@@ -52,6 +52,16 @@ class AssConverterTextCleaningTests(unittest.TestCase):
         self.assertEqual(_clean_text("混雜...…再說"), "混雜…再說")
         self.assertEqual(_clean_text("混雜…...再說"), "混雜…再說")
 
+    def test_collapses_midline_ellipsis(self):
+        # U+22EF (⋯) is normalized to U+2026 (…); runs collapse to a single …
+        self.assertEqual(_clean_text("好啊⋯"), "好啊…")
+        self.assertEqual(_clean_text("好啊⋯⋯"), "好啊…")
+
+    def test_collapses_mixed_midline_and_fullwidth_ellipsis(self):
+        # Mixed ⋯/…/... runs collapse into a single …
+        self.assertEqual(_clean_text("混雜⋯…再說"), "混雜…再說")
+        self.assertEqual(_clean_text("混雜⋯...再說"), "混雜…再說")
+
     def test_preserves_single_fullwidth_ellipsis(self):
         # A lone … is already minimal; do not touch it.
         self.assertEqual(_clean_text("好啊…"), "好啊…")

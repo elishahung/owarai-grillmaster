@@ -7,7 +7,8 @@ Netflix TC style guide:
   whitespace from each line (Netflix forbids terminal commas/periods at
   line endings).
 - Collapse any run of ellipsis characters — 3+ half-width ``.``, one or
-  more full-width ``…``, or a mixed sequence — into a single ``…``.
+  more full-width ``…`` (U+2026) or ``⋯`` (U+22EF), or a mixed
+  sequence — into a single ``…``.
 - Strip ``[\\s，、；。]+`` immediately before a closing dialogue quote
   ``」`` or ``』`` (same rule as line edges, applied to the dialogue's
   inner end). ``？``/``！``/``…`` before the quote are preserved.
@@ -42,7 +43,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
 _LINE_EDGE_PUNCT = re.compile(r"^[\s，、；。]+|[\s，、；。]+$")
-_ELLIPSIS_RUN = re.compile(r"(?:\.{3,}|…)+")
+_ELLIPSIS_RUN = re.compile(r"(?:\.{3,}|[…⋯])+")
 _QUOTE_TAIL_PUNCT = re.compile(r"[\s，、；。]+(?=[」』])")
 _SRT_TIMECODE = re.compile(
     r"^\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*"

@@ -31,7 +31,8 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.is_audio_processed = True
         project.is_asr_completed = False
         project.is_srt_completed = False
-        project.is_translated = False
+        project.is_prepass_completed = False
+        project.is_chunk_translated = False
         project.is_srt_refined = False
         project.is_cover_generated = False
         project.audio_path = Path("projects/demo/.asr/audio.opus")
@@ -95,6 +96,38 @@ class WorkflowBreakpointTests(unittest.TestCase):
         convert_file.assert_not_called()
         project.mark_progress.assert_not_called()
         gemini_cls.assert_not_called()
+
+    def test_break_after_prepass_completed_stops_before_chunk_translation(self):
+        project = self._build_project_mock()
+        project.is_asr_completed = True
+        project.is_srt_completed = True
+        project.translation_hint = None
+        project.video_path = Path("projects/demo/video.mp4")
+        project.pre_pass_path = Path("projects/demo/.pre_pass/pre_pass.json")
+        project.pre_pass_cache_dir = Path("projects/demo/.pre_pass")
+        project.chunks_cache_dir = Path("projects/demo/.chunks")
+        project.source_metadata_context.return_value = None
+        project.parent_pre_pass_context.return_value = None
+
+        with (
+            patch.object(
+                workflow_module.Project, "from_source_str", return_value=project
+            ),
+            patch.object(workflow_module, "Gemini") as gemini_cls,
+        ):
+            gemini = gemini_cls.return_value
+            gemini.run_pre_pass.return_value = MagicMock(total_cost=0.0)
+
+            workflow_module.process_project(
+                "demo",
+                break_after=workflow_module.ProgressStage.PREPASS_COMPLETED,
+            )
+
+        gemini.run_pre_pass.assert_called_once()
+        gemini.translate_chunks.assert_not_called()
+        project.mark_progress.assert_called_once_with(
+            workflow_module.ProgressStage.PREPASS_COMPLETED
+        )
 
     def test_metadata_stage_fetches_tver_talents(self):
         root = self._make_temp_dir()

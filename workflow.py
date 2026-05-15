@@ -88,6 +88,29 @@ def _should_stop_after_stage(
     return True
 
 
+def _make_translation_request(
+    project: Project, project_id: str
+) -> TranslationRequest:
+    """Build the Gemini request shared by the pre-pass and chunk stages.
+
+    Both stages must pass identical inputs so chunk boundaries and the
+    persisted pre_pass.json stay consistent across the split.
+    """
+    return TranslationRequest(
+        video_description=project.translation_hint,
+        srt_path=project.srt_path,
+        audio_key=project_id,
+        video_path=project.video_path,
+        audio_path=project.audio_path,
+        output_path=project.translated_path,
+        pre_pass_path=project.pre_pass_path,
+        pre_pass_cache_dir=project.pre_pass_cache_dir,
+        chunks_cache_dir=project.chunks_cache_dir,
+        source_metadata_context=project.source_metadata_context(),
+        parent_pre_pass_context=project.parent_pre_pass_context(),
+    )
+
+
 def process_project(
     project_id: str,
     break_after: ProgressStage | None = None,
@@ -245,25 +268,40 @@ def process_project(
         ):
             return
 
-        # Process Translation
-        if not project.is_translated:
+        # Process pre-pass
+        if not project.is_prepass_completed:
+            logger.info(f"Stage: Running pre-pass for {project_id}")
+            gemini = Gemini()
+            try:
+                prepass_result = gemini.run_pre_pass(
+                    _make_translation_request(project, project_id)
+                )
+            except GeminiTranslationError as e:
+                if e.summary.total_cost > 0:
+                    project.add_cost("gemini", e.summary.total_cost)
+                logger.error(
+                    f"Stage failed: Pre-pass partial cost "
+                    f"${e.summary.total_cost:.4f}"
+                )
+                raise
+            if prepass_result.total_cost > 0:
+                project.add_cost("gemini", prepass_result.total_cost)
+            project.mark_progress(ProgressStage.PREPASS_COMPLETED)
+            logger.success("Stage complete: Pre-pass completed")
+        else:
+            logger.debug("Stage skipped: Pre-pass already completed")
+        if _should_stop_after_stage(
+            project_id, break_after, ProgressStage.PREPASS_COMPLETED
+        ):
+            return
+
+        # Process chunk translation
+        if not project.is_chunk_translated:
             logger.info(f"Stage: Translating subtitles for {project_id}")
             gemini = Gemini()
             try:
-                translation_result = gemini.translate(
-                    TranslationRequest(
-                        video_description=project.translation_hint,
-                        srt_path=project.srt_path,
-                        audio_key=project_id,
-                        video_path=project.video_path,
-                        audio_path=project.audio_path,
-                        output_path=project.translated_path,
-                        pre_pass_path=project.pre_pass_path,
-                        pre_pass_cache_dir=project.pre_pass_cache_dir,
-                        chunks_cache_dir=project.chunks_cache_dir,
-                        source_metadata_context=project.source_metadata_context(),
-                        parent_pre_pass_context=project.parent_pre_pass_context(),
-                    )
+                translation_result = gemini.translate_chunks(
+                    _make_translation_request(project, project_id)
                 )
             except GeminiTranslationError as e:
                 if e.summary.total_cost > 0:
@@ -271,19 +309,18 @@ def process_project(
                 logger.error(
                     f"Stage failed: Translation partial cost "
                     f"${e.summary.total_cost:.4f} "
-                    f"(pre-pass ${e.summary.pre_pass_cost:.4f}, "
-                    f"completed {e.summary.completed_chunks}/{e.summary.num_chunks}, "
+                    f"(completed {e.summary.completed_chunks}/{e.summary.num_chunks}, "
                     f"retries={e.summary.retries})"
                 )
                 raise
             if translation_result.total_cost > 0:
                 project.add_cost("gemini", translation_result.total_cost)
-            project.mark_progress(ProgressStage.TRANSLATED)
-            logger.success("Stage complete: Translation completed")
+            project.mark_progress(ProgressStage.CHUNK_TRANSLATED)
+            logger.success("Stage complete: Chunk translation completed")
         else:
-            logger.debug("Stage skipped: Translation already completed")
+            logger.debug("Stage skipped: Chunk translation already completed")
         if _should_stop_after_stage(
-            project_id, break_after, ProgressStage.TRANSLATED
+            project_id, break_after, ProgressStage.CHUNK_TRANSLATED
         ):
             return
 

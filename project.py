@@ -50,7 +50,8 @@ class ProgressStage(str, Enum):
     AUDIO_PROCESSED = "is_audio_processed"
     ASR_COMPLETED = "is_asr_completed"
     SRT_COMPLETED = "is_srt_completed"
-    TRANSLATED = "is_translated"
+    PREPASS_COMPLETED = "is_prepass_completed"
+    CHUNK_TRANSLATED = "is_chunk_translated"
     SRT_REFINED = "is_srt_refined"
     FINALIZED = "is_finalized"
 
@@ -95,7 +96,8 @@ class Project(BaseModel):
         is_audio_processed: Whether audio has been extracted.
         is_asr_completed: Whether speech recognition has been completed.
         is_srt_completed: Whether SRT subtitle file has been generated.
-        is_translated: Whether translation has been completed.
+        is_prepass_completed: Whether the Gemini pre-pass briefing has been completed.
+        is_chunk_translated: Whether concurrent chunk translation has been completed.
         is_srt_refined: Whether the optional Codex-driven SRT refinement has been completed.
         is_finalized: Whether the final ASS + SRT outputs have been generated.
         is_cover_generated: Whether the optional Codex-driven cover image has been generated.
@@ -117,7 +119,8 @@ class Project(BaseModel):
     is_audio_processed: bool = False
     is_asr_completed: bool = False
     is_srt_completed: bool = False
-    is_translated: bool = False
+    is_prepass_completed: bool = False
+    is_chunk_translated: bool = False
     is_srt_refined: bool = False
     is_finalized: bool = False
     is_cover_generated: bool = False

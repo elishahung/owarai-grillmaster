@@ -20,7 +20,7 @@ from .errors import (
     TranslationCostSummary,
 )
 from .normalizer import normalize_translated_blocks
-from .pre_pass import run_pre_pass
+from .pre_pass import PrePassResult, run_pre_pass as execute_pre_pass
 
 
 class TranslationResult(TranslationCostSummary):
@@ -60,44 +60,14 @@ class Gemini:
             f"chunk_char_limit={settings.gemini_chunk_char_limit})"
         )
 
-    def translate(
-        self,
-        request: TranslationRequest,
-    ) -> TranslationResult:
-        """Translate an SRT file to Traditional Chinese. Blocks until complete.
+    def _prepare(
+        self, request: TranslationRequest
+    ) -> tuple[str, list[list[SrtBlock]]]:
+        """Parse the source SRT and split it into deterministic chunks.
 
-        Pre-pass and per-chunk multimodal assets are cached on disk so a later
-        retry can resume without rebuilding media slices.
+        Side-effect free and identical across both stages so the pre-pass and
+        chunk-translation stages always agree on chunk boundaries.
         """
-        return asyncio.run(self._translate_async(request))
-
-    async def _translate_async(
-        self,
-        request: TranslationRequest,
-    ) -> TranslationResult:
-        def build_summary(
-            *,
-            pre_pass_cost: float,
-            chunk_costs: list[float],
-            retries: int,
-            completed_chunks: int,
-            failed_chunks: list[str],
-            num_chunks: int,
-        ) -> TranslationResult:
-            return TranslationResult(
-                total_cost=pre_pass_cost + sum(chunk_costs),
-                pre_pass_cost=pre_pass_cost,
-                chunk_costs=chunk_costs,
-                num_chunks=num_chunks,
-                retries=retries,
-                elapsed_seconds=time.time() - start_time,
-                completed_chunks=completed_chunks,
-                failed_chunks=failed_chunks,
-            )
-
-        start_time = time.time()
-        logger.info(f"Starting translation for SRT file: {request.srt_path}")
-
         srt_text = request.srt_path.read_text(encoding="utf-8")
         blocks = parse_srt(srt_text)
         logger.info(f"Parsed {len(blocks)} SRT blocks")
@@ -113,9 +83,25 @@ class Gemini:
                 f"  chunk {i + 1}/{len(chunks)}: index {c[0].index}–{c[-1].index} "
                 f"({len(c)} blocks, {sum(b.char_count for b in c)} chars)"
             )
+        return srt_text, chunks
+
+    def run_pre_pass(self, request: TranslationRequest) -> TranslationResult:
+        """Run the Gemini pre-pass only and persist pre_pass.json.
+
+        Blocks until complete. The persisted briefing is the explicit hand-off
+        consumed by `translate_chunks`; this stage does no chunk translation.
+        """
+        return asyncio.run(self._run_pre_pass_async(request))
+
+    async def _run_pre_pass_async(
+        self, request: TranslationRequest
+    ) -> TranslationResult:
+        start_time = time.time()
+        logger.info(f"Starting pre-pass for SRT file: {request.srt_path}")
+        srt_text, chunks = self._prepare(request)
 
         try:
-            pre_pass_result, pre_pass_cost = await run_pre_pass(
+            _result, pre_pass_cost = await execute_pre_pass(
                 self.client,
                 request.video_description,
                 srt_text,
@@ -128,19 +114,92 @@ class Gemini:
                 request.parent_pre_pass_context,
             )
         except PrePassError as e:
-            summary = build_summary(
+            summary = TranslationResult(
+                total_cost=e.accumulated_cost,
                 pre_pass_cost=e.accumulated_cost,
+                chunk_costs=[],
+                num_chunks=len(chunks),
+                retries=0,
+                elapsed_seconds=time.time() - start_time,
+                completed_chunks=0,
+                failed_chunks=["pre-pass"],
+            )
+            logger.error(
+                f"Pre-pass failed: ${summary.total_cost:.4f} spent after "
+                f"{summary.elapsed_seconds:.1f}s"
+            )
+            raise GeminiTranslationError(str(e), summary) from e
+
+        summary = TranslationResult(
+            total_cost=pre_pass_cost,
+            pre_pass_cost=pre_pass_cost,
+            chunk_costs=[],
+            num_chunks=len(chunks),
+            retries=0,
+            elapsed_seconds=time.time() - start_time,
+            completed_chunks=0,
+            failed_chunks=[],
+        )
+        logger.success(
+            f"Pre-pass done: ${summary.total_cost:.4f}, "
+            f"{summary.elapsed_seconds:.1f}s"
+        )
+        return summary
+
+    def translate_chunks(
+        self, request: TranslationRequest
+    ) -> TranslationResult:
+        """Translate all chunks concurrently using the persisted pre-pass.
+
+        Blocks until complete. Requires `run_pre_pass` to have already written
+        pre_pass.json; this stage never re-runs the pre-pass.
+        """
+        return asyncio.run(self._translate_chunks_async(request))
+
+    async def _translate_chunks_async(
+        self, request: TranslationRequest
+    ) -> TranslationResult:
+        def build_summary(
+            *,
+            chunk_costs: list[float],
+            retries: int,
+            completed_chunks: int,
+            failed_chunks: list[str],
+            num_chunks: int,
+        ) -> TranslationResult:
+            return TranslationResult(
+                total_cost=sum(chunk_costs),
+                pre_pass_cost=0.0,
+                chunk_costs=chunk_costs,
+                num_chunks=num_chunks,
+                retries=retries,
+                elapsed_seconds=time.time() - start_time,
+                completed_chunks=completed_chunks,
+                failed_chunks=failed_chunks,
+            )
+
+        start_time = time.time()
+        logger.info(
+            f"Starting chunk translation for SRT file: {request.srt_path}"
+        )
+        srt_text, chunks = self._prepare(request)
+
+        if not request.pre_pass_path.exists():
+            summary = build_summary(
                 chunk_costs=[],
                 retries=0,
                 completed_chunks=0,
-                failed_chunks=["pre-pass"],
+                failed_chunks=["pre-pass artifact missing"],
                 num_chunks=len(chunks),
             )
-            logger.error(
-                f"Translation failed during pre-pass: "
-                f"${summary.total_cost:.4f} spent after {summary.elapsed_seconds:.1f}s"
+            raise GeminiTranslationError(
+                f"pre_pass.json not found at {request.pre_pass_path}; "
+                "run the pre-pass stage first",
+                summary,
             )
-            raise GeminiTranslationError(str(e), summary) from e
+        pre_pass_result = PrePassResult.model_validate_json(
+            request.pre_pass_path.read_text(encoding="utf-8")
+        )
 
         request.chunks_cache_dir.mkdir(parents=True, exist_ok=True)
         semaphore = asyncio.Semaphore(settings.gemini_concurrency)
@@ -206,7 +265,6 @@ class Gemini:
 
         if chunk_failures:
             summary = build_summary(
-                pre_pass_cost=pre_pass_cost,
                 chunk_costs=chunk_costs,
                 retries=total_retries,
                 completed_chunks=len(chunk_results),
@@ -216,8 +274,7 @@ class Gemini:
             logger.error(
                 f"Translation gather failed: {summary.completed_chunks}/"
                 f"{summary.num_chunks} chunks completed, {len(summary.failed_chunks)} "
-                f"failed, ${summary.total_cost:.4f} spent "
-                f"(pre-pass ${summary.pre_pass_cost:.4f})"
+                f"failed, ${summary.total_cost:.4f} spent"
             )
             raise GeminiTranslationError(
                 "One or more chunks failed after all chunk tasks completed: "
@@ -243,7 +300,6 @@ class Gemini:
         logger.success(f"Translation saved to: {request.output_path}")
 
         summary = build_summary(
-            pre_pass_cost=pre_pass_cost,
             chunk_costs=chunk_costs,
             retries=total_retries,
             completed_chunks=len(chunk_results),
@@ -252,9 +308,8 @@ class Gemini:
         )
 
         logger.info(
-            f"Translation done: {len(chunks)} chunks, {summary.retries} retries, "
-            f"${summary.total_cost:.4f} (pre-pass ${summary.pre_pass_cost:.4f}), "
-            f"{summary.elapsed_seconds:.1f}s "
+            f"Chunk translation done: {len(chunks)} chunks, {summary.retries} retries, "
+            f"${summary.total_cost:.4f}, {summary.elapsed_seconds:.1f}s "
             f"({summary.elapsed_seconds / 60:.2f} min)"
         )
 

@@ -19,7 +19,8 @@ class WorkflowGeminiCostTests(unittest.TestCase):
         project.is_audio_processed = True
         project.is_asr_completed = True
         project.is_srt_completed = True
-        project.is_translated = False
+        project.is_prepass_completed = True
+        project.is_chunk_translated = False
         base = Path("projects/demo")
         project.srt_path = base / "video.ja.srt"
         project.video_path = base / "video.mp4"
@@ -53,16 +54,16 @@ class WorkflowGeminiCostTests(unittest.TestCase):
             patch.object(workflow_module.settings, "archived_path", None),
             patch.object(workflow_module.settings, "package_path", None),
         ):
-            gemini_cls.return_value.translate.return_value = summary
+            gemini_cls.return_value.translate_chunks.return_value = summary
             workflow_module.process_project("demo")
 
         project.add_cost.assert_called_once_with("gemini", 3.5)
-        request = gemini_cls.return_value.translate.call_args.args[0]
+        request = gemini_cls.return_value.translate_chunks.call_args.args[0]
         self.assertEqual(request.video_description, "hint")
         self.assertEqual(request.audio_key, "demo")
         self.assertEqual(request.srt_path, project.srt_path)
         project.mark_progress.assert_called_once_with(
-            workflow_module.ProgressStage.TRANSLATED
+            workflow_module.ProgressStage.CHUNK_TRANSLATED
         )
 
     def test_workflow_persists_partial_gemini_cost_on_failure(self):
@@ -85,7 +86,7 @@ class WorkflowGeminiCostTests(unittest.TestCase):
             patch.object(workflow_module, "Gemini") as gemini_cls,
             patch.object(workflow_module.settings, "archived_path", None),
         ):
-            gemini_cls.return_value.translate.side_effect = (
+            gemini_cls.return_value.translate_chunks.side_effect = (
                 GeminiTranslationError("translation failed", summary)
             )
             with self.assertRaises(GeminiTranslationError):
@@ -93,6 +94,39 @@ class WorkflowGeminiCostTests(unittest.TestCase):
 
         project.add_cost.assert_called_once_with("gemini", 2.25)
         project.mark_progress.assert_not_called()
+
+    def test_workflow_persists_prepass_cost_and_stops_at_break(self):
+        project = self._build_project_mock()
+        project.is_prepass_completed = False
+        summary = TranslationCostSummary(
+            total_cost=1.0,
+            pre_pass_cost=1.0,
+            chunk_costs=[],
+            num_chunks=3,
+            retries=0,
+            elapsed_seconds=2.0,
+            completed_chunks=0,
+            failed_chunks=[],
+        )
+
+        with (
+            patch.object(
+                workflow_module.Project, "from_source_str", return_value=project
+            ),
+            patch.object(workflow_module, "Gemini") as gemini_cls,
+        ):
+            gemini = gemini_cls.return_value
+            gemini.run_pre_pass.return_value = summary
+            workflow_module.process_project(
+                "demo",
+                break_after=workflow_module.ProgressStage.PREPASS_COMPLETED,
+            )
+
+        project.add_cost.assert_called_once_with("gemini", 1.0)
+        gemini.translate_chunks.assert_not_called()
+        project.mark_progress.assert_called_once_with(
+            workflow_module.ProgressStage.PREPASS_COMPLETED
+        )
 
 
 class WorkflowElevenLabsCostTests(unittest.TestCase):
@@ -106,7 +140,8 @@ class WorkflowElevenLabsCostTests(unittest.TestCase):
         project.is_audio_processed = True
         project.is_asr_completed = False
         project.is_srt_completed = False
-        project.is_translated = False
+        project.is_prepass_completed = False
+        project.is_chunk_translated = False
         base = Path("projects/demo")
         project.audio_path = base / ".asr" / "audio.opus"
         project.asr_path = base / ".asr" / "asr.json"

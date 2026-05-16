@@ -918,6 +918,74 @@ class ElevenLabsSrtTests(unittest.TestCase):
         self.assertIn("1\n00:00:00,000 --> 00:00:00,500\n先です。", srt)
         self.assertIn("2\n00:00:02,000 --> 00:00:02,500\n後です。", srt)
 
+    def test_caps_long_single_utterance_to_two_lines_at_render(self):
+        # A single utterance with no internal punctuation between the
+        # leading 、 and trailing 。 stays > max_segment_chars (the
+        # segmenter intentionally leaves a few such cases). It must
+        # still render at most max_lines_per_block (2) lines.
+        text = (
+            "さあ、 THE SECOND 漫才トーナメント "
+            "2026 一回戦 第一試合の 対戦カードはこちらです。"
+        )
+        payload = {"words": [word(text, 2270.86, 2277.28, "speaker_13")]}
+
+        srt = convert_payload_to_srt(payload)
+
+        # Single block, exactly two text lines, no blank line.
+        self.assertNotIn("\n\n", srt.strip())
+        body_lines = srt.strip().split("\n")[2:]
+        self.assertEqual(len(body_lines), 2)
+        # Tail not orphaned; ASCII tokens not split mid-run.
+        self.assertIn("対戦カードはこちらです。", srt)
+        self.assertIn("THE SECOND", srt)
+        self.assertIn("2026", srt)
+        # The pre-fix 3-line layout broke after 漫才トーナメント.
+        self.assertNotIn("漫才トーナメント\n2026 一回戦", srt)
+
+    def test_render_line_cap_respects_max_lines_per_block_override(self):
+        # The cap generalizes: with max_lines_per_block=3 an over-long
+        # no-punctuation utterance reflows to exactly 3 balanced lines.
+        text = "検証用文章" * 16  # 80 chars, no punctuation/particles
+        payload = {"words": [word(text, 0.0, 8.0)]}
+
+        srt = _convert_payload_with_options(
+            payload, SrtFormatOptions(max_lines_per_block=3)
+        )
+
+        self.assertNotIn("\n\n", srt.strip())
+        body_lines = srt.strip().split("\n")[2:]
+        self.assertEqual(len(body_lines), 3)
+        self.assertEqual("".join(body_lines), text)
+
+    def test_line_cap_does_not_change_merge_decisions(self):
+        # Regression sentinel: the render-time line cap must NOT leak
+        # into _rendered_line_count (the merge predictor). If it did,
+        # the reply would merge into the previous block and the
+        # boundaries/timecodes would change.
+        payload = {
+            "words": [
+                word("ということで、", 22.72, 23.5, "speaker_0"),
+                word("今回やるんやけど、", 23.6, 24.6, "speaker_0"),
+                word("前は", 24.72, 25.32, "speaker_0"),
+                word("1時間", 25.56, 26.02, "speaker_0"),
+                word("2時間ぐらいかかって。", 26.14, 26.94, "speaker_0"),
+                word("かかりました。", 27.02, 27.5, "speaker_1"),
+            ]
+        }
+
+        srt = _convert_payload_with_options(
+            payload, SrtFormatOptions(max_lines_per_block=2)
+        )
+
+        self.assertIn(
+            "1\n00:00:22,720 --> 00:00:26,940\n"
+            "ということで、今回やるんやけど、\n"
+            "前は1時間2時間ぐらいかかって。",
+            srt,
+        )
+        self.assertIn("2\n00:00:27,020 --> 00:00:28,000\nかかりました。", srt)
+        self.assertNotIn("-かかりました。", srt)
+
 
 if __name__ == "__main__":
     unittest.main()

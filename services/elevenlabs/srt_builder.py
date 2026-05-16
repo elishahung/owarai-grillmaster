@@ -753,7 +753,9 @@ def _render_block_text(
         text = utterance.text.strip()
         if not text:
             continue
-        for line in _wrap_text(text, options):
+        for line in _wrap_text(
+            text, options, max_lines=options.max_lines_per_block
+        ):
             if use_dialogue:
                 rendered.append(f"{options.dialogue_prefix}{line}")
             else:
@@ -771,7 +773,9 @@ def _rendered_line_count(
     )
 
 
-def _wrap_text(text: str, options: SrtFormatOptions) -> list[str]:
+def _wrap_text(
+    text: str, options: SrtFormatOptions, *, max_lines: int | None = None
+) -> list[str]:
     max_chars = options.max_characters_per_line
     if max_chars <= 0 or len(text) <= max_chars:
         return [text]
@@ -784,7 +788,40 @@ def _wrap_text(text: str, options: SrtFormatOptions) -> list[str]:
         remaining = remaining[split_at:].strip()
     if remaining:
         lines.append(remaining)
+
+    if max_lines is not None and len(lines) > max_lines:
+        return _balanced_wrap(text.strip(), max_lines)
     return lines
+
+
+def _balanced_wrap(text: str, max_lines: int) -> list[str]:
+    """Reflow text into exactly max_lines balanced lines using the same
+    break scorer as _find_wrap_index, ignoring the per-line cap. Used
+    only at final render so a single over-cap utterance never shows
+    more than max_lines lines."""
+    if max_lines <= 1 or len(text) <= 1:
+        return [text]
+
+    n = len(text)
+    target = n / max_lines
+    best_index = max(1, round(target))
+    best_score = float("-inf")
+    for i in range(1, n):
+        score = _score_wrap_break(text, i, target)
+        if score > best_score or (
+            score == best_score
+            and abs(i - target) < abs(best_index - target)
+        ):
+            best_score = score
+            best_index = i
+
+    head = text[:best_index].strip()
+    tail = text[best_index:].strip()
+    if not head or not tail:
+        return [text]
+    if max_lines == 2:
+        return [head, tail]
+    return [head, *_balanced_wrap(tail, max_lines - 1)]
 
 
 def _find_wrap_index(text: str, options: SrtFormatOptions) -> int:

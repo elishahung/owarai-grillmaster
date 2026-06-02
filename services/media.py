@@ -5,13 +5,16 @@ such as extracting audio from video files, slicing chunk audio, sampling frames,
 and combining multiple video files.
 """
 
+from collections import deque
 from pathlib import Path
 import ffmpeg
 import subprocess
 import tempfile
 import os
+import threading
 from loguru import logger
 from pydantic import BaseModel
+from tqdm import tqdm
 
 
 class TimeRange(BaseModel):
@@ -164,8 +167,13 @@ class MediaProcessor:
             f"Burning subtitles {subtitle_file.name} into "
             f"{video_file.name} -> {output_file}"
         )
+        duration_seconds = MediaProcessor.get_media_duration(video_file)
         cmd = [
             "ffmpeg",
+            "-hide_banner",
+            "-nostats",
+            "-progress",
+            "pipe:1",
             "-i",
             video_file.name,
             "-vf",
@@ -175,24 +183,59 @@ class MediaProcessor:
             str(output_file),
             "-y",
         ]
-        try:
-            subprocess.run(
-                cmd,
-                cwd=cwd,
-                check=True,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-        except subprocess.CalledProcessError as exc:
-            stderr_tail = "\n".join(
-                (exc.stderr or "").strip().splitlines()[-20:]
-            )
+        stderr_lines: deque[str] = deque(maxlen=20)
+
+        process = subprocess.Popen(
+            cmd,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+        def collect_stderr() -> None:
+            assert process.stderr is not None
+            for line in process.stderr:
+                stderr_lines.append(line.rstrip())
+
+        stderr_thread = threading.Thread(target=collect_stderr, daemon=True)
+        stderr_thread.start()
+
+        with tqdm(
+            total=duration_seconds,
+            desc="Burning subtitles",
+            unit="s",
+            dynamic_ncols=True,
+        ) as progress:
+            assert process.stdout is not None
+            for line in process.stdout:
+                key, separator, value = line.strip().partition("=")
+                if separator == "" or key not in {"out_time_ms", "out_time_us"}:
+                    continue
+                try:
+                    current_seconds = int(value) / 1_000_000
+                except ValueError:
+                    continue
+                current_seconds = min(current_seconds, duration_seconds)
+                progress.update(max(0.0, current_seconds - progress.n))
+
+            return_code = process.wait()
+            stderr_thread.join()
+            if return_code == 0:
+                progress.update(max(0.0, duration_seconds - progress.n))
+
+        if return_code != 0:
+            stderr_tail = "\n".join(stderr_lines)
             logger.error(
-                f"ffmpeg burn-in failed (exit {exc.returncode}): {stderr_tail}"
+                f"ffmpeg burn-in failed (exit {return_code}): {stderr_tail}"
             )
-            raise
+            raise subprocess.CalledProcessError(
+                return_code,
+                cmd,
+                stderr=stderr_tail,
+            )
 
     @staticmethod
     def parse_timecode_line(timecode: str) -> TimeRange:

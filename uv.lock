@@ -44,6 +44,7 @@ dependencies = [
     { name = "pycryptodomex" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "tqdm" },
     { name = "typer" },
     { name = "yt-dlp" },
 ]
@@ -58,6 +59,7 @@ requires-dist = [
     { name = "pycryptodomex", specifier = ">=3.23.0" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
+    { name = "tqdm", specifier = ">=4.67.3" },
     { name = "typer", specifier = ">=0.21.1" },
     { name = "yt-dlp", specifier = ">=2026.1.29" },
 ]

@@ -571,7 +571,9 @@ class CuratedNameUnitsTests(unittest.TestCase):
         units = _curated_name_units()
         self.assertGreater(len(units), 5)
         # Mixed Chinese-Latin → included.
-        self.assertIn("金屬Bat", units)
+        self.assertIn("水川Katamari", units)
+        # Pure-Han curated names → deliberately excluded.
+        self.assertNotIn("金屬球棒", units)
         # Pure-Latin curated names → deliberately excluded.
         self.assertNotIn("Diane", units)
         self.assertNotIn("THE SECOND", units)
@@ -581,7 +583,7 @@ class CuratedNameUnitsTests(unittest.TestCase):
             self.assertRegex(u, r"[぀-ヿ一-鿿]")
 
     def test_finalize_spaces_curated_name_without_pre_pass(self):
-        # The user's case: 金屬Bat is NOT in this episode's pre_pass, but the
+        # The user's case: 水川Katamari is NOT in this episode's pre_pass, but the
         # curated glossary makes finalize recognize and space it anyway
         # (Latin-unit boundary spacing; the trailing 桑 keeps its space).
         tmp = (
@@ -598,7 +600,7 @@ class CuratedNameUnitsTests(unittest.TestCase):
         srt_path.write_text(
             "1\n"
             "00:00:01,000 --> 00:00:02,000\n"
-            "我推薦的是金屬Bat 桑啊。\n",
+            "我推薦的是水川Katamari 桑啊。\n",
             encoding="utf-8",
         )
         finalize_and_export(
@@ -608,7 +610,7 @@ class CuratedNameUnitsTests(unittest.TestCase):
             fin_path.read_text(encoding="utf-8"),
             "1\n"
             "00:00:01,000 --> 00:00:02,000\n"
-            "我推薦的是 金屬Bat 桑啊\n",
+            "我推薦的是 水川Katamari 桑啊\n",
         )
 
 

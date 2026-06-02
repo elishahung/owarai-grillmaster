@@ -134,7 +134,7 @@ def _curated_name_units() -> list[str]:
     """Mixed Chinese-Latin zh renderings from the bundled curated glossary.
 
     Only names containing BOTH a Han/kana char AND a Latin letter are
-    force-added (e.g. `金屬Bat`, `水川Katamari`). These are highly
+    force-added (e.g. `水川Katamari`, `空前Meteor`). These are highly
     distinctive, so backfilling them is safe even when this episode's
     pre_pass missed them (pre_pass often only mentions a name inside a
     segment summary). Pure-Latin curated names (e.g. `Diane`, `THE SECOND`)

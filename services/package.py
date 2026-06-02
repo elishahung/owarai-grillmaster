@@ -15,10 +15,14 @@ from project import (
     Project,
 )
 from services.media import MediaProcessor
+from services.progress import NoopProgressReporter
 
 
 def package_project(
-    project: Project, source_root: Path, package_root: Path
+    project: Project,
+    source_root: Path,
+    package_root: Path,
+    progress: NoopProgressReporter | None = None,
 ) -> None:
     """Burn subtitles into video and copy the cover into a deliverable folder.
 
@@ -45,6 +49,7 @@ def package_project(
             video_file=video_in,
             subtitle_file=ass_in,
             output_file=target_dir / "video.mp4",
+            progress=progress,
         )
     except subprocess.CalledProcessError:
         logger.error("Package skipped: subtitle burn-in failed")

@@ -14,7 +14,8 @@ import os
 import threading
 from loguru import logger
 from pydantic import BaseModel
-from tqdm import tqdm
+
+from services.progress import NoopProgressReporter
 
 
 class TimeRange(BaseModel):
@@ -141,6 +142,7 @@ class MediaProcessor:
         video_file: Path,
         subtitle_file: Path,
         output_file: Path,
+        progress: NoopProgressReporter | None = None,
     ) -> None:
         """Burn ASS/SRT subtitles into the video.
 
@@ -203,30 +205,39 @@ class MediaProcessor:
         stderr_thread = threading.Thread(target=collect_stderr, daemon=True)
         stderr_thread.start()
 
-        with tqdm(
-            total=duration_seconds,
-            desc="Burning subtitles",
-            unit="s",
-            dynamic_ncols=True,
-        ) as progress:
-            assert process.stdout is not None
-            for line in process.stdout:
-                key, separator, value = line.strip().partition("=")
-                if separator == "" or key not in {"out_time_ms", "out_time_us"}:
-                    continue
-                try:
-                    current_seconds = int(value) / 1_000_000
-                except ValueError:
-                    continue
-                current_seconds = min(current_seconds, duration_seconds)
-                progress.update(max(0.0, current_seconds - progress.n))
+        progress_task = (
+            progress.start_stage("Burning subtitles", total=duration_seconds)
+            if progress is not None
+            else None
+        )
+        progress_seconds = 0.0
+        assert process.stdout is not None
+        for line in process.stdout:
+            key, separator, value = line.strip().partition("=")
+            if separator == "" or key not in {"out_time_ms", "out_time_us"}:
+                continue
+            try:
+                current_seconds = int(value) / 1_000_000
+            except ValueError:
+                continue
+            current_seconds = min(current_seconds, duration_seconds)
+            delta_seconds = max(0.0, current_seconds - progress_seconds)
+            if progress is not None:
+                progress.advance(progress_task, delta_seconds)
+            progress_seconds = current_seconds
 
-            return_code = process.wait()
-            stderr_thread.join()
-            if return_code == 0:
-                progress.update(max(0.0, duration_seconds - progress.n))
+        return_code = process.wait()
+        stderr_thread.join()
+        if return_code == 0 and progress is not None:
+            progress.advance(
+                progress_task,
+                max(0.0, duration_seconds - progress_seconds),
+            )
+            progress.finish(progress_task)
 
         if return_code != 0:
+            if progress is not None:
+                progress.finish(progress_task, "failed")
             stderr_tail = "\n".join(stderr_lines)
             logger.error(
                 f"ffmpeg burn-in failed (exit {return_code}): {stderr_tail}"

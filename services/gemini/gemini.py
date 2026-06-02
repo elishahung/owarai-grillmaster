@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from settings import settings
 from services.srt import SrtBlock, parse_srt, serialize_srt
+from services.progress import NoopProgressReporter
 from .assets import prepare_chunk_media_assets
 from .chunk_worker import translate_chunk
 from .chunker import split_into_chunks
@@ -147,17 +148,21 @@ class Gemini:
         return summary
 
     def translate_chunks(
-        self, request: TranslationRequest
+        self,
+        request: TranslationRequest,
+        progress: NoopProgressReporter | None = None,
     ) -> TranslationResult:
         """Translate all chunks concurrently using the persisted pre-pass.
 
         Blocks until complete. Requires `run_pre_pass` to have already written
         pre_pass.json; this stage never re-runs the pre-pass.
         """
-        return asyncio.run(self._translate_chunks_async(request))
+        return asyncio.run(self._translate_chunks_async(request, progress))
 
     async def _translate_chunks_async(
-        self, request: TranslationRequest
+        self,
+        request: TranslationRequest,
+        progress: NoopProgressReporter | None = None,
     ) -> TranslationResult:
         def build_summary(
             *,
@@ -206,6 +211,12 @@ class Gemini:
 
         async def bounded(i: int, chunk: list[SrtBlock]):
             async with semaphore:
+                from_index = chunk[0].index
+                to_index = chunk[-1].index
+                if progress is not None:
+                    progress.chunk_started(
+                        i, len(chunks), from_index, to_index
+                    )
                 chunk_assets = prepare_chunk_media_assets(
                     video_path=request.video_path,
                     audio_path=request.audio_path,
@@ -218,19 +229,42 @@ class Gemini:
                     max_side=settings.gemini_chunk_frame_max_side,
                     intro_skip_seconds=settings.gemini_intro_skip_seconds,
                 )
-                return await translate_chunk(
-                    self.client,
-                    chunk_assets,
-                    chunk,
-                    i,
-                    len(chunks),
-                    pre_pass_result,
-                )
+                try:
+                    result = await translate_chunk(
+                        self.client,
+                        chunk_assets,
+                        chunk,
+                        i,
+                        len(chunks),
+                        pre_pass_result,
+                    )
+                except Exception as e:
+                    if progress is not None:
+                        if isinstance(e, ChunkTranslationError):
+                            progress.chunk_failed(
+                                i,
+                                str(e),
+                                retries=e.retries,
+                                cost=e.accumulated_cost,
+                            )
+                        else:
+                            progress.chunk_failed(i, str(e))
+                    raise
+                if progress is not None:
+                    progress.chunk_finished(i, result.retries, result.cost)
+                return result
 
-        raw_chunk_results = await asyncio.gather(
-            *[bounded(i, c) for i, c in enumerate(chunks)],
-            return_exceptions=True,
-        )
+        async def observed(i: int, chunk: list[SrtBlock]):
+            try:
+                return i, await bounded(i, chunk)
+            except Exception as e:
+                return i, e
+
+        raw_chunk_results: list[object] = [None] * len(chunks)
+        chunk_tasks = [observed(i, c) for i, c in enumerate(chunks)]
+        for completed in asyncio.as_completed(chunk_tasks):
+            i, result = await completed
+            raw_chunk_results[i] = result
 
         chunk_results = []
         chunk_costs: list[float] = []

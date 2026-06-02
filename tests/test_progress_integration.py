@@ -1,0 +1,331 @@
+import asyncio
+import shutil
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import workflow as workflow_module
+from services.gemini.chunk_worker import ChunkTranslationResult
+from services.gemini.errors import (
+    ChunkTranslationError,
+    GeminiTranslationError,
+    TranslationCostSummary,
+)
+from services.gemini.gemini import Gemini, TranslationRequest
+from services.gemini.pre_pass import PrePassResult
+from services.media import MediaProcessor
+from services.srt import SrtBlock, parse_srt
+
+
+class FakeProgressReporter:
+    def __init__(self):
+        self.events = []
+        self._next_task = 1
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return None
+
+    def start_stage(self, label: str, total: float | None = None):
+        task_id = self._next_task
+        self._next_task += 1
+        self.events.append(("start_stage", task_id, label, total))
+        return task_id
+
+    def advance(
+        self, task_id, amount: float = 1.0, description: str | None = None
+    ):
+        self.events.append(("advance", task_id, amount, description))
+
+    def finish(self, task_id, status: str = "done"):
+        self.events.append(("finish", task_id, status))
+
+    def chunk_started(
+        self, index: int, total: int, from_index: int, to_index: int
+    ):
+        self.events.append(
+            ("chunk_started", index, total, from_index, to_index)
+        )
+
+    def chunk_finished(self, index: int, retries: int, cost: float):
+        self.events.append(("chunk_finished", index, retries, cost))
+
+    def chunk_failed(
+        self, index: int, message: str, retries: int = 0, cost: float = 0.0
+    ):
+        self.events.append(("chunk_failed", index, message, retries, cost))
+
+
+class WorkflowProgressTests(unittest.TestCase):
+    def _build_project_mock(self):
+        project = MagicMock()
+        project.id = "demo"
+        project.translation_hint = "hint"
+        project.total_cost = 0.0
+        project.is_metadata_fetched = True
+        project.is_downloaded = True
+        project.is_video_processed = True
+        project.is_audio_processed = True
+        project.is_asr_completed = True
+        project.is_srt_completed = True
+        project.is_prepass_completed = True
+        project.is_chunk_translated = False
+        project.is_srt_refined = False
+        project.is_glossary_checked = False
+        project.is_cover_generated = False
+        project.is_finalized = True
+        base = Path("projects/demo")
+        project.srt_path = base / "video.ja.srt"
+        project.video_path = base / "video.mp4"
+        project.audio_path = base / ".asr" / "audio.opus"
+        project.translated_path = base / "video.cht.srt"
+        project.pre_pass_path = base / ".pre_pass" / "pre_pass.json"
+        project.pre_pass_cache_dir = base / ".pre_pass"
+        project.chunks_cache_dir = base / ".chunks"
+        project.source_metadata_context.return_value = None
+        project.parent_pre_pass_context.return_value = None
+        return project
+
+    def test_workflow_reports_skipped_and_completed_stages(self):
+        project = self._build_project_mock()
+        progress = FakeProgressReporter()
+        summary = TranslationCostSummary(
+            total_cost=0.5,
+            pre_pass_cost=0.0,
+            chunk_costs=[0.5],
+            num_chunks=1,
+            retries=0,
+            elapsed_seconds=1.0,
+            completed_chunks=1,
+            failed_chunks=[],
+        )
+
+        with (
+            patch.object(
+                workflow_module.Project, "from_source_str", return_value=project
+            ),
+            patch.object(workflow_module, "Gemini") as gemini_cls,
+            patch.object(workflow_module.settings, "archived_path", None),
+            patch.object(workflow_module.settings, "package_path", None),
+        ):
+            gemini_cls.return_value.translate_chunks.return_value = summary
+            workflow_module.process_project("demo", progress=progress)
+
+        gemini_cls.return_value.translate_chunks.assert_called_once()
+        self.assertIs(
+            gemini_cls.return_value.translate_chunks.call_args.kwargs[
+                "progress"
+            ],
+            progress,
+        )
+        self.assertIn(("finish", 2, "skipped"), progress.events)
+        self.assertIn(("finish", 9, "done"), progress.events)
+        self.assertEqual(progress.events[-1], ("finish", 1, "done"))
+
+    def test_workflow_marks_failed_translation_stage(self):
+        project = self._build_project_mock()
+        progress = FakeProgressReporter()
+        summary = TranslationCostSummary(
+            total_cost=0.5,
+            pre_pass_cost=0.0,
+            chunk_costs=[0.5],
+            num_chunks=1,
+            retries=1,
+            elapsed_seconds=1.0,
+            completed_chunks=0,
+            failed_chunks=["chunk failed"],
+        )
+
+        with (
+            patch.object(
+                workflow_module.Project, "from_source_str", return_value=project
+            ),
+            patch.object(workflow_module, "Gemini") as gemini_cls,
+            patch.object(workflow_module.settings, "archived_path", None),
+            patch.object(workflow_module.settings, "package_path", None),
+        ):
+            gemini_cls.return_value.translate_chunks.side_effect = (
+                GeminiTranslationError("translation failed", summary)
+            )
+            with self.assertRaises(GeminiTranslationError):
+                workflow_module.process_project("demo", progress=progress)
+
+        self.assertIn(("finish", 9, "failed"), progress.events)
+        self.assertIn(("finish", 1, "failed"), progress.events)
+
+
+class GeminiProgressTests(unittest.TestCase):
+    def _make_request(self):
+        root = Path(tempfile.mkdtemp(prefix="gemini-progress-test-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        srt_path = root / "source.srt"
+        srt_path.write_text(
+            "1\n00:00:00,000 --> 00:00:01,000\nOne\n\n"
+            "2\n00:00:01,000 --> 00:00:02,000\nTwo\n",
+            encoding="utf-8",
+        )
+        pre_pass = PrePassResult(
+            summary="summary",
+            characters=[],
+            proper_nouns={},
+            glossary={},
+            catchphrases=[],
+            tone_notes="",
+            segment_summaries=[],
+        )
+        pre_pass_path = root / "pre_pass.json"
+        pre_pass_path.write_text(
+            pre_pass.model_dump_json(), encoding="utf-8"
+        )
+        request = TranslationRequest(
+            video_description=None,
+            srt_path=srt_path,
+            audio_key="demo",
+            video_path=root / "video.mp4",
+            audio_path=root / "audio.opus",
+            output_path=root / "translated.srt",
+            pre_pass_path=pre_pass_path,
+            pre_pass_cache_dir=root / ".pre_pass",
+            chunks_cache_dir=root / ".chunks",
+        )
+        return request, parse_srt(srt_path.read_text(encoding="utf-8"))
+
+    def test_gemini_reports_chunk_completion_and_preserves_order(self):
+        request, blocks = self._make_request()
+        progress = FakeProgressReporter()
+        gemini = Gemini.__new__(Gemini)
+        gemini.client = object()
+
+        async def fake_translate(
+            client, media_assets, chunk, chunk_index, total_chunks, pre_pass
+        ):
+            if chunk_index == 0:
+                await asyncio.sleep(0.01)
+            return ChunkTranslationResult(
+                blocks=chunk,
+                cost=chunk_index + 0.5,
+                retries=chunk_index,
+                from_index=chunk[0].index,
+                to_index=chunk[-1].index,
+            )
+
+        with (
+            patch(
+                "services.gemini.gemini.split_into_chunks",
+                return_value=[[blocks[0]], [blocks[1]]],
+            ),
+            patch(
+                "services.gemini.gemini.prepare_chunk_media_assets",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "services.gemini.gemini.translate_chunk",
+                side_effect=fake_translate,
+            ),
+        ):
+            result = asyncio.run(
+                gemini._translate_chunks_async(request, progress)
+            )
+
+        self.assertEqual(result.completed_chunks, 2)
+        self.assertEqual(
+            request.output_path.read_text(encoding="utf-8"),
+            "1\n00:00:00,000 --> 00:00:01,000\nOne\n\n"
+            "2\n00:00:01,000 --> 00:00:02,000\nTwo\n",
+        )
+        self.assertEqual(
+            [event[0] for event in progress.events].count("chunk_finished"),
+            2,
+        )
+
+    def test_gemini_reports_chunk_failure(self):
+        request, blocks = self._make_request()
+        progress = FakeProgressReporter()
+        gemini = Gemini.__new__(Gemini)
+        gemini.client = object()
+
+        async def fake_translate(
+            client, media_assets, chunk, chunk_index, total_chunks, pre_pass
+        ):
+            if chunk_index == 1:
+                raise ChunkTranslationError(
+                    "failed",
+                    accumulated_cost=1.25,
+                    retries=2,
+                    chunk_index=chunk_index,
+                    total_chunks=total_chunks,
+                    from_index=chunk[0].index,
+                    to_index=chunk[-1].index,
+                )
+            return ChunkTranslationResult(
+                blocks=chunk,
+                cost=0.5,
+                retries=0,
+                from_index=chunk[0].index,
+                to_index=chunk[-1].index,
+            )
+
+        with (
+            patch(
+                "services.gemini.gemini.split_into_chunks",
+                return_value=[[blocks[0]], [blocks[1]]],
+            ),
+            patch(
+                "services.gemini.gemini.prepare_chunk_media_assets",
+                return_value=MagicMock(),
+            ),
+            patch(
+                "services.gemini.gemini.translate_chunk",
+                side_effect=fake_translate,
+            ),
+        ):
+            with self.assertRaises(GeminiTranslationError):
+                asyncio.run(gemini._translate_chunks_async(request, progress))
+
+        self.assertTrue(
+            any(event[0] == "chunk_failed" for event in progress.events)
+        )
+
+
+class MediaProgressTests(unittest.TestCase):
+    def test_burn_in_subtitles_reports_ffmpeg_progress(self):
+        root = Path(tempfile.mkdtemp(prefix="burn-progress-test-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        video = root / "video.mp4"
+        subtitle = root / "video.ass"
+        output = root / "out.mp4"
+        video.write_text("video", encoding="utf-8")
+        subtitle.write_text("subtitle", encoding="utf-8")
+        progress = FakeProgressReporter()
+
+        class FakeProcess:
+            stdout = iter(
+                [
+                    "out_time_ms=500000\n",
+                    "out_time_ms=1000000\n",
+                    "progress=end\n",
+                ]
+            )
+            stderr = iter([])
+
+            def wait(self):
+                return 0
+
+        with (
+            patch.object(MediaProcessor, "get_media_duration", return_value=1.0),
+            patch("services.media.subprocess.Popen", return_value=FakeProcess()),
+        ):
+            MediaProcessor.burn_in_subtitles(
+                video, subtitle, output, progress=progress
+            )
+
+        self.assertIn(("start_stage", 1, "Burning subtitles", 1.0), progress.events)
+        self.assertIn(("advance", 1, 0.5, None), progress.events)
+        self.assertEqual(progress.events[-1], ("finish", 1, "done"))
+
+
+if __name__ == "__main__":
+    unittest.main()

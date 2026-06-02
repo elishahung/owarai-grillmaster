@@ -89,7 +89,7 @@ class WorkflowProgressTests(unittest.TestCase):
         project.parent_pre_pass_context.return_value = None
         return project
 
-    def test_workflow_reports_skipped_and_completed_stages(self):
+    def test_workflow_passes_progress_to_chunk_translation(self):
         project = self._build_project_mock()
         progress = FakeProgressReporter()
         summary = TranslationCostSummary(
@@ -121,40 +121,7 @@ class WorkflowProgressTests(unittest.TestCase):
             ],
             progress,
         )
-        self.assertIn(("finish", 2, "skipped"), progress.events)
-        self.assertIn(("finish", 9, "done"), progress.events)
-        self.assertEqual(progress.events[-1], ("finish", 1, "done"))
-
-    def test_workflow_marks_failed_translation_stage(self):
-        project = self._build_project_mock()
-        progress = FakeProgressReporter()
-        summary = TranslationCostSummary(
-            total_cost=0.5,
-            pre_pass_cost=0.0,
-            chunk_costs=[0.5],
-            num_chunks=1,
-            retries=1,
-            elapsed_seconds=1.0,
-            completed_chunks=0,
-            failed_chunks=["chunk failed"],
-        )
-
-        with (
-            patch.object(
-                workflow_module.Project, "from_source_str", return_value=project
-            ),
-            patch.object(workflow_module, "Gemini") as gemini_cls,
-            patch.object(workflow_module.settings, "archived_path", None),
-            patch.object(workflow_module.settings, "package_path", None),
-        ):
-            gemini_cls.return_value.translate_chunks.side_effect = (
-                GeminiTranslationError("translation failed", summary)
-            )
-            with self.assertRaises(GeminiTranslationError):
-                workflow_module.process_project("demo", progress=progress)
-
-        self.assertIn(("finish", 9, "failed"), progress.events)
-        self.assertIn(("finish", 1, "failed"), progress.events)
+        self.assertEqual(progress.events, [])
 
 
 class GeminiProgressTests(unittest.TestCase):

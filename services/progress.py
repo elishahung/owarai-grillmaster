@@ -87,10 +87,11 @@ class RichProgressReporter(NoopProgressReporter):
             self.progress,
             console=self.console,
             refresh_per_second=8,
-            transient=False,
+            transient=True,
         )
         self._lock = threading.RLock()
         self._log_sink_id: int | None = None
+        self._live_started = False
         self._chunk_task_id: TaskID | None = None
         self._chunk_total = 0
         self._chunk_active = 0
@@ -98,13 +99,6 @@ class RichProgressReporter(NoopProgressReporter):
         self._chunk_retries = 0
 
     def __enter__(self) -> "RichProgressReporter":
-        self.live.start()
-        logger.remove()
-        self._log_sink_id = logger.add(
-            self._write_log,
-            colorize=False,
-            enqueue=False,
-        )
         return self
 
     def __exit__(
@@ -113,20 +107,41 @@ class RichProgressReporter(NoopProgressReporter):
         exc: BaseException | None,
         traceback: TracebackType | None,
     ) -> None:
-        if self._log_sink_id is not None:
-            logger.remove(self._log_sink_id)
-            self._log_sink_id = None
-        self.live.stop()
-        logger.add(sys.stderr)
+        self._stop_live()
 
     def _write_log(self, message: Any) -> None:
         with self._lock:
             self.console.print(str(message), end="")
 
+    def _start_live(self) -> None:
+        if self._live_started:
+            return
+        self.live.start()
+        logger.remove()
+        self._log_sink_id = logger.add(
+            self._write_log,
+            colorize=False,
+            enqueue=False,
+        )
+        self._live_started = True
+
+    def _stop_live(self) -> None:
+        if not self._live_started:
+            return
+        if self._log_sink_id is not None:
+            logger.remove(self._log_sink_id)
+            self._log_sink_id = None
+        self.live.stop()
+        logger.add(sys.stderr)
+        self._live_started = False
+
     def start_stage(
         self, label: str, total: float | None = None
     ) -> TaskID | None:
+        if total is None:
+            return None
         with self._lock:
+            self._start_live()
             return self.progress.add_task(
                 label,
                 total=total,
@@ -157,11 +172,13 @@ class RichProgressReporter(NoopProgressReporter):
             completed = task.total if task.total is not None else task.completed
             self.progress.update(task_id, completed=completed, status=status)
             self.progress.stop_task(task_id)
+            self._stop_live()
 
     def chunk_started(
         self, index: int, total: int, from_index: int, to_index: int
     ) -> None:
         with self._lock:
+            self._start_live()
             if self._chunk_task_id is None:
                 self._chunk_total = total
                 self._chunk_task_id = self.progress.add_task(
@@ -212,6 +229,8 @@ class RichProgressReporter(NoopProgressReporter):
             >= self._chunk_total
         ):
             self.progress.stop_task(self._chunk_task_id)
+            self._chunk_task_id = None
+            self._stop_live()
 
 
 def create_progress_reporter() -> NoopProgressReporter | RichProgressReporter:

@@ -544,14 +544,13 @@ class MediaProcessor:
         video_file: Path,
         subtitle_file: Path,
         output_file: Path,
-        noise_before: Path,
-        noise_after: Path,
+        noise_file: Path,
         start_seconds: float,
         end_seconds: float,
         progress: NoopProgressReporter | None = None,
         progress_task=None,
     ) -> None:
-        """Create one noise + subtitled segment + noise remix output."""
+        """Create one noise + subtitled segment remix output."""
         temp_dir = Path(tempfile.mkdtemp(prefix="grill_remix_"))
         try:
             target_segment = temp_dir / "target.mp4"
@@ -566,7 +565,7 @@ class MediaProcessor:
                 progress_description=f"Remixing {output_file.name}",
             )
             MediaProcessor.concat_remix_segments(
-                [noise_before, target_segment, noise_after],
+                [noise_file, target_segment],
                 output_file,
                 progress=progress,
             )

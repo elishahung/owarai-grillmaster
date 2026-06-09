@@ -503,10 +503,9 @@ class MediaProgressTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         video = root / "video.mp4"
         subtitle = root / "video.ass"
-        noise_before = root / "before.mp4"
-        noise_after = root / "after.mp4"
+        noise = root / "noise.mp4"
         output = root / "out.mp4"
-        for path in (video, subtitle, noise_before, noise_after):
+        for path in (video, subtitle, noise):
             path.write_text("media", encoding="utf-8")
         progress = FakeProgressReporter()
 
@@ -525,8 +524,7 @@ class MediaProgressTests(unittest.TestCase):
                 video_file=video,
                 subtitle_file=subtitle,
                 output_file=output,
-                noise_before=noise_before,
-                noise_after=noise_after,
+                noise_file=noise,
                 start_seconds=0.0,
                 end_seconds=1.0,
                 progress=progress,
@@ -534,6 +532,10 @@ class MediaProgressTests(unittest.TestCase):
             )
 
         self.assertIs(concat.call_args.kwargs["progress"], progress)
+        concat_inputs = concat.call_args.args[0]
+        self.assertEqual(len(concat_inputs), 2)
+        self.assertEqual(concat_inputs[0], noise)
+        self.assertEqual(concat_inputs[1].name, "target.mp4")
 
 
 class RichProgressReporterTests(unittest.TestCase):

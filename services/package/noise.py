@@ -25,7 +25,7 @@ class NoiseSelection:
 
 
 def select_noise_chunks(noise_dir: Path) -> NoiseSelection:
-    """Select four prepared chunks and compute the next cyclic index."""
+    """Select prepared chunks and compute the next cyclic index."""
     chunk_paths = _prepared_noise_chunks(noise_dir)
     if len(chunk_paths) < MIN_REMIX_CHUNK_COUNT:
         raise RemixPackageError(

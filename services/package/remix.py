@@ -1,6 +1,7 @@
 """Remix package split selection and output assembly."""
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 from loguru import logger
@@ -21,7 +22,7 @@ def package_remix(
     noise_name: str,
     progress: NoopProgressReporter | None = None,
 ) -> None:
-    """Create the two remix package MP4 files."""
+    """Create the three remix package MP4 files."""
     finalized_srt = source_root / FINALIZED_SRT_FILE_NAME
     if not finalized_srt.exists():
         raise RemixPackageError(f"finalized SRT not found: {finalized_srt}")
@@ -35,17 +36,19 @@ def package_remix(
         f"of {duration_seconds:.3f}s"
     )
 
-    progress_task = (
-        progress.start_stage("Remixing subtitles", total=duration_seconds)
-        if progress is not None
-        else None
-    )
+    progress_task = None
     try:
+        shutil.copy2(selection.chunk_paths[0], target_dir / "video_1.mp4")
+        progress_task = (
+            progress.start_stage("Remixing subtitles", total=duration_seconds)
+            if progress is not None
+            else None
+        )
         MediaProcessor.build_remix_output(
             video_file=video_file,
             subtitle_file=subtitle_file,
-            output_file=target_dir / "video_1.mp4",
-            noise_file=selection.chunk_paths[0],
+            output_file=target_dir / "video_2.mp4",
+            noise_file=selection.chunk_paths[1],
             start_seconds=0.0,
             end_seconds=split_seconds,
             progress=progress,
@@ -54,18 +57,18 @@ def package_remix(
         MediaProcessor.build_remix_output(
             video_file=video_file,
             subtitle_file=subtitle_file,
-            output_file=target_dir / "video_2.mp4",
-            noise_file=selection.chunk_paths[1],
+            output_file=target_dir / "video_3.mp4",
+            noise_file=selection.chunk_paths[2],
             start_seconds=split_seconds,
             end_seconds=duration_seconds,
             progress=progress,
             progress_task=progress_task,
         )
     except Exception:
-        if progress is not None:
+        if progress is not None and progress_task is not None:
             progress.finish(progress_task, "failed")
         raise
-    if progress is not None:
+    if progress is not None and progress_task is not None:
         progress.finish(progress_task)
     write_noise_state(noise_dir, selection.next_index)
 

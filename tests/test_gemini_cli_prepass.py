@@ -184,7 +184,7 @@ class RunGeminiCliTests(unittest.TestCase):
     def test_oversized_media_hard_error(self):
         self._patch_which()
         tmp = self._temp_dir()
-        media = tmp / "big.opus"
+        media = tmp / "big.ogg"
         media.write_bytes(b"x" * 16)
         with patch.object(cli_mod, "_MAX_MEDIA_FILE_MB", 0):
             with self.assertRaises(GeminiCliError) as ctx:

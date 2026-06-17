@@ -63,7 +63,7 @@ class ProjectTests(unittest.TestCase):
 
             self.assertEqual(
                 project.audio_path,
-                root / "layout-project" / ".asr" / "audio.opus",
+                root / "layout-project" / ".asr" / "audio.ogg",
             )
             self.assertEqual(
                 project.asr_path,

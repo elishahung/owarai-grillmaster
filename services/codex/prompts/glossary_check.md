@@ -23,7 +23,7 @@ Write scope (strict): you may only create or modify `video.cht.glossary_checked.
 - `video.cht.refined.srt`, `video.ja.srt` — read-only sources.
 - `.glossary_check/fixed_glossary.json`, `.glossary_check/fixed_glossary.md` — read-only inputs. Do not copy or delete them; the workflow manages their lifecycle.
 - `.pre_pass/`, `.chunks/`, `.asr/`, `.refine/` — read-only caches.
-- `video.mp4`, `audio.opus`, `poster.jpg`, etc. — unrelated to this step.
+- `video.mp4`, `audio.ogg`, `poster.jpg`, etc. — unrelated to this step.
 
 Do not run scripts that mutate `project.json` (e.g. don't run the project's own Python entrypoints, validators that write back, or any tool that re-saves state).
 

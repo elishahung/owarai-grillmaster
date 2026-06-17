@@ -20,7 +20,7 @@ from services.ytdlp.info import SourceTalentInfo, YtDlpVideoInfo
 PROJECT_ROOT_NAME = "projects"
 PROJECT_FILE_NAME = "project.json"
 VIDEO_FILE_NAME = "video.mp4"
-AUDIO_FILE_NAME = "audio.opus"
+AUDIO_FILE_NAME = "audio.ogg"
 ASR_FILE_NAME = "asr.json"
 SRT_FILE_NAME = "video.ja.srt"
 TRANSLATED_FILE_NAME = "video.cht.srt"
@@ -496,7 +496,7 @@ class Project(BaseModel):
         """Get the path to the extracted audio file.
 
         Returns:
-            Path to .asr/audio.opus.
+            Path to .asr/audio.ogg.
         """
         return self.asr_cache_dir / AUDIO_FILE_NAME
 

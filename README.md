@@ -45,7 +45,7 @@ Video ID
     ↓
 合併影片 (FFmpeg)
     ↓
-提取音檔 (FFmpeg, mono 16kHz opus)
+提取音檔 (FFmpeg, mono 16kHz opus 編碼，輸出 .ogg)
     ↓
 語音辨識 (ElevenLabs Scribe v2)
     ↓
@@ -168,7 +168,7 @@ projects/{video_id}/
 ├── video.mp4                 # 合併後的影片
 ├── video.ja.srt              # 日文原文字幕
 ├── .asr/                     # ASR 音檔與 ElevenLabs 原始結果
-│   ├── audio.opus
+│   ├── audio.ogg
 │   └── asr.json
 ├── .pre_pass/                # Gemini pre-pass 簡報與圖片快取
 │   └── pre_pass.json

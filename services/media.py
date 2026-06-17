@@ -37,18 +37,22 @@ class MediaProcessor:
 
     @staticmethod
     def extract_audio(input_file: Path, output_file: Path) -> Path:
-        """Extract audio from a video file and convert it to Opus format.
+        """Extract audio from a video file and encode it as Opus in Ogg.
 
         The audio is extracted with the following settings:
+        - Opus codec (libopus)
         - Mono channel (ac=1)
         - 16kHz sample rate (ar=16000)
         - 24k bitrate
+
+        The codec is set explicitly because ffmpeg defaults the .ogg
+        container to Vorbis; we keep Opus for speech quality at this bitrate.
 
         Args:
             input_file: Path to the input video file.
 
         Returns:
-            Path to the output audio file with .opus extension.
+            Path to the output audio file with .ogg extension.
 
         Raises:
             ffmpeg.Error: If the extraction process fails.
@@ -58,6 +62,7 @@ class MediaProcessor:
             output_file.parent.mkdir(parents=True, exist_ok=True)
             ffmpeg.input(str(input_file)).output(
                 str(output_file),
+                acodec="libopus",
                 ac=1,
                 ar="16000",
                 audio_bitrate="24k",
@@ -617,6 +622,7 @@ class MediaProcessor:
                 ffmpeg.input(str(input_file), ss=start_seconds, t=duration)
                 .output(
                     str(output_file),
+                    acodec="libopus",
                     ac=1,
                     ar="16000",
                     audio_bitrate="24k",

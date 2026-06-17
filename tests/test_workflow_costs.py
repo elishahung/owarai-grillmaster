@@ -24,7 +24,7 @@ class WorkflowGeminiCostTests(unittest.TestCase):
         base = Path("projects/demo")
         project.srt_path = base / "video.ja.srt"
         project.video_path = base / "video.mp4"
-        project.audio_path = base / ".asr" / "audio.opus"
+        project.audio_path = base / ".asr" / "audio.ogg"
         project.translated_path = base / "video.cht.srt"
         project.pre_pass_path = base / ".pre_pass" / "pre_pass.json"
         project.pre_pass_cache_dir = base / ".pre_pass"
@@ -143,7 +143,7 @@ class WorkflowElevenLabsCostTests(unittest.TestCase):
         project.is_prepass_completed = False
         project.is_chunk_translated = False
         base = Path("projects/demo")
-        project.audio_path = base / ".asr" / "audio.opus"
+        project.audio_path = base / ".asr" / "audio.ogg"
         project.asr_path = base / ".asr" / "asr.json"
         project.srt_path = base / "video.ja.srt"
         return project

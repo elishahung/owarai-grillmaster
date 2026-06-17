@@ -162,7 +162,7 @@ def prepare_chunk_media_assets(
             f"{range_info.end_seconds:.3f}:{interval_seconds}:{max_side}"
         ).encode("utf-8")
     ).hexdigest()[:10]
-    audio_output = audio_dir / f"chunk_{chunk_slug}_{digest}.opus"
+    audio_output = audio_dir / f"chunk_{chunk_slug}_{digest}.ogg"
     MediaProcessor.extract_audio_segment(
         input_file=audio_path,
         output_file=audio_output,

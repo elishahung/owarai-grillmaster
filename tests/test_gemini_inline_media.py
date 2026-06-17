@@ -65,7 +65,7 @@ class GeminiInlineMediaTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_pre_pass_sends_inline_media_parts(self):
         root = self._make_temp_dir()
-        audio_path = root / "full.opus"
+        audio_path = root / "full.ogg"
         frame_path = root / "frame.jpg"
         asset_manifest = root / "assets.json"
         audio_path.write_bytes(b"audio-bytes")
@@ -144,7 +144,7 @@ class GeminiInlineMediaTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_chunk_worker_sends_inline_media_parts(self):
         root = self._make_temp_dir()
-        audio_path = root / "chunk.opus"
+        audio_path = root / "chunk.ogg"
         frame_path = root / "frame.jpg"
         audio_path.write_bytes(b"chunk-audio")
         frame_path.write_bytes(b"chunk-frame")

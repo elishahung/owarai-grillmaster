@@ -23,7 +23,7 @@ class ElevenLabsASRTests(unittest.TestCase):
 
     def _run_transcription(self, response):
         root = self._make_temp_dir()
-        audio_path = root / "audio.opus"
+        audio_path = root / "audio.ogg"
         json_path = root / "asr.json"
         audio_path.write_bytes(b"audio")
 

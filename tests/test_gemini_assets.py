@@ -26,7 +26,7 @@ class GeminiAssetsTests(unittest.TestCase):
     def test_prepare_pre_pass_media_assets_uses_interval_spacing(self):
         root = self._make_temp_dir()
         video_path = root / "video.mp4"
-        audio_path = root / "audio.opus"
+        audio_path = root / "audio.ogg"
 
         with (
             patch(
@@ -77,7 +77,7 @@ class GeminiAssetsTests(unittest.TestCase):
 
         root = self._make_temp_dir()
         video_path = root / "video.mp4"
-        audio_path = root / "audio.opus"
+        audio_path = root / "audio.ogg"
 
         with (
             patch(
@@ -128,7 +128,7 @@ class GeminiAssetsTests(unittest.TestCase):
 
         root = self._make_temp_dir()
         video_path = root / "video.mp4"
-        audio_path = root / "audio.opus"
+        audio_path = root / "audio.ogg"
 
         with (
             patch(
@@ -178,7 +178,7 @@ class GeminiAssetsTests(unittest.TestCase):
 
         root = self._make_temp_dir()
         video_path = root / "video.mp4"
-        audio_path = root / "audio.opus"
+        audio_path = root / "audio.ogg"
 
         with (
             patch(
@@ -224,7 +224,7 @@ class GeminiAssetsTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             media_ref_to_part(
                 LocalMediaRef(
-                    path=root / "missing.opus",
+                    path=root / "missing.ogg",
                     mime_type="audio/ogg",
                 )
             )

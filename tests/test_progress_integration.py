@@ -97,7 +97,7 @@ class WorkflowProgressTests(unittest.TestCase):
         base = Path("projects/demo")
         project.srt_path = base / "video.ja.srt"
         project.video_path = base / "video.mp4"
-        project.audio_path = base / ".asr" / "audio.opus"
+        project.audio_path = base / ".asr" / "audio.ogg"
         project.translated_path = base / "video.cht.srt"
         project.pre_pass_path = base / ".pre_pass" / "pre_pass.json"
         project.pre_pass_cache_dir = base / ".pre_pass"
@@ -169,7 +169,7 @@ class GeminiProgressTests(unittest.TestCase):
             srt_path=srt_path,
             audio_key="demo",
             video_path=root / "video.mp4",
-            audio_path=root / "audio.opus",
+            audio_path=root / "audio.ogg",
             output_path=root / "translated.srt",
             pre_pass_path=pre_pass_path,
             pre_pass_cache_dir=root / ".pre_pass",

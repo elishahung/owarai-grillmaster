@@ -14,7 +14,7 @@ Write scope (strict): you may only create or modify `video.cht.refined.srt` and 
 - `project.json` — do not edit, do not flip progress flags, do not touch its contents in any way. The outer Python workflow owns this file and will mark progress after validating your output.
 - `video.cht.srt` and `video.ja.srt` — read-only sources.
 - `.pre_pass/`, `.chunks/`, `.asr/` — read-only caches.
-- `video.mp4`, `audio.opus`, `poster.jpg`, etc. — unrelated to subtitle refinement.
+- `video.mp4`, `audio.ogg`, `poster.jpg`, etc. — unrelated to subtitle refinement.
 
 Do not run scripts that mutate `project.json` (e.g. don't run the project's own Python entrypoints, validators that write back, or any tool that re-saves state).
 

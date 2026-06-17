@@ -36,7 +36,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.is_srt_refined = False
         project.is_glossary_checked = False
         project.is_cover_generated = False
-        project.audio_path = Path("projects/demo/.asr/audio.opus")
+        project.audio_path = Path("projects/demo/.asr/audio.ogg")
         project.asr_path = Path("projects/demo/.asr/asr.json")
         project.srt_path = Path("projects/demo/video.ja.srt")
         project.translated_path = Path("projects/demo/video.cht.srt")

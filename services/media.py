@@ -40,6 +40,7 @@ class MediaProcessor:
         """Extract audio from a video file and encode it as Opus in Ogg.
 
         The audio is extracted with the following settings:
+        - Drop video (vn)
         - Opus codec (libopus)
         - Mono channel (ac=1)
         - 16kHz sample rate (ar=16000)
@@ -47,6 +48,9 @@ class MediaProcessor:
 
         The codec is set explicitly because ffmpeg defaults the .ogg
         container to Vorbis; we keep Opus for speech quality at this bitrate.
+        Video is dropped explicitly because the .ogg container (unlike the
+        .opus muxer) accepts video, so ffmpeg would otherwise try to
+        re-encode the source video stream to Theora and fail.
 
         Args:
             input_file: Path to the input video file.
@@ -62,6 +66,7 @@ class MediaProcessor:
             output_file.parent.mkdir(parents=True, exist_ok=True)
             ffmpeg.input(str(input_file)).output(
                 str(output_file),
+                vn=None,
                 acodec="libopus",
                 ac=1,
                 ar="16000",
@@ -622,6 +627,7 @@ class MediaProcessor:
                 ffmpeg.input(str(input_file), ss=start_seconds, t=duration)
                 .output(
                     str(output_file),
+                    vn=None,
                     acodec="libopus",
                     ac=1,
                     ar="16000",

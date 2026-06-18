@@ -700,6 +700,38 @@ class MediaProcessor:
             raise
 
     @staticmethod
+    def extract_frames_at(
+        input_file: Path,
+        output_dir: Path,
+        timestamps: list[float],
+        max_side: int,
+    ) -> list[Path]:
+        """Extract JPEG frames at the given timestamps into ``output_dir``.
+
+        Thin loop over ``extract_video_frame`` (caching, scaling, and encoding
+        are inherited), reusing the ``frame_{ts:010.3f}_{max_side}.jpg`` naming
+        convention shared with the pre-pass/chunk asset builders. Frames that
+        fail to extract are skipped with a warning; the returned list preserves
+        chronological order of the inputs.
+        """
+        output_dir.mkdir(parents=True, exist_ok=True)
+        paths: list[Path] = []
+        for timestamp in timestamps:
+            output_file = output_dir / f"frame_{timestamp:010.3f}_{max_side}.jpg"
+            try:
+                MediaProcessor.extract_video_frame(
+                    input_file=input_file,
+                    output_file=output_file,
+                    timestamp_seconds=timestamp,
+                    max_side=max_side,
+                )
+            except Exception as e:
+                logger.warning(f"Skipping frame at {timestamp:.3f}s: {e}")
+                continue
+            paths.append(output_file)
+        return paths
+
+    @staticmethod
     def evenly_spaced_timestamps(
         duration_seconds: float, max_frames: int
     ) -> list[float]:

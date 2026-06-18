@@ -12,8 +12,10 @@ from services.srt import SrtBlock
 from services.inference import (
     Backend,
     backend_supports_audio,
+    is_agent_backend,
     run_inference,
 )
+from services.inference.tools import build_frame_tool_instruction
 from ..assets import ChunkMediaAssets
 from ..errors import ChunkTranslationError
 from .prompts import build_chunk_instruction
@@ -184,6 +186,13 @@ async def translate_chunk(
     has_audio = backend_supports_audio(backend)
     spec = settings.agent_chunk_model
     system_instruction = build_chunk_instruction(has_audio=has_audio)
+    if is_agent_backend(backend):
+        system_instruction += "\n\n" + build_frame_tool_instruction(
+            media_assets.video_path,
+            media_assets.time_range.start_seconds,
+            media_assets.time_range.end_seconds,
+            scope_label="your assigned chunk range",
+        )
     raw_path = _raw_cache_path(
         media_assets.response_dir,
         from_index,

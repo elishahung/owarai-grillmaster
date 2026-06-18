@@ -113,14 +113,15 @@ class Settings(BaseSettings):
         description="Post-processing model as 'model' or 'model/effort' (effort low/medium/high, default high), passed to the selected backend.",
     )
 
+    video_frame_max_side: int = Field(
+        default=768,
+        description="Maximum pixel length of the longest side for sampled video frames (pre-pass, chunk, and the on-demand agent frame tool).",
+    )
+
     # --- Translation: media sampling & chunking (backend-agnostic) ----------
     prepass_frame_interval_seconds: int = Field(
         default=120,
         description="Absolute video frame sampling interval in seconds for pre-pass inputs",
-    )
-    prepass_frame_max_side: int = Field(
-        default=768,
-        description="Maximum pixel length of the longest side for pre-pass frame images",
     )
     enable_prepass_full_fixed_glossary: bool = Field(
         default=False,
@@ -145,10 +146,6 @@ class Settings(BaseSettings):
     chunk_frame_interval_seconds: int = Field(
         default=30,
         description="Absolute video frame sampling interval in seconds for chunk translation inputs",
-    )
-    chunk_frame_max_side: int = Field(
-        default=768,
-        description="Maximum pixel length of the longest side for chunk frame images",
     )
     chunk_missing_block_tolerance: int = Field(
         default=2,

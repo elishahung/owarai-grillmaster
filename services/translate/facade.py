@@ -218,7 +218,7 @@ class Translate:
                     chunk_index=i,
                     total_chunks=len(chunks),
                     interval_seconds=settings.chunk_frame_interval_seconds,
-                    max_side=settings.chunk_frame_max_side,
+                    max_side=settings.video_frame_max_side,
                     extract_audio=has_audio,
                 )
                 try:

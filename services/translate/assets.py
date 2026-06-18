@@ -28,6 +28,7 @@ class FrameSpec(LocalMediaRef):
 
 
 class ChunkMediaAssets(BaseModel):
+    video_path: Path
     time_range: TimeRange
     audio: LocalMediaRef | None
     frames: list[FrameSpec]
@@ -222,6 +223,7 @@ def prepare_chunk_media_assets(
         encoding="utf-8",
     )
     return ChunkMediaAssets(
+        video_path=video_path,
         time_range=range_info,
         audio=audio_ref,
         frames=frames,

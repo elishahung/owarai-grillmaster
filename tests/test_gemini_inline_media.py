@@ -118,6 +118,7 @@ class ChunkDispatchTests(unittest.IsolatedAsyncioTestCase):
         audio_path.write_bytes(b"chunk-audio")
         frame_path.write_bytes(b"chunk-frame")
         assets = ChunkMediaAssets(
+            video_path=root / "video.mp4",
             time_range=TimeRange(start_seconds=1.0, end_seconds=2.0),
             audio=LocalMediaRef(path=audio_path, mime_type="audio/ogg"),
             frames=[FrameSpec(path=frame_path, timestamp_seconds=1.0)],
@@ -170,6 +171,40 @@ class ChunkDispatchTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(kwargs["schema"])
         self.assertEqual(len(kwargs["images"]), 1)
         self.assertEqual(len(kwargs["audio"]), 1)  # gemini-api keeps audio
+        # gemini-api is not an agent backend -> no frame-tool block appended.
+        self.assertNotIn("On-demand video frames", kwargs["system_prompt"])
+
+    async def test_agent_backend_appends_frame_tool_instruction(self):
+        root = self._make_temp_dir()
+        assets = self._assets(root)
+        chunk = [
+            SrtBlock(
+                index=1,
+                timecode="00:00:01,000 --> 00:00:02,000",
+                text="source",
+            )
+        ]
+        raw_srt = "1\n00:00:01,000 --> 00:00:02,000\ntranslated\n"
+
+        # An agent backend (claude) gets the on-demand frame-tool block, scoped
+        # to the chunk's time range. run_inference is mocked, so no real CLI /
+        # ffmpeg runs and the video file need not exist.
+        with (
+            patch.object(cw.settings, "agent_chunk_backend", "claude"),
+            patch.object(
+                cw,
+                "run_inference",
+                return_value=InferenceResult(
+                    text=raw_srt, cost=0.0, requests=1
+                ),
+            ) as mock_inf,
+        ):
+            await translate_chunk(assets, chunk, 0, 1, self._pre_pass())
+
+        system_prompt = mock_inf.call_args.kwargs["system_prompt"]
+        self.assertIn("On-demand video frames", system_prompt)
+        self.assertIn("your assigned chunk range", system_prompt)
+        self.assertIn("get_frames.py", system_prompt)
 
 
 if __name__ == "__main__":

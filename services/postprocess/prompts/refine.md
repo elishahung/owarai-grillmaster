@@ -8,6 +8,7 @@ Files in the current working directory:
 - `video.ja.srt` — Japanese source-language reference (account for ASR mistakes).
 - `.pre_pass/pre_pass.json` — summary, cast, term glossary, segment summaries.
 - Optional visual references under `.pre_pass/media/` and `.chunks/media/frames/`.
+- An on-demand frame tool (the exact command is appended at the end of this prompt) to extract extra frames from any moment of the video when the pre-sampled ones do not cover what you need to check.
 
 Write scope (strict): you may only create or modify `video.cht.refined.srt` and `.refine/report.md`. Do **not** touch any other file, in particular:
 
@@ -16,7 +17,7 @@ Write scope (strict): you may only create or modify `video.cht.refined.srt` and 
 - `.pre_pass/`, `.chunks/`, `.asr/` — read-only caches.
 - `video.mp4`, `audio.ogg`, `poster.jpg`, etc. — unrelated to subtitle refinement.
 
-Do not run scripts that mutate `project.json` (e.g. don't run the project's own Python entrypoints, validators that write back, or any tool that re-saves state).
+Do not run scripts that mutate `project.json` (e.g. don't run the project's own Python entrypoints, validators that write back, or any tool that re-saves state). The on-demand frame tool described at the end of this prompt is exempt: it only writes JPEG frames to a temporary directory outside the project, so running it does not violate this write scope.
 
 Rules:
 
@@ -28,7 +29,7 @@ Rules:
 - Avoid unsupported subject insertion: When comparing against `video.ja.srt`, remove explicit Chinese subjects such as「我 / 你 / 他 / 她 / 我們 / 大家」or specific names if they were added only for smoothness and are not stated or clearly implied by the Japanese source, immediate context, audio, visuals, or `.pre_pass/pre_pass.json`. Prefer natural subjectless Chinese when the actor is ambiguous.
 - The refined subtitle text must be Traditional Chinese. Do not leave Japanese in the subtitle text unless it is an intentional proper noun, title, service name, or quoted term that should remain untranslated.
 - Use `.pre_pass/pre_pass.json` for `summary`, `characters`, `proper_nouns`, `glossary`, `catchphrases`, `tone_notes`, and `segment_summaries`. Apply `tone_notes` to register/honorific decisions and `catchphrases` to keep recurring jokes phrased identically across blocks.
-- Use frames only when text context is insufficient.
+- Use frames only when text context is insufficient. When the pre-sampled frames do not cover the moment in doubt, you may fetch additional frames on demand with the tool described at the end of this prompt.
 - Prefer editing only text lines inside each block.
 - Preserve intentional Japanese address register and honorifics when they are already present in the Traditional Chinese subtitles. Do not remove or flatten suffixes such as `桑`, `醬`, `君`, `大人`, `前輩`, or `後輩` just to make the line sound more localized. Keep the speaker's polite/plain register contrast through word choice, but treat this as a preservation rule, not a reason to over-edit otherwise natural lines.
 - Do not force terminology, proper-noun, or name localization when the existing subtitle is not clearly wrong. For program titles, talent names, group names, segment labels, and other proper nouns, when there is no genuinely common Traditional Chinese (Taiwan) rendering, fall back to the `.pre_pass/pre_pass.json` proper_nouns/characters rendering, else an official/common romanized form with fixed casing and spacing; do not default to raw Japanese kana. For example, fix `ギャロップ (Gallop)` or a raw `コロチキ` to `Gallop` / `KoroChiki`.

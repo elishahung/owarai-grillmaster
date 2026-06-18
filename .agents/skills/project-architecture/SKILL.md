@@ -132,6 +132,12 @@ Backend files: `gemini_api.py`, `gemini_cli.py`, `codex.py`, `claude_sdk.py`;
 shared: `base.py` (contract/errors), `result.py` (`InferenceResult`),
 `schema_enforce.py`.
 
+**Agent-facing tools (`services/inference/tools/`)** — `get_frames.py` is a CLI
+agent backends run mid-session to extract frames at specific `--times` for a
+moment they need to see. `build_frame_tool_instruction` appends its usage to the
+pre-pass/chunk/refine prompts **only when `is_agent_backend(backend)`** — keeping
+gemini-api's prompt byte-stable.
+
 ## The translate package (`services/translate/`)
 
 Two-stage translation orchestrated by `facade.py` (`class Translate`). Both

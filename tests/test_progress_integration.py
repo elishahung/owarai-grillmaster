@@ -7,14 +7,14 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import workflow as workflow_module
-from services.gemini.chunk_worker import ChunkTranslationResult
-from services.gemini.errors import (
+from services.translate.chunk.chunk_worker import ChunkTranslationResult
+from services.translate.errors import (
     ChunkTranslationError,
     GeminiTranslationError,
     TranslationCostSummary,
 )
-from services.gemini.gemini import Gemini, TranslationRequest
-from services.gemini.pre_pass import PrePassResult
+from services.translate.facade import Translate, TranslationRequest
+from services.translate.pre_pass.pre_pass import PrePassResult
 from services.media import MediaProcessor
 from services.progress import RichProgressReporter
 from services.srt import SrtBlock, parse_srt
@@ -124,7 +124,7 @@ class WorkflowProgressTests(unittest.TestCase):
             patch.object(
                 workflow_module.Project, "from_source_str", return_value=project
             ),
-            patch.object(workflow_module, "Gemini") as gemini_cls,
+            patch.object(workflow_module, "Translate") as gemini_cls,
             patch.object(workflow_module.settings, "archived_path", None),
             patch.object(workflow_module.settings, "package_path", None),
         ):
@@ -180,11 +180,11 @@ class GeminiProgressTests(unittest.TestCase):
     def test_gemini_reports_chunk_completion_and_preserves_order(self):
         request, blocks = self._make_request()
         progress = FakeProgressReporter()
-        gemini = Gemini.__new__(Gemini)
+        gemini = Translate.__new__(Translate)
         gemini._client = object()
 
         async def fake_translate(
-            client, media_assets, chunk, chunk_index, total_chunks, pre_pass
+            media_assets, chunk, chunk_index, total_chunks, pre_pass
         ):
             if chunk_index == 0:
                 await asyncio.sleep(0.01)
@@ -198,15 +198,15 @@ class GeminiProgressTests(unittest.TestCase):
 
         with (
             patch(
-                "services.gemini.gemini.split_into_chunks",
+                "services.translate.facade.split_into_chunks",
                 return_value=[[blocks[0]], [blocks[1]]],
             ),
             patch(
-                "services.gemini.gemini.prepare_chunk_media_assets",
+                "services.translate.facade.prepare_chunk_media_assets",
                 return_value=MagicMock(),
             ),
             patch(
-                "services.gemini.gemini.translate_chunk",
+                "services.translate.facade.translate_chunk",
                 side_effect=fake_translate,
             ),
         ):
@@ -228,11 +228,11 @@ class GeminiProgressTests(unittest.TestCase):
     def test_gemini_reports_chunk_failure(self):
         request, blocks = self._make_request()
         progress = FakeProgressReporter()
-        gemini = Gemini.__new__(Gemini)
+        gemini = Translate.__new__(Translate)
         gemini._client = object()
 
         async def fake_translate(
-            client, media_assets, chunk, chunk_index, total_chunks, pre_pass
+            media_assets, chunk, chunk_index, total_chunks, pre_pass
         ):
             if chunk_index == 1:
                 raise ChunkTranslationError(
@@ -254,15 +254,15 @@ class GeminiProgressTests(unittest.TestCase):
 
         with (
             patch(
-                "services.gemini.gemini.split_into_chunks",
+                "services.translate.facade.split_into_chunks",
                 return_value=[[blocks[0]], [blocks[1]]],
             ),
             patch(
-                "services.gemini.gemini.prepare_chunk_media_assets",
+                "services.translate.facade.prepare_chunk_media_assets",
                 return_value=MagicMock(),
             ),
             patch(
-                "services.gemini.gemini.translate_chunk",
+                "services.translate.facade.translate_chunk",
                 side_effect=fake_translate,
             ),
         ):

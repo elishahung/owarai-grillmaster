@@ -1,5 +1,5 @@
 @echo off
-REM Bangumi Grillmaster launcher script
+REM Owarai Grillmaster launcher script
 REM Activates the virtual environment and runs main.py with all arguments
 
 REM Change to project root directory (one level up from scripts/)

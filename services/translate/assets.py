@@ -29,14 +29,14 @@ class FrameSpec(LocalMediaRef):
 
 class ChunkMediaAssets(BaseModel):
     time_range: TimeRange
-    audio: LocalMediaRef
+    audio: LocalMediaRef | None
     frames: list[FrameSpec]
     manifest_path: Path
     response_dir: Path
 
 
 class PrePassMediaAssets(BaseModel):
-    audio: LocalMediaRef
+    audio: LocalMediaRef | None
     frames: list[FrameSpec]
     manifest_path: Path
 
@@ -61,6 +61,7 @@ def prepare_pre_pass_media_assets(
     interval_seconds: int,
     max_side: int,
     intro_skip_seconds: float = INTRO_SKIP_SECONDS,
+    extract_audio: bool = True,
 ) -> PrePassMediaAssets:
     cache_root.mkdir(parents=True, exist_ok=True)
     frame_dir = cache_root / "media" / "frames"
@@ -96,12 +97,16 @@ def prepare_pre_pass_media_assets(
         )
         if frame is not None
     ]
-    audio_ref = LocalMediaRef(path=audio_path, mime_type="audio/ogg")
+    audio_ref = (
+        LocalMediaRef(path=audio_path, mime_type="audio/ogg")
+        if extract_audio
+        else None
+    )
     manifest_path.write_text(
         json.dumps(
             {
                 "video_path": str(video_path),
-                "audio": audio_ref.model_dump(mode="json"),
+                "audio": audio_ref.model_dump(mode="json") if audio_ref else None,
                 "duration_seconds": duration,
                 "interval_seconds": interval_seconds,
                 "intro_skip_seconds": intro_skip_seconds,
@@ -136,6 +141,7 @@ def prepare_chunk_media_assets(
     interval_seconds: int,
     max_side: int,
     intro_skip_seconds: float = INTRO_SKIP_SECONDS,
+    extract_audio: bool = True,
 ) -> ChunkMediaAssets:
     range_info = _chunk_time_range(chunk)
     chunk_slug = f"{chunk[0].index:04d}-{chunk[-1].index:04d}"
@@ -167,15 +173,17 @@ def prepare_chunk_media_assets(
             f"{range_info.end_seconds:.3f}:{interval_seconds}:{max_side}"
         ).encode("utf-8")
     ).hexdigest()[:10]
-    audio_output = audio_dir / f"chunk_{chunk_slug}_{digest}.ogg"
-    MediaProcessor.extract_audio_segment(
-        input_file=audio_path,
-        output_file=audio_output,
-        start_seconds=range_info.start_seconds,
-        end_seconds=range_info.end_seconds,
-    )
-
-    audio_ref = LocalMediaRef(path=audio_output, mime_type="audio/ogg")
+    if extract_audio:
+        audio_output = audio_dir / f"chunk_{chunk_slug}_{digest}.ogg"
+        MediaProcessor.extract_audio_segment(
+            input_file=audio_path,
+            output_file=audio_output,
+            start_seconds=range_info.start_seconds,
+            end_seconds=range_info.end_seconds,
+        )
+        audio_ref = LocalMediaRef(path=audio_output, mime_type="audio/ogg")
+    else:
+        audio_ref = None
     frames = [
         frame
         for frame in (
@@ -205,7 +213,7 @@ def prepare_chunk_media_assets(
                 if chunk_index == 0
                 else None,
                 "max_side": max_side,
-                "audio": audio_ref.model_dump(mode="json"),
+                "audio": audio_ref.model_dump(mode="json") if audio_ref else None,
                 "frames": [frame.model_dump(mode="json") for frame in frames],
             },
             ensure_ascii=False,

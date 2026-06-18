@@ -18,7 +18,7 @@ from services.postprocess import (
     refine_subtitles,
 )
 from services.elevenlabs import ElevenLabsASR, convert_file
-from services.gemini import Gemini, GeminiTranslationError, TranslationRequest
+from services.translate import Translate, TranslationError, TranslationRequest
 from services.media import MediaProcessor
 from services.package import package_project
 from services.progress import NoopProgressReporter, create_progress_reporter
@@ -60,10 +60,10 @@ def submit_project(
             directory whose pre_pass.json should seed this project's pre-pass
             for cross-episode consistency.
         enable_refine: Force-enable the optional subtitle refinement stage.
-            Overrides ``settings.enable_srt_refine`` when True.
+            Overrides ``settings.enable_postprocess_refine`` when True.
         enable_glossary_check: Force-enable the optional fixed-glossary
             localization check stage. Overrides
-            ``settings.enable_glossary_check`` when True.
+            ``settings.enable_postprocess_glossary_check`` when True.
         enable_cover: Force-enable the optional async cover image stylization.
             Overrides ``settings.enable_cover_generation`` when True. Always
             skipped when ``break_after`` is set.
@@ -179,10 +179,10 @@ def _process_project_impl(
             already complete on a resumed project, processing stops before the
             next stage.
         enable_refine: Force-enable the optional subtitle refinement stage.
-            Overrides ``settings.enable_srt_refine`` when True.
+            Overrides ``settings.enable_postprocess_refine`` when True.
         enable_glossary_check: Force-enable the optional fixed-glossary
             localization check stage. Overrides
-            ``settings.enable_glossary_check`` when True.
+            ``settings.enable_postprocess_glossary_check`` when True.
         enable_cover: Force-enable the optional async cover image stylization.
             Overrides ``settings.enable_cover_generation`` when True. Always
             skipped when ``break_after`` is set.
@@ -194,9 +194,9 @@ def _process_project_impl(
         Exception: If any required stage of the processing fails.
     """
     logger.info(f"Starting project processing: {project_id}")
-    do_refine = enable_refine or settings.enable_srt_refine
+    do_refine = enable_refine or settings.enable_postprocess_refine
     do_glossary_check = (
-        enable_glossary_check or settings.enable_glossary_check
+        enable_glossary_check or settings.enable_postprocess_glossary_check
     )
     do_cover = enable_cover or settings.enable_cover_generation
     cover_executor: ThreadPoolExecutor | None = None
@@ -321,12 +321,12 @@ def _process_project_impl(
         # Process pre-pass
         if not project.is_prepass_completed:
             logger.info(f"Stage: Running pre-pass for {project_id}")
-            gemini = Gemini()
+            translator = Translate()
             try:
-                prepass_result = gemini.run_pre_pass(
+                prepass_result = translator.run_pre_pass(
                     _make_translation_request(project, project_id)
                 )
-            except GeminiTranslationError as e:
+            except TranslationError as e:
                 if e.summary.total_cost > 0:
                     project.add_cost("gemini", e.summary.total_cost)
                 logger.error(
@@ -346,13 +346,13 @@ def _process_project_impl(
         # Process chunk translation
         if not project.is_chunk_translated:
             logger.info(f"Stage: Translating subtitles for {project_id}")
-            gemini = Gemini()
+            translator = Translate()
             try:
-                translation_result = gemini.translate_chunks(
+                translation_result = translator.translate_chunks(
                     _make_translation_request(project, project_id),
                     progress=progress,
                 )
-            except GeminiTranslationError as e:
+            except TranslationError as e:
                 if e.summary.total_cost > 0:
                     project.add_cost("gemini", e.summary.total_cost)
                 logger.error(

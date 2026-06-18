@@ -6,25 +6,23 @@ import unittest
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-os.environ.setdefault("GEMINI_API_KEY", "test-key")
+os.environ.setdefault("AGENT_GEMINI_API_KEY", "test-key")
 
-from pydantic import BaseModel
-
-from services.gemini import cli as cli_mod
-from services.gemini import pre_pass as pp
-from services.gemini.assets import LocalMediaRef, PrePassMediaAssets
-from services.gemini.cli import (
+from services.inference import gemini_cli as cli_mod
+from services.translate.pre_pass import pre_pass as pp
+from services.translate.assets import LocalMediaRef, PrePassMediaAssets
+from services.inference.gemini_cli import (
     GeminiCliError,
     GeminiCliNotInstalledError,
     GeminiCliQuotaError,
     GeminiCliResult,
-    extract_json_object,
     extract_request_count,
     run_gemini_cli,
 )
-from services.gemini.errors import PrePassError
+from services.inference.schema_enforce import extract_json_object
+from services.translate.errors import PrePassError
 from services.srt import SrtBlock
 
 _VALID_PREPASS_JSON = json.dumps(
@@ -38,14 +36,6 @@ _VALID_PREPASS_JSON = json.dumps(
         "segment_summaries": [],
     }
 )
-
-
-def _prepass() -> "pp.PrePassResult":
-    return pp.PrePassResult.model_validate_json(_VALID_PREPASS_JSON)
-
-
-class _Demo(BaseModel):
-    a: int
 
 
 def _completed(response, *, returncode=0, total_requests=1):
@@ -211,40 +201,9 @@ class RunGeminiCliTests(unittest.TestCase):
         self.assertNotIn(str(media), kwargs["input"])
         self.assertIn("--skip-trust", mock_run.call_args.args[0])
 
-    def test_schema_success_first_try(self):
-        self._patch_which()
-        mock_run = self._patch_run(return_value=_completed('{"a": 1}'))
-        result = run_gemini_cli("hi", model="m", schema=_Demo)
-        self.assertEqual(mock_run.call_count, 1)
-        self.assertEqual(result.response, '{"a": 1}')
-        # The JSON Schema instruction is appended to the prompt.
-        self.assertIn("JSON Schema", mock_run.call_args.kwargs["input"])
-
-    def test_schema_repair_retries_then_succeeds(self):
-        self._patch_which()
-        mock_run = self._patch_run(
-            side_effect=[
-                _completed('{"a": "not-int"}'),
-                _completed('{"a": 7}'),
-            ]
-        )
-        result = run_gemini_cli("hi", model="m", schema=_Demo)
-        self.assertEqual(mock_run.call_count, 2)
-        self.assertEqual(result.response, '{"a": 7}')
-        self.assertEqual(result.requests, 2)  # summed across attempts
-        first_input = mock_run.call_args_list[0].kwargs["input"]
-        second_input = mock_run.call_args_list[1].kwargs["input"]
-        self.assertNotIn("修正要求", first_input)
-        self.assertIn("修正要求", second_input)
-
-    def test_schema_exceeds_retries_raises(self):
-        self._patch_which()
-        mock_run = self._patch_run(
-            side_effect=[_completed('{"a": "bad"}') for _ in range(3)]
-        )
-        with self.assertRaises(GeminiCliError):
-            run_gemini_cli("hi", model="m", schema=_Demo, max_retries=3)
-        self.assertEqual(mock_run.call_count, 3)
+    # NOTE: schema enforcement is no longer a gemini-cli concern — run_gemini_cli
+    # is a single-shot text generator. The validate-and-repair loop is exercised
+    # uniformly for all prompt-based backends in tests/test_inference.py.
 
 
 class RunPrePassDispatchTests(unittest.TestCase):
@@ -256,10 +215,14 @@ class RunPrePassDispatchTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(path, ignore_errors=True))
         return path
 
-    def _common_patches(self, tmp: Path, *, use_cli: bool):
-        audio = LocalMediaRef(path=tmp / "a.ogg", mime_type="audio/ogg")
+    def _common_patches(self, tmp: Path, *, backend: str, audio: bool = True):
+        audio_ref = (
+            LocalMediaRef(path=tmp / "a.ogg", mime_type="audio/ogg")
+            if audio
+            else None
+        )
         assets = PrePassMediaAssets(
-            audio=audio, frames=[], manifest_path=tmp / "assets.json"
+            audio=audio_ref, frames=[], manifest_path=tmp / "assets.json"
         )
         for p in [
             patch.object(
@@ -270,11 +233,7 @@ class RunPrePassDispatchTests(unittest.TestCase):
             patch.object(
                 pp, "format_fixed_glossary_block", return_value=""
             ),
-            patch.object(
-                pp.settings,
-                "prepass_gemini_backend",
-                "cli" if use_cli else "api",
-            ),
+            patch.object(pp.settings, "agent_prepass_backend", backend),
         ]:
             self.addCleanup(p.stop)
             p.start()
@@ -287,83 +246,101 @@ class RunPrePassDispatchTests(unittest.TestCase):
                 text="hello",
             )
         ]
-        return asyncio.run(
-            pp.run_pre_pass(
-                client=object(),
-                video_description=None,
-                srt_text="1\n00:00:00,000 --> 00:00:02,000\nhello\n",
-                video_path=tmp / "v.mp4",
-                audio_path=tmp / "a.ogg",
-                chunks=[chunk],
-                pre_pass_path=tmp / "pre_pass.json",
-                pre_pass_cache_dir=tmp / "cache",
-            )
+        return pp.run_pre_pass(
+            video_description=None,
+            srt_text="1\n00:00:00,000 --> 00:00:02,000\nhello\n",
+            video_path=tmp / "v.mp4",
+            audio_path=tmp / "a.ogg",
+            chunks=[chunk],
+            pre_pass_path=tmp / "pre_pass.json",
+            pre_pass_cache_dir=tmp / "cache",
         )
 
-    def test_cli_dispatch_writes_manifest_backend_cli(self):
-        tmp = self._temp_dir()
-        self._common_patches(tmp, use_cli=True)
-        with patch.object(
-            pp,
-            "run_gemini_cli",
-            return_value=GeminiCliResult(
-                response=_VALID_PREPASS_JSON,
-                requests=4,
-                stats={},
-                raw_envelope={},
-            ),
-        ) as mock_cli:
-            result, cost = self._run(tmp)
+    def _io(self, *, cost=0.0):
+        from services.inference import InferenceResult
 
-        self.assertEqual(cost, 0.0)
-        self.assertEqual(result.summary, "s")
-        mock_cli.assert_called_once()
-        # run_gemini_cli is given the schema so it owns enforcement.
-        self.assertIs(mock_cli.call_args.kwargs["schema"], pp.PrePassResult)
-        manifest = json.loads(
-            (tmp / "cache" / "manifest.json").read_text(encoding="utf-8")
+        return InferenceResult(
+            text=_VALID_PREPASS_JSON, cost=cost, requests=1
         )
-        self.assertEqual(manifest["backend"], "cli")
-        self.assertTrue((tmp / "pre_pass.json").exists())
 
-    def test_cli_quota_error_becomes_prepass_error(self):
+    def test_gemini_api_dispatch_writes_manifest(self):
         tmp = self._temp_dir()
-        self._common_patches(tmp, use_cli=True)
+        self._common_patches(tmp, backend="gemini-api")
         with patch.object(
-            pp,
-            "run_gemini_cli",
-            side_effect=GeminiCliQuotaError("quota will reset after 8h"),
-        ) as mock_cli:
-            with self.assertRaises(PrePassError) as ctx:
-                self._run(tmp)
-
-        self.assertEqual(mock_cli.call_count, 1)
-        self.assertIn("quota", str(ctx.exception).lower())
-        self.assertEqual(ctx.exception.accumulated_cost, 0.0)
-
-    def test_api_dispatch_single_call_no_retry(self):
-        tmp = self._temp_dir()
-        self._common_patches(tmp, use_cli=False)
-        api = AsyncMock(return_value=(_prepass(), 0.12, 1))
-        with patch.object(pp, "_infer_via_api", new=api):
+            pp, "run_inference", return_value=self._io(cost=0.12)
+        ) as mock_inf:
             result, cost = self._run(tmp)
 
         self.assertEqual(cost, 0.12)
         self.assertEqual(result.summary, "s")
-        api.assert_awaited_once()
+        mock_inf.assert_called_once()
+        self.assertIs(mock_inf.call_args.kwargs["schema"], pp.PrePassResult)
+        self.assertEqual(
+            mock_inf.call_args.kwargs["backend"], "gemini-api"
+        )
+        # gemini-api supports audio, so the audio file is passed through.
+        self.assertEqual(len(mock_inf.call_args.kwargs["audio"]), 1)
         manifest = json.loads(
             (tmp / "cache" / "manifest.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(manifest["backend"], "api")
+        self.assertEqual(manifest["backend"], "gemini-api")
+        self.assertTrue((tmp / "pre_pass.json").exists())
 
-    def test_api_failure_raises_prepass_error_without_retry(self):
+    def test_cli_dispatch_writes_manifest(self):
         tmp = self._temp_dir()
-        self._common_patches(tmp, use_cli=False)
-        api = AsyncMock(side_effect=RuntimeError("genai boom"))
-        with patch.object(pp, "_infer_via_api", new=api):
+        self._common_patches(tmp, backend="gemini-cli")
+        with patch.object(
+            pp, "run_inference", return_value=self._io()
+        ) as mock_inf:
+            result, cost = self._run(tmp)
+
+        self.assertEqual(cost, 0.0)
+        self.assertEqual(result.summary, "s")
+        self.assertIs(mock_inf.call_args.kwargs["schema"], pp.PrePassResult)
+        manifest = json.loads(
+            (tmp / "cache" / "manifest.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(manifest["backend"], "gemini-cli")
+
+    def test_agent_backend_drops_audio(self):
+        tmp = self._temp_dir()
+        # Agent backend: prepare_pre_pass_media_assets returns no audio.
+        self._common_patches(tmp, backend="claude", audio=False)
+        with patch.object(
+            pp, "run_inference", return_value=self._io()
+        ) as mock_inf:
+            self._run(tmp)
+
+        self.assertIsNone(mock_inf.call_args.kwargs["audio"])
+        # The system instruction is rendered without audio claims.
+        self.assertNotIn(
+            "Full Source Audio", mock_inf.call_args.kwargs["system_prompt"]
+        )
+
+    def test_quota_error_becomes_prepass_error(self):
+        tmp = self._temp_dir()
+        self._common_patches(tmp, backend="gemini-cli")
+        with patch.object(
+            pp,
+            "run_inference",
+            side_effect=GeminiCliQuotaError("quota will reset after 8h"),
+        ) as mock_inf:
+            with self.assertRaises(PrePassError) as ctx:
+                self._run(tmp)
+
+        self.assertEqual(mock_inf.call_count, 1)
+        self.assertIn("quota", str(ctx.exception).lower())
+        self.assertEqual(ctx.exception.accumulated_cost, 0.0)
+
+    def test_failure_raises_prepass_error(self):
+        tmp = self._temp_dir()
+        self._common_patches(tmp, backend="gemini-api")
+        with patch.object(
+            pp, "run_inference", side_effect=RuntimeError("genai boom")
+        ) as mock_inf:
             with self.assertRaises(PrePassError):
                 self._run(tmp)
-        self.assertEqual(api.await_count, 1)
+        self.assertEqual(mock_inf.call_count, 1)
 
 
 if __name__ == "__main__":

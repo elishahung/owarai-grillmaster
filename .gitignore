@@ -225,5 +225,5 @@ _test*
 data
 node_modules
 
-.claude/
+.claude/settings.local.json
 _migration/

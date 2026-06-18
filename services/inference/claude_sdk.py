@@ -21,7 +21,6 @@ from pathlib import Path
 
 from loguru import logger
 
-from settings import settings
 from .base import AgentExecError, AgentNotInstalledError
 
 
@@ -43,6 +42,9 @@ _IMAGE_MEDIA_TYPES = {
 
 # Default per-invocation timeout for an SDK query. Hardcoded maintainer constant.
 _DEFAULT_TIMEOUT_SECS = 900
+# Claude model / reasoning effort used when a caller does not pass them.
+_DEFAULT_MODEL = "claude-opus-4-8"
+_DEFAULT_REASONING_EFFORT = "high"
 
 
 def run_claude_sdk_exec(
@@ -51,6 +53,8 @@ def run_claude_sdk_exec(
     images: list[Path] | None = None,
     output_last_message_path: Path | None = None,
     timeout: int | None = None,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> str:
     """Invoke the Claude Agent SDK once and return the final assistant message.
 
@@ -68,16 +72,18 @@ def run_claude_sdk_exec(
     except ImportError as exc:
         raise ClaudeSDKNotInstalledError(
             "claude-agent-sdk is not installed; run `uv add claude-agent-sdk` "
-            "or switch AGENT_BACKEND back to 'codex'"
+            "or switch AGENT_POSTPROCESS_BACKEND back to 'codex'"
         ) from exc
 
     abs_cwd = cwd.resolve()
     effective_timeout = timeout or _DEFAULT_TIMEOUT_SECS
+    effective_model = model or _DEFAULT_MODEL
+    effective_effort = (reasoning_effort or _DEFAULT_REASONING_EFFORT).lower()
 
     options = ClaudeAgentOptions(
         cwd=str(abs_cwd),
-        model=settings.claude_model,
-        effort="high",
+        model=effective_model,
+        effort=effective_effort,
         permission_mode="bypassPermissions",
     )
 
@@ -90,7 +96,7 @@ def run_claude_sdk_exec(
 
     logger.debug(
         f"Running claude-agent-sdk query: cwd={abs_cwd} "
-        f"model={settings.claude_model} prompt_chars={len(prompt)} "
+        f"model={effective_model} prompt_chars={len(prompt)} "
         f"images={len(images or [])} timeout={effective_timeout}s"
     )
 

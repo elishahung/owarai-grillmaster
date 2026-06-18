@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import workflow as workflow_module
 from services.elevenlabs.asr import ElevenLabsTranscriptionResult
-from services.gemini.errors import GeminiTranslationError, TranslationCostSummary
+from services.translate.errors import GeminiTranslationError, TranslationCostSummary
 
 
 class WorkflowGeminiCostTests(unittest.TestCase):
@@ -50,7 +50,7 @@ class WorkflowGeminiCostTests(unittest.TestCase):
             patch.object(
                 workflow_module.Project, "from_source_str", return_value=project
             ),
-            patch.object(workflow_module, "Gemini") as gemini_cls,
+            patch.object(workflow_module, "Translate") as gemini_cls,
             patch.object(workflow_module.settings, "archived_path", None),
             patch.object(workflow_module.settings, "package_path", None),
         ):
@@ -83,7 +83,7 @@ class WorkflowGeminiCostTests(unittest.TestCase):
             patch.object(
                 workflow_module.Project, "from_source_str", return_value=project
             ),
-            patch.object(workflow_module, "Gemini") as gemini_cls,
+            patch.object(workflow_module, "Translate") as gemini_cls,
             patch.object(workflow_module.settings, "archived_path", None),
         ):
             gemini_cls.return_value.translate_chunks.side_effect = (
@@ -113,7 +113,7 @@ class WorkflowGeminiCostTests(unittest.TestCase):
             patch.object(
                 workflow_module.Project, "from_source_str", return_value=project
             ),
-            patch.object(workflow_module, "Gemini") as gemini_cls,
+            patch.object(workflow_module, "Translate") as gemini_cls,
         ):
             gemini = gemini_cls.return_value
             gemini.run_pre_pass.return_value = summary
@@ -161,7 +161,7 @@ class WorkflowElevenLabsCostTests(unittest.TestCase):
             ),
             patch.object(workflow_module, "ElevenLabsASR") as elevenlabs_cls,
             patch.object(workflow_module, "convert_file") as convert_file,
-            patch.object(workflow_module, "Gemini") as gemini_cls,
+            patch.object(workflow_module, "Translate") as gemini_cls,
         ):
             elevenlabs_cls.return_value.transcribe_to_file.return_value = result
             workflow_module.process_project(

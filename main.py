@@ -18,13 +18,13 @@ RESERVED_COMMANDS = {"package", "noise", "process"}
 
 legacy_app = typer.Typer(
     help=(
-        "Bangumi GrillMaster - Automatic transcription and translation for "
-        "Bangumi videos"
+        "Owarai GrillMaster - Automatic transcription and translation for "
+        "Japanese variety show videos"
     ),
     add_completion=False,
 )
 tools_app = typer.Typer(
-    help="Bangumi GrillMaster packaging tools",
+    help="Owarai GrillMaster packaging tools",
     add_completion=False,
 )
 app = tools_app
@@ -126,7 +126,7 @@ def process(
             "--refine",
             help=(
                 "Force-enable subtitle refinement stage for this run. "
-                "Overrides ENABLE_SRT_REFINE setting."
+                "Overrides ENABLE_POSTPROCESS_REFINE setting."
             ),
         ),
     ] = False,

@@ -5,8 +5,8 @@ within tolerance; otherwise prints the validator's error string and exits 1.
 
 Self-contained on purpose: it bootstraps `sys.path` from its own location so
 `services` is importable regardless of the agent's cwd, and it imports only
-`services.srt` + `services.chunk_fix.validation` (no `settings`, no `.env`).
-Tolerance is passed as a flag so this never depends on app configuration.
+`services.srt` + `services.translate.chunk.validation` (no `settings`, no
+`.env`). Tolerance is passed as a flag so this never depends on app config.
 
 Usage:
     python validate_chunk.py SOURCE.srt CANDIDATE.srt --tolerance N
@@ -18,10 +18,13 @@ import argparse
 import sys
 from pathlib import Path
 
-# Repo root is three levels up: <repo>/services/chunk_fix/validate_chunk.py
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+# Repo root is four levels up:
+# <repo>/services/translate/chunk/validate_chunk.py
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
-from services.chunk_fix.validation import validate_chunk_structure  # noqa: E402
+from services.translate.chunk.validation import (  # noqa: E402
+    validate_chunk_structure,
+)
 from services.srt import parse_srt  # noqa: E402
 
 

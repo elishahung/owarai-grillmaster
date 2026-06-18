@@ -7,7 +7,8 @@ from pathlib import Path
 from loguru import logger
 
 from project import Project
-from services.agent_exec import AgentBackend, run_agent_exec
+from settings import settings
+from services.inference import AgentBackend, run_inference
 
 
 _PROMPT = (Path(__file__).parent / "prompts" / "cover.md").read_text(
@@ -36,11 +37,12 @@ def generate_cover(project: Project) -> None:
     # Cover is image generation; only the Codex backend can produce a raster
     # image, so it is hardcoded here regardless of the global subtitle backend.
     logger.info(f"Invoking Codex for cover image generation: {project.id}")
-    run_agent_exec(
+    run_inference(
+        backend=AgentBackend.CODEX,
         prompt=_PROMPT,
         cwd=project.project_path,
         images=[project.poster_path],
-        backend=AgentBackend.CODEX,
+        reasoning_effort=settings.agent_postprocess_model.reasoning_effort,
     )
 
     if not project.poster_cover_path.exists():

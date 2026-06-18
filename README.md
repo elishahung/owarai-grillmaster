@@ -1,4 +1,4 @@
-# Bangumi GrillMaster
+# Owarai GrillMaster
 
 下載日本綜藝節目，生成繁體中文 SRT / ASS 字幕方便個人使用識讀
 
@@ -126,37 +126,42 @@ ELEVENLABS_API_KEY=xxx
 ELEVENLABS_STT_MODEL=scribe_v2
 ELEVENLABS_STT_LANGUAGE_CODE=jpn
 
-# Google Gemini (翻譯) — GEMINI_API_KEY 只在某階段 backend=api 時才需要
-GEMINI_API_KEY=xxx
-GEMINI_THINKING_LEVEL=HIGH             # api backend 的 thinking level: LOW/MEDIUM/HIGH
+# Agent / 模型 backends（每個階段可獨立選 backend + model；gemini-cli/claude/codex 走訂閱制省
+#   API 費用；claude/codex 無法吃音訊，只用影格+字幕）。AGENT_GEMINI_API_KEY 只在某階段用
+#   gemini-api 時才需要。*_MODEL 寫成 "model" 或 "model/effort"（effort 為 low/medium/high，
+#   省略則預設 high），會自動拆成 model + reasoning_effort。
+AGENT_GEMINI_API_KEY=xxx
 
-# 可選：pre-pass 階段（翻譯階段可獨立選 api 或 cli；cli 走訂閱制省 API 費用，需安裝 Gemini CLI）
-PREPASS_GEMINI_BACKEND=api             # api 或 cli
-PREPASS_GEMINI_MODEL=gemini-3.1-pro-preview # 傳給所選 backend 的 pre-pass 模型
+AGENT_PREPASS_BACKEND=gemini-api               # gemini-api / gemini-cli / claude / codex
+AGENT_PREPASS_MODEL=gemini-3.1-pro-preview     # "model" 或 "model/effort"（如 claude-opus-4-8/high）
+AGENT_CHUNK_BACKEND=gemini-api                 # gemini-api / gemini-cli / claude / codex
+AGENT_CHUNK_MODEL=gemini-3-flash-preview       # "model" 或 "model/effort"
+AGENT_POSTPROCESS_BACKEND=codex                # 後處理（refine/glossary/chunk 結構修正）：codex 或 claude；封面固定用 codex
+AGENT_POSTPROCESS_MODEL=gpt-5.5/medium         # "model" 或 "model/effort"
+
+# 可選：pre-pass 圖片抽樣與固定譯名表
 PREPASS_FRAME_INTERVAL_SECONDS=120     # pre-pass 全片圖片抽樣頻率（每幾秒一張，另外固定包含影片首尾幀）
 PREPASS_FRAME_MAX_SIDE=768             # pre-pass 圖片最長邊尺寸
-ENABLE_FULL_FIXED_GLOSSARY=false       # 固定譯名表整份帶入 pre-pass（false=只帶比對到的）
+ENABLE_PREPASS_FULL_FIXED_GLOSSARY=false  # 固定譯名表整份帶入 pre-pass（false=只帶比對到的）
 
-# 可選：chunk 翻譯階段
-CHUNK_GEMINI_BACKEND=api               # api 或 cli
-CHUNK_GEMINI_MODEL=gemini-3-flash-preview # 傳給所選 backend 的 chunk 模型
+# 可選：chunk 切塊與圖片抽樣
 CHUNK_CHAR_LIMIT=6000                  # 每塊目標字元數 (約 5 分鐘字幕)
-CHUNK_CONCURRENCY=10                   # chunk 併發上限
+CHUNK_API_CONCURRENCY=10               # chunk 併發上限（gemini-api 網路請求，可開高）
+CHUNK_AGENT_CONCURRENCY=3              # chunk 併發上限（agent：gemini-cli/claude/codex 本機子行程，故較低）
 CHUNK_MAX_RETRIES=3                    # chunk 失敗重試次數
 CHUNK_FRAME_INTERVAL_SECONDS=30        # chunk 圖片抽樣頻率（每幾秒一張，另外固定包含每段首尾幀）
 CHUNK_FRAME_MAX_SIDE=768               # chunk 圖片最長邊尺寸
 CHUNK_MISSING_BLOCK_TOLERANCE=2        # 每塊允許未對齊/缺漏字幕區塊數上限
 
-# 可選：agent 後處理（codex 需安裝 Codex CLI；claude_sdk 用本機 Claude 訂閱）
-AGENT_BACKEND=codex                # agent 任務後端（refine/glossary/chunk 結構修正）：codex 或 claude；封面固定用 codex
-ENABLE_SRT_REFINE=true             # 翻譯後再用 agent 潤飾繁中字幕
-ENABLE_GLOSSARY_CHECK=true         # 潤飾後再用 agent 校對殘留的英文/假名專名
-ENABLE_COVER_GENERATION=true       # 下載後並行 Codex 風格化封面圖
+# 可選：後處理開關（codex 需安裝 Codex CLI；claude 用本機 Claude 訂閱）
+ENABLE_POSTPROCESS_REFINE=true            # 翻譯後再用 agent 潤飾繁中字幕
+ENABLE_POSTPROCESS_GLOSSARY_CHECK=true    # 潤飾後再用 agent 校對殘留的英文/假名專名
+ENABLE_COVER_GENERATION=true              # 下載後並行 Codex 風格化封面圖
 
 # 可選：下載/歸檔/封裝
 COOKIES_TXT_PATH=cookies.txt       # 影片來源網站 cookies (供 yt-dlp 使用)
-ARCHIVED_PATH=NAS:\bangumi\ai\     # 歸檔路徑 - 處理完直接移至指定資料夾並將資料夾名稱改為影片名稱
-PACKAGE_PATH=NAS:\bangumi\package\ # 封裝路徑 - 將 ASS 字幕燒錄進影片並複製封面到 <package_path>/<id>_<name>/
+ARCHIVED_PATH=NAS:\video\ai\     # 歸檔路徑 - 處理完直接移至指定資料夾並將資料夾名稱改為影片名稱
+PACKAGE_PATH=NAS:\video\package\ # 封裝路徑 - 將 ASS 字幕燒錄進影片並複製封面到 <package_path>/<id>_<name>/
 ```
 
 ## 專案結構

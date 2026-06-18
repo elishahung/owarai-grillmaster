@@ -2,13 +2,13 @@
 
 When a translated chunk fails `validate_chunk_structure` and the cheap local
 `canonicalize_by_position` fast-path cannot fix it, we hand the problem to a
-coding agent (Codex or Claude, per `settings.agent_backend`): it gets the
+coding agent (Codex or Claude, per `settings.agent_postprocess_backend`): it gets the
 authoritative source SRT, the broken output, and a validator command it runs
 itself, iterating until the output matches the source skeleton. The Python
 worker re-validates the agent's `fixed.srt` as a final guard.
 
 This mirrors the `services.postprocess` task pattern: a thin orchestrator over
-`services.agent_exec.run_agent_exec` plus a `prompts/*.md` system prompt. The
+`services.inference.run_inference` plus a `prompts/*.md` system prompt. The
 sync backend is invoked through `asyncio.to_thread` so it composes with the
 worker's async/concurrent translation loop.
 """
@@ -21,16 +21,16 @@ from pathlib import Path
 from loguru import logger
 
 from settings import settings
-from services.agent_exec import AgentBackend, run_agent_exec
+from services.inference import AgentBackend, run_inference
 
 
 class ChunkFixError(RuntimeError):
     """Raised when the agent fails to produce a repaired chunk SRT."""
 
 
-_PROMPT = (Path(__file__).parent / "prompts" / "chunk_fix.md").read_text(
-    encoding="utf-8"
-)
+_PROMPT = (
+    Path(__file__).parent / "prompts" / "structural_fix.md"
+).read_text(encoding="utf-8")
 _VALIDATOR = (Path(__file__).parent / "validate_chunk.py").resolve()
 
 
@@ -70,13 +70,19 @@ async def fix_chunk_structure(
     fixed_path.unlink(missing_ok=True)
 
     prompt = _PROMPT + _concrete_section(tolerance, error)
-    backend = AgentBackend(settings.agent_backend)
+    backend = AgentBackend(settings.agent_postprocess_backend)
     logger.info(
         f"{log_prefix} Invoking {backend.value} to repair chunk structure "
         f"in {workspace_dir}"
     )
+    spec = settings.agent_postprocess_model
     await asyncio.to_thread(
-        run_agent_exec, prompt, workspace_dir, backend=backend
+        run_inference,
+        backend=backend,
+        prompt=prompt,
+        cwd=workspace_dir,
+        model=spec.model,
+        reasoning_effort=spec.reasoning_effort,
     )
 
     if not fixed_path.exists():

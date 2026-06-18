@@ -57,7 +57,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
             ),
             patch.object(workflow_module, "ElevenLabsASR") as elevenlabs_cls,
             patch.object(workflow_module, "convert_file") as convert_file,
-            patch.object(workflow_module, "Gemini") as gemini_cls,
+            patch.object(workflow_module, "Translate") as gemini_cls,
         ):
             asr = elevenlabs_cls.return_value
             asr.transcribe_to_file.return_value = ElevenLabsTranscriptionResult(
@@ -89,7 +89,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
             ),
             patch.object(workflow_module, "ElevenLabsASR") as elevenlabs_cls,
             patch.object(workflow_module, "convert_file") as convert_file,
-            patch.object(workflow_module, "Gemini") as gemini_cls,
+            patch.object(workflow_module, "Translate") as gemini_cls,
         ):
             workflow_module.process_project(
                 "demo",
@@ -117,7 +117,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
             patch.object(
                 workflow_module.Project, "from_source_str", return_value=project
             ),
-            patch.object(workflow_module, "Gemini") as gemini_cls,
+            patch.object(workflow_module, "Translate") as gemini_cls,
         ):
             gemini = gemini_cls.return_value
             gemini.run_pre_pass.return_value = MagicMock(total_cost=0.0)

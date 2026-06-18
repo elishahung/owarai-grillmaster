@@ -1,78 +1,52 @@
-"""Gemini translation orchestrator: pre-pass + concurrent chunked translation."""
+"""Translation orchestrator: pre-pass + concurrent chunked translation."""
 
 import asyncio
 import time
-from pathlib import Path
 
-from google import genai
 from loguru import logger
-from pydantic import BaseModel
 
 from settings import settings
 from services.srt import SrtBlock, parse_srt, serialize_srt
 from services.progress import NoopProgressReporter
+from services.inference import (
+    Backend,
+    backend_supports_audio,
+    is_agent_backend,
+)
 from .assets import prepare_chunk_media_assets
-from .chunk_worker import translate_chunk
+from .chunk.chunk_worker import translate_chunk
 from .chunker import split_into_chunks
 from .errors import (
     ChunkTranslationError,
-    GeminiTranslationError,
+    TranslationError,
     PrePassError,
     TranslationCostSummary,
 )
-from .normalizer import normalize_translated_blocks
-from .pre_pass import PrePassResult, run_pre_pass as execute_pre_pass
+from .chunk.normalizer import normalize_translated_blocks
+from .pre_pass.pre_pass import PrePassResult, run_pre_pass as execute_pre_pass
+from .request import TranslationRequest
 
 
 class TranslationResult(TranslationCostSummary):
     pass
 
 
-class TranslationRequest(BaseModel):
-    """Inputs required to run the Gemini translation pipeline."""
-
-    video_description: str | None
-    srt_path: Path
-    audio_key: str
-    video_path: Path
-    audio_path: Path
-    output_path: Path
-    pre_pass_path: Path
-    pre_pass_cache_dir: Path
-    chunks_cache_dir: Path
-    source_metadata_context: str | None = None
-    parent_pre_pass_context: str | None = None
-
-
-class Gemini:
-    """Google Gemini client for SRT subtitle translation.
+class Translate:
+    """Subtitle translation orchestrator (pre-pass + concurrent chunks).
 
     Flow: parse SRT → split into N char-balanced chunks → run one pre-pass
     analysis call → translate chunks concurrently (bounded by a semaphore) →
-    normalize merged indices → write output.
+    normalize merged indices → write output. Each stage picks its backend via
+    `settings.agent_prepass_backend` / `settings.agent_chunk_backend`.
     """
 
     def __init__(self):
-        # The API client is built lazily and only when a stage actually uses the
-        # 'api' backend, so a fully 'cli' run needs no GEMINI_API_KEY.
-        self._client: genai.Client | None = None
         logger.info(
-            f"Gemini initialized "
-            f"(chunk_concurrency={settings.chunk_concurrency}, "
+            f"Translate initialized "
+            f"(chunk_api_concurrency={settings.chunk_api_concurrency}, "
+            f"chunk_agent_concurrency={settings.chunk_agent_concurrency}, "
             f"chunk_char_limit={settings.chunk_char_limit})"
         )
-
-    def _api_client(self) -> genai.Client:
-        """Build (once) and return the genai API client, requiring the API key."""
-        if self._client is None:
-            if not settings.gemini_api_key:
-                raise RuntimeError(
-                    "GEMINI_API_KEY is required when a stage uses the 'api' "
-                    "backend (set it, or switch the stage backend to 'cli')"
-                )
-            logger.debug("Initializing Gemini API client")
-            self._client = genai.Client(api_key=settings.gemini_api_key)
-        return self._client
 
     def _prepare(
         self, request: TranslationRequest
@@ -100,28 +74,18 @@ class Gemini:
         return srt_text, chunks
 
     def run_pre_pass(self, request: TranslationRequest) -> TranslationResult:
-        """Run the Gemini pre-pass only and persist pre_pass.json.
+        """Run the pre-pass only and persist pre_pass.json.
 
         Blocks until complete. The persisted briefing is the explicit hand-off
         consumed by `translate_chunks`; this stage does no chunk translation.
+        The backend is chosen per `settings.agent_prepass_backend`.
         """
-        return asyncio.run(self._run_pre_pass_async(request))
-
-    async def _run_pre_pass_async(
-        self, request: TranslationRequest
-    ) -> TranslationResult:
         start_time = time.time()
         logger.info(f"Starting pre-pass for SRT file: {request.srt_path}")
         srt_text, chunks = self._prepare(request)
 
-        client = (
-            self._api_client()
-            if settings.prepass_gemini_backend == "api"
-            else None
-        )
         try:
-            _result, pre_pass_cost = await execute_pre_pass(
-                client,
+            _result, pre_pass_cost = execute_pre_pass(
                 request.video_description,
                 srt_text,
                 request.video_path,
@@ -147,7 +111,7 @@ class Gemini:
                 f"Pre-pass failed: ${summary.total_cost:.4f} spent after "
                 f"{summary.elapsed_seconds:.1f}s"
             )
-            raise GeminiTranslationError(str(e), summary) from e
+            raise TranslationError(str(e), summary) from e
 
         summary = TranslationResult(
             total_cost=pre_pass_cost,
@@ -215,7 +179,7 @@ class Gemini:
                 failed_chunks=["pre-pass artifact missing"],
                 num_chunks=len(chunks),
             )
-            raise GeminiTranslationError(
+            raise TranslationError(
                 f"pre_pass.json not found at {request.pre_pass_path}; "
                 "run the pre-pass stage first",
                 summary,
@@ -225,12 +189,17 @@ class Gemini:
         )
 
         request.chunks_cache_dir.mkdir(parents=True, exist_ok=True)
-        semaphore = asyncio.Semaphore(settings.chunk_concurrency)
-        client = (
-            self._api_client()
-            if settings.chunk_gemini_backend == "api"
-            else None
+        chunk_backend = Backend(settings.agent_chunk_backend)
+        has_audio = backend_supports_audio(chunk_backend)
+        # Agent backends (gemini-cli / codex / claude) spawn a heavy local
+        # process per chunk, so bound them more tightly than the network
+        # gemini-api backend.
+        concurrency = (
+            settings.chunk_agent_concurrency
+            if is_agent_backend(chunk_backend)
+            else settings.chunk_api_concurrency
         )
+        semaphore = asyncio.Semaphore(concurrency)
 
         async def bounded(i: int, chunk: list[SrtBlock]):
             async with semaphore:
@@ -250,10 +219,10 @@ class Gemini:
                     total_chunks=len(chunks),
                     interval_seconds=settings.chunk_frame_interval_seconds,
                     max_side=settings.chunk_frame_max_side,
+                    extract_audio=has_audio,
                 )
                 try:
                     result = await translate_chunk(
-                        client,
                         chunk_assets,
                         chunk,
                         i,
@@ -332,7 +301,7 @@ class Gemini:
                 f"{summary.num_chunks} chunks completed, {len(summary.failed_chunks)} "
                 f"failed, ${summary.total_cost:.4f} spent"
             )
-            raise GeminiTranslationError(
+            raise TranslationError(
                 "One or more chunks failed after all chunk tasks completed: "
                 + "; ".join(chunk_failures),
                 summary,

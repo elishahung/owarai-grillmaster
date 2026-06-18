@@ -9,7 +9,6 @@ from pathlib import Path
 
 from loguru import logger
 
-from settings import settings
 from .base import AgentExecError
 
 
@@ -23,6 +22,9 @@ class CodexNotInstalledError(CodexInvocationError):
 
 # Default per-invocation timeout for `codex exec`. Hardcoded maintainer constant.
 _DEFAULT_TIMEOUT_SECS = 900
+# Codex model / reasoning effort used when a caller does not pass them.
+_DEFAULT_MODEL = "gpt-5.5"
+_DEFAULT_REASONING_EFFORT = "high"
 
 
 def run_codex_exec(
@@ -31,6 +33,8 @@ def run_codex_exec(
     images: list[Path] | None = None,
     output_last_message_path: Path | None = None,
     timeout: int | None = None,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
 ) -> str:
     """Invoke `codex exec` non-interactively and return the final assistant message."""
     executable = shutil.which("codex")
@@ -41,6 +45,8 @@ def run_codex_exec(
 
     abs_cwd = cwd.resolve()
     effective_timeout = timeout or _DEFAULT_TIMEOUT_SECS
+    effective_model = model or _DEFAULT_MODEL
+    effective_effort = (reasoning_effort or _DEFAULT_REASONING_EFFORT).lower()
 
     if output_last_message_path is not None:
         capture_path = output_last_message_path.resolve()
@@ -58,9 +64,9 @@ def run_codex_exec(
         executable,
         "exec",
         "-m",
-        "gpt-5.5",
+        effective_model,
         "-c",
-        "model_reasoning_effort=medium",
+        f"model_reasoning_effort={effective_effort}",
         "--cd",
         str(abs_cwd),
         "--yolo",

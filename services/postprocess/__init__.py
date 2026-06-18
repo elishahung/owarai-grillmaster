@@ -1,8 +1,8 @@
 """Optional agent-driven post-processing tasks.
 
 `cover` (image stylization, always Codex), `refine` and `glossary_check`
-(subtitle passes, backend chosen by `settings.agent_backend`). Each task is
-a thin orchestrator over `services.agent_exec`; the agent does its work by
+(subtitle passes, backend chosen by `settings.agent_postprocess_backend`). Each task is
+a thin orchestrator over `services.inference`; the agent does its work by
 reading/writing files in the project directory and we validate them afterward.
 """
 

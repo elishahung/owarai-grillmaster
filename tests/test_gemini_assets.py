@@ -5,7 +5,7 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-from services.gemini.assets import (
+from services.translate.assets import (
     LocalMediaRef,
     media_ref_to_part,
     prepare_chunk_media_assets,
@@ -30,11 +30,11 @@ class GeminiAssetsTests(unittest.TestCase):
 
         with (
             patch(
-                "services.gemini.assets.MediaProcessor.get_media_duration",
+                "services.translate.assets.MediaProcessor.get_media_duration",
                 return_value=305.0,
             ),
             patch(
-                "services.gemini.assets.MediaProcessor.extract_video_frame"
+                "services.translate.assets.MediaProcessor.extract_video_frame"
             ) as extract_frame,
         ):
             assets = prepare_pre_pass_media_assets(
@@ -81,10 +81,10 @@ class GeminiAssetsTests(unittest.TestCase):
 
         with (
             patch(
-                "services.gemini.assets.MediaProcessor.extract_audio_segment"
+                "services.translate.assets.MediaProcessor.extract_audio_segment"
             ),
             patch(
-                "services.gemini.assets.MediaProcessor.extract_video_frame"
+                "services.translate.assets.MediaProcessor.extract_video_frame"
             ),
         ):
             assets = prepare_chunk_media_assets(
@@ -132,10 +132,10 @@ class GeminiAssetsTests(unittest.TestCase):
 
         with (
             patch(
-                "services.gemini.assets.MediaProcessor.extract_audio_segment"
+                "services.translate.assets.MediaProcessor.extract_audio_segment"
             ) as extract_audio,
             patch(
-                "services.gemini.assets.MediaProcessor.extract_video_frame"
+                "services.translate.assets.MediaProcessor.extract_video_frame"
             ),
         ):
             assets = prepare_chunk_media_assets(
@@ -182,10 +182,10 @@ class GeminiAssetsTests(unittest.TestCase):
 
         with (
             patch(
-                "services.gemini.assets.MediaProcessor.extract_audio_segment"
+                "services.translate.assets.MediaProcessor.extract_audio_segment"
             ),
             patch(
-                "services.gemini.assets.MediaProcessor.extract_video_frame"
+                "services.translate.assets.MediaProcessor.extract_video_frame"
             ),
         ):
             assets = prepare_chunk_media_assets(

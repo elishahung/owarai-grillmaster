@@ -6,24 +6,15 @@ from unittest.mock import patch
 
 from google import genai
 
-from services.gemini.assets import (
-    ChunkMediaAssets,
-    FrameSpec,
-    LocalMediaRef,
-    PrePassMediaAssets,
-)
-import services.gemini.chunk_worker as cw
-from services.gemini.chunk_worker import translate_chunk
-from services.gemini.cli import GeminiCliResult
-from services.srt import SrtBlock
-from services.gemini.pre_pass import (
-    Catchphrase,
-    Character,
-    PrePassResult,
-    SegmentSummary,
-    run_pre_pass,
-)
+from services.inference import InferenceResult
+import services.inference.gemini_api as gemini_api
+from services.inference.gemini_api import run_gemini_api
+import services.translate.chunk.chunk_worker as cw
+from services.translate.assets import ChunkMediaAssets, FrameSpec, LocalMediaRef
+from services.translate.chunk.chunk_worker import translate_chunk
+from services.translate.pre_pass.schema import PrePassResult, SegmentSummary
 from services.media import TimeRange
+from services.srt import SrtBlock
 
 
 class _FakeResponse:
@@ -42,23 +33,19 @@ class _FakeModels:
         self.response = response
         self.calls = []
 
-    async def generate_content(self, **kwargs):
+    def generate_content(self, **kwargs):
         self.calls.append(kwargs)
         return self.response
-
-
-class _FakeAio:
-    def __init__(self, models: _FakeModels):
-        self.models = models
 
 
 class _FakeClient:
     def __init__(self, response: _FakeResponse):
         self.models = _FakeModels(response)
-        self.aio = _FakeAio(self.models)
 
 
-class GeminiInlineMediaTests(unittest.IsolatedAsyncioTestCase):
+class GeminiApiInlineMediaTests(unittest.TestCase):
+    """The gemini-api backend builds inline audio+frame Parts then the prompt."""
+
     def _make_temp_dir(self) -> Path:
         base = Path(__file__).resolve().parents[1] / "tmp_test_artifacts"
         base.mkdir(parents=True, exist_ok=True)
@@ -67,106 +54,81 @@ class GeminiInlineMediaTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(lambda: shutil.rmtree(path, ignore_errors=True))
         return path
 
-    async def test_pre_pass_sends_inline_media_parts(self):
+    def test_run_gemini_api_sends_audio_then_frames_then_prompt(self):
         root = self._make_temp_dir()
         audio_path = root / "full.ogg"
         frame_path = root / "frame.jpg"
-        asset_manifest = root / "assets.json"
         audio_path.write_bytes(b"audio-bytes")
         frame_path.write_bytes(b"frame-bytes")
 
         result = PrePassResult(
             summary="summary",
-            characters=[
-                Character(name_jp="JP", name_zh="ZH", role_note="role")
-            ],
+            characters=[],
             proper_nouns={},
             glossary={},
-            catchphrases=[
-                Catchphrase(phrase_jp="jp", phrase_zh="zh", note="note")
-            ],
+            catchphrases=[],
             tone_notes="tone",
             segment_summaries=[
-                SegmentSummary(from_index=1, to_index=1, summary="segment")
+                SegmentSummary(from_index=1, to_index=1, summary="seg")
             ],
         )
-        client = _FakeClient(_FakeResponse(result.model_dump_json()))
-        chunks = [
-            [
-                SrtBlock(
-                    index=1,
-                    timecode="00:00:01,000 --> 00:00:02,000",
-                    text="source",
-                )
-            ]
-        ]
-        assets = PrePassMediaAssets(
-            audio=LocalMediaRef(path=audio_path, mime_type="audio/ogg"),
-            frames=[
-                FrameSpec(
-                    path=frame_path,
-                    timestamp_seconds=1.0,
-                    mime_type="image/jpeg",
-                )
-            ],
-            manifest_path=asset_manifest,
-        )
-
-        with (
-            patch(
-                "services.gemini.pre_pass.prepare_pre_pass_media_assets",
-                return_value=assets,
-            ),
-            patch(
-                "services.gemini.pre_pass.settings.prepass_gemini_backend",
-                "api",
-            ),
-        ):
-            parsed, cost = await run_pre_pass(
-                client,
-                "description",
-                "1\n00:00:01,000 --> 00:00:02,000\nsource",
-                root / "video.mp4",
-                audio_path,
-                chunks,
-                root / "pre_pass.json",
-                root,
-                "Official source cast/talent metadata:\n- 山内　健司",
+        client = _FakeClient(
+            _FakeResponse(
+                result.model_dump_json(), genai.types.FinishReason.STOP
             )
+        )
+        with patch.object(gemini_api, "_api_client", return_value=client):
+            io = run_gemini_api(
+                prompt="USER",
+                system_prompt="SYSTEM",
+                images=[frame_path],
+                audio=[audio_path],
+                schema=PrePassResult,
+                model="gemini-3.1-pro-preview",
+            )
+
+        self.assertEqual(io.cost, 0.0)  # usage_metadata None -> 0
+        parsed = PrePassResult.model_validate_json(io.text)
+        self.assertEqual(parsed.summary, "summary")
 
         contents = client.models.calls[0]["contents"]
         config = client.models.calls[0]["config"]
-        self.assertEqual(cost, 0.0)
-        self.assertEqual(parsed.summary, "summary")
         self.assertEqual(contents[0].inline_data.data, b"audio-bytes")
         self.assertEqual(contents[0].inline_data.mime_type, "audio/ogg")
         self.assertEqual(contents[1].inline_data.data, b"frame-bytes")
         self.assertEqual(contents[1].inline_data.mime_type, "image/jpeg")
-        self.assertIsInstance(contents[-1], str)
-        self.assertIn("【官方來源 Metadata】", contents[-1])
-        self.assertIn("山内　健司", contents[-1])
-        self.assertIn("OFFICIAL SOURCE METADATA", config.system_instruction)
-        self.assertIn("characters` MUST include", config.system_instruction)
-        self.assertIn("exactly as written", config.system_instruction)
+        self.assertEqual(contents[-1], "USER")
+        self.assertEqual(config.system_instruction, "SYSTEM")
 
-    async def test_chunk_worker_sends_inline_media_parts(self):
-        root = self._make_temp_dir()
+
+class ChunkDispatchTests(unittest.IsolatedAsyncioTestCase):
+    """translate_chunk routes media + system prompt through run_inference."""
+
+    def _make_temp_dir(self) -> Path:
+        base = Path(__file__).resolve().parents[1] / "tmp_test_artifacts"
+        base.mkdir(parents=True, exist_ok=True)
+        path = base / f"tmp_chunk_{uuid.uuid4().hex[:8]}"
+        path.mkdir(parents=True, exist_ok=True)
+        self.addCleanup(lambda: shutil.rmtree(path, ignore_errors=True))
+        return path
+
+    def _assets(self, root: Path) -> ChunkMediaAssets:
         audio_path = root / "chunk.ogg"
         frame_path = root / "frame.jpg"
         audio_path.write_bytes(b"chunk-audio")
         frame_path.write_bytes(b"chunk-frame")
-        response_text = "1\n" "00:00:01,000 --> 00:00:02,000\n" "translated\n"
-        client = _FakeClient(
-            _FakeResponse(response_text, genai.types.FinishReason.STOP)
+        assets = ChunkMediaAssets(
+            time_range=TimeRange(start_seconds=1.0, end_seconds=2.0),
+            audio=LocalMediaRef(path=audio_path, mime_type="audio/ogg"),
+            frames=[FrameSpec(path=frame_path, timestamp_seconds=1.0)],
+            manifest_path=root / "chunk.json",
+            response_dir=root,
         )
-        chunk = [
-            SrtBlock(
-                index=1,
-                timecode="00:00:01,000 --> 00:00:02,000",
-                text="source",
-            )
-        ]
-        pre_pass = PrePassResult(
+        assets.manifest_path.write_text("{}", encoding="utf-8")
+        return assets
+
+    def _pre_pass(self) -> PrePassResult:
+        return PrePassResult(
             summary="summary",
             characters=[],
             proper_nouns={},
@@ -174,48 +136,13 @@ class GeminiInlineMediaTests(unittest.IsolatedAsyncioTestCase):
             catchphrases=[],
             tone_notes="tone",
             segment_summaries=[
-                SegmentSummary(from_index=1, to_index=1, summary="segment")
+                SegmentSummary(from_index=1, to_index=1, summary="seg")
             ],
         )
-        media_assets = ChunkMediaAssets(
-            time_range=TimeRange(start_seconds=1.0, end_seconds=2.0),
-            audio=LocalMediaRef(path=audio_path, mime_type="audio/ogg"),
-            frames=[
-                FrameSpec(
-                    path=frame_path,
-                    timestamp_seconds=1.0,
-                    mime_type="image/jpeg",
-                )
-            ],
-            manifest_path=root / "chunk.json",
-            response_dir=root,
-        )
-        media_assets.manifest_path.write_text("{}", encoding="utf-8")
 
-        result = await translate_chunk(
-            client,
-            media_assets,
-            chunk,
-            0,
-            1,
-            pre_pass,
-        )
-
-        contents = client.models.calls[0]["contents"]
-        self.assertEqual(result.blocks[0].text, "translated")
-        self.assertEqual(contents[0].inline_data.data, b"chunk-audio")
-        self.assertEqual(contents[0].inline_data.mime_type, "audio/ogg")
-        self.assertEqual(contents[1].inline_data.data, b"chunk-frame")
-        self.assertEqual(contents[1].inline_data.mime_type, "image/jpeg")
-        self.assertIsInstance(contents[-1], str)
-
-    async def test_chunk_worker_cli_backend(self):
+    async def test_chunk_passes_media_and_no_schema(self):
         root = self._make_temp_dir()
-        audio_path = root / "chunk.ogg"
-        frame_path = root / "frame.jpg"
-        audio_path.write_bytes(b"chunk-audio")
-        frame_path.write_bytes(b"chunk-frame")
-        cli_srt = "1\n00:00:01,000 --> 00:00:02,000\ntranslated\n"
+        assets = self._assets(root)
         chunk = [
             SrtBlock(
                 index=1,
@@ -223,56 +150,26 @@ class GeminiInlineMediaTests(unittest.IsolatedAsyncioTestCase):
                 text="source",
             )
         ]
-        pre_pass = PrePassResult(
-            summary="summary",
-            characters=[],
-            proper_nouns={},
-            glossary={},
-            catchphrases=[],
-            tone_notes="tone",
-            segment_summaries=[
-                SegmentSummary(from_index=1, to_index=1, summary="segment")
-            ],
-        )
-        media_assets = ChunkMediaAssets(
-            time_range=TimeRange(start_seconds=1.0, end_seconds=2.0),
-            audio=LocalMediaRef(path=audio_path, mime_type="audio/ogg"),
-            frames=[
-                FrameSpec(
-                    path=frame_path,
-                    timestamp_seconds=1.0,
-                    mime_type="image/jpeg",
-                )
-            ],
-            manifest_path=root / "chunk.json",
-            response_dir=root,
-        )
-        media_assets.manifest_path.write_text("{}", encoding="utf-8")
+        raw_srt = "1\n00:00:01,000 --> 00:00:02,000\ntranslated\n"
 
-        cli_result = GeminiCliResult(
-            response=cli_srt, requests=1, stats={}, raw_envelope={}
-        )
-        # client is None: the cli backend must never touch the api client.
+        # Pin the backend so the test is independent of the developer's .env.
         with (
-            patch.object(cw.settings, "chunk_gemini_backend", "cli"),
+            patch.object(cw.settings, "agent_chunk_backend", "gemini-api"),
             patch.object(
-                cw, "run_gemini_cli", return_value=cli_result
-            ) as mock_cli,
+                cw,
+                "run_inference",
+                return_value=InferenceResult(
+                    text=raw_srt, cost=0.0, requests=1
+                ),
+            ) as mock_inf,
         ):
-            result = await translate_chunk(
-                None, media_assets, chunk, 0, 1, pre_pass
-            )
+            result = await translate_chunk(assets, chunk, 0, 1, self._pre_pass())
 
         self.assertEqual(result.blocks[0].text, "translated")
-        self.assertEqual(result.cost, 0.0)
-        mock_cli.assert_called_once()
-        self.assertEqual(
-            mock_cli.call_args.kwargs["model"], cw.settings.chunk_gemini_model
-        )
-        self.assertIsNone(mock_cli.call_args.kwargs["schema"])
-        media_files = mock_cli.call_args.kwargs["media_files"]
-        self.assertEqual(media_files[0], audio_path)
-        self.assertIn(frame_path, media_files)
+        kwargs = mock_inf.call_args.kwargs
+        self.assertIsNone(kwargs["schema"])
+        self.assertEqual(len(kwargs["images"]), 1)
+        self.assertEqual(len(kwargs["audio"]), 1)  # gemini-api keeps audio
 
 
 if __name__ == "__main__":

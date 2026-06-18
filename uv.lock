@@ -41,7 +41,7 @@ wheels = [
 ]
 
 [[package]]
-name = "bangumi-grillmaster"
+name = "owarai-grillmaster"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

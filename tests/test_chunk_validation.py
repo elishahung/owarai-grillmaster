@@ -4,14 +4,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from services.chunk_fix import (
+from services.translate.chunk.validation import (
     canonicalize_by_position,
     validate_chunk_structure,
 )
 from services.srt import parse_srt
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_VALIDATOR = _REPO_ROOT / "services" / "chunk_fix" / "validate_chunk.py"
+_VALIDATOR = (
+    _REPO_ROOT / "services" / "translate" / "chunk" / "validate_chunk.py"
+)
 
 # Three source blocks with distinct timecodes. Validation matches by timecode
 # only (text is never compared), so candidate text can be anything.

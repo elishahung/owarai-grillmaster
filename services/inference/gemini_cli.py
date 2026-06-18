@@ -1,15 +1,15 @@
 """Generic subprocess wrapper for the Gemini CLI.
 
-Sibling of ``services/codex/client.py``: a pure, media-agnostic
-``text + 0..N media files -> text`` wrapper. Auth is delegated to the CLI's
-cached OAuth (subscription); the parent process's API-key env vars are
-scrubbed so the CLI never silently falls back to paid API-key billing.
+A pure, media-agnostic ``text + 0..N media files -> text`` wrapper. Auth is
+delegated to the CLI's cached OAuth (subscription); the parent process's
+API-key env vars are scrubbed so the CLI never silently falls back to paid
+API-key billing.
 
 Unlike the genai SDK (which enforces a response schema natively), the CLI is
 primitive: it has no structured-output guarantee. So when a caller passes a
-``schema`` pydantic model, this wrapper owns the whole enforcement — it
-appends the JSON Schema to the prompt and runs a validate-and-repair retry
-loop here, not in callers.
+``schema`` pydantic model, this wrapper appends the JSON Schema to the prompt
+and drives the shared ``schema_enforce.enforce_schema`` validate-and-repair
+loop, staging media into a private workspace that persists across attempts.
 """
 
 from __future__ import annotations
@@ -22,9 +22,10 @@ import tempfile
 from pathlib import Path
 
 from loguru import logger
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
-from settings import settings
+from .base import InferenceError, InferenceNotInstalledError
+from .schema_enforce import extract_json_object
 
 # Hardcoded per-file size guard for @path media. The CLI rejects oversized
 # attachments; for this project an oversized media file means something
@@ -40,17 +41,12 @@ _CLI_TIMEOUT_SECS = 900
 # subscription auth is used (the whole reason for the CLI backend).
 _API_KEY_ENV_VARS = ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_API_KEY")
 
-_SCHEMA_INSTRUCTION = (
-    "\n\n【輸出要求】只輸出一個符合下列 JSON Schema 的 JSON 物件，"
-    "不要任何說明文字、前後綴或 markdown code fence：\n{schema_json}"
-)
 
-
-class GeminiCliError(RuntimeError):
+class GeminiCliError(InferenceError):
     """Raised when the Gemini CLI exits non-zero, times out, or misbehaves."""
 
 
-class GeminiCliNotInstalledError(GeminiCliError):
+class GeminiCliNotInstalledError(GeminiCliError, InferenceNotInstalledError):
     """Raised when the configured Gemini CLI executable is not on PATH."""
 
 
@@ -70,27 +66,6 @@ class GeminiCliResult(BaseModel):
     requests: int
     stats: dict
     raw_envelope: dict
-
-
-def extract_json_object(text: str) -> str:
-    """Best-effort extraction of a single JSON object from model output.
-
-    Tolerates ```json fences and surrounding prose. Returns the substring
-    from the first ``{`` to the last ``}``; if no braces are present the
-    stripped input is returned so the caller's parser raises a meaningful
-    error.
-    """
-    stripped = text.strip()
-    if stripped.startswith("```"):
-        without_open = stripped.split("\n", 1)[1] if "\n" in stripped else ""
-        if without_open.rstrip().endswith("```"):
-            without_open = without_open.rstrip()[:-3]
-        stripped = without_open.strip()
-    start = stripped.find("{")
-    end = stripped.rfind("}")
-    if start != -1 and end != -1 and end > start:
-        return stripped[start : end + 1]
-    return stripped
 
 
 def extract_request_count(envelope: dict) -> int:
@@ -264,10 +239,8 @@ def run_gemini_cli(
     model: str,
     media_files: list[Path] | None = None,
     timeout: int | None = None,
-    schema: type[BaseModel] | None = None,
-    max_retries: int | None = None,
 ) -> GeminiCliResult:
-    """Invoke the Gemini CLI non-interactively and return the parsed result.
+    """Invoke the Gemini CLI once and return the parsed result (single-shot).
 
     Prompt is fed via stdin (the full SRT is far too large for a Windows
     argv). ``media_files`` may be empty; when present, each file is staged
@@ -276,11 +249,10 @@ def run_gemini_cli(
     gemini-cli's ``@`` parser resolves relative names, not absolute Windows
     paths.
 
-    When ``schema`` (a pydantic model class) is given, the JSON Schema is
-    appended to the prompt and the model output is validated against it; on
-    a validation failure the model is re-prompted with the error up to
-    ``max_retries`` times (default ``settings.gemini_cli_max_retries``). The
-    returned ``response`` is then guaranteed-parseable JSON for that schema.
+    This is a pure text generator: it never enforces a response schema. Schema
+    handling (the JSON-Schema prompt suffix + the validate-and-repair loop) is
+    owned by ``run_inference`` and applied uniformly across every prompt-based
+    backend, so the CLI backend has no schema-specific code path of its own.
     """
     media_files = media_files or []
 
@@ -302,7 +274,6 @@ def run_gemini_cli(
             )
 
     effective_timeout = timeout or _CLI_TIMEOUT_SECS
-    attempts = max_retries or settings.gemini_cli_max_retries
 
     workspace: Path | None = None
     try:
@@ -316,75 +287,20 @@ def run_gemini_cli(
                 tokens.append(f"@{staged_name}")
             media_block = "\n\n[ATTACHED MEDIA]\n" + "\n".join(tokens)
 
-        base_prompt = prompt
-        if schema is not None:
-            base_prompt += _SCHEMA_INSTRUCTION.format(
-                schema_json=json.dumps(
-                    schema.model_json_schema(), ensure_ascii=False
-                )
-            )
-        base_prompt += media_block
-
-        total_requests = 0
-        last_error: ValidationError | None = None
-        repair = ""
-        for attempt in range(1, attempts + 1):
-            response, requests, envelope = _invoke_once(
-                executable,
-                model,
-                base_prompt + repair,
-                workspace,
-                effective_timeout,
-            )
-            total_requests += requests
-            stats = envelope.get("stats")
-            stats = stats if isinstance(stats, dict) else {}
-
-            if schema is None:
-                logger.debug(
-                    f"gemini CLI ok: response_chars={len(response)} "
-                    f"requests={total_requests}"
-                )
-                return GeminiCliResult(
-                    response=response,
-                    requests=total_requests,
-                    stats=stats,
-                    raw_envelope=envelope,
-                )
-
-            cleaned = extract_json_object(response)
-            try:
-                schema.model_validate_json(cleaned)
-            except ValidationError as ve:
-                last_error = ve
-                logger.warning(
-                    f"[gemini-cli] schema validation failed "
-                    f"(attempt {attempt}/{attempts}): {ve}"
-                )
-                repair = (
-                    "\n\n【修正要求】你上一次的回應未通過 JSON schema 驗證。"
-                    f"驗證錯誤：\n{ve}\n\n"
-                    "你上一次（無效）的輸出為：\n"
-                    f"{response[:8000]}\n\n"
-                    "請只輸出一個符合 schema 的修正後 JSON 物件，"
-                    "不要任何說明文字或 markdown code fence。"
-                )
-                continue
-
-            logger.debug(
-                f"gemini CLI ok (schema validated, attempt {attempt}): "
-                f"requests={total_requests}"
-            )
-            return GeminiCliResult(
-                response=cleaned,
-                requests=total_requests,
-                stats=stats,
-                raw_envelope=envelope,
-            )
-
-        raise GeminiCliError(
-            f"gemini CLI output failed schema validation after "
-            f"{attempts} attempts: {last_error}"
+        response, requests, envelope = _invoke_once(
+            executable, model, prompt + media_block, workspace, effective_timeout
+        )
+        stats = envelope.get("stats")
+        stats = stats if isinstance(stats, dict) else {}
+        logger.debug(
+            f"gemini CLI ok: response_chars={len(response)} "
+            f"requests={requests}"
+        )
+        return GeminiCliResult(
+            response=response,
+            requests=requests,
+            stats=stats,
+            raw_envelope=envelope,
         )
     finally:
         if workspace is not None:

@@ -20,7 +20,7 @@ from loguru import logger
 
 from project import Project
 from settings import settings
-from services.agent_exec import AgentBackend, run_agent_exec
+from services.inference import AgentBackend, run_inference
 from services.fixed_glossary.fixed_glossary import (
     FIXED_GLOSSARY_PATH,
     load_fixed_glossary,
@@ -183,13 +183,18 @@ def glossary_check_subtitles(project: Project) -> None:
             + _render_suspect_list(suspects)
             + "\n"
         )
-        backend = AgentBackend(settings.agent_backend)
+        backend = AgentBackend(settings.agent_postprocess_backend)
         logger.info(
             f"Invoking {backend.value} for glossary check "
             f"({len(suspects)} flagged blocks): {project.id}"
         )
-        run_agent_exec(
-            prompt=prompt, cwd=project.project_path, backend=backend
+        spec = settings.agent_postprocess_model
+        run_inference(
+            backend=backend,
+            prompt=prompt,
+            cwd=project.project_path,
+            model=spec.model,
+            reasoning_effort=spec.reasoning_effort,
         )
 
         if not project.glossary_checked_srt_path.exists():

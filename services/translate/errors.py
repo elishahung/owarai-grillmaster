@@ -1,4 +1,4 @@
-"""Error and summary types for Gemini translation cost tracking."""
+"""Error and summary types for translation cost tracking."""
 
 from pydantic import BaseModel, Field
 
@@ -55,9 +55,13 @@ class ChunkTranslationError(CostTrackingError):
         )
 
 
-class GeminiTranslationError(RuntimeError):
+class TranslationError(RuntimeError):
     """Raised when translation fails with a partial cost summary."""
 
     def __init__(self, message: str, summary: TranslationCostSummary):
         super().__init__(message)
         self.summary = summary
+
+
+# Legacy alias (the package was previously `services.gemini`).
+GeminiTranslationError = TranslationError

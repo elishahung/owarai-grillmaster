@@ -1,7 +1,7 @@
 import unittest
 
 from services.srt import SrtBlock
-from services.gemini.normalizer import normalize_translated_blocks
+from services.translate.chunk.normalizer import normalize_translated_blocks
 
 
 class GeminiNormalizerTests(unittest.TestCase):

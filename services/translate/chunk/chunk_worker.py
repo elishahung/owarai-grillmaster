@@ -4,23 +4,22 @@ import asyncio
 import hashlib
 import json
 
-from google import genai
 from loguru import logger
 from pydantic import BaseModel
 
 from settings import settings
-from services.chunk_fix import (
-    canonicalize_by_position,
-    fix_chunk_structure,
-    validate_chunk_structure,
-)
 from services.srt import SrtBlock
-from .assets import ChunkMediaAssets, media_refs_to_parts
-from .cli import run_gemini_cli
-from .cost import calculate_cost
-from .errors import ChunkTranslationError
-from .instructions import chunk_instruction
-from .pre_pass import PrePassResult, SegmentSummary
+from services.inference import (
+    Backend,
+    backend_supports_audio,
+    run_inference,
+)
+from ..assets import ChunkMediaAssets
+from ..errors import ChunkTranslationError
+from .prompts import build_chunk_instruction
+from .validation import canonicalize_by_position, validate_chunk_structure
+from .structural_fix import fix_chunk_structure
+from ..pre_pass.schema import PrePassResult, SegmentSummary
 
 
 class ChunkTranslationResult(BaseModel):
@@ -129,6 +128,7 @@ def _write_chunk_manifest(
     media_assets: ChunkMediaAssets,
     user_message: str,
     raw_path,
+    instruction: str,
     fixed_path=None,
 ):
     try:
@@ -140,7 +140,7 @@ def _write_chunk_manifest(
         manifest.update(
             {
                 "instruction_sha256": hashlib.sha256(
-                    chunk_instruction.encode("utf-8")
+                    instruction.encode("utf-8")
                 ).hexdigest(),
                 "user_message_sha256": hashlib.sha256(
                     user_message.encode("utf-8")
@@ -159,84 +159,20 @@ def _write_chunk_manifest(
         )
 
 
-def _chunk_config() -> "genai.types.GenerateContentConfig":
-    """Shared api-backend generation config (safety off, thinking on)."""
-    thinking_level = genai.types.ThinkingLevel[settings.gemini_thinking_level]
-    return genai.types.GenerateContentConfig(
-        system_instruction=chunk_instruction,
-        safety_settings=[
-            genai.types.SafetySetting(
-                category=cat,
-                threshold=genai.types.HarmBlockThreshold.BLOCK_NONE,
-            )
-            for cat in (
-                genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-            )
-        ],
-        thinking_config=genai.types.ThinkingConfig(
-            thinking_level=thinking_level
-        ),
-    )
-
-
-async def _translate_via_api(
-    client: genai.Client,
-    model: str,
-    user_message: str,
-    media_parts: list,
-) -> tuple[str, float]:
-    """One genai API translation attempt. Returns (raw_text, cost)."""
-    response = await client.aio.models.generate_content(
-        model=model,
-        contents=[*media_parts, user_message],
-        config=_chunk_config(),
-    )
-    cost = calculate_cost(response.usage_metadata, model)
-    finish_reason = (
-        response.candidates[0].finish_reason if response.candidates else None
-    )
-    if finish_reason != genai.types.FinishReason.STOP:
-        raise RuntimeError(
-            f"Non-STOP finish reason: {finish_reason} (likely MAX_TOKENS)"
-        )
-    return response.text or "", cost
-
-
-async def _translate_via_cli(
-    model: str, user_message: str, media_assets: ChunkMediaAssets
-) -> str:
-    """One Gemini CLI translation attempt. Returns raw_text (subscription, no cost).
-
-    Output is free-form SRT (no JSON schema); structural validation happens
-    downstream, identical to the api path.
-    """
-    prompt = f"{chunk_instruction}\n\n{user_message}"
-    media_files = [
-        media_assets.audio.path,
-        *[frame.path for frame in media_assets.frames],
-    ]
-    cli_result = await asyncio.to_thread(
-        run_gemini_cli,
-        prompt,
-        model=model,
-        media_files=media_files,
-        schema=None,
-    )
-    return cli_result.response
-
-
 async def translate_chunk(
-    client: genai.Client | None,
     media_assets: ChunkMediaAssets,
     chunk: list[SrtBlock],
     chunk_index: int,
     total_chunks: int,
     pre_pass: PrePassResult,
 ) -> ChunkTranslationResult:
-    """Translate one chunk with persistent media cache and response caching."""
+    """Translate one chunk with persistent media cache and response caching.
+
+    The backend is chosen per `settings.agent_chunk_backend`; agent backends drop
+    audio and translate on frames + SRT only. Output is free-form SRT (no JSON
+    schema) — structural validation happens downstream, identical for every
+    backend.
+    """
     user_message = _build_user_message(
         chunk, chunk_index, total_chunks, pre_pass, media_assets
     )
@@ -244,15 +180,17 @@ async def translate_chunk(
     prefix = f"[chunk {chunk_index + 1}/{total_chunks}]"
     from_index = chunk[0].index
     to_index = chunk[-1].index
-    backend = settings.chunk_gemini_backend
-    model = settings.chunk_gemini_model
+    backend = Backend(settings.agent_chunk_backend)
+    has_audio = backend_supports_audio(backend)
+    spec = settings.agent_chunk_model
+    system_instruction = build_chunk_instruction(has_audio=has_audio)
     raw_path = _raw_cache_path(
         media_assets.response_dir,
         from_index,
         to_index,
         user_message,
-        backend,
-        model,
+        settings.agent_chunk_backend,
+        str(spec),
     )
     source_srt = "\n\n".join(block.raw for block in chunk)
 
@@ -272,30 +210,35 @@ async def translate_chunk(
     if raw_text is None:
         max_retries = settings.chunk_max_retries
         last_error: Exception | None = None
-        # Only the api backend needs inline media Parts; the cli backend stages
-        # the raw files itself, so skip the (byte-reading) Part construction.
-        media_parts = (
-            media_refs_to_parts([media_assets.audio, *media_assets.frames])
-            if backend == "api"
+        images = [frame.path for frame in media_assets.frames]
+        # Gate audio on the backend's capability, not just the cached asset, so
+        # an agent backend never receives a lingering audio segment.
+        audio = (
+            [media_assets.audio.path]
+            if (has_audio and media_assets.audio)
             else None
         )
 
         for attempt in range(1, max_retries + 1):
             try:
                 logger.info(
-                    f"{prefix} Translating ({backend}) index "
+                    f"{prefix} Translating ({settings.agent_chunk_backend}) index "
                     f"{from_index}–{to_index} ({len(chunk)} blocks, "
                     f"attempt {attempt}/{max_retries})"
                 )
-                if backend == "cli":
-                    raw_text = await _translate_via_cli(
-                        model, user_message, media_assets
-                    )
-                else:
-                    raw_text, cost = await _translate_via_api(
-                        client, model, user_message, media_parts
-                    )
-                    api_cost += cost
+                io_result = await asyncio.to_thread(
+                    run_inference,
+                    backend=backend,
+                    system_prompt=system_instruction,
+                    prompt=user_message,
+                    images=images,
+                    audio=audio,
+                    schema=None,
+                    model=spec.model,
+                    reasoning_effort=spec.reasoning_effort,
+                )
+                raw_text = io_result.text
+                api_cost += io_result.cost
                 retries = attempt - 1
                 break
             except Exception as e:
@@ -319,7 +262,9 @@ async def translate_chunk(
 
         try:
             raw_path.write_text(raw_text, encoding="utf-8")
-            _write_chunk_manifest(media_assets, user_message, raw_path)
+            _write_chunk_manifest(
+                media_assets, user_message, raw_path, system_instruction
+            )
         except OSError as e:
             logger.warning(
                 f"{prefix} Failed to write raw cache {raw_path.name}: {e}"
@@ -419,7 +364,11 @@ async def translate_chunk(
     try:
         fixed_path.write_text(fixed_text, encoding="utf-8")
         _write_chunk_manifest(
-            media_assets, user_message, raw_path, fixed_path=fixed_path
+            media_assets,
+            user_message,
+            raw_path,
+            system_instruction,
+            fixed_path=fixed_path,
         )
     except OSError as e:
         logger.warning(

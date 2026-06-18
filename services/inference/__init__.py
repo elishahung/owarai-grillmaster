@@ -42,6 +42,7 @@ from .codex import (
 from .claude_sdk import (
     ClaudeSDKExecError,
     ClaudeSDKNotInstalledError,
+    ClaudeSDKRateLimitError,
     run_claude_sdk_exec,
 )
 from .gemini_api import GeminiApiError, run_gemini_api
@@ -74,6 +75,7 @@ __all__ = [
     "CodexNotInstalledError",
     "ClaudeSDKExecError",
     "ClaudeSDKNotInstalledError",
+    "ClaudeSDKRateLimitError",
     "GeminiApiError",
     "GeminiCliError",
     "GeminiCliNotInstalledError",

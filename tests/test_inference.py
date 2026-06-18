@@ -15,6 +15,7 @@ from services.inference import (
     is_gemini_backend,
     run_inference,
 )
+from services.inference.base import truncate_middle
 from services.inference.gemini_cli import GeminiCliResult
 from services.inference.schema_enforce import (
     SchemaValidationError,
@@ -50,6 +51,26 @@ class CapabilityTests(unittest.TestCase):
         # Post-processing selects via the legacy alias with "codex"/"claude".
         self.assertEqual(inf.AgentBackend("codex"), Backend.CODEX)
         self.assertEqual(inf.AgentBackend("claude"), Backend.CLAUDE)
+
+
+class TruncateMiddleTests(unittest.TestCase):
+    def test_short_text_passes_through(self):
+        self.assertEqual(truncate_middle("abc"), "abc")
+
+    def test_boundary_equal_to_head_plus_tail_passes_through(self):
+        text = "x" * 100  # head(50) + tail(50)
+        self.assertEqual(truncate_middle(text), text)
+
+    def test_long_text_keeps_head_and_tail_and_counts_omission(self):
+        text = "H" * 50 + "M" * 30 + "T" * 50  # 130 chars, 30 in the middle
+        out = truncate_middle(text)
+        self.assertTrue(out.startswith("H" * 50))
+        self.assertTrue(out.endswith("T" * 50))
+        self.assertIn("[30 chars omitted]", out)
+        self.assertNotIn("M", out)
+
+    def test_trailing_whitespace_stripped_before_measuring(self):
+        self.assertEqual(truncate_middle("abc\n\n  "), "abc")
 
 
 class EnforceSchemaTests(unittest.TestCase):

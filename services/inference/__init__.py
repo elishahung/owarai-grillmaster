@@ -12,6 +12,7 @@ import tempfile
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
+from loguru import logger
 from pydantic import BaseModel
 
 from .base import (
@@ -25,6 +26,7 @@ from .base import (
     backend_supports_audio,
     is_agent_backend,
     is_gemini_backend,
+    truncate_middle,
 )
 from .result import InferenceResult
 from .schema_enforce import (
@@ -131,7 +133,7 @@ def run_inference(
 
     # gemini-api: native schema + metered cost + raw system_instruction.
     if backend == Backend.GEMINI_API:
-        return run_gemini_api(
+        result = run_gemini_api(
             prompt=prompt,
             system_prompt=system_prompt,
             images=images,
@@ -140,48 +142,55 @@ def run_inference(
             model=model,
             reasoning_effort=reasoning_effort,
         )
+    else:
+        # Prompt-based backends (gemini-cli / codex / claude): one concatenated
+        # prompt, schema (if any) enforced uniformly via enforce_schema below.
+        full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+        # codex/claude need a working dir for their file tools; the gemini CLI is
+        # an agent too but manages its own media tempdir, so it gets no work dir.
+        needs_workdir = backend in (Backend.CODEX, Backend.CLAUDE)
+        work_ctx = _working_dir(cwd) if needs_workdir else nullcontext(None)
+        with work_ctx as work:
 
-    # Prompt-based backends (gemini-cli / codex / claude): one concatenated
-    # prompt, schema (if any) enforced uniformly via enforce_schema below.
-    full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-    # codex/claude need a working dir for their file tools; the gemini CLI is an
-    # agent too but manages its own media tempdir, so it gets no working dir.
-    needs_workdir = backend in (Backend.CODEX, Backend.CLAUDE)
-    work_ctx = _working_dir(cwd) if needs_workdir else nullcontext(None)
-    with work_ctx as work:
-
-        def invoke_once(p: str) -> tuple[str, int]:
-            if backend == Backend.GEMINI_CLI:
-                result = run_gemini_cli(
-                    p,
+            def invoke_once(p: str) -> tuple[str, int]:
+                if backend == Backend.GEMINI_CLI:
+                    cli = run_gemini_cli(
+                        p,
+                        model=model,
+                        media_files=[*(audio or []), *(images or [])],
+                        timeout=timeout,
+                    )
+                    return cli.response, cli.requests
+                runner = (
+                    run_codex_exec
+                    if backend == Backend.CODEX
+                    else run_claude_sdk_exec
+                )
+                text = runner(
+                    prompt=p,
+                    cwd=work,
+                    images=images,
                     model=model,
-                    media_files=[*(audio or []), *(images or [])],
+                    reasoning_effort=reasoning_effort,
+                    output_last_message_path=output_last_message_path,
                     timeout=timeout,
                 )
-                return result.response, result.requests
-            runner = (
-                run_codex_exec
-                if backend == Backend.CODEX
-                else run_claude_sdk_exec
-            )
-            text = runner(
-                prompt=p,
-                cwd=work,
-                images=images,
-                model=model,
-                reasoning_effort=reasoning_effort,
-                output_last_message_path=output_last_message_path,
-                timeout=timeout,
-            )
-            return text, 1
+                return text, 1
 
-        if schema is None:
-            text, requests = invoke_once(full_prompt)
-            return InferenceResult(text=text, cost=0.0, requests=requests)
+            if schema is None:
+                text, requests = invoke_once(full_prompt)
+            else:
+                text, requests = enforce_schema(
+                    invoke_once,
+                    schema=schema,
+                    base_prompt=full_prompt + schema_instruction(schema),
+                )
+        result = InferenceResult(text=text, cost=0.0, requests=requests)
 
-        text, requests = enforce_schema(
-            invoke_once,
-            schema=schema,
-            base_prompt=full_prompt + schema_instruction(schema),
-        )
-        return InferenceResult(text=text, cost=0.0, requests=requests)
+    # ONE final-message log site for every backend. Each backend's only job is
+    # `prompt -> text`; logging (with middle-truncation so large SRT/JSON output
+    # doesn't flood the log) lives here, not duplicated and diverging per backend.
+    logger.debug(
+        f"{backend.value} final message:\n{truncate_middle(result.text)}"
+    )
+    return result

@@ -60,6 +60,21 @@ def backend_supports_audio(backend: Backend) -> bool:
     return backend in _AUDIO_CAPABLE
 
 
+def truncate_middle(text: str, *, head: int = 50, tail: int = 50) -> str:
+    """Collapse a long string for logging: keep the head and tail, replace the
+    middle with a count of omitted characters.
+
+    Model final messages (raw SRT, JSON briefings) can be thousands of chars and
+    flood the debug log. Strings short enough to fit in ``head + tail`` pass
+    through unchanged.
+    """
+    text = text.rstrip()
+    if len(text) <= head + tail:
+        return text
+    omitted = len(text) - head - tail
+    return f"{text[:head]} ... [{omitted} chars omitted] ... {text[-tail:]}"
+
+
 class InferenceError(RuntimeError):
     """Base error for any backend invocation failure."""
 

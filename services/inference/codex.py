@@ -114,8 +114,8 @@ def run_codex_exec(
             )
         else:
             final_message = result.stdout or ""
-        if final_message.strip():
-            logger.debug(f"Codex final message:\n{final_message.rstrip()}")
+        # The final message is logged centrally by `run_inference` (one site for
+        # every backend, with middle-truncation), not here.
         return final_message
     finally:
         if cleanup_capture:

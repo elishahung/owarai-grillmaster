@@ -135,8 +135,8 @@ def run_claude_sdk_exec(
         capture_path.parent.mkdir(parents=True, exist_ok=True)
         capture_path.write_text(final_message, encoding="utf-8")
 
-    if final_message.strip():
-        logger.debug(f"Claude SDK final message:\n{final_message.rstrip()}")
+    # The final message is logged centrally by `run_inference` (one site for
+    # every backend, with middle-truncation), not here.
     return final_message
 
 

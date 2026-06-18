@@ -8,7 +8,7 @@ from loguru import logger
 
 from project import Project
 from settings import settings
-from services.inference import AgentBackend, run_inference
+from services.inference import Backend, run_inference
 
 
 _PROMPT = (Path(__file__).parent / "prompts" / "cover.md").read_text(
@@ -38,7 +38,7 @@ def generate_cover(project: Project) -> None:
     # image, so it is hardcoded here regardless of the global subtitle backend.
     logger.info(f"Invoking Codex for cover image generation: {project.id}")
     run_inference(
-        backend=AgentBackend.CODEX,
+        backend=Backend.CODEX,
         prompt=_PROMPT,
         cwd=project.project_path,
         images=[project.poster_path],

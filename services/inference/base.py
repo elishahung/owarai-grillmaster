@@ -28,11 +28,6 @@ class Backend(StrEnum):
     CLAUDE = "claude"
 
 
-# Backwards-compatible alias: post-processing selects an agent backend via
-# `AgentBackend(settings.agent_postprocess_backend)` with values "codex"/"claude".
-AgentBackend = Backend
-
-
 _AUDIO_CAPABLE = frozenset({Backend.GEMINI_API, Backend.GEMINI_CLI})
 _GEMINI = frozenset({Backend.GEMINI_API, Backend.GEMINI_CLI})
 # Agent backends: subscription/OAuth, local, free. Everything EXCEPT the network
@@ -85,8 +80,3 @@ class InferenceNotInstalledError(InferenceError):
 
 class UnsupportedMediaError(InferenceError):
     """Raised when media is passed to a backend that cannot ingest it."""
-
-
-# Legacy aliases (the layer was previously named `agent_exec`).
-AgentExecError = InferenceError
-AgentNotInstalledError = InferenceNotInstalledError

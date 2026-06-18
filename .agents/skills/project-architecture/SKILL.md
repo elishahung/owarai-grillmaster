@@ -127,8 +127,6 @@ Design rules baked into this layer — preserve them:
   once and runs the validate-and-repair loop centrally. Each backend's only job
   is `prompt → text`. The retry cap is the hardcoded `MAX_SCHEMA_RETRIES`
   constant there (not a setting).
-- **Legacy aliases** (`AgentBackend`, `AgentExecError`, …) exist for back-compat;
-  don't proliferate new ones.
 
 Backend files: `gemini_api.py`, `gemini_cli.py`, `codex.py`, `claude_sdk.py`;
 shared: `base.py` (contract/errors), `result.py` (`InferenceResult`),

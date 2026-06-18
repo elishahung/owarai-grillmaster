@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import workflow as workflow_module
 from services.elevenlabs.asr import ElevenLabsTranscriptionResult
-from services.translate.errors import GeminiTranslationError, TranslationCostSummary
+from services.translate.errors import TranslationCostSummary, TranslationError
 
 
 class WorkflowGeminiCostTests(unittest.TestCase):
@@ -87,9 +87,9 @@ class WorkflowGeminiCostTests(unittest.TestCase):
             patch.object(workflow_module.settings, "archived_path", None),
         ):
             gemini_cls.return_value.translate_chunks.side_effect = (
-                GeminiTranslationError("translation failed", summary)
+                TranslationError("translation failed", summary)
             )
-            with self.assertRaises(GeminiTranslationError):
+            with self.assertRaises(TranslationError):
                 workflow_module.process_project("demo")
 
         project.add_cost.assert_called_once_with("gemini", 2.25)

@@ -8,7 +8,7 @@ from loguru import logger
 
 from project import Project
 from settings import settings
-from services.inference import AgentBackend, run_inference
+from services.inference import Backend, run_inference
 from ._srt_guard import (
     parse_srt_file as _parse_srt,
     validate_srt_against_source as _validate_refined_srt,
@@ -40,7 +40,7 @@ def refine_subtitles(project: Project) -> None:
 
     project.refine_cache_dir.mkdir(parents=True, exist_ok=True)
 
-    backend = AgentBackend(settings.agent_postprocess_backend)
+    backend = Backend(settings.agent_postprocess_backend)
     logger.info(
         f"Invoking {backend.value} for subtitle refinement: {project.id}"
     )

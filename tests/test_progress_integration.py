@@ -10,8 +10,8 @@ import workflow as workflow_module
 from services.translate.chunk.chunk_worker import ChunkTranslationResult
 from services.translate.errors import (
     ChunkTranslationError,
-    GeminiTranslationError,
     TranslationCostSummary,
+    TranslationError,
 )
 from services.translate.facade import Translate, TranslationRequest
 from services.translate.pre_pass.pre_pass import PrePassResult
@@ -266,7 +266,7 @@ class GeminiProgressTests(unittest.TestCase):
                 side_effect=fake_translate,
             ),
         ):
-            with self.assertRaises(GeminiTranslationError):
+            with self.assertRaises(TranslationError):
                 asyncio.run(gemini._translate_chunks_async(request, progress))
 
         self.assertTrue(

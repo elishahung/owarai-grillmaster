@@ -16,9 +16,6 @@ from loguru import logger
 from pydantic import BaseModel
 
 from .base import (
-    AgentBackend,
-    AgentExecError,
-    AgentNotInstalledError,
     Backend,
     InferenceError,
     InferenceNotInstalledError,
@@ -54,9 +51,6 @@ from .gemini_cli import (
 )
 
 __all__ = [
-    "AgentBackend",
-    "AgentExecError",
-    "AgentNotInstalledError",
     "Backend",
     "InferenceError",
     "InferenceNotInstalledError",
@@ -81,6 +75,7 @@ __all__ = [
     "GeminiCliNotInstalledError",
     "GeminiCliQuotaError",
 ]
+
 
 @contextmanager
 def _working_dir(cwd: Path | None):
@@ -147,7 +142,9 @@ def run_inference(
     else:
         # Prompt-based backends (gemini-cli / codex / claude): one concatenated
         # prompt, schema (if any) enforced uniformly via enforce_schema below.
-        full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+        full_prompt = (
+            f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
+        )
         # codex/claude need a working dir for their file tools; the gemini CLI is
         # an agent too but manages its own media tempdir, so it gets no work dir.
         needs_workdir = backend in (Backend.CODEX, Backend.CLAUDE)

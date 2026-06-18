@@ -8,7 +8,6 @@ slices concurrently against that briefing. Each stage picks a backend through
 
 from .errors import (
     ChunkTranslationError,
-    GeminiTranslationError,
     PrePassError,
     TranslationCostSummary,
     TranslationError,
@@ -21,7 +20,6 @@ __all__ = [
     "TranslationRequest",
     "TranslationResult",
     "TranslationError",
-    "GeminiTranslationError",
     "TranslationCostSummary",
     "PrePassError",
     "ChunkTranslationError",

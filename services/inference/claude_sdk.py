@@ -21,10 +21,10 @@ from pathlib import Path
 
 from loguru import logger
 
-from .base import AgentExecError, AgentNotInstalledError
+from .base import InferenceError, InferenceNotInstalledError
 
 
-class ClaudeSDKExecError(AgentExecError):
+class ClaudeSDKExecError(InferenceError):
     """Raised when the Claude Agent SDK query fails or times out."""
 
 
@@ -39,7 +39,7 @@ class ClaudeSDKRateLimitError(ClaudeSDKExecError):
     """
 
 
-class ClaudeSDKNotInstalledError(AgentNotInstalledError):
+class ClaudeSDKNotInstalledError(InferenceNotInstalledError):
     """Raised when the `claude-agent-sdk` package is not importable."""
 
 
@@ -173,7 +173,9 @@ def run_claude_sdk_exec(
     # Defensive: should a CLI version end the stream cleanly on a 429 rather than
     # exiting non-zero, surface the limit instead of an empty final message.
     if rate_limit:
-        raise ClaudeSDKRateLimitError(f"Claude rate limit hit: {rate_limit['text']}")
+        raise ClaudeSDKRateLimitError(
+            f"Claude rate limit hit: {rate_limit['text']}"
+        )
 
     if output_last_message_path is not None:
         capture_path = output_last_message_path.resolve()
@@ -195,7 +197,9 @@ def _rate_limit_text(info) -> str:
 
     parts = [f"{info.rate_limit_type or 'rate'} limit reached"]
     if info.resets_at:
-        when = datetime.fromtimestamp(info.resets_at).strftime("%Y-%m-%d %H:%M:%S")
+        when = datetime.fromtimestamp(info.resets_at).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
         parts.append(f"resets at {when}")
     return "; ".join(parts)
 

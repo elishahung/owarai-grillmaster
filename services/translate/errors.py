@@ -61,7 +61,3 @@ class TranslationError(RuntimeError):
     def __init__(self, message: str, summary: TranslationCostSummary):
         super().__init__(message)
         self.summary = summary
-
-
-# Legacy alias (the package was previously `services.gemini`).
-GeminiTranslationError = TranslationError

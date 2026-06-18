@@ -47,10 +47,11 @@ class CapabilityTests(unittest.TestCase):
         self.assertTrue(is_agent_backend(Backend.CLAUDE))
         self.assertFalse(is_agent_backend(Backend.GEMINI_API))
 
-    def test_agent_backend_alias_values(self):
-        # Post-processing selects via the legacy alias with "codex"/"claude".
-        self.assertEqual(inf.AgentBackend("codex"), Backend.CODEX)
-        self.assertEqual(inf.AgentBackend("claude"), Backend.CLAUDE)
+    def test_postprocess_backend_string_values(self):
+        # Post-processing selects a backend from the "codex"/"claude" strings
+        # stored in settings.agent_postprocess_backend.
+        self.assertEqual(Backend("codex"), Backend.CODEX)
+        self.assertEqual(Backend("claude"), Backend.CLAUDE)
 
 
 class TruncateMiddleTests(unittest.TestCase):
@@ -163,9 +164,7 @@ class RunInferenceDispatchTests(unittest.TestCase):
 
     def test_gemini_api_routes_to_backend(self):
         sentinel = InferenceResult(text='{"a": 1}', cost=0.12, requests=1)
-        with patch.object(
-            inf, "run_gemini_api", return_value=sentinel
-        ) as m:
+        with patch.object(inf, "run_gemini_api", return_value=sentinel) as m:
             result = run_inference(
                 backend=Backend.GEMINI_API,
                 prompt="hi",
@@ -182,9 +181,7 @@ class RunInferenceDispatchTests(unittest.TestCase):
         cli_result = GeminiCliResult(
             response="raw srt", requests=3, stats={}, raw_envelope={}
         )
-        with patch.object(
-            inf, "run_gemini_cli", return_value=cli_result
-        ) as m:
+        with patch.object(inf, "run_gemini_cli", return_value=cli_result) as m:
             result = run_inference(
                 backend=Backend.GEMINI_CLI,
                 prompt="user",
@@ -221,9 +218,7 @@ class RunInferenceDispatchTests(unittest.TestCase):
             inf, "run_claude_sdk_exec", return_value='{"a": "bad"}'
         ) as m:
             with self.assertRaises(SchemaValidationError):
-                run_inference(
-                    backend=Backend.CLAUDE, prompt="hi", schema=_Demo
-                )
+                run_inference(backend=Backend.CLAUDE, prompt="hi", schema=_Demo)
         self.assertEqual(m.call_count, MAX_SCHEMA_RETRIES)
 
 

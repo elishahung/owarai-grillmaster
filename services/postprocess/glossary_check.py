@@ -20,7 +20,7 @@ from loguru import logger
 
 from project import Project
 from settings import settings
-from services.inference import AgentBackend, run_inference
+from services.inference import Backend, run_inference
 from services.fixed_glossary.fixed_glossary import (
     FIXED_GLOSSARY_PATH,
     load_fixed_glossary,
@@ -112,9 +112,7 @@ def _is_suspect(text: str, glossary_terms: list[str]) -> bool:
 def _suspect_blocks(blocks: list[SrtBlock]) -> list[SrtBlock]:
     glossary_terms = _glossary_zh_terms()
     return [
-        block
-        for block in blocks
-        if _is_suspect(block.text, glossary_terms)
+        block for block in blocks if _is_suspect(block.text, glossary_terms)
     ]
 
 
@@ -154,9 +152,7 @@ def glossary_check_subtitles(project: Project) -> None:
         return
 
     project.glossary_check_cache_dir.mkdir(parents=True, exist_ok=True)
-    gloss_json_dst = (
-        project.glossary_check_cache_dir / FIXED_GLOSSARY_PATH.name
-    )
+    gloss_json_dst = project.glossary_check_cache_dir / FIXED_GLOSSARY_PATH.name
     gloss_md_dst = (
         project.glossary_check_cache_dir / _FIXED_GLOSSARY_MD_PATH.name
     )
@@ -183,7 +179,7 @@ def glossary_check_subtitles(project: Project) -> None:
             + _render_suspect_list(suspects)
             + "\n"
         )
-        backend = AgentBackend(settings.agent_postprocess_backend)
+        backend = Backend(settings.agent_postprocess_backend)
         logger.info(
             f"Invoking {backend.value} for glossary check "
             f"({len(suspects)} flagged blocks): {project.id}"

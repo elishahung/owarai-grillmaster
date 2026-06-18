@@ -9,10 +9,10 @@ from pathlib import Path
 
 from loguru import logger
 
-from .base import AgentExecError
+from .base import InferenceError
 
 
-class CodexInvocationError(AgentExecError):
+class CodexInvocationError(InferenceError):
     """Raised when `codex exec` exits non-zero or times out."""
 
 

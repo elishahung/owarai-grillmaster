@@ -21,16 +21,16 @@ from pathlib import Path
 from loguru import logger
 
 from settings import settings
-from services.inference import AgentBackend, run_inference
+from services.inference import Backend, run_inference
 
 
 class ChunkFixError(RuntimeError):
     """Raised when the agent fails to produce a repaired chunk SRT."""
 
 
-_PROMPT = (
-    Path(__file__).parent / "prompts" / "structural_fix.md"
-).read_text(encoding="utf-8")
+_PROMPT = (Path(__file__).parent / "prompts" / "structural_fix.md").read_text(
+    encoding="utf-8"
+)
 _VALIDATOR = (Path(__file__).parent / "validate_chunk.py").resolve()
 
 
@@ -70,7 +70,7 @@ async def fix_chunk_structure(
     fixed_path.unlink(missing_ok=True)
 
     prompt = _PROMPT + _concrete_section(tolerance, error)
-    backend = AgentBackend(settings.agent_postprocess_backend)
+    backend = Backend(settings.agent_postprocess_backend)
     logger.info(
         f"{log_prefix} Invoking {backend.value} to repair chunk structure "
         f"in {workspace_dir}"
@@ -86,7 +86,5 @@ async def fix_chunk_structure(
     )
 
     if not fixed_path.exists():
-        raise ChunkFixError(
-            f"agent did not produce fixed.srt: {fixed_path}"
-        )
+        raise ChunkFixError(f"agent did not produce fixed.srt: {fixed_path}")
     return fixed_path.read_text(encoding="utf-8-sig")

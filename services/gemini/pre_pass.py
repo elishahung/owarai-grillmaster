@@ -4,7 +4,7 @@ Two thin inference clients feed a single orchestrator. ``_infer_via_api``
 uses the genai SDK, which enforces the response schema natively (no retry
 needed here). ``_infer_via_cli`` delegates to ``run_gemini_cli``, which owns
 all CLI-side schema enforcement and repair retries internally. ``run_pre_pass``
-just picks one client based on ``settings.enable_gemini_cli_prepass`` and
+just picks one client based on ``settings.prepass_gemini_backend`` and
 writes the explicit ``pre_pass.json`` hand-off.
 """
 
@@ -154,11 +154,13 @@ async def _infer_via_api(
     )
     media_parts = media_refs_to_parts([audio_ref, *frame_refs])
     response = await client.aio.models.generate_content(
-        model=settings.gemini_model,
+        model=settings.prepass_gemini_model,
         contents=[*media_parts, user_message],
         config=config,
     )
-    cost = calculate_cost(response.usage_metadata, settings.gemini_model)
+    cost = calculate_cost(
+        response.usage_metadata, settings.prepass_gemini_model
+    )
     result = PrePassResult.model_validate_json(response.text or "")
     return result, cost, 1
 
@@ -180,9 +182,8 @@ async def _infer_via_cli(
     cli_result = await asyncio.to_thread(
         run_gemini_cli,
         prompt,
-        model=settings.gemini_cli_model,
+        model=settings.prepass_gemini_model,
         media_files=media_files,
-        timeout=settings.gemini_cli_timeout_secs,
         schema=PrePassResult,
     )
     result = PrePassResult.model_validate_json(cli_result.response)
@@ -203,17 +204,16 @@ async def run_pre_pass(
 ) -> tuple[PrePassResult, float]:
     """Run the single pre-pass call. Returns (parsed result, cost in USD).
 
-    Dispatches to the CLI client when ``settings.enable_gemini_cli_prepass``
-    is set (cost 0.0, subscription auth), otherwise the genai SDK client.
+    Dispatches to the CLI client when ``settings.prepass_gemini_backend`` is
+    "cli" (cost 0.0, subscription auth), otherwise the genai SDK client.
     Raises ``PrePassError`` on failure.
     """
     pre_pass_assets = prepare_pre_pass_media_assets(
         video_path=video_path,
         audio_path=audio_path,
         cache_root=pre_pass_cache_dir,
-        interval_seconds=settings.gemini_pre_pass_frame_interval_seconds,
-        max_side=settings.gemini_pre_pass_frame_max_side,
-        intro_skip_seconds=settings.gemini_intro_skip_seconds,
+        interval_seconds=settings.prepass_frame_interval_seconds,
+        max_side=settings.prepass_frame_max_side,
     )
     frame_timestamps = [
         frame.timestamp_seconds for frame in pre_pass_assets.frames
@@ -246,9 +246,7 @@ async def run_pre_pass(
                 f"[pre-pass] Fixed glossary matched "
                 f"{len(fixed_glossary.talents)} talent unit(s), "
                 f"{len(fixed_glossary.others)} other(s): "
-                + ", ".join(
-                    f"{'/'.join(aliases)}→{zh}" for aliases, zh in flat
-                )
+                + ", ".join(f"{'/'.join(aliases)}→{zh}" for aliases, zh in flat)
             )
     user_message = _build_user_message(
         video_description,
@@ -272,19 +270,16 @@ async def run_pre_pass(
     if parent_pre_pass_context:
         system_instruction += f"\n\n{PARENT_PRE_PASS_INSTRUCTION}"
 
-    use_cli = settings.enable_gemini_cli_prepass
+    use_cli = settings.prepass_gemini_backend == "cli"
     backend = "cli" if use_cli else "api"
-    active_model = (
-        settings.gemini_cli_model if use_cli else settings.gemini_model
-    )
+    active_model = settings.prepass_gemini_model
 
     prompt_digest = hashlib.sha256(
         (
             system_instruction
             + user_message
-            + str(settings.gemini_pre_pass_frame_interval_seconds)
-            + str(settings.gemini_pre_pass_frame_max_side)
-            + str(settings.gemini_intro_skip_seconds)
+            + str(settings.prepass_frame_interval_seconds)
+            + str(settings.prepass_frame_max_side)
             + backend
             + active_model
         ).encode("utf-8")
@@ -334,9 +329,7 @@ async def run_pre_pass(
         ) from e
     except Exception as e:
         logger.error(f"[pre-pass] Failed: {e}")
-        raise PrePassError(
-            f"Pre-pass failed: {e}", accumulated_cost=0.0
-        ) from e
+        raise PrePassError(f"Pre-pass failed: {e}", accumulated_cost=0.0) from e
 
     pre_pass_path.parent.mkdir(parents=True, exist_ok=True)
     pre_pass_path.write_text(

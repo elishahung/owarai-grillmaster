@@ -12,7 +12,7 @@ from project import Project, ProgressStage, VideoSource
 from loguru import logger
 from settings import settings
 from services.finalize import finalize_and_export
-from services.codex import (
+from services.postprocess import (
     generate_cover,
     glossary_check_subtitles,
     refine_subtitles,
@@ -28,6 +28,10 @@ from services.ytdlp import (
     get_tver_episode_talents,
     get_video_info,
 )
+
+# Upper bound for joining the async cover-generation future before archive.
+# Generous (2x a generation timeout) so a slow-but-progressing cover still lands.
+_COVER_JOIN_TIMEOUT_SECS = 1800
 
 
 def submit_project(
@@ -430,9 +434,7 @@ def _process_project_impl(
         # would orphan the subprocess and lose the work.
         if cover_future is not None and project is not None:
             try:
-                cover_future.result(
-                    timeout=settings.codex_default_timeout_secs * 2
-                )
+                cover_future.result(timeout=_COVER_JOIN_TIMEOUT_SECS)
                 project.is_cover_generated = True
                 project.save()
                 logger.success("Stage complete: Cover generated")

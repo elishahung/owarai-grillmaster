@@ -11,6 +11,11 @@ from pydantic import BaseModel
 from services.media import MediaProcessor, TimeRange
 from services.srt import SrtBlock
 
+# Skip the first N seconds of video when sampling reference frames (avoids TV
+# station intro/logo). Applies to pre-pass and the first chunk only. Hardcoded
+# maintainer constant.
+INTRO_SKIP_SECONDS = 3.0
+
 
 class LocalMediaRef(BaseModel):
     path: Path
@@ -55,7 +60,7 @@ def prepare_pre_pass_media_assets(
     cache_root: Path,
     interval_seconds: int,
     max_side: int,
-    intro_skip_seconds: float,
+    intro_skip_seconds: float = INTRO_SKIP_SECONDS,
 ) -> PrePassMediaAssets:
     cache_root.mkdir(parents=True, exist_ok=True)
     frame_dir = cache_root / "media" / "frames"
@@ -130,7 +135,7 @@ def prepare_chunk_media_assets(
     total_chunks: int,
     interval_seconds: int,
     max_side: int,
-    intro_skip_seconds: float,
+    intro_skip_seconds: float = INTRO_SKIP_SECONDS,
 ) -> ChunkMediaAssets:
     range_info = _chunk_time_range(chunk)
     chunk_slug = f"{chunk[0].index:04d}-{chunk[-1].index:04d}"

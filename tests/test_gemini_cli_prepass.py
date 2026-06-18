@@ -9,7 +9,6 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 os.environ.setdefault("GEMINI_API_KEY", "test-key")
-os.environ.setdefault("DEEPSEEK_API_KEY", "test-key")
 
 from pydantic import BaseModel
 
@@ -271,7 +270,11 @@ class RunPrePassDispatchTests(unittest.TestCase):
             patch.object(
                 pp, "format_fixed_glossary_block", return_value=""
             ),
-            patch.object(pp.settings, "enable_gemini_cli_prepass", use_cli),
+            patch.object(
+                pp.settings,
+                "prepass_gemini_backend",
+                "cli" if use_cli else "api",
+            ),
         ]:
             self.addCleanup(p.stop)
             p.start()

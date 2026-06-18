@@ -181,7 +181,7 @@ class GeminiProgressTests(unittest.TestCase):
         request, blocks = self._make_request()
         progress = FakeProgressReporter()
         gemini = Gemini.__new__(Gemini)
-        gemini.client = object()
+        gemini._client = object()
 
         async def fake_translate(
             client, media_assets, chunk, chunk_index, total_chunks, pre_pass
@@ -229,7 +229,7 @@ class GeminiProgressTests(unittest.TestCase):
         request, blocks = self._make_request()
         progress = FakeProgressReporter()
         gemini = Gemini.__new__(Gemini)
-        gemini.client = object()
+        gemini._client = object()
 
         async def fake_translate(
             client, media_assets, chunk, chunk_index, total_chunks, pre_pass

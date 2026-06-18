@@ -53,13 +53,26 @@ class Gemini:
     """
 
     def __init__(self):
-        logger.debug("Initializing Gemini client")
-        self.client = genai.Client(api_key=settings.gemini_api_key)
+        # The API client is built lazily and only when a stage actually uses the
+        # 'api' backend, so a fully 'cli' run needs no GEMINI_API_KEY.
+        self._client: genai.Client | None = None
         logger.info(
-            f"Gemini client initialized "
-            f"(concurrency={settings.gemini_concurrency}, "
-            f"chunk_char_limit={settings.gemini_chunk_char_limit})"
+            f"Gemini initialized "
+            f"(chunk_concurrency={settings.chunk_concurrency}, "
+            f"chunk_char_limit={settings.chunk_char_limit})"
         )
+
+    def _api_client(self) -> genai.Client:
+        """Build (once) and return the genai API client, requiring the API key."""
+        if self._client is None:
+            if not settings.gemini_api_key:
+                raise RuntimeError(
+                    "GEMINI_API_KEY is required when a stage uses the 'api' "
+                    "backend (set it, or switch the stage backend to 'cli')"
+                )
+            logger.debug("Initializing Gemini API client")
+            self._client = genai.Client(api_key=settings.gemini_api_key)
+        return self._client
 
     def _prepare(
         self, request: TranslationRequest
@@ -73,7 +86,7 @@ class Gemini:
         blocks = parse_srt(srt_text)
         logger.info(f"Parsed {len(blocks)} SRT blocks")
 
-        chunks = split_into_chunks(blocks, settings.gemini_chunk_char_limit)
+        chunks = split_into_chunks(blocks, settings.chunk_char_limit)
         total_chars = sum(b.char_count for b in blocks)
         logger.info(
             f"Split into {len(chunks)} chunks "
@@ -101,9 +114,14 @@ class Gemini:
         logger.info(f"Starting pre-pass for SRT file: {request.srt_path}")
         srt_text, chunks = self._prepare(request)
 
+        client = (
+            self._api_client()
+            if settings.prepass_gemini_backend == "api"
+            else None
+        )
         try:
             _result, pre_pass_cost = await execute_pre_pass(
-                self.client,
+                client,
                 request.video_description,
                 srt_text,
                 request.video_path,
@@ -207,7 +225,12 @@ class Gemini:
         )
 
         request.chunks_cache_dir.mkdir(parents=True, exist_ok=True)
-        semaphore = asyncio.Semaphore(settings.gemini_concurrency)
+        semaphore = asyncio.Semaphore(settings.chunk_concurrency)
+        client = (
+            self._api_client()
+            if settings.chunk_gemini_backend == "api"
+            else None
+        )
 
         async def bounded(i: int, chunk: list[SrtBlock]):
             async with semaphore:
@@ -225,13 +248,12 @@ class Gemini:
                     chunk=chunk,
                     chunk_index=i,
                     total_chunks=len(chunks),
-                    interval_seconds=settings.gemini_chunk_frame_interval_seconds,
-                    max_side=settings.gemini_chunk_frame_max_side,
-                    intro_skip_seconds=settings.gemini_intro_skip_seconds,
+                    interval_seconds=settings.chunk_frame_interval_seconds,
+                    max_side=settings.chunk_frame_max_side,
                 )
                 try:
                     result = await translate_chunk(
-                        self.client,
+                        client,
                         chunk_assets,
                         chunk,
                         i,

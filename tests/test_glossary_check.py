@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import project as project_module
-import services.codex.glossary_check as gc
+import services.postprocess.glossary_check as gc
 from project import Project
 from services.fixed_glossary.fixed_glossary import FixedGlossary
 
@@ -68,7 +68,7 @@ class GlossaryCheckTests(unittest.TestCase):
         project = self._make_project()
         self._write_refined(project, _HAN_ONLY_SRT)
 
-        with patch.object(gc, "run_codex_exec") as run_codex:
+        with patch.object(gc, "run_agent_exec") as run_codex:
             gc.glossary_check_subtitles(project)
 
         run_codex.assert_not_called()
@@ -78,7 +78,7 @@ class GlossaryCheckTests(unittest.TestCase):
         project = self._make_project()
         self._write_refined(project, _SINGLE_CHAR_SRT)
 
-        with patch.object(gc, "run_codex_exec") as run_codex:
+        with patch.object(gc, "run_agent_exec") as run_codex:
             gc.glossary_check_subtitles(project)
 
         run_codex.assert_not_called()
@@ -105,7 +105,7 @@ class GlossaryCheckTests(unittest.TestCase):
             patch.object(
                 gc, "load_fixed_glossary", return_value=_FAKE_GLOSSARY
             ),
-            patch.object(gc, "run_codex_exec") as run_codex,
+            patch.object(gc, "run_agent_exec") as run_codex,
         ):
             gc.glossary_check_subtitles(project)
 
@@ -125,7 +125,7 @@ class GlossaryCheckTests(unittest.TestCase):
                 gc, "load_fixed_glossary", return_value=_FAKE_GLOSSARY
             ),
             patch.object(
-                gc, "run_codex_exec", side_effect=self._valid_codex(project)
+                gc, "run_agent_exec", side_effect=self._valid_codex(project)
             ) as run_codex,
         ):
             gc.glossary_check_subtitles(project)
@@ -146,7 +146,7 @@ class GlossaryCheckTests(unittest.TestCase):
                 gc, "load_fixed_glossary", return_value=_FAKE_GLOSSARY
             ),
             patch.object(
-                gc, "run_codex_exec", side_effect=self._valid_codex(project)
+                gc, "run_agent_exec", side_effect=self._valid_codex(project)
             ) as run_codex,
         ):
             gc.glossary_check_subtitles(project)
@@ -160,7 +160,7 @@ class GlossaryCheckTests(unittest.TestCase):
             _KANA_SRT, encoding="utf-8"
         )
 
-        with patch.object(gc, "run_codex_exec") as run_codex:
+        with patch.object(gc, "run_agent_exec") as run_codex:
             gc.glossary_check_subtitles(project)
 
         run_codex.assert_not_called()
@@ -170,7 +170,7 @@ class GlossaryCheckTests(unittest.TestCase):
         self._write_refined(project, _KANA_SRT)
 
         with patch.object(
-            gc, "run_codex_exec", side_effect=RuntimeError("codex boom")
+            gc, "run_agent_exec", side_effect=RuntimeError("codex boom")
         ):
             with self.assertRaises(RuntimeError):
                 gc.glossary_check_subtitles(project)
@@ -192,7 +192,7 @@ class GlossaryCheckTests(unittest.TestCase):
             return "done"
 
         with patch.object(
-            gc, "run_codex_exec", side_effect=_write_bad_output
+            gc, "run_agent_exec", side_effect=_write_bad_output
         ):
             with self.assertRaises(gc.GlossaryCheckError):
                 gc.glossary_check_subtitles(project)

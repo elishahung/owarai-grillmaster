@@ -10,14 +10,19 @@ from pathlib import Path
 from loguru import logger
 
 from settings import settings
+from .base import AgentExecError
 
 
-class CodexInvocationError(RuntimeError):
+class CodexInvocationError(AgentExecError):
     """Raised when `codex exec` exits non-zero or times out."""
 
 
 class CodexNotInstalledError(CodexInvocationError):
     """Raised when the configured Codex executable is not on PATH."""
+
+
+# Default per-invocation timeout for `codex exec`. Hardcoded maintainer constant.
+_DEFAULT_TIMEOUT_SECS = 900
 
 
 def run_codex_exec(
@@ -28,14 +33,14 @@ def run_codex_exec(
     timeout: int | None = None,
 ) -> str:
     """Invoke `codex exec` non-interactively and return the final assistant message."""
-    executable = shutil.which(settings.codex_executable)
+    executable = shutil.which("codex")
     if executable is None:
         raise CodexNotInstalledError(
-            f"Codex executable not found on PATH: {settings.codex_executable!r}"
+            "Codex executable not found on PATH: 'codex'"
         )
 
     abs_cwd = cwd.resolve()
-    effective_timeout = timeout or settings.codex_default_timeout_secs
+    effective_timeout = timeout or _DEFAULT_TIMEOUT_SECS
 
     if output_last_message_path is not None:
         capture_path = output_last_message_path.resolve()
@@ -54,6 +59,8 @@ def run_codex_exec(
         "exec",
         "-m",
         "gpt-5.5",
+        "-c",
+        "model_reasoning_effort=medium",
         "--cd",
         str(abs_cwd),
         "--yolo",

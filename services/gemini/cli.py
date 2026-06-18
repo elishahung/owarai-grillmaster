@@ -31,6 +31,11 @@ from settings import settings
 # upstream is wrong, so fail loudly instead of silently degrading.
 _MAX_MEDIA_FILE_MB = 20
 
+# Gemini CLI executable name and per-invocation timeout. Hardcoded — these are
+# maintainer constants, not per-deployment configuration.
+_CLI_EXECUTABLE = "gemini"
+_CLI_TIMEOUT_SECS = 900
+
 # API-key env vars the Gemini CLI would prefer over cached OAuth. Scrubbed so
 # subscription auth is used (the whole reason for the CLI backend).
 _API_KEY_ENV_VARS = ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_API_KEY")
@@ -279,11 +284,10 @@ def run_gemini_cli(
     """
     media_files = media_files or []
 
-    executable = shutil.which(settings.gemini_cli_executable)
+    executable = shutil.which(_CLI_EXECUTABLE)
     if executable is None:
         raise GeminiCliNotInstalledError(
-            f"Gemini CLI executable not found on PATH: "
-            f"{settings.gemini_cli_executable!r}"
+            f"Gemini CLI executable not found on PATH: {_CLI_EXECUTABLE!r}"
         )
 
     limit_bytes = _MAX_MEDIA_FILE_MB * 1024 * 1024
@@ -297,7 +301,7 @@ def run_gemini_cli(
                 f"({size / 1024 / 1024:.1f} MB): {media}"
             )
 
-    effective_timeout = timeout or settings.gemini_cli_timeout_secs
+    effective_timeout = timeout or _CLI_TIMEOUT_SECS
     attempts = max_retries or settings.gemini_cli_max_retries
 
     workspace: Path | None = None

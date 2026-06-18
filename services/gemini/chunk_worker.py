@@ -9,16 +9,16 @@ from loguru import logger
 from pydantic import BaseModel
 
 from settings import settings
-from services.llm.chunk_fix import (
-    canonicalize_by_aligned_sequence,
+from services.chunk_fix import (
     canonicalize_by_position,
-    canonicalize_by_timecode_subset,
     fix_chunk_structure,
+    validate_chunk_structure,
 )
-from services.srt import SrtBlock, parse_srt
+from services.srt import SrtBlock
 from .assets import ChunkMediaAssets, media_refs_to_parts
+from .cli import run_gemini_cli
 from .cost import calculate_cost
-from .errors import ChunkFixError, ChunkTranslationError
+from .errors import ChunkTranslationError
 from .instructions import chunk_instruction
 from .pre_pass import PrePassResult, SegmentSummary
 
@@ -32,10 +32,21 @@ class ChunkTranslationResult(BaseModel):
 
 
 def _raw_cache_path(
-    response_dir, from_index: int, to_index: int, user_message: str
+    response_dir,
+    from_index: int,
+    to_index: int,
+    user_message: str,
+    backend: str,
+    model: str,
 ):
-    digest = hashlib.sha256(user_message.encode("utf-8")).hexdigest()[:8]
-    return response_dir / f"chunk_{from_index:04d}-{to_index:04d}_{digest}.raw.srt"
+    # Key the raw cache on backend + model too, so switching backend/model does
+    # not reuse another backend's cached output for the same user_message.
+    digest = hashlib.sha256(
+        f"{backend}\n{model}\n{user_message}".encode("utf-8")
+    ).hexdigest()[:8]
+    return (
+        response_dir / f"chunk_{from_index:04d}-{to_index:04d}_{digest}.raw.srt"
+    )
 
 
 def _fixed_cache_path(
@@ -114,70 +125,6 @@ def _build_user_message(
     )
 
 
-def _validate_output(
-    expected: list[SrtBlock], output_text: str
-) -> list[SrtBlock]:
-    """Parse output SRT and validate against input chunk by timecode."""
-    parsed = parse_srt(output_text)
-    errors: list[str] = []
-    tolerance = settings.gemini_chunk_missing_block_tolerance
-
-    expected_by_timecode = {block.timecode: block for block in expected}
-    output_by_timecode: dict[str, SrtBlock] = {}
-    duplicate_timecodes: set[str] = set()
-
-    for out in parsed:
-        if out.timecode not in expected_by_timecode:
-            errors.append(f"Unexpected output timecode {out.timecode!r}")
-            continue
-        if out.timecode in output_by_timecode:
-            duplicate_timecodes.add(out.timecode)
-            continue
-        output_by_timecode[out.timecode] = out
-
-    if duplicate_timecodes:
-        dupes = ", ".join(repr(tc) for tc in sorted(duplicate_timecodes))
-        errors.append(f"Duplicate output timecodes: {dupes}")
-
-    missing = [
-        src for src in expected if src.timecode not in output_by_timecode
-    ]
-    if missing and len(missing) <= tolerance:
-        logger.warning(
-            "Output missing {} source block(s) but within tolerance {}: {}",
-            len(missing),
-            tolerance,
-            ", ".join(str(block.index) for block in missing),
-        )
-    if len(missing) > tolerance:
-        errors.append(
-            f"Missing {len(missing)} source block(s) exceeds tolerance {tolerance}"
-        )
-
-    count_delta = len(expected) - len(parsed)
-    if abs(count_delta) > tolerance:
-        errors.append(
-            f"Output block count delta {count_delta} exceeds tolerance {tolerance} "
-            f"(output {len(parsed)} vs input {len(expected)})"
-        )
-
-    if errors:
-        raise ValueError("; ".join(errors))
-
-    normalized: list[SrtBlock] = []
-    for src in expected:
-        out = output_by_timecode.get(src.timecode)
-        if out is None:
-            normalized.append(
-                SrtBlock(index=src.index, timecode=src.timecode, text="")
-            )
-            continue
-        normalized.append(
-            SrtBlock(index=src.index, timecode=src.timecode, text=out.text)
-        )
-    return normalized
-
-
 def _write_chunk_manifest(
     media_assets: ChunkMediaAssets,
     user_message: str,
@@ -212,8 +159,77 @@ def _write_chunk_manifest(
         )
 
 
-async def translate_chunk(
+def _chunk_config() -> "genai.types.GenerateContentConfig":
+    """Shared api-backend generation config (safety off, thinking on)."""
+    thinking_level = genai.types.ThinkingLevel[settings.gemini_thinking_level]
+    return genai.types.GenerateContentConfig(
+        system_instruction=chunk_instruction,
+        safety_settings=[
+            genai.types.SafetySetting(
+                category=cat,
+                threshold=genai.types.HarmBlockThreshold.BLOCK_NONE,
+            )
+            for cat in (
+                genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            )
+        ],
+        thinking_config=genai.types.ThinkingConfig(
+            thinking_level=thinking_level
+        ),
+    )
+
+
+async def _translate_via_api(
     client: genai.Client,
+    model: str,
+    user_message: str,
+    media_parts: list,
+) -> tuple[str, float]:
+    """One genai API translation attempt. Returns (raw_text, cost)."""
+    response = await client.aio.models.generate_content(
+        model=model,
+        contents=[*media_parts, user_message],
+        config=_chunk_config(),
+    )
+    cost = calculate_cost(response.usage_metadata, model)
+    finish_reason = (
+        response.candidates[0].finish_reason if response.candidates else None
+    )
+    if finish_reason != genai.types.FinishReason.STOP:
+        raise RuntimeError(
+            f"Non-STOP finish reason: {finish_reason} (likely MAX_TOKENS)"
+        )
+    return response.text or "", cost
+
+
+async def _translate_via_cli(
+    model: str, user_message: str, media_assets: ChunkMediaAssets
+) -> str:
+    """One Gemini CLI translation attempt. Returns raw_text (subscription, no cost).
+
+    Output is free-form SRT (no JSON schema); structural validation happens
+    downstream, identical to the api path.
+    """
+    prompt = f"{chunk_instruction}\n\n{user_message}"
+    media_files = [
+        media_assets.audio.path,
+        *[frame.path for frame in media_assets.frames],
+    ]
+    cli_result = await asyncio.to_thread(
+        run_gemini_cli,
+        prompt,
+        model=model,
+        media_files=media_files,
+        schema=None,
+    )
+    return cli_result.response
+
+
+async def translate_chunk(
+    client: genai.Client | None,
     media_assets: ChunkMediaAssets,
     chunk: list[SrtBlock],
     chunk_index: int,
@@ -224,13 +240,19 @@ async def translate_chunk(
     user_message = _build_user_message(
         chunk, chunk_index, total_chunks, pre_pass, media_assets
     )
-    thinking_level = genai.types.ThinkingLevel[settings.gemini_thinking_level]
 
     prefix = f"[chunk {chunk_index + 1}/{total_chunks}]"
     from_index = chunk[0].index
     to_index = chunk[-1].index
+    backend = settings.chunk_gemini_backend
+    model = settings.chunk_gemini_model
     raw_path = _raw_cache_path(
-        media_assets.response_dir, from_index, to_index, user_message
+        media_assets.response_dir,
+        from_index,
+        to_index,
+        user_message,
+        backend,
+        model,
     )
     source_srt = "\n\n".join(block.raw for block in chunk)
 
@@ -244,67 +266,36 @@ async def translate_chunk(
             logger.info(f"{prefix} Raw cache hit: {raw_path.name}")
         except OSError as e:
             logger.warning(
-                f"{prefix} Raw cache read failed ({e}); calling API"
+                f"{prefix} Raw cache read failed ({e}); re-translating"
             )
 
     if raw_text is None:
-        config = genai.types.GenerateContentConfig(
-            system_instruction=chunk_instruction,
-            safety_settings=[
-                genai.types.SafetySetting(
-                    category=genai.types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                    threshold=genai.types.HarmBlockThreshold.BLOCK_NONE,
-                ),
-                genai.types.SafetySetting(
-                    category=genai.types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                    threshold=genai.types.HarmBlockThreshold.BLOCK_NONE,
-                ),
-                genai.types.SafetySetting(
-                    category=genai.types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                    threshold=genai.types.HarmBlockThreshold.BLOCK_NONE,
-                ),
-                genai.types.SafetySetting(
-                    category=genai.types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                    threshold=genai.types.HarmBlockThreshold.BLOCK_NONE,
-                ),
-            ],
-            thinking_config=genai.types.ThinkingConfig(
-                thinking_level=thinking_level
-            ),
-        )
-
-        max_retries = settings.gemini_chunk_max_retries
+        max_retries = settings.chunk_max_retries
         last_error: Exception | None = None
-        media_parts = media_refs_to_parts(
-            [media_assets.audio, *media_assets.frames]
+        # Only the api backend needs inline media Parts; the cli backend stages
+        # the raw files itself, so skip the (byte-reading) Part construction.
+        media_parts = (
+            media_refs_to_parts([media_assets.audio, *media_assets.frames])
+            if backend == "api"
+            else None
         )
 
         for attempt in range(1, max_retries + 1):
             try:
                 logger.info(
-                    f"{prefix} Translating index {from_index}–{to_index} "
-                    f"({len(chunk)} blocks, attempt {attempt}/{max_retries})"
+                    f"{prefix} Translating ({backend}) index "
+                    f"{from_index}–{to_index} ({len(chunk)} blocks, "
+                    f"attempt {attempt}/{max_retries})"
                 )
-                response = await client.aio.models.generate_content(
-                    model=settings.gemini_model,
-                    contents=[*media_parts, user_message],
-                    config=config,
-                )
-                api_cost += calculate_cost(
-                    response.usage_metadata, settings.gemini_model
-                )
-
-                finish_reason = (
-                    response.candidates[0].finish_reason
-                    if response.candidates
-                    else None
-                )
-                if finish_reason != genai.types.FinishReason.STOP:
-                    raise RuntimeError(
-                        f"Non-STOP finish reason: {finish_reason} (likely MAX_TOKENS)"
+                if backend == "cli":
+                    raw_text = await _translate_via_cli(
+                        model, user_message, media_assets
                     )
-
-                raw_text = response.text or ""
+                else:
+                    raw_text, cost = await _translate_via_api(
+                        client, model, user_message, media_parts
+                    )
+                    api_cost += cost
                 retries = attempt - 1
                 break
             except Exception as e:
@@ -334,13 +325,14 @@ async def translate_chunk(
                 f"{prefix} Failed to write raw cache {raw_path.name}: {e}"
             )
 
+    tolerance = settings.chunk_missing_block_tolerance
     fixed_path = _fixed_cache_path(
         media_assets.response_dir, from_index, to_index, user_message, raw_text
     )
     if fixed_path.exists():
         try:
             fixed_text = fixed_path.read_text(encoding="utf-8")
-            blocks = _validate_output(chunk, fixed_text)
+            blocks = validate_chunk_structure(chunk, fixed_text, tolerance)
             logger.info(
                 f"{prefix} Fixed cache hit: {len(blocks)} blocks from "
                 f"{fixed_path.name}"
@@ -358,69 +350,9 @@ async def translate_chunk(
             )
 
     try:
-        blocks = _validate_output(chunk, raw_text)
+        blocks = validate_chunk_structure(chunk, raw_text, tolerance)
     except ValueError as validation_error:
         error_str = str(validation_error)
-        # Each canonicalizer is attempted independently. Some require a
-        # structurally parseable output (e.g. timecode-subset uses strict
-        # parse_srt) and may raise ValueError on malformed timecodes; that
-        # must not block the lenient-based canonicalizers that follow.
-        canonical_text: str | None = None
-        canonical_method = ""
-        for method_name, canonicalizer in (
-            ("Timecode subset", canonicalize_by_timecode_subset),
-            ("Positional", canonicalize_by_position),
-            ("Aligned sequence", canonicalize_by_aligned_sequence),
-        ):
-            try:
-                candidate = canonicalizer(source_srt, raw_text)
-            except ValueError as canonical_parse_error:
-                logger.warning(
-                    f"{prefix} {method_name} canonicalization not parseable: "
-                    f"{canonical_parse_error}"
-                )
-                continue
-            if candidate is not None:
-                canonical_text = candidate
-                canonical_method = method_name
-                break
-        if canonical_text is not None:
-            try:
-                blocks = _validate_output(chunk, canonical_text)
-            except ValueError as canonical_error:
-                logger.warning(
-                    f"{prefix} {canonical_method} canonicalization failed: "
-                    f"{canonical_error}"
-                )
-            else:
-                try:
-                    fixed_path.write_text(canonical_text, encoding="utf-8")
-                    _write_chunk_manifest(
-                        media_assets,
-                        user_message,
-                        raw_path,
-                        fixed_path=fixed_path,
-                    )
-                except OSError as e:
-                    logger.warning(
-                        f"{prefix} Failed to write fixed cache "
-                        f"{fixed_path.name}: {e}"
-                    )
-                logger.success(
-                    f"{prefix} {canonical_method} canonicalization succeeded; "
-                    f"{len(blocks)} blocks (${api_cost:.4f}, retries={retries})"
-                )
-                return ChunkTranslationResult(
-                    blocks=blocks,
-                    cost=api_cost,
-                    retries=retries,
-                    from_index=from_index,
-                    to_index=to_index,
-                )
-        logger.warning(
-            f"{prefix} Raw output failed validation: {error_str}. "
-            f"Running fix layer."
-        )
     else:
         logger.success(
             f"{prefix} Completed {len(blocks)} blocks "
@@ -434,30 +366,56 @@ async def translate_chunk(
             to_index=to_index,
         )
 
-    def _validate(text: str) -> None:
-        _validate_output(chunk, text)
+    # Raw output failed validation. Try the one cheap in-process fast-path
+    # first: when block counts already match, reassign the source skeleton by
+    # physical order — no agent needed for a plain index/timecode drift.
+    fixed_text: str | None = None
+    candidate = canonicalize_by_position(source_srt, raw_text)
+    if candidate is not None:
+        try:
+            blocks = validate_chunk_structure(chunk, candidate, tolerance)
+        except ValueError as positional_error:
+            logger.warning(
+                f"{prefix} Positional fast-path failed: {positional_error}"
+            )
+        else:
+            fixed_text = candidate
+            logger.success(
+                f"{prefix} Positional fast-path succeeded; {len(blocks)} blocks"
+            )
 
-    try:
-        fixed_text, fix_cost = await fix_chunk_structure(
-            source_srt, raw_text, error_str, _validate, prefix
+    # Otherwise hand it to the agent, which self-validates until it passes.
+    if fixed_text is None:
+        logger.warning(
+            f"{prefix} Raw output failed validation: {error_str}. "
+            f"Running agent fix layer."
         )
-    except Exception as fix_error:
-        fix_cost = (
-            fix_error.accumulated_cost
-            if isinstance(fix_error, ChunkFixError)
-            else 0.0
+        workspace_dir = (
+            media_assets.response_dir
+            / f"chunk_{from_index:04d}-{to_index:04d}_fix"
         )
-        raise ChunkTranslationError(
-            f"Fix layer failed ({fix_error}); original: {error_str}",
-            accumulated_cost=api_cost + fix_cost,
-            retries=retries,
-            chunk_index=chunk_index,
-            total_chunks=total_chunks,
-            from_index=from_index,
-            to_index=to_index,
-        ) from fix_error
+        try:
+            fixed_text = await fix_chunk_structure(
+                source_srt,
+                raw_text,
+                error_str,
+                workspace_dir,
+                tolerance,
+                prefix,
+            )
+        except Exception as fix_error:
+            raise ChunkTranslationError(
+                f"Fix layer failed ({fix_error}); original: {error_str}",
+                accumulated_cost=api_cost,
+                retries=retries,
+                chunk_index=chunk_index,
+                total_chunks=total_chunks,
+                from_index=from_index,
+                to_index=to_index,
+            ) from fix_error
+        blocks = validate_chunk_structure(chunk, fixed_text, tolerance)
 
-    blocks = _validate_output(chunk, fixed_text)
+    # Persist whichever fix (positional or agent) produced a valid result.
     try:
         fixed_path.write_text(fixed_text, encoding="utf-8")
         _write_chunk_manifest(
@@ -468,14 +426,13 @@ async def translate_chunk(
             f"{prefix} Failed to write fixed cache {fixed_path.name}: {e}"
         )
 
-    total_cost = api_cost + fix_cost
     logger.success(
-        f"{prefix} Fix layer succeeded; {len(blocks)} blocks "
-        f"(${total_cost:.4f}, retries={retries})"
+        f"{prefix} Fix succeeded; {len(blocks)} blocks "
+        f"(${api_cost:.4f}, retries={retries})"
     )
     return ChunkTranslationResult(
         blocks=blocks,
-        cost=total_cost,
+        cost=api_cost,
         retries=retries,
         from_index=from_index,
         to_index=to_index,

@@ -19,13 +19,14 @@ from pathlib import Path
 from loguru import logger
 
 from project import Project
+from settings import settings
+from services.agent_exec import AgentBackend, run_agent_exec
 from services.fixed_glossary.fixed_glossary import (
     FIXED_GLOSSARY_PATH,
     load_fixed_glossary,
 )
 from services.srt import SrtBlock
 from ._srt_guard import parse_srt_file, validate_srt_against_source
-from .client import run_codex_exec
 
 
 _PROMPT_TEMPLATE = (
@@ -182,11 +183,14 @@ def glossary_check_subtitles(project: Project) -> None:
             + _render_suspect_list(suspects)
             + "\n"
         )
+        backend = AgentBackend(settings.agent_backend)
         logger.info(
-            f"Invoking Codex for glossary check "
+            f"Invoking {backend.value} for glossary check "
             f"({len(suspects)} flagged blocks): {project.id}"
         )
-        run_codex_exec(prompt=prompt, cwd=project.project_path)
+        run_agent_exec(
+            prompt=prompt, cwd=project.project_path, backend=backend
+        )
 
         if not project.glossary_checked_srt_path.exists():
             raise GlossaryCheckError(

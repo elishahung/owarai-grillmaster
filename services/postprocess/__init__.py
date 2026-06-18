@@ -1,29 +1,22 @@
+"""Optional agent-driven post-processing tasks.
+
+`cover` (image stylization, always Codex), `refine` and `glossary_check`
+(subtitle passes, backend chosen by `settings.agent_backend`). Each task is
+a thin orchestrator over `services.agent_exec`; the agent does its work by
+reading/writing files in the project directory and we validate them afterward.
+"""
+
 __all__ = [
-    "CodexInvocationError",
-    "CodexNotInstalledError",
     "CoverFileMissingError",
     "GlossaryCheckError",
     "RefinementValidationError",
     "generate_cover",
     "glossary_check_subtitles",
     "refine_subtitles",
-    "run_codex_exec",
 ]
 
 
 def __getattr__(name: str):
-    if name in {"CodexInvocationError", "CodexNotInstalledError", "run_codex_exec"}:
-        from .client import (
-            CodexInvocationError,
-            CodexNotInstalledError,
-            run_codex_exec,
-        )
-
-        return {
-            "CodexInvocationError": CodexInvocationError,
-            "CodexNotInstalledError": CodexNotInstalledError,
-            "run_codex_exec": run_codex_exec,
-        }[name]
     if name in {"RefinementValidationError", "refine_subtitles"}:
         from .refine import RefinementValidationError, refine_subtitles
 

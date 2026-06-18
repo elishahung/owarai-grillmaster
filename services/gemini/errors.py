@@ -26,10 +26,6 @@ class PrePassError(CostTrackingError):
     """Raised when Gemini pre-pass fails after accruing cost."""
 
 
-class ChunkFixError(CostTrackingError):
-    """Raised when chunk fix retries exhaust after accruing cost."""
-
-
 class ChunkTranslationError(CostTrackingError):
     """Raised when a chunk fails after accruing cost."""
 

@@ -7,11 +7,12 @@ from pathlib import Path
 from loguru import logger
 
 from project import Project
+from settings import settings
+from services.agent_exec import AgentBackend, run_agent_exec
 from ._srt_guard import (
     parse_srt_file as _parse_srt,
     validate_srt_against_source as _validate_refined_srt,
 )
-from .client import run_codex_exec
 
 
 _PROMPT = (Path(__file__).parent / "prompts" / "refine.md").read_text(
@@ -39,8 +40,13 @@ def refine_subtitles(project: Project) -> None:
 
     project.refine_cache_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"Invoking Codex for subtitle refinement: {project.id}")
-    run_codex_exec(prompt=_PROMPT, cwd=project.project_path)
+    backend = AgentBackend(settings.agent_backend)
+    logger.info(
+        f"Invoking {backend.value} for subtitle refinement: {project.id}"
+    )
+    run_agent_exec(
+        prompt=_PROMPT, cwd=project.project_path, backend=backend
+    )
 
     if not project.refined_srt_path.exists():
         raise RefinementValidationError(

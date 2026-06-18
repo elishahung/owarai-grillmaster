@@ -16,7 +16,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from settings import settings
-from .base import InferenceError
+from .base import DEFAULT_TIMEOUT_SECS, InferenceError
 from .result import InferenceResult
 
 
@@ -151,16 +151,21 @@ def run_gemini_api(
     schema: type[BaseModel] | None = None,
     model: str,
     reasoning_effort: str = "high",
+    timeout: int | None = None,
 ) -> InferenceResult:
     """One genai SDK generation. Native schema enforcement, metered cost."""
     client = _api_client()
     thinking_level = genai.types.ThinkingLevel[reasoning_effort.upper()]
+    # The genai SDK takes its per-request timeout in milliseconds; the rest of
+    # the inference layer speaks seconds, so convert here.
+    timeout_secs = timeout or DEFAULT_TIMEOUT_SECS
     config_kwargs = dict(
         system_instruction=system_prompt,
         safety_settings=_safety_off(),
         thinking_config=genai.types.ThinkingConfig(
             thinking_level=thinking_level
         ),
+        http_options=genai.types.HttpOptions(timeout=timeout_secs * 1000),
     )
     if schema is not None:
         config_kwargs["response_mime_type"] = "application/json"

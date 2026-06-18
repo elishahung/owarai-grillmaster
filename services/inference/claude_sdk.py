@@ -21,7 +21,11 @@ from pathlib import Path
 
 from loguru import logger
 
-from .base import InferenceError, InferenceNotInstalledError
+from .base import (
+    DEFAULT_TIMEOUT_SECS,
+    InferenceError,
+    InferenceNotInstalledError,
+)
 
 
 class ClaudeSDKExecError(InferenceError):
@@ -51,8 +55,6 @@ _IMAGE_MEDIA_TYPES = {
     ".webp": "image/webp",
 }
 
-# Default per-invocation timeout for an SDK query. Hardcoded maintainer constant.
-_DEFAULT_TIMEOUT_SECS = 900
 # Claude model / reasoning effort used when a caller does not pass them.
 _DEFAULT_MODEL = "claude-opus-4-8"
 _DEFAULT_REASONING_EFFORT = "high"
@@ -89,7 +91,7 @@ def run_claude_sdk_exec(
         ) from exc
 
     abs_cwd = cwd.resolve()
-    effective_timeout = timeout or _DEFAULT_TIMEOUT_SECS
+    effective_timeout = timeout or DEFAULT_TIMEOUT_SECS
     effective_model = model or _DEFAULT_MODEL
     effective_effort = (reasoning_effort or _DEFAULT_REASONING_EFFORT).lower()
 

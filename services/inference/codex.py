@@ -9,7 +9,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from .base import InferenceError
+from .base import DEFAULT_TIMEOUT_SECS, InferenceError
 
 
 class CodexInvocationError(InferenceError):
@@ -20,8 +20,6 @@ class CodexNotInstalledError(CodexInvocationError):
     """Raised when the configured Codex executable is not on PATH."""
 
 
-# Default per-invocation timeout for `codex exec`. Hardcoded maintainer constant.
-_DEFAULT_TIMEOUT_SECS = 900
 # Codex model / reasoning effort used when a caller does not pass them.
 _DEFAULT_MODEL = "gpt-5.5"
 _DEFAULT_REASONING_EFFORT = "high"
@@ -44,7 +42,7 @@ def run_codex_exec(
         )
 
     abs_cwd = cwd.resolve()
-    effective_timeout = timeout or _DEFAULT_TIMEOUT_SECS
+    effective_timeout = timeout or DEFAULT_TIMEOUT_SECS
     effective_model = model or _DEFAULT_MODEL
     effective_effort = (reasoning_effort or _DEFAULT_REASONING_EFFORT).lower()
 

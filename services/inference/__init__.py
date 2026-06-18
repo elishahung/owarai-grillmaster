@@ -138,6 +138,7 @@ def run_inference(
             schema=schema,
             model=model,
             reasoning_effort=reasoning_effort,
+            timeout=timeout,
         )
     else:
         # Prompt-based backends (gemini-cli / codex / claude): one concatenated

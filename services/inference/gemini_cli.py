@@ -24,7 +24,11 @@ from pathlib import Path
 from loguru import logger
 from pydantic import BaseModel
 
-from .base import InferenceError, InferenceNotInstalledError
+from .base import (
+    DEFAULT_TIMEOUT_SECS,
+    InferenceError,
+    InferenceNotInstalledError,
+)
 from .schema_enforce import extract_json_object
 
 # Hardcoded per-file size guard for @path media. The CLI rejects oversized
@@ -32,10 +36,9 @@ from .schema_enforce import extract_json_object
 # upstream is wrong, so fail loudly instead of silently degrading.
 _MAX_MEDIA_FILE_MB = 20
 
-# Gemini CLI executable name and per-invocation timeout. Hardcoded — these are
-# maintainer constants, not per-deployment configuration.
+# Gemini CLI executable name. Hardcoded maintainer constant. The per-invocation
+# timeout is shared across backends (`DEFAULT_TIMEOUT_SECS` in `base`).
 _CLI_EXECUTABLE = "gemini"
-_CLI_TIMEOUT_SECS = 900
 
 # API-key env vars the Gemini CLI would prefer over cached OAuth. Scrubbed so
 # subscription auth is used (the whole reason for the CLI backend).
@@ -273,7 +276,7 @@ def run_gemini_cli(
                 f"({size / 1024 / 1024:.1f} MB): {media}"
             )
 
-    effective_timeout = timeout or _CLI_TIMEOUT_SECS
+    effective_timeout = timeout or DEFAULT_TIMEOUT_SECS
 
     workspace: Path | None = None
     try:

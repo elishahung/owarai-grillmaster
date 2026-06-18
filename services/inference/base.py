@@ -18,6 +18,13 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+# Per-invocation timeout shared by every backend. A maintainer constant, not
+# per-deployment configuration — the agent backends (gemini-cli / codex /
+# claude) pass it straight to their subprocess/query timeout; gemini-api
+# converts it to the genai SDK's milliseconds. 20 minutes covers the slowest
+# high-effort chunk translations.
+DEFAULT_TIMEOUT_SECS = 20 * 60
+
 
 class Backend(StrEnum):
     """Selectable inference backend."""

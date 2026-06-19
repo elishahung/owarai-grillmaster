@@ -27,17 +27,28 @@ def build_frame_tool_instruction(
     end_seconds: float,
     *,
     scope_label: str,
+    out_dir: str | None = None,
 ) -> str:
     """Render the on-demand frame-tool instruction for an agent backend.
 
     Embeds the exact command (current interpreter + absolute script and video
     paths) and the valid time window, so the agent can run it verbatim from its
     throwaway working directory.
+
+    ``out_dir`` is rendered as a relative ``--out`` so frames land inside the
+    agent's own working directory. That directory is the only place some
+    backends (notably gemini-cli, whose ``read_file`` is sandboxed to its
+    workspace) can read back — without it the agent must copy the frames in by
+    hand. Leave it ``None`` when the cwd is the project directory (refine), so
+    frames go to a system temp dir instead of polluting the project.
     """
     python = Path(sys.executable).resolve()
     video = video_path.resolve()
     start = max(0.0, start_seconds)
     end = max(start, end_seconds)
+    command = f'"{python}" "{FRAME_TOOL_SCRIPT}" --video "{video}" --times "62.5,70,77"'
+    if out_dir:
+        command += f" --out {out_dir}"
     return (
         "## On-demand video frames\n"
         "The pre-sampled reference images may not cover the exact moment you "
@@ -47,15 +58,12 @@ def build_frame_tool_instruction(
         "want to confirm what is on screen — extract the exact frames you need "
         "instead of guessing.\n\n"
         "Run this command with the specific timestamps (in seconds) you want to "
-        "see; it prints absolute image paths, one per line, which you then open "
-        "with your file/image-reading tool:\n\n"
-        f'```\n"{python}" "{FRAME_TOOL_SCRIPT}" --video "{video}" '
-        '--times "62.5,70,77"\n```\n\n'
+        "see; it prints image paths, one per line, which you then open with "
+        "your file/image-reading tool:\n\n"
+        f"```\n{command}\n```\n\n"
         f"- Valid timestamps for {scope_label}: {start:.3f}s to {end:.3f}s. "
         "Stay strictly within this window.\n"
         f"- At most {_MAX_FRAMES_PER_CALL} timestamps per call.\n"
-        "- Frames are written to a temporary directory outside the project, so "
-        "running this never counts as modifying project files.\n"
         "- Use this sparingly — only where seeing the frame would actually "
         "change a translation decision."
     )

@@ -192,6 +192,7 @@ async def translate_chunk(
             media_assets.time_range.start_seconds,
             media_assets.time_range.end_seconds,
             scope_label="your assigned chunk range",
+            out_dir="agent_frames",
         )
     raw_path = _raw_cache_path(
         media_assets.response_dir,

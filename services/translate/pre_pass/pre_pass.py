@@ -232,6 +232,7 @@ def run_pre_pass(
             0.0,
             source_end,
             scope_label="the entire video",
+            out_dir="agent_frames",
         )
 
     images = [frame.path for frame in pre_pass_assets.frames]

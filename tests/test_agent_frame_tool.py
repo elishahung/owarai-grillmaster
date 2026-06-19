@@ -77,6 +77,21 @@ class FrameToolInstructionTests(unittest.TestCase):
         # The agent does not control frame size: no --max-side flag exposed.
         self.assertNotIn("--max-side", text)
 
+    def test_out_dir_renders_relative_out_flag(self):
+        # pre-pass / chunk write into the agent's cwd so sandboxed backends
+        # (gemini-cli) can read the frames back without copying them.
+        with_out = build_frame_tool_instruction(
+            Path("v.mp4"), 0.0, 10.0,
+            scope_label="the entire video", out_dir="agent_frames",
+        )
+        self.assertIn("--out agent_frames", with_out)
+
+        # refine omits --out (cwd is the project dir; default is a temp dir).
+        without_out = build_frame_tool_instruction(
+            Path("v.mp4"), 0.0, 10.0, scope_label="the entire video",
+        )
+        self.assertNotIn("--out", without_out)
+
     def test_window_is_clamped_non_negative_and_ordered(self):
         text = build_frame_tool_instruction(
             Path("v.mp4"),

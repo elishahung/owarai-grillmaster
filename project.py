@@ -30,6 +30,7 @@ ASS_FILE_NAME = "video.cht.ass"
 POSTER_FILE_NAME = "poster.jpg"
 POSTER_COVER_FILE_NAME = "poster.cover.png"
 PRE_PASS_FILE_NAME = "pre_pass.json"
+PRE_PASS_RAW_FILE_NAME = "pre_pass.raw.json"
 REFINE_REPORT_FILE_NAME = "report.md"
 GLOSSARY_CHECKED_SRT_FILE_NAME = "video.cht.glossary_checked.srt"
 GLOSSARY_CHECK_REPORT_FILE_NAME = "report.md"
@@ -564,6 +565,11 @@ class Project(BaseModel):
             Path to .pre_pass/pre_pass.json.
         """
         return self.pre_pass_cache_dir / PRE_PASS_FILE_NAME
+
+    @property
+    def pre_pass_raw_path(self) -> Path:
+        """Get the path to the original pre-pass briefing backup JSON."""
+        return self.pre_pass_cache_dir / PRE_PASS_RAW_FILE_NAME
 
     @property
     def parent_pre_pass_path(self) -> Path | None:

@@ -174,10 +174,11 @@ projects/{video_id}/
 │   ├── audio.ogg
 │   └── asr.json
 ├── .pre_pass/                # Gemini pre-pass 簡報與圖片快取
-│   └── pre_pass.json
+│   ├── pre_pass.json
+│   └── pre_pass.raw.json     # glossary-check 更正 pre_pass 前的原始備份（可選）
 ├── .chunks/                  # chunk 音檔 / 圖片 / 翻譯回應快取（供 resume）
 ├── .refine/                  # Agent 潤飾報告（可選）
-├── .glossary_check/          # Agent 固定詞彙校對報告（可選）
+├── .glossary_check/          # Agent 名詞校對報告與額外取幀（可選）
 ├── poster.jpg                # yt-dlp 取得的原始封面
 ├── poster.cover.png          # Agent 風格化封面（可選）
 ├── video.cht.srt             # 繁體中文翻譯字幕

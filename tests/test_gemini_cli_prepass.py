@@ -21,6 +21,7 @@ from services.inference.gemini_cli import (
     extract_request_count,
     run_gemini_cli,
 )
+from services.inference.tools import FRAME_TOOL_SCRIPTS, FrameToolStage
 from services.inference.schema_enforce import extract_json_object
 from services.translate.errors import PrePassError
 from services.srt import SrtBlock
@@ -216,6 +217,24 @@ class RunGeminiCliTests(unittest.TestCase):
         self.assertIn(str(project_dir.resolve()), argv)
         self.assertEqual(
             mock_run.call_args.kwargs["cwd"], str(project_dir.resolve())
+        )
+
+    def test_policy_allows_glossary_check_frame_tool(self):
+        self._patch_which()
+        captured: dict[str, str] = {}
+
+        def _fake_run(cmd, **kwargs):
+            policy_path = Path(cmd[cmd.index("--policy") + 1])
+            captured["policy"] = policy_path.read_text(encoding="utf-8")
+            return _completed("ok")
+
+        self._patch_run(side_effect=_fake_run)
+        run_gemini_cli("hi", model="m")
+
+        self.assertIn("get_frames_for_glossary_check.py", captured["policy"])
+        self.assertIn("commandPrefix", captured["policy"])
+        self.assertTrue(
+            FRAME_TOOL_SCRIPTS[FrameToolStage.GLOSSARY_CHECK].exists()
         )
 
     # NOTE: schema enforcement is no longer a gemini-cli concern — run_gemini_cli

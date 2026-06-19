@@ -28,15 +28,16 @@ from services.media import MediaProcessor  # noqa: E402
 
 VIDEO_FILE_NAME = "video.mp4"
 
-# Per-call cap on extracted frames. Hard-coded maintainer constant (mirrors
-# INTRO_SKIP_SECONDS in services/translate/assets.py) — deliberately not a flag.
-_MAX_FRAMES_PER_CALL = 6
+# Per-call cap on extracted frames. Hard-coded maintainer constant —
+# deliberately not a flag.
+_MAX_FRAMES_PER_CALL = 20
 
 
 class FrameToolStage(StrEnum):
     PRE_PASS = "pre_pass"
     CHUNK = "chunk"
     REFINE = "refine"
+    GLOSSARY_CHECK = "glossary_check"
 
 
 def _parse_times(raw: str) -> list[float]:
@@ -55,6 +56,8 @@ def extra_frame_dir(project_dir: Path, stage: FrameToolStage) -> Path:
         return project_dir / ".chunks" / "media" / "extra_frames"
     if stage == FrameToolStage.REFINE:
         return project_dir / ".refine" / "extra_frames"
+    if stage == FrameToolStage.GLOSSARY_CHECK:
+        return project_dir / ".glossary_check" / "extra_frames"
     raise ValueError(f"unsupported frame tool stage: {stage}")
 
 

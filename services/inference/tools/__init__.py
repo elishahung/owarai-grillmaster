@@ -22,6 +22,9 @@ FRAME_TOOL_SCRIPTS: dict[FrameToolStage, Path] = {
     ).resolve(),
     FrameToolStage.CHUNK: (_TOOL_DIR / "get_frames_for_chunk.py").resolve(),
     FrameToolStage.REFINE: (_TOOL_DIR / "get_frames_for_refine.py").resolve(),
+    FrameToolStage.GLOSSARY_CHECK: (
+        _TOOL_DIR / "get_frames_for_glossary_check.py"
+    ).resolve(),
 }
 
 # Mirror of get_frames.py `_MAX_FRAMES_PER_CALL`, surfaced in the instruction so
@@ -34,6 +37,7 @@ __all__ = [
     "FrameToolStage",
     "build_chunk_frame_tool_instruction",
     "build_frame_tool_instruction",
+    "build_glossary_check_frame_tool_instruction",
     "build_pre_pass_frame_tool_instruction",
     "build_refine_frame_tool_instruction",
     "frame_tool_command_prefix",
@@ -146,4 +150,30 @@ def build_refine_frame_tool_instruction(
         end_seconds,
         scope_label="the entire video",
         stage=FrameToolStage.REFINE,
+    )
+
+
+def build_glossary_check_frame_tool_instruction(
+    project_dir: Path,
+    start_seconds: float,
+    end_seconds: float,
+) -> str:
+    return (
+        build_frame_tool_instruction(
+            project_dir,
+            start_seconds,
+            end_seconds,
+            scope_label="the entire video",
+            stage=FrameToolStage.GLOSSARY_CHECK,
+        )
+        + "\n\n"
+        "Glossary check is the terminology and factual-consistency pass. Use "
+        "it a little more proactively here than in ordinary polishing, because "
+        "this is the final translation safety net before finalize. If a "
+        "suspicious name, group, title, catchphrase, on-screen caption, visual "
+        "gag, or possible `pre_pass.json` correction lines up with a known "
+        "timestamp, fetch the relevant frame instead of relying on subtitle "
+        "text alone. You do not need frames for every edit, but any correction "
+        "that would be meaningfully stronger with visual evidence should use "
+        "them."
     )

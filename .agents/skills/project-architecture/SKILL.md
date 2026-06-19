@@ -52,7 +52,7 @@ the stages below in order. Each maps 1:1 to a `ProgressStage` enum value and a
 | 7 | `PREPASS_COMPLETED`              | One whole-film analysis call → `.pre_pass/pre_pass.json`                     | `services/translate` (pre_pass) |
 | 8 | `CHUNK_TRANSLATED`               | Concurrent per-chunk translation → `video.cht.srt`                          | `services/translate` (chunk) |
 | 9 | `SRT_REFINED` (optional)         | Agent polishes TC subtitles → `video.cht.refined.srt`                        | `services/postprocess/refine` |
-| 10| `GLOSSARY_CHECKED` (optional)    | Agent swaps fixed-glossary term mismatches → `video.cht.glossary_checked.srt`| `services/postprocess/glossary_check` |
+| 10| `GLOSSARY_CHECKED` (optional)    | Agent checks full-text terminology/facts, may correct `pre_pass.json` → `video.cht.glossary_checked.srt`| `services/postprocess/glossary_check` |
 | 11| `FINALIZED`                      | Punctuation cleanup → styled `video.cht.ass` + `video.cht.finalized.srt`     | `services/finalize` |
 
 After `FINALIZED` (and only if no `--break-after`): join the async cover future,
@@ -133,16 +133,17 @@ shared: `base.py` (contract/errors), `result.py` (`InferenceResult`),
 `schema_enforce.py`.
 
 **Agent-facing tools (`services/inference/tools/`)** — `get_frames.py` is a CLI
-agent backends run mid-session to extract frames at specific `--times` for a
-moment they need to see. Stage-specific wrapper scripts pre-fill the stage and
-output directory; the agent should only pass `--project-dir` and replace the
+agent backends run mid-session to extract up to 20 frames at specific `--times`
+for a moment they need to see. Stage-specific wrapper scripts pre-fill the stage
+and output directory; the agent should only pass `--project-dir` and replace the
 `--times` value. Extra frames are written next to the stage artifacts:
-`.pre_pass/media/extra_frames/`, `.chunks/media/extra_frames/`, and
-`.refine/extra_frames/`. Treat files in these directories as the audit signal
-for whether the tool was actually used. Gemini CLI allows only these wrappers
-via policy/include-dirs instead of `--yolo`, because yolo's sandboxing breaks
-project-local frame reads. `build_*_frame_tool_instruction` appends usage to the
-pre-pass/chunk/refine prompts **only when `is_agent_backend(backend)`** — keeping
+`.pre_pass/media/extra_frames/`, `.chunks/media/extra_frames/`,
+`.refine/extra_frames/`, and `.glossary_check/extra_frames/`. Treat files in
+these directories as the audit signal for whether the tool was actually used.
+Gemini CLI allows only these wrappers via policy/include-dirs instead of
+`--yolo`, because yolo's sandboxing breaks project-local frame reads.
+`build_*_frame_tool_instruction` appends usage to the pre-pass/chunk/refine/
+glossary-check prompts **only when `is_agent_backend(backend)`** — keeping
 gemini-api's prompt byte-stable.
 
 ## The translate package (`services/translate/`)
@@ -215,7 +216,12 @@ agent reads/writes files in the project dir and we validate afterward
 (`_srt_guard.py` guards line-count/structure):
 
 - `refine.py` — polish TC subtitles (`AGENT_POSTPROCESS_BACKEND`).
-- `glossary_check.py` — swap only fixed-glossary term mismatches.
+- `glossary_check.py` — full-text terminology/factual consistency check after
+  refine. It always runs when enabled unless `video.cht.glossary_checked.srt`
+  already exists, treats Latin/kana blocks only as priority hints, may use web
+  search or on-demand frames, and may correct `.pre_pass/pre_pass.json` after
+  preserving the original as `.pre_pass/pre_pass.raw.json`. The updated
+  pre-pass must still validate against `PrePassResult`.
 - `cover.py` — stylize the poster. **Always Codex** (image generation), regardless
   of the post-process backend setting. Runs async (see pipeline notes).
 

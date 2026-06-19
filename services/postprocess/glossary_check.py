@@ -20,12 +20,15 @@ from loguru import logger
 
 from project import Project
 from settings import settings
-from services.inference import Backend, run_inference
+from services.inference import Backend, is_agent_backend, run_inference
+from services.inference.tools import build_glossary_check_frame_tool_instruction
 from services.fixed_glossary.fixed_glossary import (
     FIXED_GLOSSARY_PATH,
     load_fixed_glossary,
 )
+from services.media import MediaProcessor
 from services.srt import SrtBlock
+from services.translate.pre_pass.schema import PrePassResult
 from ._srt_guard import parse_srt_file, validate_srt_against_source
 
 
@@ -117,18 +120,54 @@ def _suspect_blocks(blocks: list[SrtBlock]) -> list[SrtBlock]:
 
 
 def _render_suspect_list(blocks: list[SrtBlock]) -> str:
+    if not blocks:
+        return "No priority Latin/kana suspect blocks were detected."
     return "\n".join(
         f"- #{block.index}: {' '.join(block.text.splitlines()).strip()}"
         for block in blocks
     )
 
 
+def _copy_pre_pass_raw_once(project: Project) -> bytes:
+    if not project.pre_pass_path.exists():
+        raise GlossaryCheckError(
+            f"pre-pass JSON missing before glossary check: "
+            f"{project.pre_pass_path}"
+        )
+    original = project.pre_pass_path.read_bytes()
+    if not project.pre_pass_raw_path.exists():
+        project.pre_pass_raw_path.parent.mkdir(parents=True, exist_ok=True)
+        project.pre_pass_raw_path.write_bytes(original)
+    return original
+
+
+def _validate_pre_pass(project: Project) -> None:
+    try:
+        PrePassResult.model_validate_json(
+            project.pre_pass_path.read_text(encoding="utf-8")
+        )
+    except Exception as exc:
+        raise GlossaryCheckError(
+            f"glossary-check updated pre_pass.json but it is invalid: "
+            f"{project.pre_pass_path}"
+        ) from exc
+
+
+def _srt_text_changed(project: Project) -> bool:
+    if not project.glossary_checked_srt_path.exists():
+        return False
+    return (
+        project.refined_srt_path.read_text(encoding="utf-8")
+        != project.glossary_checked_srt_path.read_text(encoding="utf-8")
+    )
+
+
 def glossary_check_subtitles(project: Project) -> None:
     """Run the Codex glossary check and structurally validate the output.
 
-    Idempotent on the produced file. When no block carries English/kana the
-    Codex call is skipped and no output file is written, so the workflow's
-    finalize stage transparently falls back to the refined SRT.
+    Idempotent on the produced file. This pass always reviews the whole refined
+    SRT when no glossary-checked SRT exists; the Latin/kana detector only
+    provides priority hints for the agent.
     """
     if project.glossary_checked_srt_path.exists():
         logger.info(
@@ -144,14 +183,10 @@ def glossary_check_subtitles(project: Project) -> None:
         )
 
     suspects = _suspect_blocks(parse_srt_file(project.refined_srt_path))
-    if not suspects:
-        logger.info(
-            f"No Latin/kana blocks found; skipping glossary-check Codex "
-            f"invocation (finalize falls back to refined SRT): {project.id}"
-        )
-        return
+    original_pre_pass = _copy_pre_pass_raw_once(project)
 
     project.glossary_check_cache_dir.mkdir(parents=True, exist_ok=True)
+    project.glossary_check_report_path.unlink(missing_ok=True)
     gloss_json_dst = project.glossary_check_cache_dir / FIXED_GLOSSARY_PATH.name
     gloss_md_dst = (
         project.glossary_check_cache_dir / _FIXED_GLOSSARY_MD_PATH.name
@@ -175,14 +210,27 @@ def glossary_check_subtitles(project: Project) -> None:
 
         prompt = (
             _PROMPT_TEMPLATE
-            + "\n\nFlagged blocks (only these may be edited):\n"
+            + "\n\nPriority suspect blocks (review these first; this is not "
+            + "the full edit scope):\n"
             + _render_suspect_list(suspects)
             + "\n"
         )
         backend = Backend(settings.agent_postprocess_backend)
+        if is_agent_backend(backend):
+            try:
+                video_end = MediaProcessor.get_media_duration(
+                    project.video_path
+                )
+            except Exception:
+                video_end = 0.0
+            prompt += "\n\n" + build_glossary_check_frame_tool_instruction(
+                project.project_path,
+                0.0,
+                video_end,
+            )
         logger.info(
             f"Invoking {backend.value} for glossary check "
-            f"({len(suspects)} flagged blocks): {project.id}"
+            f"({len(suspects)} priority suspect blocks): {project.id}"
         )
         spec = settings.agent_postprocess_model
         run_inference(
@@ -213,10 +261,21 @@ def glossary_check_subtitles(project: Project) -> None:
             f"{len(parse_srt_file(project.glossary_checked_srt_path))} blocks"
         )
 
+        _validate_pre_pass(project)
+        pre_pass_changed = project.pre_pass_path.read_bytes() != original_pre_pass
+        srt_changed = _srt_text_changed(project)
+        if (srt_changed or pre_pass_changed) and not (
+            project.glossary_check_report_path.exists()
+        ):
+            raise GlossaryCheckError(
+                f"glossary check changed output but did not write report: "
+                f"{project.glossary_check_report_path}"
+            )
         if not project.glossary_check_report_path.exists():
             logger.info(
-                f"Glossary check report absent (no changes, or expected at "
-                f"{project.glossary_check_report_path})"
+                f"Glossary check report absent (no subtitle or pre-pass "
+                f"changes, expected at {project.glossary_check_report_path} "
+                f"only when changes occur)"
             )
     finally:
         for path in copied:

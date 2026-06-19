@@ -11,6 +11,7 @@ from services.inference.tools import (
     FrameToolStage,
     build_chunk_frame_tool_instruction,
     build_frame_tool_instruction,
+    build_pre_pass_frame_tool_instruction,
 )
 from services.inference.tools import get_frames
 
@@ -83,8 +84,20 @@ class FrameToolInstructionTests(unittest.TestCase):
         self.assertIn("your assigned chunk range", text)
         self.assertIn("字卡", text)  # on-screen text-card cue
         self.assertIn("ASR", text)
+        self.assertNotIn("sparingly", text)
         # The agent does not control frame size: no --max-side flag exposed.
         self.assertNotIn("--max-side", text)
+
+    def test_pre_pass_helper_encourages_proactive_visual_checks(self):
+        text = build_pre_pass_frame_tool_instruction(
+            Path("projects/x"),
+            0.0,
+            100.0,
+        )
+        self.assertIn("Pre-pass is the anchor", text)
+        self.assertIn("proactively", text)
+        self.assertIn("proper_nouns", text)
+        self.assertIn("segment_summaries", text)
 
     def test_chunk_helper_sets_stage_local_extra_frames(self):
         text = build_chunk_frame_tool_instruction(

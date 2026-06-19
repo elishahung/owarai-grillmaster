@@ -88,8 +88,9 @@ def build_frame_tool_instruction(
         f"- Valid timestamps for {scope_label}: {start:.3f}s to {end:.3f}s. "
         "Stay strictly within this window.\n"
         f"- At most {_MAX_FRAMES_PER_CALL} timestamps per call.\n"
-        "- Use this sparingly — only where seeing the frame would actually "
-        "change a translation decision."
+        "- Use this when visual evidence would clarify names, captions, "
+        "objects, reactions, scene changes, or any decision that would be "
+        "weaker if based on text alone."
     )
 
 
@@ -98,12 +99,23 @@ def build_pre_pass_frame_tool_instruction(
     start_seconds: float,
     end_seconds: float,
 ) -> str:
-    return build_frame_tool_instruction(
-        project_dir,
-        start_seconds,
-        end_seconds,
-        scope_label="the entire video",
-        stage=FrameToolStage.PRE_PASS,
+    return (
+        build_frame_tool_instruction(
+            project_dir,
+            start_seconds,
+            end_seconds,
+            scope_label="the entire video",
+            stage=FrameToolStage.PRE_PASS,
+        )
+        + "\n\n"
+        "Pre-pass is the anchor for the entire downstream translation. Use this "
+        "tool proactively before finalizing `proper_nouns`, `glossary`, "
+        "`catchphrases`, or `segment_summaries` when the sparse reference "
+        "images do not verify a visual fact. Fetch extra frames for likely "
+        "on-screen names/titles, inserted captions, lower-thirds, scoreboards, "
+        "props, costumes, locations, scene changes, or visual gags that could "
+        "affect downstream consistency. Do not guess stable visual anchors from "
+        "ASR alone when an extra frame can verify them."
     )
 
 

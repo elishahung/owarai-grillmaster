@@ -191,7 +191,7 @@ def run_pre_pass(
             + str(settings.video_frame_max_side)
             + active_backend
             + str(spec)
-            + ("frame_tool:v1" if frame_tool_enabled else "")
+            + ("frame_tool:v2" if frame_tool_enabled else "")
         ).encode("utf-8")
     ).hexdigest()
     manifest_path = pre_pass_cache_dir / "manifest.json"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Gemini CLI Session Audit"
+  short_description: "Parse Gemini CLI session JSONL and debug tool usage."
+  default_prompt: "Audit a Gemini CLI session JSONL or tmp directory for real tool calls, searches, thoughts, and final output."

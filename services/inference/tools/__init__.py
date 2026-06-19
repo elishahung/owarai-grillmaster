@@ -12,43 +12,66 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-FRAME_TOOL_SCRIPT: Path = (Path(__file__).parent / "get_frames.py").resolve()
+from .get_frames import FrameToolStage
+
+_TOOL_DIR = Path(__file__).parent
+FRAME_TOOL_SCRIPT: Path = (_TOOL_DIR / "get_frames.py").resolve()
+FRAME_TOOL_SCRIPTS: dict[FrameToolStage, Path] = {
+    FrameToolStage.PRE_PASS: (_TOOL_DIR / "get_frames_for_pre_pass.py").resolve(),
+    FrameToolStage.CHUNK: (_TOOL_DIR / "get_frames_for_chunk.py").resolve(),
+    FrameToolStage.REFINE: (_TOOL_DIR / "get_frames_for_refine.py").resolve(),
+}
 
 # Mirror of get_frames.py `_MAX_FRAMES_PER_CALL`, surfaced in the instruction so
 # the agent knows the per-call cap.
 _MAX_FRAMES_PER_CALL = 6
 
-__all__ = ["FRAME_TOOL_SCRIPT", "build_frame_tool_instruction"]
+__all__ = [
+    "FRAME_TOOL_SCRIPT",
+    "FRAME_TOOL_SCRIPTS",
+    "FrameToolStage",
+    "build_chunk_frame_tool_instruction",
+    "build_frame_tool_instruction",
+    "build_pre_pass_frame_tool_instruction",
+    "build_refine_frame_tool_instruction",
+    "frame_tool_command_prefix",
+    "frame_tool_command_prefixes",
+]
+
+
+def frame_tool_command_prefix(stage: FrameToolStage) -> str:
+    """Return the stable shell command prefix used for Gemini CLI policy."""
+    python = Path(sys.executable).resolve()
+    return f'& "{python}" "{FRAME_TOOL_SCRIPTS[stage]}"'
+
+
+def frame_tool_command_prefixes() -> list[str]:
+    return [frame_tool_command_prefix(stage) for stage in FrameToolStage]
 
 
 def build_frame_tool_instruction(
-    video_path: Path,
+    project_dir: Path,
     start_seconds: float,
     end_seconds: float,
     *,
     scope_label: str,
-    out_dir: str | None = None,
+    stage: FrameToolStage,
 ) -> str:
     """Render the on-demand frame-tool instruction for an agent backend.
 
-    Embeds the exact command (current interpreter + absolute script and video
-    paths) and the valid time window, so the agent can run it verbatim from its
-    throwaway working directory.
+    Embeds the exact stage-specific wrapper command and valid time window, so
+    the agent can run it verbatim from its throwaway working directory.
 
-    ``out_dir`` is rendered as a relative ``--out`` so frames land inside the
-    agent's own working directory. That directory is the only place some
-    backends (notably gemini-cli, whose ``read_file`` is sandboxed to its
-    workspace) can read back — without it the agent must copy the frames in by
-    hand. Leave it ``None`` when the cwd is the project directory (refine), so
-    frames go to a system temp dir instead of polluting the project.
+    The generated command is fully pre-filled except for the ``--times`` value.
+    Output paths are inferred from ``project_dir`` and ``stage`` by Python code.
     """
-    python = Path(sys.executable).resolve()
-    video = video_path.resolve()
+    project = project_dir.resolve()
     start = max(0.0, start_seconds)
     end = max(start, end_seconds)
-    command = f'"{python}" "{FRAME_TOOL_SCRIPT}" --video "{video}" --times "62.5,70,77"'
-    if out_dir:
-        command += f" --out {out_dir}"
+    command = (
+        f'{frame_tool_command_prefix(stage)} --project-dir "{project}" '
+        f'--times "62.5,70,77"'
+    )
     return (
         "## On-demand video frames\n"
         "The pre-sampled reference images may not cover the exact moment you "
@@ -58,12 +81,55 @@ def build_frame_tool_instruction(
         "want to confirm what is on screen — extract the exact frames you need "
         "instead of guessing.\n\n"
         "Run this command with the specific timestamps (in seconds) you want to "
-        "see; it prints image paths, one per line, which you then open with "
-        "your file/image-reading tool:\n\n"
+        "see; replace only the value after `--times`. It writes frames into the "
+        "stage-local `extra_frames` directory and prints image paths which you "
+        "then open with your file/image-reading tool:\n\n"
         f"```\n{command}\n```\n\n"
         f"- Valid timestamps for {scope_label}: {start:.3f}s to {end:.3f}s. "
         "Stay strictly within this window.\n"
         f"- At most {_MAX_FRAMES_PER_CALL} timestamps per call.\n"
         "- Use this sparingly — only where seeing the frame would actually "
         "change a translation decision."
+    )
+
+
+def build_pre_pass_frame_tool_instruction(
+    project_dir: Path,
+    start_seconds: float,
+    end_seconds: float,
+) -> str:
+    return build_frame_tool_instruction(
+        project_dir,
+        start_seconds,
+        end_seconds,
+        scope_label="the entire video",
+        stage=FrameToolStage.PRE_PASS,
+    )
+
+
+def build_chunk_frame_tool_instruction(
+    project_dir: Path,
+    start_seconds: float,
+    end_seconds: float,
+) -> str:
+    return build_frame_tool_instruction(
+        project_dir,
+        start_seconds,
+        end_seconds,
+        scope_label="your assigned chunk range",
+        stage=FrameToolStage.CHUNK,
+    )
+
+
+def build_refine_frame_tool_instruction(
+    project_dir: Path,
+    start_seconds: float,
+    end_seconds: float,
+) -> str:
+    return build_frame_tool_instruction(
+        project_dir,
+        start_seconds,
+        end_seconds,
+        scope_label="the entire video",
+        stage=FrameToolStage.REFINE,
     )

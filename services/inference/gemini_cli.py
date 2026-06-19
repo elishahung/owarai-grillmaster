@@ -30,6 +30,7 @@ from .base import (
     InferenceNotInstalledError,
 )
 from .schema_enforce import extract_json_object
+from .tools import frame_tool_command_prefixes
 
 # Hardcoded per-file size guard for @path media. The CLI rejects oversized
 # attachments; for this project an oversized media file means something
@@ -43,6 +44,7 @@ _CLI_EXECUTABLE = "gemini"
 # API-key env vars the Gemini CLI would prefer over cached OAuth. Scrubbed so
 # subscription auth is used (the whole reason for the CLI backend).
 _API_KEY_ENV_VARS = ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_API_KEY")
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 class GeminiCliError(InferenceError):
@@ -171,6 +173,8 @@ def _invoke_once(
     prompt: str,
     cwd: Path | None,
     timeout: int,
+    include_directories: list[Path],
+    policy_path: Path,
 ) -> tuple[str, int, dict]:
     """One subprocess round-trip. Returns (response, requests, envelope)."""
     # --skip-trust avoids an interactive workspace-trust prompt that would
@@ -182,8 +186,13 @@ def _invoke_once(
         "--output-format",
         "json",
         "--skip-trust",
-        "--yolo",
+        "--approval-mode",
+        "auto_edit",
+        "--policy",
+        str(policy_path),
     ]
+    for directory in include_directories:
+        cmd += ["--include-directories", str(directory)]
     logger.debug(
         f"Running gemini CLI: argv={cmd} prompt_chars={len(prompt)} "
         f"(via stdin) cwd={cwd} timeout={timeout}s"
@@ -241,6 +250,8 @@ def run_gemini_cli(
     *,
     model: str,
     media_files: list[Path] | None = None,
+    cwd: Path | None = None,
+    include_directories: list[Path] | None = None,
     timeout: int | None = None,
 ) -> GeminiCliResult:
     """Invoke the Gemini CLI once and return the parsed result (single-shot).
@@ -251,6 +262,11 @@ def run_gemini_cli(
     include token with the subprocess ``cwd`` set to that workspace —
     gemini-cli's ``@`` parser resolves relative names, not absolute Windows
     paths.
+
+    ``cwd`` and ``include_directories`` are surfaced to Gemini CLI as workspace
+    roots so agent file tools can read project-local frame artifacts. The CLI
+    runs in ``auto_edit`` mode with a temporary policy that allows only the
+    project-owned frame extraction command instead of using ``--yolo``.
 
     This is a pure text generator: it never enforces a response schema. Schema
     handling (the JSON-Schema prompt suffix + the validate-and-repair loop) is
@@ -290,8 +306,48 @@ def run_gemini_cli(
                 tokens.append(f"@{staged_name}")
             media_block = "\n\n[ATTACHED MEDIA]\n" + "\n".join(tokens)
 
+        policy_path = (
+            Path(tempfile.mkdtemp(prefix="gemini_policy_"))
+            / "frame_tool.toml"
+        )
+        policy_rules: list[str] = []
+        for prefix in frame_tool_command_prefixes():
+            policy_rules.extend(
+                [
+                    "[[rule]]",
+                    'toolName = "run_shell_command"',
+                    f"commandPrefix = {json.dumps(prefix)}",
+                    'decision = "allow"',
+                    "priority = 900",
+                    'modes = ["default", "autoEdit", "yolo"]',
+                    "",
+                ]
+            )
+        policy_path.write_text("\n".join(policy_rules), encoding="utf-8")
+        base_include_dirs = [_REPO_ROOT]
+        if cwd is not None:
+            base_include_dirs.append(cwd.resolve())
+        base_include_dirs.extend(path.resolve().parent for path in media_files)
+        base_include_dirs.extend(
+            path.resolve() for path in (include_directories or [])
+        )
+        deduped_include_dirs: list[Path] = []
+        seen: set[str] = set()
+        for directory in base_include_dirs:
+            key = str(directory)
+            if key not in seen:
+                seen.add(key)
+                deduped_include_dirs.append(directory)
+
+        process_cwd = workspace or (cwd.resolve() if cwd is not None else None)
         response, requests, envelope = _invoke_once(
-            executable, model, prompt + media_block, workspace, effective_timeout
+            executable,
+            model,
+            prompt + media_block,
+            process_cwd,
+            effective_timeout,
+            deduped_include_dirs[:5],
+            policy_path,
         )
         stats = envelope.get("stats")
         stats = stats if isinstance(stats, dict) else {}
@@ -308,3 +364,5 @@ def run_gemini_cli(
     finally:
         if workspace is not None:
             shutil.rmtree(workspace, ignore_errors=True)
+        if "policy_path" in locals():
+            shutil.rmtree(policy_path.parent, ignore_errors=True)

@@ -204,7 +204,7 @@ class ChunkDispatchTests(unittest.IsolatedAsyncioTestCase):
         system_prompt = mock_inf.call_args.kwargs["system_prompt"]
         self.assertIn("On-demand video frames", system_prompt)
         self.assertIn("your assigned chunk range", system_prompt)
-        self.assertIn("get_frames.py", system_prompt)
+        self.assertIn("get_frames_for_chunk.py", system_prompt)
 
 
 if __name__ == "__main__":

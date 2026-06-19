@@ -24,7 +24,7 @@ from services.inference import (
     is_agent_backend,
     run_inference,
 )
-from services.inference.tools import build_frame_tool_instruction
+from services.inference.tools import build_pre_pass_frame_tool_instruction
 from services.inference.gemini_cli import GeminiCliQuotaError
 from ..errors import PrePassError
 from services.fixed_glossary import (
@@ -227,12 +227,10 @@ def run_pre_pass(
             if last_block is not None
             else 0.0
         )
-        system_instruction += "\n\n" + build_frame_tool_instruction(
-            video_path,
+        system_instruction += "\n\n" + build_pre_pass_frame_tool_instruction(
+            pre_pass_cache_dir.parent,
             0.0,
             source_end,
-            scope_label="the entire video",
-            out_dir="agent_frames",
         )
 
     images = [frame.path for frame in pre_pass_assets.frames]
@@ -252,6 +250,7 @@ def run_pre_pass(
             images=images,
             audio=audio,
             schema=PrePassResult,
+            cwd=pre_pass_cache_dir.parent,
             model=spec.model,
             reasoning_effort=spec.reasoning_effort,
         )

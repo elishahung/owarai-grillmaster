@@ -158,6 +158,7 @@ def run_inference(
                         p,
                         model=model,
                         media_files=[*(audio or []), *(images or [])],
+                        cwd=cwd,
                         timeout=timeout,
                     )
                     return cli.response, cli.requests

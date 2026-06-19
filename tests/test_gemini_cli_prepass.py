@@ -138,6 +138,11 @@ class RunGeminiCliTests(unittest.TestCase):
         _, kwargs = mock_run.call_args
         self.assertEqual(kwargs["input"], "hi")
         self.assertNotIn("GEMINI_API_KEY", kwargs["env"])
+        argv = mock_run.call_args.args[0]
+        self.assertIn("--approval-mode", argv)
+        self.assertIn("auto_edit", argv)
+        self.assertIn("--policy", argv)
+        self.assertNotIn("--yolo", argv)
 
     def test_quota_error_classified(self):
         self._patch_which()
@@ -200,6 +205,18 @@ class RunGeminiCliTests(unittest.TestCase):
         self.assertIn("@00_frame.jpg", kwargs["input"])
         self.assertNotIn(str(media), kwargs["input"])
         self.assertIn("--skip-trust", mock_run.call_args.args[0])
+        self.assertIn("--include-directories", mock_run.call_args.args[0])
+
+    def test_cwd_is_included_for_project_file_access(self):
+        self._patch_which()
+        project_dir = self._temp_dir()
+        mock_run = self._patch_run(return_value=_completed("ok"))
+        run_gemini_cli("hi", model="m", cwd=project_dir)
+        argv = mock_run.call_args.args[0]
+        self.assertIn(str(project_dir.resolve()), argv)
+        self.assertEqual(
+            mock_run.call_args.kwargs["cwd"], str(project_dir.resolve())
+        )
 
     # NOTE: schema enforcement is no longer a gemini-cli concern — run_gemini_cli
     # is a single-shot text generator. The validate-and-repair loop is exercised

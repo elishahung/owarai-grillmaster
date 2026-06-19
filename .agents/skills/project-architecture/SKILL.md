@@ -134,7 +134,14 @@ shared: `base.py` (contract/errors), `result.py` (`InferenceResult`),
 
 **Agent-facing tools (`services/inference/tools/`)** — `get_frames.py` is a CLI
 agent backends run mid-session to extract frames at specific `--times` for a
-moment they need to see. `build_frame_tool_instruction` appends its usage to the
+moment they need to see. Stage-specific wrapper scripts pre-fill the stage and
+output directory; the agent should only pass `--project-dir` and replace the
+`--times` value. Extra frames are written next to the stage artifacts:
+`.pre_pass/media/extra_frames/`, `.chunks/media/extra_frames/`, and
+`.refine/extra_frames/`. Treat files in these directories as the audit signal
+for whether the tool was actually used. Gemini CLI allows only these wrappers
+via policy/include-dirs instead of `--yolo`, because yolo's sandboxing breaks
+project-local frame reads. `build_*_frame_tool_instruction` appends usage to the
 pre-pass/chunk/refine prompts **only when `is_agent_backend(backend)`** — keeping
 gemini-api's prompt byte-stable.
 

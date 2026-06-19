@@ -15,7 +15,7 @@ from services.inference import (
     is_agent_backend,
     run_inference,
 )
-from services.inference.tools import build_frame_tool_instruction
+from services.inference.tools import build_chunk_frame_tool_instruction
 from ..assets import ChunkMediaAssets
 from ..errors import ChunkTranslationError
 from .prompts import build_chunk_instruction
@@ -187,12 +187,10 @@ async def translate_chunk(
     spec = settings.agent_chunk_model
     system_instruction = build_chunk_instruction(has_audio=has_audio)
     if is_agent_backend(backend):
-        system_instruction += "\n\n" + build_frame_tool_instruction(
-            media_assets.video_path,
+        system_instruction += "\n\n" + build_chunk_frame_tool_instruction(
+            media_assets.video_path.parent,
             media_assets.time_range.start_seconds,
             media_assets.time_range.end_seconds,
-            scope_label="your assigned chunk range",
-            out_dir="agent_frames",
         )
     raw_path = _raw_cache_path(
         media_assets.response_dir,
@@ -244,6 +242,7 @@ async def translate_chunk(
                     images=images,
                     audio=audio,
                     schema=None,
+                    cwd=media_assets.video_path.parent,
                     model=spec.model,
                     reasoning_effort=spec.reasoning_effort,
                 )

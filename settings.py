@@ -136,7 +136,7 @@ class Settings(BaseSettings):
         description="Maximum concurrent chunk requests for the gemini-api backend (cheap network HTTP calls, can fan out widely).",
     )
     chunk_agent_concurrency: int = Field(
-        default=3,
+        default=5,
         description="Maximum concurrent chunk processes for the agent backends (gemini-cli / codex / claude); lower than chunk_api_concurrency since each spawns a heavy local process.",
     )
     chunk_max_retries: int = Field(

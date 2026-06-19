@@ -10,7 +10,7 @@ from project import Project
 from settings import settings
 from services.media import MediaProcessor
 from services.inference import Backend, is_agent_backend, run_inference
-from services.inference.tools import build_frame_tool_instruction
+from services.inference.tools import build_refine_frame_tool_instruction
 from ._srt_guard import (
     parse_srt_file as _parse_srt,
     validate_srt_against_source as _validate_refined_srt,
@@ -47,22 +47,19 @@ def refine_subtitles(project: Project) -> None:
         f"Invoking {backend.value} for subtitle refinement: {project.id}"
     )
     spec = settings.agent_postprocess_model
-    # Offer the on-demand frame tool only to a backend that can run it. Refine
-    # writes its output in `cwd=project_path`, so frames use the system-temp
-    # default (no `--out`) to avoid littering the project dir — fine because the
-    # only backends that can actually drive refine (codex/claude) read system
-    # temp freely. Window = the whole video.
+    # Offer the on-demand frame tool only to a backend that can run it. The
+    # stage-specific wrapper writes into `.refine/extra_frames`; window = the
+    # whole video.
     prompt = _PROMPT
     if is_agent_backend(backend):
         try:
             video_end = MediaProcessor.get_media_duration(project.video_path)
         except Exception:
             video_end = 0.0
-        prompt += "\n\n" + build_frame_tool_instruction(
-            project.video_path,
+        prompt += "\n\n" + build_refine_frame_tool_instruction(
+            project.project_path,
             0.0,
             video_end,
-            scope_label="the entire video",
         )
     run_inference(
         backend=backend,

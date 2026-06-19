@@ -57,6 +57,14 @@ skill needs updating** so the next agent inherits an accurate map. Update
   boundary determinism, cover-always-Codex, prompt-cache byte-stability);
 - add or rename a setting or an `.env` key.
 
+Keep skill updates proportional. Document facts the next agent must know to
+avoid breaking architecture or operating the wrong subsystem: ownership
+boundaries, persisted artifact locations, backend/tool contracts, and invariants
+that affect future changes. Do **not** promote one-off debugging notes,
+implementation minutiae, or local workaround history into top-level guidance;
+fold small local details into the relevant existing paragraph, or leave them out
+when the code/tests are the clearer source of truth.
+
 The project is small enough today to document in this one skill. As it grows,
 the intended path is to **split the codebase into multiple focused skills** (one
 per subsystem) so an agent reads only the skill relevant to the part it is

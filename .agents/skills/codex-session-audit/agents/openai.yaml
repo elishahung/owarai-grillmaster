@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Session Audit"
+  short_description: "Audit Codex JSONL tool evidence"
+  default_prompt: "Use $codex-session-audit to audit these Codex rollout JSONL files for real tool calls, image inputs, and output impact."

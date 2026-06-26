@@ -29,7 +29,11 @@ Rules:
 - Avoid unsupported subject insertion: When comparing against `video.ja.srt`, remove explicit Chinese subjects such as「我 / 你 / 他 / 她 / 我們 / 大家」or specific names if they were added only for smoothness and are not stated or clearly implied by the Japanese source, immediate context, audio, visuals, or `.pre_pass/pre_pass.json`. Prefer natural subjectless Chinese when the actor is ambiguous.
 - The refined subtitle text must be Traditional Chinese. Do not leave Japanese in the subtitle text unless it is an intentional proper noun, title, service name, or quoted term that should remain untranslated.
 - Use `.pre_pass/pre_pass.json` for `summary`, `characters`, `proper_nouns`, `glossary`, `catchphrases`, `tone_notes`, and `segment_summaries`. Apply `tone_notes` to register/honorific decisions and `catchphrases` to keep recurring jokes phrased identically across blocks.
-- Use frames only when text context is insufficient. When the pre-sampled frames do not cover the moment in doubt, you may fetch additional frames on demand with the tool described at the end of this prompt.
+- Use frames proactively but selectively. If a concrete subtitle edit depends on
+  on-screen text, a visible name/title, a prop, a scoreboard, a reaction shot, a
+  visual gag, or a conflict between `video.ja.srt` and `video.cht.srt`, fetch the
+  exact frame when the pre-sampled images do not cover that timestamp. Do not
+  use frames for routine fluency edits that are already settled by text context.
 - Prefer editing only text lines inside each block.
 - Preserve intentional Japanese address register and honorifics when they are already present in the Traditional Chinese subtitles. Do not remove or flatten suffixes such as `桑`, `醬`, `君`, `大人`, `前輩`, or `後輩` just to make the line sound more localized. Keep the speaker's polite/plain register contrast through word choice, but treat this as a preservation rule, not a reason to over-edit otherwise natural lines.
 - Do not force terminology, proper-noun, or name localization when the existing subtitle is not clearly wrong. For program titles, talent names, group names, segment labels, and other proper nouns, when there is no genuinely common Traditional Chinese (Taiwan) rendering, fall back to the `.pre_pass/pre_pass.json` proper_nouns/characters rendering, else an official/common romanized form with fixed casing and spacing; do not default to raw Japanese kana. For example, fix `ギャロップ (Gallop)` or a raw `コロチキ` to `Gallop` / `KoroChiki`.
@@ -57,7 +61,28 @@ instead of:
 - For repeated words, reduce mechanical duplication only when the source repeats the same word twice without comedic or emotional force. Preserve repetition when it carries timing, teasing, panic, emphasis, or a running joke.
 - Match profanity, teasing, and roast severity without censoring or intensifying it. Prefer compact Taiwan Traditional Chinese phrasing that preserves the original register and variety-show timing.
 
-For large SRT files, chunk by stable index ranges and stitch text back into the original skeleton. Each range pass must return replacements keyed by block index, not a full reindexed SRT.
+Review workflow:
+
+- First inspect the overall context: `.pre_pass/pre_pass.json`, the beginning and
+  ending subtitles, and any obvious repeated names, teams, segment labels, or
+  catchphrases.
+- For large SRT files, work in stable index windows of about 500 blocks
+  (`1-500`, `501-1000`, etc.). Within each window, compare `video.cht.srt` with
+  nearby `video.ja.srt`, the relevant `segment_summaries`, and surrounding
+  blocks. Track replacements by original block index and stitch the edited text
+  back into the original SRT skeleton; never generate a newly reindexed file.
+- In each window, prioritize concrete defects: mistranslation, missing
+  translation, leftover Japanese, unsupported inserted subjects, wrong
+  speaker/person/team reference, recurring term drift, joke-function loss,
+  overly formal phrasing that hurts timing, and awkward line wrapping.
+- When a candidate edit is visually grounded and the timestamp is known, use the
+  on-demand frame tool before committing the edit if the pre-sampled frames do
+  not already settle it.
+- After all windows are edited, run a final cross-window pass for recurring
+  names, team names, catchphrases, honorific/register choices, title formatting,
+  and repeated joke phrasing. Keep this pass conservative: align inconsistent
+  renderings, but do not turn the stage into a full retranslation or glossary
+  audit.
 
 After writing the refined SRT, also write a concise refinement summary to `.refine/report.md` (the `.refine/` directory already exists). The report must be a Markdown table with these exact columns:
 

@@ -144,12 +144,21 @@ def build_refine_frame_tool_instruction(
     start_seconds: float,
     end_seconds: float,
 ) -> str:
-    return build_frame_tool_instruction(
-        project_dir,
-        start_seconds,
-        end_seconds,
-        scope_label="the entire video",
-        stage=FrameToolStage.REFINE,
+    return (
+        build_frame_tool_instruction(
+            project_dir,
+            start_seconds,
+            end_seconds,
+            scope_label="the entire video",
+            stage=FrameToolStage.REFINE,
+        )
+        + "\n\n"
+        "Refine is still a medium polishing pass, not a full retranslation. "
+        "Use frames proactively for concrete subtitle decisions where visual "
+        "evidence can change the wording: on-screen captions, visible names or "
+        "titles, props, scoreboards, reaction shots, visual gags, or conflicts "
+        "between the Japanese source and Chinese baseline. Do not spend frame "
+        "calls on routine fluency edits that text context already settles."
     )
 
 

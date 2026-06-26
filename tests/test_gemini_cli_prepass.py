@@ -314,6 +314,10 @@ class RunPrePassDispatchTests(unittest.TestCase):
         self.assertEqual(
             mock_inf.call_args.kwargs["backend"], "gemini-api"
         )
+        self.assertNotIn(
+            "Use built-in web search only",
+            mock_inf.call_args.kwargs["system_prompt"],
+        )
         # gemini-api supports audio, so the audio file is passed through.
         self.assertEqual(len(mock_inf.call_args.kwargs["audio"]), 1)
         manifest = json.loads(
@@ -333,6 +337,14 @@ class RunPrePassDispatchTests(unittest.TestCase):
         self.assertEqual(cost, 0.0)
         self.assertEqual(result.summary, "s")
         self.assertIs(mock_inf.call_args.kwargs["schema"], pp.PrePassResult)
+        self.assertIn(
+            "Use built-in web search only",
+            mock_inf.call_args.kwargs["system_prompt"],
+        )
+        self.assertIn(
+            "The SRT is not ground truth",
+            mock_inf.call_args.kwargs["system_prompt"],
+        )
         manifest = json.loads(
             (tmp / "cache" / "manifest.json").read_text(encoding="utf-8")
         )

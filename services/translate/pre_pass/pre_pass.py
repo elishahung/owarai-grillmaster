@@ -24,7 +24,7 @@ from services.inference import (
     is_agent_backend,
     run_inference,
 )
-from services.inference.tools import build_pre_pass_frame_tool_instruction
+from services.inference.tools import build_pre_pass_agent_instruction
 from services.inference.gemini_cli import GeminiCliQuotaError
 from ..errors import PrePassError
 from services.fixed_glossary import (
@@ -180,10 +180,11 @@ def run_pre_pass(
     active_backend = settings.agent_prepass_backend
     spec = settings.agent_prepass_model
 
-    # The frame-tool block (appended below for agent backends) embeds volatile
-    # absolute paths, so digest a stable token instead of the rendered text —
-    # keeps cache keys machine-independent while still distinguishing tool on/off.
-    frame_tool_enabled = is_agent_backend(backend)
+    # The agent-only instruction block (appended below for agent backends)
+    # embeds volatile absolute frame-tool paths, so digest a stable token instead
+    # of the rendered text — keeps cache keys machine-independent while still
+    # distinguishing agent capability guidance on/off.
+    agent_instruction_enabled = is_agent_backend(backend)
     prompt_digest = hashlib.sha256(
         (
             system_instruction
@@ -192,7 +193,7 @@ def run_pre_pass(
             + str(settings.video_frame_max_side)
             + active_backend
             + str(spec)
-            + ("frame_tool:v2" if frame_tool_enabled else "")
+            + ("agent_tools:v1" if agent_instruction_enabled else "")
         ).encode("utf-8")
     ).hexdigest()
     manifest_path = pre_pass_cache_dir / "manifest.json"
@@ -221,14 +222,14 @@ def run_pre_pass(
         f"effort={spec.reasoning_effort}, "
         f"audio={'on' if has_audio else 'off'})"
     )
-    if frame_tool_enabled:
+    if agent_instruction_enabled:
         last_block = chunks[-1][-1] if chunks and chunks[-1] else None
         source_end = (
             MediaProcessor.parse_timecode_line(last_block.timecode).end_seconds
             if last_block is not None
             else 0.0
         )
-        system_instruction += "\n\n" + build_pre_pass_frame_tool_instruction(
+        system_instruction += "\n\n" + build_pre_pass_agent_instruction(
             pre_pass_cache_dir.parent,
             0.0,
             source_end,

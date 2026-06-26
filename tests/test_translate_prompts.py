@@ -89,5 +89,12 @@ class NoAudioSubstitutionTests(unittest.TestCase):
         )
 
 
+class PrePassPromptScopeTests(unittest.TestCase):
+    def test_base_pre_pass_prompt_does_not_expose_agent_web_search(self):
+        text = P.build_pre_pass_instruction(has_audio=True)
+        self.assertNotIn("Use built-in web search", text)
+        self.assertNotIn("The SRT is not ground truth", text)
+
+
 if __name__ == "__main__":
     unittest.main()

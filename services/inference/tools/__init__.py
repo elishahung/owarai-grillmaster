@@ -1,10 +1,12 @@
-"""Agent-facing helper tools that live alongside the inference backends.
+"""Agent-facing helper instructions that live alongside inference backends.
 
 ``get_frames.py`` is a standalone CLI the agent backends run to pull video
 frames at specific timestamps on demand; ``build_frame_tool_instruction``
 renders the system-prompt block that teaches an agent backend when and how to
-call it. The instruction is appended only for agent backends (gemini-cli /
-codex / claude); gemini-api never sees it, so its prompt stays byte-stable.
+call it. Stage helpers may also render non-CLI agent capability guidance such as
+web search. These instructions are appended only for agent backends
+(gemini-cli / gemini-agy / codex / claude); gemini-api never sees them, so its
+prompt stays byte-stable.
 """
 
 from __future__ import annotations
@@ -38,7 +40,9 @@ __all__ = [
     "build_chunk_frame_tool_instruction",
     "build_frame_tool_instruction",
     "build_glossary_check_frame_tool_instruction",
+    "build_pre_pass_agent_instruction",
     "build_pre_pass_frame_tool_instruction",
+    "build_pre_pass_web_search_instruction",
     "build_refine_frame_tool_instruction",
     "frame_tool_command_prefix",
     "frame_tool_command_prefixes",
@@ -122,6 +126,46 @@ def build_pre_pass_frame_tool_instruction(
         "props, costumes, locations, scene changes, or visual gags that could "
         "affect downstream consistency. Do not guess stable visual anchors from "
         "ASR alone when an extra frame can verify them."
+    )
+
+
+def build_pre_pass_web_search_instruction() -> str:
+    return (
+        "## Agent web search\n"
+        "Use local evidence first: program title/description, full audio when "
+        "available, reference images, fixed glossary if supplied, parent "
+        "pre-pass context if supplied, and the source SRT as a fallible "
+        "timing/text scaffold. The SRT is not ground truth: expect ASR errors "
+        "and resolve conflicts with audio, images, program metadata, and "
+        "reliable external references when needed.\n\n"
+        "Use built-in web search only when local context is insufficient for an "
+        "external fact that would materially affect `characters`, "
+        "`proper_nouns`, `glossary`, `catchphrases`, or `segment_summaries`: "
+        "official/common spellings of talent or group names, program or segment "
+        "titles, public work titles, brand names, recurring public catchphrases, "
+        "or other public references.\n\n"
+        "Prefer official pages, reliable listings, or stable public references "
+        "over unsourced snippets. If web evidence is inconclusive, keep the "
+        "mapping conservative instead of inventing a confident localization. "
+        "Do not use web search for routine phrasing or tone choices already "
+        "settled by local evidence. Output remains the schema JSON only: do not "
+        "add citations, prose, or markdown."
+    )
+
+
+def build_pre_pass_agent_instruction(
+    project_dir: Path,
+    start_seconds: float,
+    end_seconds: float,
+) -> str:
+    return (
+        build_pre_pass_frame_tool_instruction(
+            project_dir,
+            start_seconds,
+            end_seconds,
+        )
+        + "\n\n"
+        + build_pre_pass_web_search_instruction()
     )
 
 

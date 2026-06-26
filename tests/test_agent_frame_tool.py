@@ -12,7 +12,9 @@ from services.inference.tools import (
     build_chunk_frame_tool_instruction,
     build_frame_tool_instruction,
     build_glossary_check_frame_tool_instruction,
+    build_pre_pass_agent_instruction,
     build_pre_pass_frame_tool_instruction,
+    build_pre_pass_web_search_instruction,
     build_refine_frame_tool_instruction,
 )
 from services.inference.tools import get_frames
@@ -101,6 +103,23 @@ class FrameToolInstructionTests(unittest.TestCase):
         self.assertIn("proactively", text)
         self.assertIn("proper_nouns", text)
         self.assertIn("segment_summaries", text)
+
+    def test_pre_pass_web_search_helper_is_bounded_to_external_facts(self):
+        text = build_pre_pass_web_search_instruction()
+        self.assertIn("Use built-in web search only", text)
+        self.assertIn("The SRT is not ground truth", text)
+        self.assertIn("external fact", text)
+        self.assertIn("schema JSON only", text)
+
+    def test_pre_pass_agent_helper_combines_frames_and_web_search(self):
+        text = build_pre_pass_agent_instruction(
+            Path("projects/x"),
+            0.0,
+            100.0,
+        )
+        self.assertIn(str(FRAME_TOOL_SCRIPTS[FrameToolStage.PRE_PASS]), text)
+        self.assertIn("Use built-in web search only", text)
+        self.assertIn("The SRT is not ground truth", text)
 
     def test_chunk_helper_sets_stage_local_extra_frames(self):
         text = build_chunk_frame_tool_instruction(

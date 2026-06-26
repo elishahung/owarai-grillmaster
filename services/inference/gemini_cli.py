@@ -188,8 +188,6 @@ def _invoke_once(
         "--skip-trust",
         "--approval-mode",
         "auto_edit",
-        "--search",
-        "--ephemeral",
         "--policy",
         str(policy_path),
     ]

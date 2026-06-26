@@ -11,10 +11,12 @@ from pydantic import BaseModel
 from services.media import MediaProcessor, TimeRange
 from services.srt import SrtBlock
 
-# Skip the first N seconds of video when sampling reference frames (avoids TV
-# station intro/logo). Applies to pre-pass and the first chunk only. Hardcoded
-# maintainer constant.
+# Kept for compatibility with callers that still pass intro_skip_seconds.
+# SRT-start-based frame sampling no longer clamps initial frames past the intro.
 INTRO_SKIP_SECONDS = 3.0
+PRE_PASS_MIN_FRAMES = 20
+PRE_PASS_MAX_FRAMES = 40
+FRAME_START_OFFSET_SECONDS = 0.2
 
 
 class LocalMediaRef(BaseModel):
@@ -59,11 +61,14 @@ def prepare_pre_pass_media_assets(
     video_path: Path,
     audio_path: Path,
     cache_root: Path,
+    srt_blocks: list[SrtBlock],
     interval_seconds: int,
     max_side: int,
     intro_skip_seconds: float = INTRO_SKIP_SECONDS,
     extract_audio: bool = True,
 ) -> PrePassMediaAssets:
+    if interval_seconds <= 0:
+        raise ValueError("interval_seconds must be positive")
     cache_root.mkdir(parents=True, exist_ok=True)
     frame_dir = cache_root / "media" / "frames"
     manifest_path = cache_root / "assets.json"
@@ -75,15 +80,10 @@ def prepare_pre_pass_media_assets(
     # never lands on the last keyframe with no decodable frame after it.
     last_frame_offset = 1.5
     end_seconds = max(0.0, duration - last_frame_offset)
-    # Skip the very first seconds (TV station intro/logo). Clamp so the start
-    # never exceeds end on pathologically short videos.
-    start_seconds = min(max(0.0, intro_skip_seconds), end_seconds)
-    timestamps = MediaProcessor.absolute_interval_timestamps(
-        start_seconds=start_seconds,
-        end_seconds=end_seconds,
+    timestamps = _pre_pass_srt_start_frame_timestamps(
+        blocks=srt_blocks,
+        video_end_seconds=end_seconds,
         interval_seconds=interval_seconds,
-        include_start=True,
-        include_end=True,
     )
     frames = [
         frame
@@ -110,7 +110,9 @@ def prepare_pre_pass_media_assets(
                 "audio": audio_ref.model_dump(mode="json") if audio_ref else None,
                 "duration_seconds": duration,
                 "interval_seconds": interval_seconds,
-                "intro_skip_seconds": intro_skip_seconds,
+                "intro_skip_seconds": None,
+                "min_frames": PRE_PASS_MIN_FRAMES,
+                "max_frames": PRE_PASS_MAX_FRAMES,
                 "max_side": max_side,
                 "frames": [
                     {
@@ -247,8 +249,46 @@ def _chunk_srt_start_frame_timestamps(
             block.timecode
         ).start_seconds
         timestamp = min(
-            max(block_start + 0.2, range_info.start_seconds),
+            max(
+                block_start + FRAME_START_OFFSET_SECONDS,
+                range_info.start_seconds,
+            ),
             range_info.end_seconds,
+        )
+        timestamps.append(round(timestamp, 3))
+    return timestamps
+
+
+def _pre_pass_srt_start_frame_timestamps(
+    *,
+    blocks: list[SrtBlock],
+    video_end_seconds: float,
+    interval_seconds: int,
+) -> list[float]:
+    if interval_seconds <= 0:
+        raise ValueError("interval_seconds must be positive")
+    if not blocks or video_end_seconds <= 0:
+        return []
+
+    last_block_range = MediaProcessor.parse_timecode_line(
+        blocks[-1].timecode
+    )
+    srt_duration = max(0.0, last_block_range.end_seconds)
+    frame_budget = int(srt_duration // interval_seconds)
+    frame_count = min(
+        len(blocks),
+        PRE_PASS_MAX_FRAMES,
+        max(PRE_PASS_MIN_FRAMES, frame_budget),
+    )
+    selected_blocks = _evenly_select_blocks(blocks, frame_count)
+    timestamps = []
+    for block in selected_blocks:
+        block_start = MediaProcessor.parse_timecode_line(
+            block.timecode
+        ).start_seconds
+        timestamp = min(
+            max(block_start + FRAME_START_OFFSET_SECONDS, 0.0),
+            video_end_seconds,
         )
         timestamps.append(round(timestamp, 3))
     return timestamps

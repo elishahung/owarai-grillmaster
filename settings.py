@@ -120,8 +120,8 @@ class Settings(BaseSettings):
 
     # --- Translation: media sampling & chunking (backend-agnostic) ----------
     prepass_frame_interval_seconds: int = Field(
-        default=120,
-        description="Absolute video frame sampling interval in seconds for pre-pass inputs",
+        default=60,
+        description="Frame budget interval in seconds for SRT-start-based pre-pass frame sampling",
     )
     enable_prepass_full_fixed_glossary: bool = Field(
         default=False,

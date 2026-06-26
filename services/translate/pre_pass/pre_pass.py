@@ -117,6 +117,7 @@ def run_pre_pass(
         video_path=video_path,
         audio_path=audio_path,
         cache_root=pre_pass_cache_dir,
+        srt_blocks=[block for chunk in chunks for block in chunk],
         interval_seconds=settings.prepass_frame_interval_seconds,
         max_side=settings.video_frame_max_side,
         extract_audio=has_audio,

@@ -23,15 +23,26 @@ class GeminiAssetsTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(path, ignore_errors=True))
         return path
 
-    def test_prepare_pre_pass_media_assets_uses_interval_spacing(self):
+    def test_prepare_pre_pass_media_assets_samples_even_srt_starts(self):
         root = self._make_temp_dir()
         video_path = root / "video.mp4"
         audio_path = root / "audio.ogg"
+        blocks = [
+            SrtBlock(
+                index=index + 1,
+                timecode=(
+                    f"{format_timecode(index * 90)} --> "
+                    f"{format_timecode(index * 90 + (90 if index == 44 else 5))}"
+                ),
+                text=f"line {index + 1}",
+            )
+            for index in range(45)
+        ]
 
         with (
             patch(
                 "services.translate.assets.MediaProcessor.get_media_duration",
-                return_value=305.0,
+                return_value=4055.0,
             ),
             patch(
                 "services.translate.assets.MediaProcessor.extract_video_frame"
@@ -41,25 +52,158 @@ class GeminiAssetsTests(unittest.TestCase):
                 video_path=video_path,
                 audio_path=audio_path,
                 cache_root=root / "pre_pass",
-                interval_seconds=120,
+                srt_blocks=blocks,
+                interval_seconds=60,
                 max_side=768,
                 intro_skip_seconds=3.0,
             )
 
         self.assertEqual(
             [frame.timestamp_seconds for frame in assets.frames],
-            [3.0, 120.0, 240.0, 303.5],
+            [
+                round(slot * 44 / 39) * 90 + 0.2
+                for slot in range(40)
+            ],
         )
-        self.assertEqual(extract_frame.call_count, 4)
+        self.assertEqual(extract_frame.call_count, 40)
         self.assertEqual(assets.audio.path, audio_path)
         self.assertEqual(assets.audio.mime_type, "audio/ogg")
         self.assertTrue(assets.manifest_path.exists())
         manifest = json.loads(
             assets.manifest_path.read_text(encoding="utf-8")
         )
-        self.assertEqual(manifest["interval_seconds"], 120)
+        self.assertEqual(manifest["interval_seconds"], 60)
+        self.assertIsNone(manifest["intro_skip_seconds"])
+        self.assertEqual(manifest["min_frames"], 20)
+        self.assertEqual(manifest["max_frames"], 40)
         self.assertEqual(manifest["frames"][0]["mime_type"], "image/jpeg")
         self.assertEqual(manifest["audio"]["path"], str(audio_path))
+
+    def test_prepare_pre_pass_media_assets_uses_minimum_frame_count(self):
+        root = self._make_temp_dir()
+        blocks = [
+            SrtBlock(
+                index=index + 1,
+                timecode=(
+                    f"{format_timecode(index * 10)} --> "
+                    f"{format_timecode(index * 10 + (10 if index == 24 else 1))}"
+                ),
+                text=f"line {index + 1}",
+            )
+            for index in range(25)
+        ]
+
+        with (
+            patch(
+                "services.translate.assets.MediaProcessor.get_media_duration",
+                return_value=255.0,
+            ),
+            patch(
+                "services.translate.assets.MediaProcessor.extract_video_frame"
+            ),
+        ):
+            assets = prepare_pre_pass_media_assets(
+                video_path=root / "video.mp4",
+                audio_path=root / "audio.ogg",
+                cache_root=root / "pre_pass",
+                srt_blocks=blocks,
+                interval_seconds=60,
+                max_side=768,
+            )
+
+        self.assertEqual(len(assets.frames), 20)
+        self.assertEqual(assets.frames[0].timestamp_seconds, 0.2)
+        self.assertEqual(assets.frames[-1].timestamp_seconds, 240.2)
+
+    def test_prepare_pre_pass_media_assets_caps_at_block_count(self):
+        root = self._make_temp_dir()
+        blocks = [
+            SrtBlock(
+                index=index + 1,
+                timecode=(
+                    f"{format_timecode(index * 10)} --> "
+                    f"{format_timecode(index * 10 + 1)}"
+                ),
+                text=f"line {index + 1}",
+            )
+            for index in range(5)
+        ]
+
+        with (
+            patch(
+                "services.translate.assets.MediaProcessor.get_media_duration",
+                return_value=45.0,
+            ),
+            patch(
+                "services.translate.assets.MediaProcessor.extract_video_frame"
+            ),
+        ):
+            assets = prepare_pre_pass_media_assets(
+                video_path=root / "video.mp4",
+                audio_path=root / "audio.ogg",
+                cache_root=root / "pre_pass",
+                srt_blocks=blocks,
+                interval_seconds=60,
+                max_side=768,
+            )
+
+        self.assertEqual(
+            [frame.timestamp_seconds for frame in assets.frames],
+            [0.2, 10.2, 20.2, 30.2, 40.2],
+        )
+
+    def test_prepare_pre_pass_media_assets_clamps_to_video_safe_end(self):
+        root = self._make_temp_dir()
+        blocks = [
+            SrtBlock(
+                index=index + 1,
+                timecode=(
+                    f"{format_timecode(index * 10)} --> "
+                    f"{format_timecode(index * 10 + (10 if index == 19 else 1))}"
+                ),
+                text=f"line {index + 1}",
+            )
+            for index in range(20)
+        ]
+
+        with (
+            patch(
+                "services.translate.assets.MediaProcessor.get_media_duration",
+                return_value=190.1,
+            ),
+            patch(
+                "services.translate.assets.MediaProcessor.extract_video_frame"
+            ),
+        ):
+            assets = prepare_pre_pass_media_assets(
+                video_path=root / "video.mp4",
+                audio_path=root / "audio.ogg",
+                cache_root=root / "pre_pass",
+                srt_blocks=blocks,
+                interval_seconds=60,
+                max_side=768,
+            )
+
+        self.assertEqual(assets.frames[-1].timestamp_seconds, 188.6)
+
+    def test_prepare_pre_pass_frame_interval_must_be_positive(self):
+        root = self._make_temp_dir()
+
+        with self.assertRaises(ValueError):
+            prepare_pre_pass_media_assets(
+                video_path=root / "video.mp4",
+                audio_path=root / "audio.ogg",
+                cache_root=root / "pre_pass",
+                srt_blocks=[
+                    SrtBlock(
+                        index=1,
+                        timecode="00:00:00,000 --> 00:00:01,000",
+                        text="a",
+                    )
+                ],
+                interval_seconds=0,
+                max_side=768,
+            )
 
     def test_prepare_chunk_media_assets_samples_even_srt_starts(self):
         chunk = [

@@ -13,7 +13,7 @@ def _sha(text: str) -> str:
 # assembly MUST stay byte-identical to these so existing gemini caches (keyed on
 # an instruction digest) are not invalidated by the .md migration.
 _PRE_PASS_SHA = (
-    "993a3ac2505e5a83f50090c6d6836b7cebe7489e7be5655a7310f0c2a2890ff8"
+    "ff45ff44f212bd09c82563518fb850ee3ab21e1b257ea4910dfbd93ea5b02bcf"
 )
 _CHUNK_SHA = "6db96ef3bb60583a50584bc8a33161558ca00fef596367f1287ec8aaaf4a02c4"
 _BLOCK_SHAS = {

@@ -175,7 +175,7 @@ services/translate/
 ### Pre-pass (stage 7)
 
 One call over the **whole** film (full SRT + program info + full audio for gemini
-backends + sparse representative frames + optional fixed-glossary + optional
+backends + 20-40 SRT-start-aligned representative frames + optional fixed-glossary + optional
 parent context). Produces a `PrePassResult` briefing: character roster, proper
 nouns / ASR-correction dict, catchphrase fixed translations, overall tone, and a
 **per-segment summary keyed by the exact chunk index ranges**. Persisted to

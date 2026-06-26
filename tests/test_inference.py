@@ -35,14 +35,19 @@ class CapabilityTests(unittest.TestCase):
         self.assertTrue(backend_supports_audio(Backend.GEMINI_CLI))
         self.assertFalse(backend_supports_audio(Backend.CODEX))
         self.assertFalse(backend_supports_audio(Backend.CLAUDE))
+        # gemini-agy (Antigravity CLI) cannot ingest audio.
+        self.assertFalse(backend_supports_audio(Backend.GEMINI_AGY))
 
     def test_family_helpers(self):
         self.assertTrue(is_gemini_backend(Backend.GEMINI_CLI))
+        # gemini-agy is a Gemini backend (so it requires an explicit model).
+        self.assertTrue(is_gemini_backend(Backend.GEMINI_AGY))
         self.assertFalse(is_gemini_backend(Backend.CODEX))
 
     def test_agent_is_everything_except_gemini_api(self):
-        # api-vs-agent is the only taxonomy: gemini-cli is an agent too.
+        # api-vs-agent is the only taxonomy: gemini-cli/gemini-agy are agents too.
         self.assertTrue(is_agent_backend(Backend.GEMINI_CLI))
+        self.assertTrue(is_agent_backend(Backend.GEMINI_AGY))
         self.assertTrue(is_agent_backend(Backend.CODEX))
         self.assertTrue(is_agent_backend(Backend.CLAUDE))
         self.assertFalse(is_agent_backend(Backend.GEMINI_API))
@@ -197,6 +202,41 @@ class RunInferenceDispatchTests(unittest.TestCase):
         self.assertEqual(
             m.call_args.kwargs["media_files"], [Path("a.ogg"), Path("f.jpg")]
         )
+
+    def test_gemini_agy_routes_images_and_rejects_audio(self):
+        from services.inference.gemini_agy import GeminiAgyResult
+
+        agy_result = GeminiAgyResult(response="agy out", requests=1)
+        with patch.object(inf, "run_gemini_agy", return_value=agy_result) as m:
+            result = run_inference(
+                backend=Backend.GEMINI_AGY,
+                prompt="user",
+                system_prompt="SYS",
+                images=[Path("f.jpg")],
+                model="gemini-3.5-flash",
+                reasoning_effort="low",
+            )
+        self.assertEqual(result.text, "agy out")
+        self.assertEqual(result.cost, 0.0)
+        # Single concatenated prompt; images + model + effort forwarded, audio
+        # never passed (the wrapper maps model/effort to agy's --model string).
+        self.assertEqual(m.call_args.args[0], "SYS\n\nuser")
+        self.assertEqual(m.call_args.kwargs["images"], [Path("f.jpg")])
+        self.assertEqual(m.call_args.kwargs["model"], "gemini-3.5-flash")
+        self.assertEqual(m.call_args.kwargs["reasoning_effort"], "low")
+
+        # Audio to gemini-agy is rejected before any backend call.
+        with self.assertRaises(UnsupportedMediaError):
+            run_inference(
+                backend=Backend.GEMINI_AGY,
+                prompt="hi",
+                audio=[Path("a.ogg")],
+                model="m",
+            )
+
+    def test_gemini_agy_requires_model(self):
+        with self.assertRaises(InferenceError):
+            run_inference(backend=Backend.GEMINI_AGY, prompt="hi")
 
     def test_model_and_effort_thread_through_to_agent_runner(self):
         with patch.object(inf, "run_codex_exec", return_value="ok") as m:

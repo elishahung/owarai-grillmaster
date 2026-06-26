@@ -49,6 +49,12 @@ from .gemini_cli import (
     GeminiCliQuotaError,
     run_gemini_cli,
 )
+from .gemini_agy import (
+    GeminiAgyError,
+    GeminiAgyNotInstalledError,
+    GeminiAgyQuotaError,
+    run_gemini_agy,
+)
 
 __all__ = [
     "Backend",
@@ -65,6 +71,7 @@ __all__ = [
     "run_claude_sdk_exec",
     "run_gemini_api",
     "run_gemini_cli",
+    "run_gemini_agy",
     "CodexInvocationError",
     "CodexNotInstalledError",
     "ClaudeSDKExecError",
@@ -74,6 +81,9 @@ __all__ = [
     "GeminiCliError",
     "GeminiCliNotInstalledError",
     "GeminiCliQuotaError",
+    "GeminiAgyError",
+    "GeminiAgyNotInstalledError",
+    "GeminiAgyQuotaError",
 ]
 
 
@@ -162,6 +172,19 @@ def run_inference(
                         timeout=timeout,
                     )
                     return cli.response, cli.requests
+                if backend == Backend.GEMINI_AGY:
+                    # agy cannot ingest audio (capability-gated above); it sees
+                    # images only, and the prompt is staged to a file. model +
+                    # effort are mapped to agy's --model string inside the wrapper.
+                    agy = run_gemini_agy(
+                        p,
+                        model=model,
+                        reasoning_effort=reasoning_effort,
+                        images=images,
+                        cwd=cwd,
+                        timeout=timeout,
+                    )
+                    return agy.response, agy.requests
                 runner = (
                     run_codex_exec
                     if backend == Backend.CODEX

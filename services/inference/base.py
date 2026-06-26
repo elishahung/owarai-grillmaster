@@ -31,27 +31,35 @@ class Backend(StrEnum):
 
     GEMINI_API = "gemini-api"
     GEMINI_CLI = "gemini-cli"
+    GEMINI_AGY = "gemini-agy"
     CODEX = "codex"
     CLAUDE = "claude"
 
 
+# gemini-agy (Antigravity CLI) is a Gemini agent backend like gemini-cli, but it
+# cannot ingest audio — so it joins codex/claude as audio-incapable.
 _AUDIO_CAPABLE = frozenset({Backend.GEMINI_API, Backend.GEMINI_CLI})
-_GEMINI = frozenset({Backend.GEMINI_API, Backend.GEMINI_CLI})
+_GEMINI = frozenset(
+    {Backend.GEMINI_API, Backend.GEMINI_CLI, Backend.GEMINI_AGY}
+)
 # Agent backends: subscription/OAuth, local, free. Everything EXCEPT the network
-# gemini-api backend — gemini-cli is an agent too (a local CLI subprocess).
-_AGENT = frozenset({Backend.GEMINI_CLI, Backend.CODEX, Backend.CLAUDE})
+# gemini-api backend — gemini-cli and gemini-agy are agents too (local CLI
+# subprocesses).
+_AGENT = frozenset(
+    {Backend.GEMINI_CLI, Backend.GEMINI_AGY, Backend.CODEX, Backend.CLAUDE}
+)
 
 
 def is_gemini_backend(backend: Backend) -> bool:
-    """True for the Gemini backends (genai SDK or gemini CLI)."""
+    """True for the Gemini backends (genai SDK, gemini CLI, or Antigravity CLI)."""
     return backend in _GEMINI
 
 
 def is_agent_backend(backend: Backend) -> bool:
-    """True for the agent backends (gemini-cli, codex, claude).
+    """True for the agent backends (gemini-cli, gemini-agy, codex, claude).
 
     The api-vs-agent split is the core taxonomy: only gemini-api is an API
-    (network HTTP, metered, fans out widely); the other three are agents
+    (network HTTP, metered, fans out widely); the others are agents
     (local subscription processes, free, low concurrency).
     """
     return backend in _AGENT

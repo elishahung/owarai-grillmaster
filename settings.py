@@ -88,7 +88,7 @@ class Settings(BaseSettings):
 
     agent_prepass_backend: str = Field(
         default="gemini-api",
-        description="Backend for the pre-pass stage: 'gemini-api', 'gemini-cli', 'claude', or 'codex'.",
+        description="Backend for the pre-pass stage: 'gemini-api', 'gemini-cli', 'gemini-agy', 'claude', or 'codex'.",
     )
     agent_prepass_model: ModelSpecField = Field(
         default="gemini-3-flash-preview",
@@ -97,7 +97,7 @@ class Settings(BaseSettings):
 
     agent_chunk_backend: str = Field(
         default="gemini-api",
-        description="Backend for chunk translation: 'gemini-api', 'gemini-cli', 'claude', or 'codex'.",
+        description="Backend for chunk translation: 'gemini-api', 'gemini-cli', 'gemini-agy', 'claude', or 'codex'.",
     )
     agent_chunk_model: ModelSpecField = Field(
         default="gemini-3-flash-preview",
@@ -106,7 +106,7 @@ class Settings(BaseSettings):
 
     agent_postprocess_backend: str = Field(
         default="codex",
-        description="Backend for agent-driven post-processing (subtitle refine + glossary_check + chunk structural fix): 'codex' or 'claude'. Cover is always Codex (image generation).",
+        description="Backend for agent-driven post-processing (subtitle refine + glossary_check + chunk structural fix): 'codex', 'claude', 'gemini-cli', or 'gemini-agy'. Cover is always Codex (image generation).",
     )
     agent_postprocess_model: ModelSpecField = Field(
         default="gpt-5.5/medium",

@@ -110,6 +110,7 @@ Four backends (`Backend` StrEnum in `base.py`):
 |---------------|-----------------|--------|-----------------|------|
 | `gemini-api`  | API key         | ✅     | native `response_json_schema` | metered (the only paid backend) |
 | `gemini-cli`  | subscription    | ✅     | prompt-appended + repair loop | free |
+| `gemini-agy`  | subscription    | ❌     | prompt-appended + repair loop | free |
 | `codex`       | subscription    | ❌     | prompt-appended + repair loop | free |
 | `claude`      | subscription    | ❌     | prompt-appended + repair loop | free |
 
@@ -128,7 +129,9 @@ Design rules baked into this layer — preserve them:
   is `prompt → text`. The retry cap is the hardcoded `MAX_SCHEMA_RETRIES`
   constant there (not a setting).
 
-Backend files: `gemini_api.py`, `gemini_cli.py`, `codex.py`, `claude_sdk.py`;
+Backend files: `gemini_api.py`, `gemini_cli.py`, `gemini_agy.py` (Antigravity
+CLI; must run under a pty and stage the prompt to a file — `agy -p` drops stdout
+on a non-TTY and takes the prompt as an argv arg), `codex.py`, `claude_sdk.py`;
 shared: `base.py` (contract/errors), `result.py` (`InferenceResult`),
 `schema_enforce.py`.
 

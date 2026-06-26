@@ -65,7 +65,6 @@ def run_codex_exec(
         effective_model,
         "-c",
         f"model_reasoning_effort={effective_effort}",
-        "--search",
         "--ephemeral",
         "--cd",
         str(abs_cwd),

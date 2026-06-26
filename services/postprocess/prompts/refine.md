@@ -66,8 +66,8 @@ Review workflow:
 - First inspect the overall context: `.pre_pass/pre_pass.json`, the beginning and
   ending subtitles, and any obvious repeated names, teams, segment labels, or
   catchphrases.
-- For large SRT files, work in stable index windows of about 500 blocks
-  (`1-500`, `501-1000`, etc.). Within each window, compare `video.cht.srt` with
+- For large SRT files, work in stable index windows of about 200 blocks
+  (`1-200`, `201-400`, etc.). Within each window, compare `video.cht.srt` with
   nearby `video.ja.srt`, the relevant `segment_summaries`, and surrounding
   blocks. Track replacements by original block index and stitch the edited text
   back into the original SRT skeleton; never generate a newly reindexed file.

@@ -147,11 +147,6 @@ class Settings(BaseSettings):
         default=30,
         description="Absolute video frame sampling interval in seconds for chunk translation inputs",
     )
-    chunk_missing_block_tolerance: int = Field(
-        default=2,
-        description="Maximum number of unmatched/missing subtitle blocks allowed per translated chunk before structural validation fails",
-    )
-
     # --- Download & pipeline extras -----------------------------------------
     cookies_txt_path: Path | None = Field(
         default=None,

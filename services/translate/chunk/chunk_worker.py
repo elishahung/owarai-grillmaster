@@ -19,7 +19,7 @@ from services.inference.tools import build_chunk_frame_tool_instruction
 from ..assets import ChunkMediaAssets
 from ..errors import ChunkTranslationError
 from .prompts import build_chunk_instruction
-from .validation import canonicalize_by_position, validate_chunk_structure
+from .validation import validate_chunk_structure
 from .structural_fix import fix_chunk_structure
 from ..pre_pass.schema import PrePassResult, SegmentSummary
 
@@ -279,14 +279,13 @@ async def translate_chunk(
                 f"{prefix} Failed to write raw cache {raw_path.name}: {e}"
             )
 
-    tolerance = settings.chunk_missing_block_tolerance
     fixed_path = _fixed_cache_path(
         media_assets.response_dir, from_index, to_index, user_message, raw_text
     )
     if fixed_path.exists():
         try:
             fixed_text = fixed_path.read_text(encoding="utf-8")
-            blocks = validate_chunk_structure(chunk, fixed_text, tolerance)
+            blocks = validate_chunk_structure(chunk, fixed_text)
             logger.info(
                 f"{prefix} Fixed cache hit: {len(blocks)} blocks from "
                 f"{fixed_path.name}"
@@ -304,7 +303,7 @@ async def translate_chunk(
             )
 
     try:
-        blocks = validate_chunk_structure(chunk, raw_text, tolerance)
+        blocks = validate_chunk_structure(chunk, raw_text)
     except ValueError as validation_error:
         error_str = str(validation_error)
     else:
@@ -320,56 +319,34 @@ async def translate_chunk(
             to_index=to_index,
         )
 
-    # Raw output failed validation. Try the one cheap in-process fast-path
-    # first: when block counts already match, reassign the source skeleton by
-    # physical order — no agent needed for a plain index/timecode drift.
-    fixed_text: str | None = None
-    candidate = canonicalize_by_position(source_srt, raw_text)
-    if candidate is not None:
-        try:
-            blocks = validate_chunk_structure(chunk, candidate, tolerance)
-        except ValueError as positional_error:
-            logger.warning(
-                f"{prefix} Positional fast-path failed: {positional_error}"
-            )
-        else:
-            fixed_text = candidate
-            logger.success(
-                f"{prefix} Positional fast-path succeeded; {len(blocks)} blocks"
-            )
-
-    # Otherwise hand it to the agent, which self-validates until it passes.
-    if fixed_text is None:
-        logger.warning(
-            f"{prefix} Raw output failed validation: {error_str}. "
-            f"Running agent fix layer."
+    logger.warning(
+        f"{prefix} Raw output failed validation: {error_str}. "
+        f"Running agent fix layer."
+    )
+    workspace_dir = (
+        media_assets.response_dir / f"chunk_{from_index:04d}-{to_index:04d}_fix"
+    )
+    try:
+        fixed_text = await fix_chunk_structure(
+            source_srt,
+            raw_text,
+            error_str,
+            workspace_dir,
+            prefix,
         )
-        workspace_dir = (
-            media_assets.response_dir
-            / f"chunk_{from_index:04d}-{to_index:04d}_fix"
-        )
-        try:
-            fixed_text = await fix_chunk_structure(
-                source_srt,
-                raw_text,
-                error_str,
-                workspace_dir,
-                tolerance,
-                prefix,
-            )
-        except Exception as fix_error:
-            raise ChunkTranslationError(
-                f"Fix layer failed ({fix_error}); original: {error_str}",
-                accumulated_cost=api_cost,
-                retries=retries,
-                chunk_index=chunk_index,
-                total_chunks=total_chunks,
-                from_index=from_index,
-                to_index=to_index,
-            ) from fix_error
-        blocks = validate_chunk_structure(chunk, fixed_text, tolerance)
+    except Exception as fix_error:
+        raise ChunkTranslationError(
+            f"Fix layer failed ({fix_error}); original: {error_str}",
+            accumulated_cost=api_cost,
+            retries=retries,
+            chunk_index=chunk_index,
+            total_chunks=total_chunks,
+            from_index=from_index,
+            to_index=to_index,
+        ) from fix_error
+    blocks = validate_chunk_structure(chunk, fixed_text)
 
-    # Persist whichever fix (positional or agent) produced a valid result.
+    # Persist the agent-produced fix after the final in-process validation guard.
     try:
         fixed_path.write_text(fixed_text, encoding="utf-8")
         _write_chunk_manifest(

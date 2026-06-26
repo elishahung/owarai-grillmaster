@@ -2,7 +2,7 @@ import shutil
 import unittest
 import uuid
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from google import genai
 
@@ -205,6 +205,39 @@ class ChunkDispatchTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("On-demand video frames", system_prompt)
         self.assertIn("your assigned chunk range", system_prompt)
         self.assertIn("get_frames_for_chunk.py", system_prompt)
+
+    async def test_raw_validation_failure_goes_directly_to_fix_layer(self):
+        root = self._make_temp_dir()
+        assets = self._assets(root)
+        chunk = [
+            SrtBlock(
+                index=1,
+                timecode="00:00:01,000 --> 00:00:02,000",
+                text="source",
+            )
+        ]
+        raw_srt = "7\n99:99:99,999 --> 99:99:99,999\ntranslated\n"
+        fixed_srt = "1\n00:00:01,000 --> 00:00:02,000\ntranslated\n"
+
+        with (
+            patch.object(cw.settings, "agent_chunk_backend", "gemini-api"),
+            patch.object(
+                cw,
+                "run_inference",
+                return_value=InferenceResult(
+                    text=raw_srt, cost=0.0, requests=1
+                ),
+            ),
+            patch.object(
+                cw,
+                "fix_chunk_structure",
+                new=AsyncMock(return_value=fixed_srt),
+            ) as mock_fix,
+        ):
+            result = await translate_chunk(assets, chunk, 0, 1, self._pre_pass())
+
+        mock_fix.assert_awaited_once()
+        self.assertEqual(result.blocks[0].text, "translated")
 
 
 if __name__ == "__main__":

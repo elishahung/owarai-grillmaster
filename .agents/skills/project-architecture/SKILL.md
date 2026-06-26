@@ -194,15 +194,16 @@ cache-and-repair ladder:
 2. Build the user message: pre-pass briefing (global + this segment's summary) +
    the chunk's frame timestamps + the SRT slice. Call `run_inference`
    (`schema=None`, free-form SRT out) with retries + exponential backoff.
-3. **Structural validation** (`validate_chunk_structure`) checks index/timecode
-   continuity, tolerating up to `chunk_missing_block_tolerance` dropped blocks.
-4. On validation failure, the repair ladder:
-   - **Positional fast-path** (`canonicalize_by_position`): if block counts match,
-     reassign the source skeleton by physical order — no agent, fixes plain
-     index/timecode drift cheaply.
-   - **Agent fix layer** (`fix_chunk_structure`): hand raw output + the source
-     skeleton + the error to an agent backend that self-validates until it passes.
-   - The repaired result is cached as `…_<>.fixed.srt`.
+3. **Strict structural validation** (`validate_chunk_structure`) checks that
+   every source timecode appears exactly once, there are no unexpected or
+   duplicate timecodes, the block count matches, and every output block has
+   non-empty translated text.
+4. On validation failure, the worker invokes the **agent fix layer**
+   (`fix_chunk_structure`): hand raw output + the source skeleton + the error to
+   an agent backend that self-validates until it passes. The agent may translate
+   a genuinely missing block from `source.srt`, but it must preserve the source
+   skeleton and cannot leave blank placeholder blocks. The repaired result is
+   cached as `…_<>.fixed.srt`.
 
 `facade._translate_chunks_async` gathers all chunks (collecting partial costs and
 per-chunk failures into a `TranslationError` summary on failure), then

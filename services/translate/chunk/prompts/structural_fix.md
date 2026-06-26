@@ -12,9 +12,10 @@ Write scope (strict): you may only create `fixed.srt` in the current working dir
 Rules:
 
 - `source.srt` is the single authority for index and timecode. Copy them verbatim into `fixed.srt`.
-- Do **not** translate, rewrite, improve, split, or merge any translated text. Move existing text as whole units only.
+- Do **not** rewrite, improve, split, or merge any translated text. Move existing text as whole units whenever the translated payload exists.
 - Pair each `broken.srt` text payload to the source block it belongs to (use timecode proximity, surrounding context, and physical order to decide). Output `fixed.srt` blocks in source order.
-- A source block with no corresponding translated text must be emitted with empty text (a blank text line). This is allowed within the tolerance below; do not invent or duplicate text to fill it.
+- If a source block genuinely has no corresponding translated payload in `broken.srt`, translate only that missing source block from `source.srt` so `fixed.srt` has non-empty Traditional Chinese text for every source block.
+- Do not treat a merge/layout artifact as missing text. If `broken.srt` merged multiple source blocks into one payload, distribute that payload to the correct source blocks without leaving blank placeholder blocks.
 - Discard extra/untrustworthy output blocks that do not correspond to any source block.
 
 Self-validation (required): after writing `fixed.srt`, run the validator command given below. If it prints anything other than `VALID`, read the reported errors, correct `fixed.srt`, and run it again. Repeat until the validator prints `VALID`. Do not stop until it passes.

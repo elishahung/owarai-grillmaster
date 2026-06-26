@@ -1,11 +1,10 @@
 """Agent-driven structural repair for broken chunk SRT outputs.
 
-When a translated chunk fails `validate_chunk_structure` and the cheap local
-`canonicalize_by_position` fast-path cannot fix it, we hand the problem to a
-coding agent (Codex or Claude, per `settings.agent_postprocess_backend`): it gets the
-authoritative source SRT, the broken output, and a validator command it runs
-itself, iterating until the output matches the source skeleton. The Python
-worker re-validates the agent's `fixed.srt` as a final guard.
+When a translated chunk fails `validate_chunk_structure`, we hand the problem
+to a coding agent (Codex or Claude, per `settings.agent_postprocess_backend`):
+it gets the authoritative source SRT, the broken output, and a validator command
+it runs itself, iterating until the output matches the source skeleton. The
+Python worker re-validates the agent's `fixed.srt` as a final guard.
 
 This mirrors the `services.postprocess` task pattern: a thin orchestrator over
 `services.inference.run_inference` plus a `prompts/*.md` system prompt. The
@@ -34,7 +33,7 @@ _PROMPT = (Path(__file__).parent / "prompts" / "structural_fix.md").read_text(
 _VALIDATOR = (Path(__file__).parent / "validate_chunk.py").resolve()
 
 
-def _concrete_section(tolerance: int, error: str) -> str:
+def _concrete_section(error: str) -> str:
     """Append the run-specific files, validator command, and head-start error."""
     return (
         "\n\n## This task\n\n"
@@ -42,7 +41,7 @@ def _concrete_section(tolerance: int, error: str) -> str:
         "Validator command (run from the current working directory; iterate "
         "until it prints `VALID`):\n\n"
         "```\n"
-        f'python "{_VALIDATOR}" source.srt fixed.srt --tolerance {tolerance}\n'
+        f'python "{_VALIDATOR}" source.srt fixed.srt\n'
         "```\n"
     )
 
@@ -52,7 +51,6 @@ async def fix_chunk_structure(
     broken_output: str,
     error: str,
     workspace_dir: Path,
-    tolerance: int,
     log_prefix: str = "",
 ) -> str:
     """Repair `broken_output` to match `source_srt` via an agent; return the SRT.
@@ -69,7 +67,7 @@ async def fix_chunk_structure(
     # Drop any stale artifact so a crashed prior run cannot masquerade as success.
     fixed_path.unlink(missing_ok=True)
 
-    prompt = _PROMPT + _concrete_section(tolerance, error)
+    prompt = _PROMPT + _concrete_section(error)
     backend = Backend(settings.agent_postprocess_backend)
     logger.info(
         f"{log_prefix} Invoking {backend.value} to repair chunk structure "

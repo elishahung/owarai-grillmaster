@@ -27,11 +27,15 @@ class FixChunkStructureTests(unittest.TestCase):
             ) as run_agent:
                 result = asyncio.run(
                     chunk_fix.fix_chunk_structure(
-                        _SOURCE_SRT, _BROKEN_SRT, "boom", workspace, tolerance=2
+                        _SOURCE_SRT, _BROKEN_SRT, "boom", workspace
                     )
                 )
 
             run_agent.assert_called_once()
+            prompt = run_agent.call_args.kwargs["prompt"]
+            self.assertIn("validate_chunk.py", prompt)
+            self.assertIn("source.srt fixed.srt", prompt)
+            self.assertNotIn("--tolerance", prompt)
             self.assertEqual(result, _FIXED_SRT)
             # Inputs were materialized for the agent.
             self.assertTrue((workspace / "source.srt").exists())
@@ -51,7 +55,7 @@ class FixChunkStructureTests(unittest.TestCase):
                 with self.assertRaises(ChunkFixError):
                     asyncio.run(
                         chunk_fix.fix_chunk_structure(
-                            _SOURCE_SRT, _BROKEN_SRT, "boom", workspace, tolerance=2
+                            _SOURCE_SRT, _BROKEN_SRT, "boom", workspace
                         )
                     )
 

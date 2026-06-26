@@ -1,15 +1,15 @@
 """CLI the fix agent runs to self-check a candidate chunk SRT.
 
 Prints `VALID` and exits 0 when the candidate matches the source skeleton
-within tolerance; otherwise prints the validator's error string and exits 1.
+strictly; otherwise prints the validator's error string and exits 1.
 
 Self-contained on purpose: it bootstraps `sys.path` from its own location so
 `services` is importable regardless of the agent's cwd, and it imports only
 `services.srt` + `services.translate.chunk.validation` (no `settings`, no
-`.env`). Tolerance is passed as a flag so this never depends on app config.
+`.env`).
 
 Usage:
-    python validate_chunk.py SOURCE.srt CANDIDATE.srt --tolerance N
+    python validate_chunk.py SOURCE.srt CANDIDATE.srt
 """
 
 from __future__ import annotations
@@ -32,19 +32,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path, help="authoritative source SRT")
     parser.add_argument("candidate", type=Path, help="candidate SRT to check")
-    parser.add_argument(
-        "--tolerance",
-        type=int,
-        required=True,
-        help="max missing/extra source blocks allowed",
-    )
     args = parser.parse_args(argv)
 
     source_blocks = parse_srt(args.source.read_text(encoding="utf-8-sig"))
     candidate_text = args.candidate.read_text(encoding="utf-8-sig")
 
     try:
-        validate_chunk_structure(source_blocks, candidate_text, args.tolerance)
+        validate_chunk_structure(source_blocks, candidate_text)
     except ValueError as error:
         print(str(error))
         return 1

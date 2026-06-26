@@ -188,6 +188,8 @@ def _invoke_once(
         "--skip-trust",
         "--approval-mode",
         "auto_edit",
+        "--search",
+        "--ephemeral",
         "--policy",
         str(policy_path),
     ]
@@ -307,8 +309,7 @@ def run_gemini_cli(
             media_block = "\n\n[ATTACHED MEDIA]\n" + "\n".join(tokens)
 
         policy_path = (
-            Path(tempfile.mkdtemp(prefix="gemini_policy_"))
-            / "frame_tool.toml"
+            Path(tempfile.mkdtemp(prefix="gemini_policy_")) / "frame_tool.toml"
         )
         policy_rules: list[str] = []
         for prefix in frame_tool_command_prefixes():

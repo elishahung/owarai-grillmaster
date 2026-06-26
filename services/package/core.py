@@ -8,7 +8,13 @@ from loguru import logger
 
 from project import (
     ASS_FILE_NAME,
+    GLOSSARY_CHECK_CACHE_DIR_NAME,
+    GLOSSARY_CHECK_REPORT_FILE_NAME,
     PROJECT_FILE_NAME,
+    PRE_PASS_CACHE_DIR_NAME,
+    PRE_PASS_FILE_NAME,
+    REFINE_CACHE_DIR_NAME,
+    REFINE_REPORT_FILE_NAME,
     VIDEO_FILE_NAME,
     Project,
 )
@@ -69,6 +75,7 @@ def package_project(
         return
 
     copy_cover(source_root, target_dir)
+    copy_auxiliary_artifacts(source_root, target_dir)
     logger.success(f"Project packaged to {target_dir}")
 
 
@@ -112,6 +119,39 @@ def prepare_noise(
         chunk_duration_seconds=chunk_duration_seconds,
         progress=progress,
     )
+
+
+def copy_auxiliary_artifacts(source_root: Path, target_dir: Path) -> None:
+    """Copy analysis artifacts into a package directory."""
+    required_pre_pass = source_root / PRE_PASS_CACHE_DIR_NAME / PRE_PASS_FILE_NAME
+    if required_pre_pass.exists():
+        shutil.copy2(required_pre_pass, target_dir / PRE_PASS_FILE_NAME)
+        logger.info(
+            f"Copied package artifact: "
+            f"{required_pre_pass} -> {target_dir / PRE_PASS_FILE_NAME}"
+        )
+    else:
+        logger.warning(f"Package: pre-pass JSON not found at {required_pre_pass}")
+
+    optional_reports = [
+        (
+            source_root / REFINE_CACHE_DIR_NAME / REFINE_REPORT_FILE_NAME,
+            "refine.md",
+        ),
+        (
+            source_root
+            / GLOSSARY_CHECK_CACHE_DIR_NAME
+            / GLOSSARY_CHECK_REPORT_FILE_NAME,
+            "glossary_check.md",
+        ),
+    ]
+    for source, target_name in optional_reports:
+        if not source.exists():
+            continue
+        shutil.copy2(source, target_dir / target_name)
+        logger.info(
+            f"Copied package artifact: {source} -> {target_dir / target_name}"
+        )
 
 
 def _prepare_target_dir(project: Project, package_root: Path) -> Path:

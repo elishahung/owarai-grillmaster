@@ -245,7 +245,9 @@ drag in every backend.
 - `services/fixed_glossary/` — loads `fixed_glossary.json` / `.md` (canonical
   term translations) consumed by pre-pass, glossary-check, and finalize.
 - `services/package/` — deliverable assembly: burn ASS into video (`core.py`),
-  copy cover, plus a `noise`/`remix` packaging path (`noise.py`, `remix.py`).
+  copy cover and analysis artifacts (`pre_pass.json`, optional
+  `refine.md`/`glossary_check.md`), plus a `noise`/`remix` packaging path
+  (`noise.py`, `remix.py`).
 - `services/progress.py` — Rich progress reporter (`create_progress_reporter`,
   `NoopProgressReporter`) threaded through chunk translation and packaging.
 

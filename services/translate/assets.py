@@ -153,19 +153,10 @@ def prepare_chunk_media_assets(
     response_dir = cache_root / "responses"
     manifest_path = manifests_dir / f"chunk_{chunk_slug}.json"
 
-    # Push the first chunk's first frame past the TV station intro/logo.
-    # Audio segment + chunk time_range stay anchored to the subtitle range.
-    frame_start = range_info.start_seconds
-    if chunk_index == 0:
-        frame_start = min(
-            max(frame_start, intro_skip_seconds), range_info.end_seconds
-        )
-    frame_timestamps = MediaProcessor.absolute_interval_timestamps(
-        start_seconds=frame_start,
-        end_seconds=range_info.end_seconds,
+    frame_timestamps = _chunk_srt_start_frame_timestamps(
+        chunk=chunk,
+        range_info=range_info,
         interval_seconds=interval_seconds,
-        include_start=True,
-        include_end=True,
     )
 
     digest = hashlib.sha256(
@@ -210,9 +201,7 @@ def prepare_chunk_media_assets(
                 "to_index": chunk[-1].index,
                 "time_range": range_info.model_dump(),
                 "interval_seconds": interval_seconds,
-                "intro_skip_seconds": intro_skip_seconds
-                if chunk_index == 0
-                else None,
+                "intro_skip_seconds": None,
                 "max_side": max_side,
                 "audio": audio_ref.model_dump(mode="json") if audio_ref else None,
                 "frames": [frame.model_dump(mode="json") for frame in frames],
@@ -236,6 +225,50 @@ def _chunk_time_range(chunk: list[SrtBlock]) -> TimeRange:
     start = MediaProcessor.parse_timecode_line(chunk[0].timecode).start_seconds
     end = MediaProcessor.parse_timecode_line(chunk[-1].timecode).end_seconds
     return TimeRange(start_seconds=start, end_seconds=end)
+
+
+def _chunk_srt_start_frame_timestamps(
+    *,
+    chunk: list[SrtBlock],
+    range_info: TimeRange,
+    interval_seconds: int,
+) -> list[float]:
+    if interval_seconds <= 0:
+        raise ValueError("interval_seconds must be positive")
+    if not chunk or range_info.duration_seconds <= 0:
+        return []
+
+    frame_budget = int(range_info.duration_seconds // interval_seconds)
+    frame_count = min(len(chunk), max(1, frame_budget))
+    selected_blocks = _evenly_select_blocks(chunk, frame_count)
+    timestamps = []
+    for block in selected_blocks:
+        block_start = MediaProcessor.parse_timecode_line(
+            block.timecode
+        ).start_seconds
+        timestamp = min(
+            max(block_start + 0.2, range_info.start_seconds),
+            range_info.end_seconds,
+        )
+        timestamps.append(round(timestamp, 3))
+    return timestamps
+
+
+def _evenly_select_blocks(
+    blocks: list[SrtBlock], count: int
+) -> list[SrtBlock]:
+    if count <= 0:
+        return []
+    if count >= len(blocks):
+        return blocks
+    if count == 1:
+        return [blocks[0]]
+
+    last_index = len(blocks) - 1
+    return [
+        blocks[round(slot * last_index / (count - 1))]
+        for slot in range(count)
+    ]
 
 
 def _build_frame_asset(

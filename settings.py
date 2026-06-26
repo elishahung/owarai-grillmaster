@@ -145,7 +145,7 @@ class Settings(BaseSettings):
     )
     chunk_frame_interval_seconds: int = Field(
         default=30,
-        description="Absolute video frame sampling interval in seconds for chunk translation inputs",
+        description="Frame budget interval in seconds for SRT-start-based chunk translation frame sampling",
     )
     # --- Download & pipeline extras -----------------------------------------
     cookies_txt_path: Path | None = Field(

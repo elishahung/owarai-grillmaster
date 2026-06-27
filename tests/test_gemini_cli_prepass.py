@@ -138,12 +138,72 @@ class RunGeminiCliTests(unittest.TestCase):
         self.assertEqual(result.requests, 2)
         _, kwargs = mock_run.call_args
         self.assertEqual(kwargs["input"], "hi")
-        self.assertNotIn("GEMINI_API_KEY", kwargs["env"])
+        for key in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_API_KEY"):
+            self.assertNotIn(key, kwargs["env"])
         argv = mock_run.call_args.args[0]
         self.assertIn("--approval-mode", argv)
         self.assertIn("auto_edit", argv)
         self.assertIn("--policy", argv)
         self.assertNotIn("--yolo", argv)
+
+    def test_gcp_project_setting_sets_google_cloud_project(self):
+        self._patch_which()
+        mock_run = self._patch_run(return_value=_completed("answer"))
+        with patch.object(
+            cli_mod.settings, "agent_gemini_gcp_project", "subs-project"
+        ):
+            run_gemini_cli("hi", model="m")
+
+        env = mock_run.call_args.kwargs["env"]
+        self.assertEqual(env["GOOGLE_CLOUD_PROJECT"], "subs-project")
+
+    def test_inherited_google_cloud_project_kept_when_setting_unset(self):
+        self._patch_which()
+        mock_run = self._patch_run(return_value=_completed("answer"))
+        with (
+            patch.object(cli_mod.settings, "agent_gemini_gcp_project", None),
+            patch.dict(
+                os.environ,
+                {
+                    "GOOGLE_CLOUD_PROJECT": "inherited-project",
+                    "GOOGLE_CLOUD_PROJECT_ID": "inherited-project-id",
+                },
+                clear=False,
+            ),
+        ):
+            run_gemini_cli("hi", model="m")
+
+        env = mock_run.call_args.kwargs["env"]
+        self.assertEqual(env["GOOGLE_CLOUD_PROJECT"], "inherited-project")
+        self.assertEqual(
+            env["GOOGLE_CLOUD_PROJECT_ID"], "inherited-project-id"
+        )
+
+    def test_gcp_project_setting_overrides_inherited_project(self):
+        self._patch_which()
+        mock_run = self._patch_run(return_value=_completed("answer"))
+        with (
+            patch.object(
+                cli_mod.settings,
+                "agent_gemini_gcp_project",
+                "configured-project",
+            ),
+            patch.dict(
+                os.environ,
+                {
+                    "GOOGLE_CLOUD_PROJECT": "inherited-project",
+                    "GOOGLE_CLOUD_PROJECT_ID": "inherited-project-id",
+                },
+                clear=False,
+            ),
+        ):
+            run_gemini_cli("hi", model="m")
+
+        env = mock_run.call_args.kwargs["env"]
+        self.assertEqual(env["GOOGLE_CLOUD_PROJECT"], "configured-project")
+        self.assertEqual(
+            env["GOOGLE_CLOUD_PROJECT_ID"], "inherited-project-id"
+        )
 
     def test_quota_error_classified(self):
         self._patch_which()

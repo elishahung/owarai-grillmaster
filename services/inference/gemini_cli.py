@@ -24,6 +24,8 @@ from pathlib import Path
 from loguru import logger
 from pydantic import BaseModel
 
+from settings import settings
+
 from .base import (
     DEFAULT_TIMEOUT_SECS,
     InferenceError,
@@ -120,10 +122,13 @@ def extract_request_count(envelope: dict) -> int:
     return total if found and total > 0 else 1
 
 
-def _scrubbed_env() -> dict[str, str]:
+def _gemini_cli_env() -> dict[str, str]:
     env = os.environ.copy()
     for key in _API_KEY_ENV_VARS:
         env.pop(key, None)
+    project = (settings.agent_gemini_gcp_project or "").strip()
+    if project:
+        env["GOOGLE_CLOUD_PROJECT"] = project
     return env
 
 
@@ -207,7 +212,7 @@ def _invoke_once(
             timeout=timeout,
             capture_output=True,
             input=prompt,
-            env=_scrubbed_env(),
+            env=_gemini_cli_env(),
             cwd=str(cwd) if cwd is not None else None,
         )
     except subprocess.TimeoutExpired as exc:

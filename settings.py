@@ -71,7 +71,9 @@ class Settings(BaseSettings):
     # Every model-driven stage (pre-pass, chunk, post-processing) picks one
     # backend: 'gemini-api', 'gemini-cli', 'claude', or 'codex'. gemini-cli /
     # claude / codex use subscription/OAuth auth; gemini-api uses
-    # AGENT_GEMINI_API_KEY (only then is the key required). claude / codex
+    # AGENT_GEMINI_API_KEY (only then is the key required). gemini-cli can
+    # additionally receive AGENT_GEMINI_GCP_PROJECT as subprocess-only
+    # GOOGLE_CLOUD_PROJECT for Code Assist subscription auth. claude / codex
     # cannot ingest audio, so those stages run on frames + SRT only. Each stage
     # sets its own backend + model + reasoning_effort; the model and effort are
     # passed to whichever backend the stage selected (set them to values that
@@ -84,6 +86,10 @@ class Settings(BaseSettings):
     agent_gemini_api_key: str | None = Field(
         default=None,
         description="API key for Google Gemini. Required only when a stage uses the 'gemini-api' backend.",
+    )
+    agent_gemini_gcp_project: str | None = Field(
+        default=None,
+        description="Optional Google Cloud project ID injected as GOOGLE_CLOUD_PROJECT for the gemini-cli subprocess only.",
     )
 
     agent_prepass_backend: str = Field(

@@ -268,6 +268,10 @@ Pydantic-settings, loaded from `.env`. Notable patterns:
   model_reasoning_effort, claude effort). The `ModelSpecField` annotation uses
   `NoDecode` so pydantic-settings doesn't JSON-decode the shorthand string.
 - `AGENT_GEMINI_API_KEY` is required **only** when a stage uses `gemini-api`.
+- `AGENT_GEMINI_GCP_PROJECT` is optional and applies **only** to `gemini-cli`:
+  the subprocess receives it as temporary `GOOGLE_CLOUD_PROJECT` for
+  subscription / Code Assist auth. API-key env vars are still scrubbed from the
+  CLI subprocess so it does not silently switch to API-key billing.
 
 ## Prompts are `.md` files
 

@@ -131,6 +131,7 @@ ELEVENLABS_STT_LANGUAGE_CODE=jpn
 #   Antigravity CLI）。AGENT_GEMINI_API_KEY 只在某階段用 gemini-api 時才需要。*_MODEL 寫成
 #   "model" 或 "model/effort"（effort 為 low/medium/high，省略則預設 high）。
 AGENT_GEMINI_API_KEY=xxx
+AGENT_GEMINI_GCP_PROJECT=your-project-id       # 可選；gemini-cli 訂閱/Code Assist auth 時，臨時注入為 GOOGLE_CLOUD_PROJECT
 
 AGENT_PREPASS_BACKEND=gemini-api               # gemini-api / gemini-cli / gemini-agy / claude / codex
 AGENT_PREPASS_MODEL=gemini-3.1-pro-preview     # "model" 或 "model/effort"（如 claude-opus-4-8/high）

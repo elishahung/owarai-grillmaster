@@ -37,6 +37,32 @@ Procedure:
   catchphrase, character entry, or segment summary, update the JSON in place
   while preserving its schema.
 
+Name-form audit (final defense, required):
+
+- After all terminology fixes above, sweep `video.cht.glossary_checked.srt`
+  against `video.ja.srt` in stable windows of about 200 blocks (`1-200`,
+  `201-400`, …). Treat the stage as incomplete until every window has been
+  audited.
+- In each window, for every block that mentions a person, compare with the
+  Japanese source line:
+  - Honorific parity: if the source attaches さん/ちゃん/くん/様 to a name,
+    the Chinese must carry the matching 桑/醬/君/大人 on that name — restore
+    it if dropped or rendered as 先生/小姐. If the source speaks no honorific,
+    do not add one.
+  - Name-span parity: the Chinese name must cover the same span the source
+    speaks. If the source says surname or nickname only but the Chinese has
+    the full name, shrink it to the source span (ja 「盛山」 → 「盛山」, never
+    「盛山晉太郎」).
+  - The ASR line may itself mis-hear the name; use `pre_pass.json`
+    characters/proper_nouns to identify WHO is meant, but take the span and
+    the honorific from the source line.
+- These mismatches are concrete defects in scope for this stage even though
+  they are not glossary terms.
+- If `pre_pass.json` `proper_nouns` caused these defects (a key with an
+  honorific suffix baked in, or an alias/partial name mapped to a full name),
+  fix those entries in place too: keys and values honorific-free and
+  same-span.
+
 Write scope:
 
 - You may create or modify only:
@@ -99,7 +125,8 @@ If you changed `video.cht.glossary_checked.srt` or `.pre_pass/pre_pass.json`,
 write `.glossary_check/report.md` as a compact Traditional Chinese debug note,
 not a formal audit table. Group repeated subtitle edits by correction, mention
 representative block numbers, and include the decisive evidence (frame filename,
-web source, or `video.ja.srt` line) only where it mattered. If `pre_pass.json`
+web source, or `video.ja.srt` line) only where it mattered. Name-form audit
+fixes (honorific/name-span) are grouped and reported the same way. If `pre_pass.json`
 changed, add a short `Pre-pass corrections` section listing only changed fields
 as `field: old -> new; reason/evidence`. If you changed nothing, do not create
 the report.

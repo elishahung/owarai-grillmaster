@@ -9,13 +9,14 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-# Captured from the original instructions.py constants. The has_audio=True
-# assembly MUST stay byte-identical to these so existing gemini caches (keyed on
-# an instruction digest) are not invalidated by the .md migration.
+# The has_audio=True assembly MUST stay byte-identical to these so existing
+# gemini caches (keyed on an instruction digest) are not invalidated by
+# accidental edits. Re-captured after the honorific/name-span same-span
+# guardrail revision (intentional one-time cache invalidation).
 _PRE_PASS_SHA = (
-    "ff45ff44f212bd09c82563518fb850ee3ab21e1b257ea4910dfbd93ea5b02bcf"
+    "6548706421d57e7dd7ffc434c9f42b5f63b525c0251c1d054352c67fa15ed7ef"
 )
-_CHUNK_SHA = "6db96ef3bb60583a50584bc8a33161558ca00fef596367f1287ec8aaaf4a02c4"
+_CHUNK_SHA = "5913a5116dfd7234760f51d2c10204b3c966c8c12c5afcb76109f59bad80fed4"
 _BLOCK_SHAS = {
     "OFFICIAL_SOURCE_METADATA_INSTRUCTION": (
         "dc97bbcf819523d86f92b46d2f2be341970f3ee01ce9f12379316ecf611f2253"

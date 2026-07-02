@@ -185,6 +185,9 @@ parent context). Produces a `PrePassResult` briefing: character roster, proper
 nouns / ASR-correction dict, catchphrase fixed translations, overall tone, and a
 **per-segment summary keyed by the exact chunk index ranges**. Persisted to
 `.pre_pass/pre_pass.json` — this file is the explicit hand-off to the chunk stage.
+`proper_nouns` entries must be honorific-free and same-span (alias → that
+alias's own rendering, never the full name; alias identity goes in `role_note`)
+— chunk workers apply them verbatim, so a violating entry propagates globally.
 
 ### Chunk translation (stage 8) — `chunk_worker.translate_chunk`
 
@@ -227,7 +230,9 @@ agent reads/writes files in the project dir and we validate afterward
   already exists, treats Latin/kana blocks only as priority hints, may use web
   search or on-demand frames, and may correct `.pre_pass/pre_pass.json` after
   preserving the original as `.pre_pass/pre_pass.raw.json`. The updated
-  pre-pass must still validate against `PrePassResult`.
+  pre-pass must still validate against `PrePassResult`. Its prompt ends with a
+  required name-form audit (honorific/name-span parity vs `video.ja.srt`) as
+  the final defense against dropped honorifics and full-name expansion.
 - `cover.py` — stylize the poster. **Always Codex** (image generation), regardless
   of the post-process backend setting. Runs async (see pipeline notes).
 

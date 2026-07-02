@@ -73,8 +73,12 @@ Review workflow:
   back into the original SRT skeleton; never generate a newly reindexed file.
 - In each window, prioritize concrete defects: mistranslation, missing
   translation, leftover Japanese, unsupported inserted subjects, wrong
-  speaker/person/team reference, recurring term drift, joke-function loss,
-  overly formal phrasing that hurts timing, and awkward line wrapping.
+  speaker/person/team reference, dropped or substituted honorific suffixes
+  versus the Japanese source (ja attaches さん/ちゃん/くん to a name but the
+  Chinese lacks the matching 桑/醬/君, or renders it as 先生/小姐), name-span
+  expansion (ja uses surname/nickname only but the Chinese has the full name),
+  recurring term drift, joke-function loss, overly formal phrasing that hurts
+  timing, and awkward line wrapping.
 - When a candidate edit is visually grounded and the timestamp is known, use the
   on-demand frame tool before committing the edit if the pre-sampled frames do
   not already settle it.

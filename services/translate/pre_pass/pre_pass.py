@@ -9,7 +9,6 @@ parsed result is written as the explicit ``pre_pass.json`` hand-off.
 """
 
 import json
-import hashlib
 from pathlib import Path
 
 from loguru import logger
@@ -180,39 +179,22 @@ def run_pre_pass(
     active_backend = settings.agent_prepass_backend
     spec = settings.agent_prepass_model
 
-    # The agent-only instruction block (appended below for agent backends)
-    # embeds volatile absolute frame-tool paths, so digest a stable token instead
-    # of the rendered text — keeps cache keys machine-independent while still
-    # distinguishing agent capability guidance on/off.
     agent_instruction_enabled = is_agent_backend(backend)
-    prompt_digest = hashlib.sha256(
-        (
-            system_instruction
-            + user_message
-            + str(settings.prepass_frame_interval_seconds)
-            + str(settings.video_frame_max_side)
-            + active_backend
-            + str(spec)
-            + ("agent_tools:v1" if agent_instruction_enabled else "")
-        ).encode("utf-8")
-    ).hexdigest()
     manifest_path = pre_pass_cache_dir / "manifest.json"
 
-    if pre_pass_path.exists() and manifest_path.exists():
+    # An existing pre_pass.json is reused as-is: no prompt/parameter matching.
+    # Delete .pre_pass/ manually to force a re-run with new parameters.
+    if pre_pass_path.exists():
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if manifest.get("prompt_digest") == prompt_digest:
-                logger.info(
-                    f"[pre-pass] Cache validated by manifest {manifest_path}"
-                )
-                return (
-                    PrePassResult.model_validate_json(
-                        pre_pass_path.read_text(encoding="utf-8")
-                    ),
-                    0.0,
-                )
+            result = PrePassResult.model_validate_json(
+                pre_pass_path.read_text(encoding="utf-8")
+            )
+            logger.info(f"[pre-pass] Reusing existing {pre_pass_path}")
+            return result, 0.0
         except Exception as e:
-            logger.warning(f"[pre-pass] Manifest read failed: {e}")
+            logger.warning(
+                f"[pre-pass] Existing pre_pass unusable ({e}); re-running"
+            )
 
     if parent_pre_pass_context:
         logger.info(f"[pre-pass] Parent pre-pass context injected")
@@ -278,14 +260,7 @@ def run_pre_pass(
     manifest_path.write_text(
         json.dumps(
             {
-                "prompt_digest": prompt_digest,
                 "backend": active_backend,
-                "instruction_sha256": hashlib.sha256(
-                    system_instruction.encode("utf-8")
-                ).hexdigest(),
-                "user_message_sha256": hashlib.sha256(
-                    user_message.encode("utf-8")
-                ).hexdigest(),
                 "frames": [
                     frame.model_dump(mode="json")
                     for frame in pre_pass_assets.frames

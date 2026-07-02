@@ -213,7 +213,6 @@ class Translate:
                     video_path=request.video_path,
                     audio_path=request.audio_path,
                     cache_root=request.chunks_cache_dir,
-                    video_key=request.audio_key,
                     chunk=chunk,
                     chunk_index=i,
                     total_chunks=len(chunks),

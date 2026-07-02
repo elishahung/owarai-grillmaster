@@ -1,9 +1,7 @@
 """Chunk-worker system-instruction assembly from the prompt `.md` file.
 
 The base instruction lives as ``prompts/chunk.md``. Audio-bearing phrasing is
-swapped out when the backend cannot ingest audio (agent backends). With
-``has_audio=True`` the instruction is byte-identical to the historical constant
-so existing gemini caches do not invalidate (guarded by a hash-stability test).
+swapped out when the backend cannot ingest audio (agent backends).
 """
 
 from __future__ import annotations

@@ -1,7 +1,6 @@
 """Translate a single SRT chunk concurrently with timecode-first validation."""
 
 import asyncio
-import hashlib
 import json
 
 from loguru import logger
@@ -32,37 +31,15 @@ class ChunkTranslationResult(BaseModel):
     to_index: int
 
 
-def _raw_cache_path(
-    response_dir,
-    from_index: int,
-    to_index: int,
-    user_message: str,
-    backend: str,
-    model: str,
-):
-    # Key the raw cache on backend + model too, so switching backend/model does
-    # not reuse another backend's cached output for the same user_message.
-    digest = hashlib.sha256(
-        f"{backend}\n{model}\n{user_message}".encode("utf-8")
-    ).hexdigest()[:8]
-    return (
-        response_dir / f"chunk_{from_index:04d}-{to_index:04d}_{digest}.raw.srt"
-    )
+def _raw_cache_path(response_dir, from_index: int, to_index: int):
+    # Keyed on the chunk range only: an existing file is reused as-is. Changing
+    # backend/model/prompt does not invalidate it — delete the cache manually
+    # when re-running with different parameters.
+    return response_dir / f"chunk_{from_index:04d}-{to_index:04d}.raw.srt"
 
 
-def _fixed_cache_path(
-    response_dir,
-    from_index: int,
-    to_index: int,
-    user_message: str,
-    raw_text: str,
-):
-    user_digest = hashlib.sha256(user_message.encode("utf-8")).hexdigest()[:8]
-    raw_digest = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()[:8]
-    return (
-        response_dir
-        / f"chunk_{from_index:04d}-{to_index:04d}_{user_digest}_{raw_digest}.fixed.srt"
-    )
+def _fixed_cache_path(response_dir, from_index: int, to_index: int):
+    return response_dir / f"chunk_{from_index:04d}-{to_index:04d}.fixed.srt"
 
 
 def _find_segment_summary(
@@ -128,9 +105,7 @@ def _build_user_message(
 
 def _write_chunk_manifest(
     media_assets: ChunkMediaAssets,
-    user_message: str,
     raw_path,
-    instruction: str,
     fixed_path=None,
 ):
     try:
@@ -141,12 +116,6 @@ def _write_chunk_manifest(
             )
         manifest.update(
             {
-                "instruction_sha256": hashlib.sha256(
-                    instruction.encode("utf-8")
-                ).hexdigest(),
-                "user_message_sha256": hashlib.sha256(
-                    user_message.encode("utf-8")
-                ).hexdigest(),
                 "raw_response_path": str(raw_path),
                 "fixed_response_path": str(fixed_path) if fixed_path else None,
             }
@@ -192,14 +161,7 @@ async def translate_chunk(
             media_assets.time_range.start_seconds,
             media_assets.time_range.end_seconds,
         )
-    raw_path = _raw_cache_path(
-        media_assets.response_dir,
-        from_index,
-        to_index,
-        user_message,
-        settings.agent_chunk_backend,
-        str(spec),
-    )
+    raw_path = _raw_cache_path(media_assets.response_dir, from_index, to_index)
     source_srt = "\n\n".join(block.raw for block in chunk)
 
     raw_text: str | None = None
@@ -271,16 +233,14 @@ async def translate_chunk(
 
         try:
             raw_path.write_text(raw_text, encoding="utf-8")
-            _write_chunk_manifest(
-                media_assets, user_message, raw_path, system_instruction
-            )
+            _write_chunk_manifest(media_assets, raw_path)
         except OSError as e:
             logger.warning(
                 f"{prefix} Failed to write raw cache {raw_path.name}: {e}"
             )
 
     fixed_path = _fixed_cache_path(
-        media_assets.response_dir, from_index, to_index, user_message, raw_text
+        media_assets.response_dir, from_index, to_index
     )
     if fixed_path.exists():
         try:
@@ -349,13 +309,7 @@ async def translate_chunk(
     # Persist the agent-produced fix after the final in-process validation guard.
     try:
         fixed_path.write_text(fixed_text, encoding="utf-8")
-        _write_chunk_manifest(
-            media_assets,
-            user_message,
-            raw_path,
-            system_instruction,
-            fixed_path=fixed_path,
-        )
+        _write_chunk_manifest(media_assets, raw_path, fixed_path=fixed_path)
     except OSError as e:
         logger.warning(
             f"{prefix} Failed to write fixed cache {fixed_path.name}: {e}"

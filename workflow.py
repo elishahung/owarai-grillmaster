@@ -94,9 +94,7 @@ def submit_project(
     )
 
 
-def _make_translation_request(
-    project: Project, project_id: str
-) -> TranslationRequest:
+def _make_translation_request(project: Project) -> TranslationRequest:
     """Build the Gemini request shared by the pre-pass and chunk stages.
 
     Both stages must pass identical inputs so chunk boundaries and the
@@ -105,7 +103,6 @@ def _make_translation_request(
     return TranslationRequest(
         video_description=project.translation_hint,
         srt_path=project.srt_path,
-        audio_key=project_id,
         video_path=project.video_path,
         audio_path=project.audio_path,
         output_path=project.translated_path,
@@ -324,7 +321,7 @@ def _process_project_impl(
             translator = Translate()
             try:
                 prepass_result = translator.run_pre_pass(
-                    _make_translation_request(project, project_id)
+                    _make_translation_request(project)
                 )
             except TranslationError as e:
                 if e.summary.total_cost > 0:
@@ -349,7 +346,7 @@ def _process_project_impl(
             translator = Translate()
             try:
                 translation_result = translator.translate_chunks(
-                    _make_translation_request(project, project_id),
+                    _make_translation_request(project),
                     progress=progress,
                 )
             except TranslationError as e:

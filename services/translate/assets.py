@@ -1,6 +1,5 @@
 """Chunk/pre-pass media asset builders and persistent cache manifests."""
 
-import hashlib
 import json
 from pathlib import Path
 
@@ -137,7 +136,6 @@ def prepare_chunk_media_assets(
     video_path: Path,
     audio_path: Path,
     cache_root: Path,
-    video_key: str,
     chunk: list[SrtBlock],
     chunk_index: int,
     total_chunks: int,
@@ -161,14 +159,8 @@ def prepare_chunk_media_assets(
         interval_seconds=interval_seconds,
     )
 
-    digest = hashlib.sha256(
-        (
-            f"{video_key}:{chunk_slug}:{range_info.start_seconds:.3f}:"
-            f"{range_info.end_seconds:.3f}:{interval_seconds}:{max_side}"
-        ).encode("utf-8")
-    ).hexdigest()[:10]
     if extract_audio:
-        audio_output = audio_dir / f"chunk_{chunk_slug}_{digest}.ogg"
+        audio_output = audio_dir / f"chunk_{chunk_slug}.ogg"
         MediaProcessor.extract_audio_segment(
             input_file=audio_path,
             output_file=audio_output,

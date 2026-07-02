@@ -3,9 +3,7 @@
 The base instruction and conditional blocks live as `.md` under `prompts/`. The
 audio-bearing phrasing in the base instruction is swapped out when the selected
 backend cannot ingest audio (the agent backends), so the model is never told it
-has an audio track it did not receive. With ``has_audio=True`` the base
-instruction is byte-identical to the historical constant, so existing gemini
-caches do not invalidate (guarded by a hash-stability test).
+has an audio track it did not receive.
 """
 
 from __future__ import annotations
@@ -86,9 +84,9 @@ _NO_AUDIO_SUBS: list[tuple[str, str]] = [
 def build_pre_pass_instruction(*, has_audio: bool) -> str:
     """Return the base pre-pass instruction, audio-conditioned.
 
-    ``has_audio=True`` returns the base instruction unchanged (byte-identical
-    to the historical constant). ``has_audio=False`` swaps audio-bearing
-    phrasing for image/SRT-only phrasing.
+    ``has_audio=True`` returns the base instruction unchanged.
+    ``has_audio=False`` swaps audio-bearing phrasing for image/SRT-only
+    phrasing.
     """
     text = pre_pass_instruction
     if not has_audio:

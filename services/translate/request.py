@@ -12,7 +12,6 @@ class TranslationRequest(BaseModel):
 
     video_description: str | None
     srt_path: Path
-    audio_key: str
     video_path: Path
     audio_path: Path
     output_path: Path

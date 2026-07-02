@@ -54,7 +54,7 @@ skill needs updating** so the next agent inherits an accurate map. Update
 
 - add/rename/remove a pipeline stage, service module, or model backend;
 - change a cross-cutting invariant (resumability, stage↔field sync, chunk-
-  boundary determinism, cover-always-Codex, prompt-cache byte-stability);
+  boundary determinism, cover-always-Codex);
 - add or rename a setting or an `.env` key.
 
 Keep skill updates proportional. Document facts the next agent must know to

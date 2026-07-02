@@ -1,52 +1,7 @@
-import hashlib
 import unittest
 
 from services.translate.chunk import prompts as C
 from services.translate.pre_pass import prompts as P
-
-
-def _sha(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-# The has_audio=True assembly MUST stay byte-identical to these so existing
-# gemini caches (keyed on an instruction digest) are not invalidated by
-# accidental edits. Re-captured after the honorific/name-span same-span
-# guardrail revision (intentional one-time cache invalidation).
-_PRE_PASS_SHA = (
-    "6548706421d57e7dd7ffc434c9f42b5f63b525c0251c1d054352c67fa15ed7ef"
-)
-_CHUNK_SHA = "5913a5116dfd7234760f51d2c10204b3c966c8c12c5afcb76109f59bad80fed4"
-_BLOCK_SHAS = {
-    "OFFICIAL_SOURCE_METADATA_INSTRUCTION": (
-        "dc97bbcf819523d86f92b46d2f2be341970f3ee01ce9f12379316ecf611f2253"
-    ),
-    "FIXED_GLOSSARY_INSTRUCTION": (
-        "de522377cc296a1a91aefb58ba9c797773a3ffbb3a583395b69918f8ccfc148b"
-    ),
-    "FIXED_GLOSSARY_FULL_INSTRUCTION": (
-        "59d6928a23e0c883407f9852b82cc37d674e5fa5abc11daf6fa93cdb5dff3aeb"
-    ),
-    "PARENT_PRE_PASS_INSTRUCTION": (
-        "8b173fc53823b0e02b9b2cce5793c79b858209c8f01d77411db6005c86390c31"
-    ),
-}
-
-
-class PromptHashStabilityTests(unittest.TestCase):
-    def test_pre_pass_has_audio_byte_identical(self):
-        self.assertEqual(
-            _sha(P.build_pre_pass_instruction(has_audio=True)), _PRE_PASS_SHA
-        )
-
-    def test_chunk_has_audio_byte_identical(self):
-        self.assertEqual(
-            _sha(C.build_chunk_instruction(has_audio=True)), _CHUNK_SHA
-        )
-
-    def test_conditional_blocks_byte_identical(self):
-        for name, sha in _BLOCK_SHAS.items():
-            self.assertEqual(_sha(getattr(P, name)), sha, name)
 
 
 class NoAudioSubstitutionTests(unittest.TestCase):

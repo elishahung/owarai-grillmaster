@@ -5,8 +5,8 @@ frames at specific timestamps on demand; ``build_frame_tool_instruction``
 renders the system-prompt block that teaches an agent backend when and how to
 call it. Stage helpers may also render non-CLI agent capability guidance such as
 web search. These instructions are appended only for agent backends
-(gemini-cli / gemini-agy / codex / claude); gemini-api never sees them, so its
-prompt stays byte-stable.
+(gemini-cli / gemini-agy / codex / claude); gemini-api cannot run local tools,
+so it never sees them.
 """
 
 from __future__ import annotations

@@ -167,7 +167,6 @@ class GeminiProgressTests(unittest.TestCase):
         request = TranslationRequest(
             video_description=None,
             srt_path=srt_path,
-            audio_key="demo",
             video_path=root / "video.mp4",
             audio_path=root / "audio.ogg",
             output_path=root / "translated.srt",

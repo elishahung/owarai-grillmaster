@@ -149,7 +149,8 @@ Gemini CLI allows only these wrappers via policy/include-dirs instead of
 `build_pre_pass_agent_instruction` combines pre-pass frame guidance with bounded
 agent-only web-search guidance for external facts. These blocks append to
 pre-pass/chunk/refine/glossary-check prompts **only when
-`is_agent_backend(backend)`** — keeping gemini-api's prompt byte-stable.
+`is_agent_backend(backend)`** — gemini-api cannot run local tools, so it never
+sees them.
 
 ## The translate package (`services/translate/`)
 
@@ -197,8 +198,10 @@ backends — gemini-cli/codex/claude — since each spawns a heavy local process
 `is_agent_backend` is "everything except gemini-api"). The worker is a careful
 cache-and-repair ladder:
 
-1. **Raw cache** (`chunk_XXXX-YYYY_<digest>.raw.srt`) keyed on backend+model+
-   message — a hit skips the model call entirely.
+1. **Raw cache** (`chunk_XXXX-YYYY.raw.srt`) keyed on the chunk range only — an
+   existing file skips the model call entirely. Caches never self-invalidate:
+   changing backend/model/prompt/settings mid-project requires manually deleting
+   `.chunks/` (and `.pre_pass/` for the pre-pass) to force a re-run.
 2. Build the user message: pre-pass briefing (global + this segment's summary) +
    the chunk's frame timestamps + the SRT slice. Call `run_inference`
    (`schema=None`, free-form SRT out) with retries + exponential backoff.
@@ -211,7 +214,7 @@ cache-and-repair ladder:
    an agent backend that self-validates until it passes. The agent may translate
    a genuinely missing block from `source.srt`, but it must preserve the source
    skeleton and cannot leave blank placeholder blocks. The repaired result is
-   cached as `…_<>.fixed.srt`.
+   cached as `chunk_XXXX-YYYY.fixed.srt`.
 
 `facade._translate_chunks_async` gathers all chunks (collecting partial costs and
 per-chunk failures into a `TranslationError` summary on failure), then
@@ -282,12 +285,11 @@ Pydantic-settings, loaded from `.env`. Notable patterns:
 
 Every prompt template is a `.md` under the owning module's `prompts/` dir, loaded
 by a sibling `prompts.py`. **Edit the `.md` for wording; edit `prompts.py` only
-for assembly logic.** The chunk instruction has an audio-conditioned variant:
-`build_chunk_instruction(has_audio=...)` applies verbatim find/replace pairs so
-the `has_audio=True` text stays **byte-identical** to the historical constant
-(gemini prompt-cache stability is asserted by a unit test in
-`tests/test_translate_prompts.py`). When editing `chunk.md`, keep the strings the
-no-audio substitution searches for intact, or that test will fail.
+for assembly logic.** The pre-pass and chunk instructions have audio-conditioned
+variants: `build_*_instruction(has_audio=...)` applies verbatim find/replace
+pairs to strip audio references for agent backends. When editing `chunk.md` or
+`pre_pass.md`, keep the strings the no-audio substitution searches for intact —
+a unit test in `tests/test_translate_prompts.py` asserts they still occur.
 
 ## Testing
 

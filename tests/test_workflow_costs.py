@@ -60,7 +60,6 @@ class WorkflowGeminiCostTests(unittest.TestCase):
         project.add_cost.assert_called_once_with("gemini", 3.5)
         request = gemini_cls.return_value.translate_chunks.call_args.args[0]
         self.assertEqual(request.video_description, "hint")
-        self.assertEqual(request.audio_key, "demo")
         self.assertEqual(request.srt_path, project.srt_path)
         project.mark_progress.assert_called_once_with(
             workflow_module.ProgressStage.CHUNK_TRANSLATED

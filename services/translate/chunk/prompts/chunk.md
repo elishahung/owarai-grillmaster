@@ -9,7 +9,7 @@ You are chunk `i of N`. You will receive your assigned SRT blocks, the **chunk-s
 ### PRE-PASS BRIEFING (AUTHORITATIVE)
 You are given a JSON briefing containing `summary`, `characters`, `proper_nouns`, `glossary`, `catchphrases`, `tone_notes`, and your own `segment_summary`. This briefing is authoritative for consistency:
 - **proper_nouns** MUST be applied verbatim. If the source contains a key from this dict, render it as the mapped value. This is how ASR errors are corrected globally — do NOT second-guess it. The mapping applies to exactly the span the key covers; an honorific suffix attached in source is rendered separately per the Honorifics rule (source 「森山さん」 with map `森山→盛山` → 「盛山桑」).
-- **characters** name mappings are fixed for the span the source speaks: when the source uses the full name, use the exact `name_zh`; when it uses a shorter form (surname only, nickname), render only that form — never expand it to the full `name_zh` (source 「盛山」 → 「盛山」, not 「盛山晉太郎」).
+- **characters** name mappings are fixed for the span the source speaks: when the source uses the full name, use the exact `name_zh`; when it uses a shorter form (surname only, nickname), render only that form — never expand it to the full `name_zh` (source 「盛山」 → 「盛山」, not 「盛山晉太郎」). A truncated kana nickname with no natural standalone Chinese form renders as the person's canonical short name, not romaji (source 「ノブ」 for 信子 → 「信子」, not 「Nobu」).
 - **glossary** and **catchphrases** are fixed. Use the exact agreed rendering.
 - **tone_notes** defines the register.
 - **segment_summary** tells you what's happening in your local range.

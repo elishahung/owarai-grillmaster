@@ -52,7 +52,11 @@ Name-form audit (final defense, required):
   - Name-span parity: the Chinese name must cover the same span the source
     speaks. If the source says surname or nickname only but the Chinese has
     the full name, shrink it to the source span (ja 「盛山」 → 「盛山」, never
-    「盛山晉太郎」).
+    「盛山晉太郎」). Span parity targets full-name expansion (unspoken
+    surname/given-name components added) — when the source speaks a truncated
+    kana nickname that has no natural standalone Chinese form (e.g. ノブ for
+    信子), the person's canonical short name IS the correct rendering; keep
+    it, and do not re-render it as romaji or force a shorter span.
   - The ASR line may itself mis-hear the name; use `pre_pass.json`
     characters/proper_nouns to identify WHO is meant, but take the span and
     the honorific from the source line.

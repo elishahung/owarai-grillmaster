@@ -299,12 +299,14 @@ class MediaProgressTests(unittest.TestCase):
 
         with (
             patch.object(MediaProcessor, "get_media_duration", return_value=1.0),
-            patch("services.media.subprocess.Popen", return_value=FakeProcess()),
+            patch("services.media.subprocess.Popen", return_value=FakeProcess()) as popen,
         ):
             MediaProcessor.burn_in_subtitles(
                 video, subtitle, output, progress=progress
             )
 
+        cmd = popen.call_args.args[0]
+        self.assertIn("-nostdin", cmd)
         self.assertIn(("start_stage", 1, "Burning subtitles", 1.0), progress.events)
         self.assertIn(("advance", 1, 0.5, None), progress.events)
         self.assertEqual(progress.events[-1], ("finish", 1, "done"))

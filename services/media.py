@@ -242,6 +242,7 @@ class MediaProcessor:
         cmd = [
             "ffmpeg",
             "-hide_banner",
+            "-nostdin",
             "-nostats",
             "-progress",
             "pipe:1",

@@ -149,6 +149,61 @@ class MediaProcessor:
             raise
 
     @staticmethod
+    def cut_video(
+        input_file: Path,
+        output_file: Path,
+        start_seconds: float | None = None,
+        end_seconds: float | None = None,
+    ) -> None:
+        """Cut a section out of a video without re-encoding.
+
+        Uses stream copy, so the actual cut points snap to the nearest
+        keyframes; the output may include slightly more content than the
+        requested range.
+
+        Args:
+            input_file: Path to the source video.
+            output_file: Path where the cut video will be saved.
+            start_seconds: Optional section start; defaults to the beginning.
+            end_seconds: Optional section end; defaults to the end.
+
+        Raises:
+            ValueError: If no boundary is given or the range is empty.
+            ffmpeg.Error: If the cut process fails.
+        """
+        if start_seconds is None and end_seconds is None:
+            raise ValueError("cut_video requires start_seconds or end_seconds")
+        if (
+            end_seconds is not None
+            and end_seconds <= (start_seconds or 0.0)
+        ):
+            raise ValueError("end_seconds must be later than start_seconds")
+
+        input_kwargs: dict = {}
+        if start_seconds is not None:
+            input_kwargs["ss"] = start_seconds
+        output_kwargs: dict = {
+            "c": "copy",
+            "avoid_negative_ts": "make_zero",
+            "movflags": "faststart",
+        }
+        if end_seconds is not None:
+            output_kwargs["t"] = end_seconds - (start_seconds or 0.0)
+
+        logger.info(
+            f"Cutting video section {start_seconds}-{end_seconds}s "
+            f"from {input_file} to {output_file}"
+        )
+        try:
+            ffmpeg.input(str(input_file), **input_kwargs).output(
+                str(output_file), **output_kwargs
+            ).run(overwrite_output=True)
+            logger.success(f"Successfully cut video to: {output_file}")
+        except Exception as e:
+            logger.error(f"Failed to cut video '{input_file}': {e}")
+            raise
+
+    @staticmethod
     def burn_in_subtitles(
         video_file: Path,
         subtitle_file: Path,

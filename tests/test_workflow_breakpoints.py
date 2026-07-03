@@ -101,6 +101,89 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.mark_progress.assert_not_called()
         gemini_cls.assert_not_called()
 
+    def test_section_run_combines_to_full_video_then_cuts(self):
+        root = self._make_temp_dir()
+        project = self._build_project_mock()
+        project.is_video_processed = False
+        project.downloaded_video_paths = [root / "0.mp4"]
+        project.full_video_path = root / "video.full.mp4"
+        project.video_path = root / "video.mp4"
+
+        with (
+            patch.object(
+                workflow_module.Project, "from_source_str", return_value=project
+            ),
+            patch.object(workflow_module, "MediaProcessor") as media_cls,
+        ):
+            workflow_module.process_project(
+                "demo",
+                break_after=workflow_module.ProgressStage.VIDEO_PROCESSED,
+                section_start=90.0,
+                section_end=600.0,
+            )
+
+        media_cls.combine_videos.assert_called_once_with(
+            project.downloaded_video_paths, project.full_video_path
+        )
+        media_cls.cut_video.assert_called_once_with(
+            project.full_video_path,
+            project.video_path,
+            start_seconds=90.0,
+            end_seconds=600.0,
+        )
+
+    def test_section_resume_skips_combine_when_full_video_exists(self):
+        root = self._make_temp_dir()
+        project = self._build_project_mock()
+        project.is_video_processed = False
+        project.downloaded_video_paths = []
+        project.full_video_path = root / "video.full.mp4"
+        project.full_video_path.touch()
+        project.video_path = root / "video.mp4"
+
+        with (
+            patch.object(
+                workflow_module.Project, "from_source_str", return_value=project
+            ),
+            patch.object(workflow_module, "MediaProcessor") as media_cls,
+        ):
+            workflow_module.process_project(
+                "demo",
+                break_after=workflow_module.ProgressStage.VIDEO_PROCESSED,
+                section_start=90.0,
+            )
+
+        media_cls.combine_videos.assert_not_called()
+        media_cls.cut_video.assert_called_once_with(
+            project.full_video_path,
+            project.video_path,
+            start_seconds=90.0,
+            end_seconds=None,
+        )
+
+    def test_no_section_combines_directly_to_video(self):
+        root = self._make_temp_dir()
+        project = self._build_project_mock()
+        project.is_video_processed = False
+        project.downloaded_video_paths = [root / "0.mp4"]
+        project.video_path = root / "video.mp4"
+
+        with (
+            patch.object(
+                workflow_module.Project, "from_source_str", return_value=project
+            ),
+            patch.object(workflow_module, "MediaProcessor") as media_cls,
+        ):
+            workflow_module.process_project(
+                "demo",
+                break_after=workflow_module.ProgressStage.VIDEO_PROCESSED,
+            )
+
+        media_cls.combine_videos.assert_called_once_with(
+            project.downloaded_video_paths, project.video_path
+        )
+        media_cls.cut_video.assert_not_called()
+
     def test_break_after_prepass_completed_stops_before_chunk_translation(self):
         project = self._build_project_mock()
         project.is_asr_completed = True

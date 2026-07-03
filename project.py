@@ -20,6 +20,7 @@ from services.ytdlp.info import SourceTalentInfo, YtDlpVideoInfo
 PROJECT_ROOT_NAME = "projects"
 PROJECT_FILE_NAME = "project.json"
 VIDEO_FILE_NAME = "video.mp4"
+FULL_VIDEO_FILE_NAME = "video.full.mp4"
 AUDIO_FILE_NAME = "audio.ogg"
 ASR_FILE_NAME = "asr.json"
 SRT_FILE_NAME = "video.ja.srt"
@@ -480,7 +481,8 @@ class Project(BaseModel):
             video_file
             for video_file in self.project_path.glob("*.mp4")
             if video_file.is_file()
-            and video_file.name != VIDEO_FILE_NAME.split(".")[0]
+            and video_file.name
+            not in (VIDEO_FILE_NAME, FULL_VIDEO_FILE_NAME)
         ]
 
     @property
@@ -491,6 +493,15 @@ class Project(BaseModel):
             Path to video.mp4.
         """
         return self.project_path / VIDEO_FILE_NAME
+
+    @property
+    def full_video_path(self) -> Path:
+        """Get the path to the uncut combined video kept for section runs.
+
+        Returns:
+            Path to video.full.mp4.
+        """
+        return self.project_path / FULL_VIDEO_FILE_NAME
 
     @property
     def audio_path(self) -> Path:

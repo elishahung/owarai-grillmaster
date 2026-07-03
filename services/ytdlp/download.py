@@ -5,10 +5,25 @@ thumbnail extraction, metadata embedding, and format conversion.
 """
 
 import yt_dlp
-from yt_dlp.utils import DownloadError
+from yt_dlp.utils import DownloadError, parse_duration
 from loguru import logger
 from pathlib import Path
 from typing import Any, cast
+
+
+def parse_section_time(value: str) -> float:
+    """Parse a section boundary time string into seconds.
+
+    Accepts plain seconds ("90"), MM:SS ("1:30"), HH:MM:SS ("0:01:30"),
+    or duration shorthand ("1h30m") via yt-dlp's duration parser.
+
+    Raises:
+        ValueError: If the value cannot be parsed or is negative.
+    """
+    seconds = parse_duration(value)
+    if seconds is None or seconds < 0:
+        raise ValueError(f"Invalid time value: {value!r}")
+    return float(seconds)
 
 
 def download_video(

@@ -63,6 +63,11 @@ Key control-flow details that are easy to break:
 
 - **`--break-after <stage>`** stops cleanly *after* the named stage (works on a
   fresh or resumed project). When set, cover generation is skipped entirely.
+- **`--start` / `--to`** (either or both) process only a section. The full
+  video is still downloaded (yt-dlp's `--download-sections` is ffmpeg-backed
+  and slow); the video-processing stage combines to `video.full.mp4`, then
+  stream-copy cuts `video.mp4` (keyframe-aligned). Ignored with a warning if
+  the video is already processed.
 - **Cover generation runs in a background `ThreadPoolExecutor`** started right
   after download and joined in the `finally` block — even on pipeline failure,
   because the Codex subscription cost is already incurred. Don't move the join.

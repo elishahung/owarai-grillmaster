@@ -133,6 +133,48 @@ class MainCliTests(unittest.TestCase):
 
         submit_project.assert_not_called()
 
+    def test_section_flags_are_parsed_to_seconds(self):
+        with patch.object(main_module, "submit_project") as submit_project:
+            main_module.main(["BV123", "--start", "1:30", "--to", "10:00"])
+
+        submit_project.assert_called_once()
+        self.assertEqual(
+            submit_project.call_args.kwargs["section_start"], 90.0
+        )
+        self.assertEqual(
+            submit_project.call_args.kwargs["section_end"], 600.0
+        )
+
+    def test_section_flags_default_to_none(self):
+        with patch.object(main_module, "submit_project") as submit_project:
+            main_module.main(["BV123"])
+
+        submit_project.assert_called_once()
+        self.assertIsNone(submit_project.call_args.kwargs["section_start"])
+        self.assertIsNone(submit_project.call_args.kwargs["section_end"])
+
+    def test_start_only_is_accepted(self):
+        with patch.object(main_module, "submit_project") as submit_project:
+            main_module.main(["BV123", "--start", "90"])
+
+        submit_project.assert_called_once()
+        self.assertEqual(
+            submit_project.call_args.kwargs["section_start"], 90.0
+        )
+        self.assertIsNone(submit_project.call_args.kwargs["section_end"])
+
+    def test_invalid_section_time_fails(self):
+        with patch.object(main_module, "submit_project") as submit_project:
+            main_module.main(["BV123", "--start", "abc"])
+
+        submit_project.assert_not_called()
+
+    def test_to_not_after_start_fails(self):
+        with patch.object(main_module, "submit_project") as submit_project:
+            main_module.main(["BV123", "--start", "10:00", "--to", "1:30"])
+
+        submit_project.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

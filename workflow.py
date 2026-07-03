@@ -44,6 +44,8 @@ def submit_project(
     enable_cover: bool = False,
     remix_noise_name: str | None = None,
     remix_prefix: bool = False,
+    section_start: float | None = None,
+    section_end: float | None = None,
 ) -> None:
     """Submit a new video project for processing.
 
@@ -70,6 +72,12 @@ def submit_project(
         remix_noise_name: Optional prepared noise set name for remix packaging.
         remix_prefix: Whether remix packaging should prepend a standalone
             noise output before the two mixed outputs.
+        section_start: Optional section start in seconds. The full video is
+            still downloaded and kept as video.full.mp4; the video-processing
+            stage cuts video.mp4 from this point onward. Ignored on projects
+            whose video is already processed.
+        section_end: Optional section end in seconds; video.mp4 is cut up to
+            this point. Ignored on projects whose video is already processed.
 
     Note:
         The project will be automatically saved to the projects directory before
@@ -91,6 +99,8 @@ def submit_project(
         enable_cover=enable_cover,
         remix_noise_name=remix_noise_name,
         remix_prefix=remix_prefix,
+        section_start=section_start,
+        section_end=section_end,
     )
 
 
@@ -122,6 +132,8 @@ def process_project(
     enable_cover: bool = False,
     remix_noise_name: str | None = None,
     remix_prefix: bool = False,
+    section_start: float | None = None,
+    section_end: float | None = None,
     progress: NoopProgressReporter | None = None,
 ) -> None:
     """Process a video project with an auto-enabled CLI progress reporter."""
@@ -139,6 +151,8 @@ def process_project(
             enable_cover=enable_cover,
             remix_noise_name=remix_noise_name,
             remix_prefix=remix_prefix,
+            section_start=section_start,
+            section_end=section_end,
             progress=active_progress,
         )
 
@@ -151,6 +165,8 @@ def _process_project_impl(
     enable_cover: bool = False,
     remix_noise_name: str | None = None,
     remix_prefix: bool = False,
+    section_start: float | None = None,
+    section_end: float | None = None,
     progress: NoopProgressReporter | None = None,
 ) -> None:
     """Process a video project through the complete captioning pipeline.
@@ -186,6 +202,11 @@ def _process_project_impl(
         remix_noise_name: Optional prepared noise set name for remix packaging.
         remix_prefix: Whether remix packaging should prepend a standalone
             noise output before the two mixed outputs.
+        section_start: Optional section start in seconds. The video-processing
+            stage keeps the full combined video as video.full.mp4 and cuts
+            video.mp4 to the requested range. Ignored on projects whose video
+            is already processed.
+        section_end: Optional section end in seconds; see ``section_start``.
 
     Raises:
         Exception: If any required stage of the processing fails.
@@ -260,15 +281,38 @@ def _process_project_impl(
             cover_future = cover_executor.submit(generate_cover, project)
 
         # Process video
+        has_section = section_start is not None or section_end is not None
         if not project.is_video_processed:
             logger.info(f"Stage: Combining video segments for {project_id}")
-            MediaProcessor.combine_videos(
-                project.downloaded_video_paths,
-                project.video_path,
-            )
+            if has_section:
+                # Keep the uncut combine as video.full.mp4, then cut the
+                # requested section locally (much faster than yt-dlp's
+                # ffmpeg-backed --download-sections). Skip the combine on
+                # resume if the full video already exists.
+                if not project.full_video_path.exists():
+                    MediaProcessor.combine_videos(
+                        project.downloaded_video_paths,
+                        project.full_video_path,
+                    )
+                MediaProcessor.cut_video(
+                    project.full_video_path,
+                    project.video_path,
+                    start_seconds=section_start,
+                    end_seconds=section_end,
+                )
+            else:
+                MediaProcessor.combine_videos(
+                    project.downloaded_video_paths,
+                    project.video_path,
+                )
             project.mark_progress(ProgressStage.VIDEO_PROCESSED)
             logger.success("Stage complete: Video processed")
         else:
+            if has_section:
+                logger.warning(
+                    "Video already processed; --start/--to are ignored "
+                    "on resume"
+                )
             logger.debug("Stage skipped: Video already processed")
         if should_stop_after_stage(ProgressStage.VIDEO_PROCESSED):
             return

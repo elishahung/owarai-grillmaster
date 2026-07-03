@@ -10,6 +10,7 @@ from typing_extensions import Annotated
 from project import ProgressStage
 from services.progress import create_progress_reporter
 from services.package import package_project_directory, prepare_noise
+from services.ytdlp import parse_section_time
 from settings import settings
 from workflow import submit_project
 
@@ -40,17 +41,33 @@ def _run_process(
     cover: bool,
     remix: str | None,
     prefix: bool,
+    start: str | None = None,
+    to: str | None = None,
 ) -> None:
     logger.info(
         f"CLI invoked with source_str={source_str}, "
         f"translation_hint={translation_hint}, break_after={break_after}, "
         f"parent_project={parent_project}, refine={refine}, "
         f"glossary_check={glossary_check}, cover={cover}, remix={remix}, "
-        f"prefix={prefix}"
+        f"prefix={prefix}, start={start}, to={to}"
     )
 
     if prefix and remix is None:
         logger.error("--prefix requires --remix")
+        raise typer.Exit(code=1)
+
+    try:
+        section_start = parse_section_time(start) if start else None
+        section_end = parse_section_time(to) if to else None
+    except ValueError as e:
+        logger.error(f"Invalid --start/--to value: {e}")
+        raise typer.Exit(code=1)
+    if (
+        section_start is not None
+        and section_end is not None
+        and section_end <= section_start
+    ):
+        logger.error("--to must be later than --start")
         raise typer.Exit(code=1)
 
     try:
@@ -64,6 +81,8 @@ def _run_process(
             enable_cover=cover,
             remix_noise_name=remix,
             remix_prefix=prefix,
+            section_start=section_start,
+            section_end=section_end,
         )
         logger.success(f"Successfully completed processing for {source_str}")
     except Exception as e:
@@ -165,6 +184,29 @@ def process(
             help="Write a standalone noise output before remix videos.",
         ),
     ] = False,
+    start: Annotated[
+        str | None,
+        typer.Option(
+            "--start",
+            help=(
+                "Process only from this time onward (e.g., '90', '1:30', "
+                "'0:01:30'). The full video is still downloaded and kept as "
+                "video.full.mp4; video.mp4 is cut locally with ffmpeg."
+            ),
+            show_default=False,
+        ),
+    ] = None,
+    to: Annotated[
+        str | None,
+        typer.Option(
+            "--to",
+            help=(
+                "Process only up to this time (e.g., '600', '10:00'). "
+                "See --start for how the cut is made."
+            ),
+            show_default=False,
+        ),
+    ] = None,
 ) -> None:
     """Submit and process an online video for captioning and translation."""
     _run_process(
@@ -177,6 +219,8 @@ def process(
         cover=cover,
         remix=remix,
         prefix=prefix,
+        start=start,
+        to=to,
     )
 
 

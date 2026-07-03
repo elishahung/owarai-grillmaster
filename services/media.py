@@ -19,6 +19,9 @@ from pydantic import BaseModel
 from services.progress import NoopProgressReporter
 
 
+BURN_IN_DURATION_TOLERANCE_SECONDS = 2.0
+
+
 class TimeRange(BaseModel):
     start_seconds: float
     end_seconds: float
@@ -294,13 +297,6 @@ class MediaProcessor:
 
         return_code = process.wait()
         stderr_thread.join()
-        if return_code == 0 and progress is not None:
-            progress.advance(
-                progress_task,
-                max(0.0, duration_seconds - progress_seconds),
-            )
-            progress.finish(progress_task)
-
         if return_code != 0:
             if progress is not None:
                 progress.finish(progress_task, "failed")
@@ -313,6 +309,24 @@ class MediaProcessor:
                 cmd,
                 stderr=stderr_tail,
             )
+
+        output_duration = MediaProcessor.get_media_duration(output_file)
+        duration_delta = duration_seconds - output_duration
+        if duration_delta > BURN_IN_DURATION_TOLERANCE_SECONDS:
+            if progress is not None:
+                progress.finish(progress_task, "failed")
+            raise ValueError(
+                f"burn-in output is shorter than source by "
+                f"{duration_delta:.3f}s: {output_file} "
+                f"({output_duration:.3f}s vs {duration_seconds:.3f}s)"
+            )
+
+        if progress is not None:
+            progress.advance(
+                progress_task,
+                max(0.0, duration_seconds - progress_seconds),
+            )
+            progress.finish(progress_task)
 
     @staticmethod
     def prepare_noise_chunks(

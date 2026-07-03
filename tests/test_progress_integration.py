@@ -341,6 +341,41 @@ class MediaProgressTests(unittest.TestCase):
         self.assertIn("bad filter", raised.exception.stderr)
         self.assertEqual(progress.events[-1], ("finish", 1, "failed"))
 
+    def test_burn_in_subtitles_rejects_short_successful_output(self):
+        root = Path(tempfile.mkdtemp(prefix="burn-progress-short-test-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        video = root / "video.mp4"
+        subtitle = root / "video.ass"
+        output = root / "out.mp4"
+        video.write_text("video", encoding="utf-8")
+        subtitle.write_text("subtitle", encoding="utf-8")
+        progress = FakeProgressReporter()
+
+        class FakeProcess:
+            stdout = iter(["out_time_ms=5000000\n", "progress=end\n"])
+            stderr = iter([])
+
+            def wait(self):
+                return 0
+
+        with (
+            patch.object(
+                MediaProcessor,
+                "get_media_duration",
+                side_effect=[10.0, 5.0],
+            ),
+            patch("services.media.subprocess.Popen", return_value=FakeProcess()),
+        ):
+            with self.assertRaisesRegex(ValueError, "shorter than source"):
+                MediaProcessor.burn_in_subtitles(
+                    video,
+                    subtitle,
+                    output,
+                    progress=progress,
+                )
+
+        self.assertEqual(progress.events[-1], ("finish", 1, "failed"))
+
     def test_remix_segment_reports_progress_to_existing_task(self):
         root = Path(tempfile.mkdtemp(prefix="remix-progress-test-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))

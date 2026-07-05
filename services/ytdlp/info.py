@@ -4,7 +4,7 @@ This module provides functionality to extract video metadata without
 downloading the actual video content.
 """
 
-from .client import get_ytdlp_client
+from .client import get_ytdlp_client_for_url
 from typing import cast
 from pydantic import BaseModel, Field
 from loguru import logger
@@ -255,7 +255,7 @@ def get_video_info(input_str: str) -> YtDlpVideoInfo:
     """
     logger.info(f"Extracting video info for: {input_str}")
     try:
-        with get_ytdlp_client() as ydl:
+        with get_ytdlp_client_for_url(input_str) as ydl:
             info = ydl.extract_info(input_str, download=False)
             video_info = YtDlpVideoInfo.model_validate(cast(dict, info))
             logger.success(f"Successfully extracted info: {video_info.title}")

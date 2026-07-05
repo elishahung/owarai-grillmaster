@@ -50,8 +50,19 @@ _BILIBILI_PLAYURL_FALLBACK_URL = "https://api.bilibili.com/x/player/playurl"
 _bilibili_412_patch_applied = False
 
 
+def _is_bilibili_input(input_str: str) -> bool:
+    """Return True for BiliBili URLs and common direct BV identifiers."""
+    return "bilibili.com" in input_str.lower() or input_str.startswith("BV")
+
+
 def _apply_bilibili_412_playurl_patch() -> None:
-    """Temporarily route BiliBili playinfo requests around yt-dlp's 412-prone endpoint."""
+    """Temporarily route BiliBili playinfo requests around yt-dlp's 412-prone endpoint.
+
+    yt-dlp 2026.06.09 calls `/x/player/wbi/playurl` for BiliBili playinfo. In
+    July 2026 that endpoint can return HTTP 412 for videos that still work via
+    `/x/player/playurl`. Keep this monkey patch narrow so it is easy to remove
+    after yt-dlp ships an upstream fix.
+    """
     global _bilibili_412_patch_applied
     if _bilibili_412_patch_applied:
         return
@@ -112,3 +123,22 @@ def get_ytdlp_client(opts: dict | None = None):
     }
 
     return yt_dlp.YoutubeDL(cast(Any, ydl_opts))
+
+
+def get_ytdlp_client_for_url(input_str: str, opts: dict | None = None):
+    """Create a yt-dlp client with source-specific defaults.
+
+    BiliBili is intentionally anonymous by default here. Some account cookies
+    return a restricted format list for ordinary videos (observed on
+    BV16D4y1H7Wk: cookie -> max 480p, anonymous -> 1080p). Other sources still
+    inherit the configured cookies because TVer/ABEMA may need them.
+    """
+    if opts is None:
+        opts = {}
+    else:
+        opts = opts.copy()
+
+    if _is_bilibili_input(input_str) and "cookiefile" not in opts:
+        opts["cookiefile"] = None
+
+    return get_ytdlp_client(opts)

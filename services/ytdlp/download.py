@@ -8,7 +8,7 @@ from yt_dlp.utils import DownloadError, parse_duration
 from loguru import logger
 from pathlib import Path
 
-from .client import get_ytdlp_client
+from .client import get_ytdlp_client_for_url
 
 
 def parse_section_time(value: str) -> float:
@@ -83,7 +83,7 @@ def download_video(
     try:
         logger.info(f"Starting yt-dlp process for: {url}")
 
-        with get_ytdlp_client(ydl_opts) as ydl:
+        with get_ytdlp_client_for_url(url, ydl_opts) as ydl:
             # extract_info with download=True performs the download
             info_dict = ydl.extract_info(url, download=True)
 

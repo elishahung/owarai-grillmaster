@@ -1,6 +1,6 @@
-"""Shared SRT structural guard for Codex post-processing steps.
+"""Shared SRT structural guard for agent post-processing steps.
 
-`refine` and `glossary_check` both require that a Codex-rewritten SRT keeps
+`refine` and `glossary_check` both require that an agent-rewritten SRT keeps
 the source skeleton (block count, indexes, timecodes) and never empties a
 block. The check is identical for both, so it lives here once. Behavior is
 byte-identical to the original `refine.py` helpers, including the literal

@@ -1,8 +1,8 @@
-"""Codex-driven fixed-glossary localization check (runs after refine).
+"""Agent-driven fixed-glossary localization check (runs after refine).
 
 A narrow pass over the refined SRT: Python flags blocks whose text still
-carries Latin letters or Japanese kana, hands that short list to Codex with
-the curated fixed glossary, and Codex swaps only the genuine glossary misses
+carries Latin letters or Japanese kana, hands that short list to the agent with
+the curated fixed glossary, and the agent swaps only the genuine glossary misses
 into `video.cht.glossary_checked.srt`. A block is not flagged when its only
 foreign content is already an exact curated `zh` rendering (a known-good
 term, not a miss). The glossary files are materialized into
@@ -163,7 +163,7 @@ def _srt_text_changed(project: Project) -> bool:
 
 
 def glossary_check_subtitles(project: Project) -> None:
-    """Run the Codex glossary check and structurally validate the output.
+    """Run the agent glossary check and structurally validate the output.
 
     Idempotent on the produced file. This pass always reviews the whole refined
     SRT when no glossary-checked SRT exists; the Latin/kana detector only
@@ -171,7 +171,7 @@ def glossary_check_subtitles(project: Project) -> None:
     """
     if project.glossary_checked_srt_path.exists():
         logger.info(
-            f"Glossary-checked SRT already exists, skipping Codex invocation: "
+            f"Glossary-checked SRT already exists, skipping agent invocation: "
             f"{project.glossary_checked_srt_path}"
         )
         return
@@ -243,7 +243,7 @@ def glossary_check_subtitles(project: Project) -> None:
 
         if not project.glossary_checked_srt_path.exists():
             raise GlossaryCheckError(
-                f"Codex did not produce glossary-checked SRT: "
+                f"agent did not produce glossary-checked SRT: "
                 f"{project.glossary_checked_srt_path}"
             )
 

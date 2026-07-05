@@ -1,4 +1,4 @@
-"""Codex-driven Traditional Chinese subtitle refinement."""
+"""Agent-driven Traditional Chinese subtitle refinement."""
 
 from __future__ import annotations
 
@@ -27,10 +27,10 @@ class RefinementValidationError(RuntimeError):
 
 
 def refine_subtitles(project: Project) -> None:
-    """Run Codex refinement and structurally validate the output."""
+    """Run agent refinement and structurally validate the output."""
     if project.refined_srt_path.exists():
         logger.info(
-            f"Refined SRT already exists, skipping Codex invocation: "
+            f"Refined SRT already exists, skipping agent invocation: "
             f"{project.refined_srt_path}"
         )
         return
@@ -71,7 +71,7 @@ def refine_subtitles(project: Project) -> None:
 
     if not project.refined_srt_path.exists():
         raise RefinementValidationError(
-            f"Codex did not produce refined SRT: {project.refined_srt_path}"
+            f"agent did not produce refined SRT: {project.refined_srt_path}"
         )
 
     errors = _validate_refined_srt(

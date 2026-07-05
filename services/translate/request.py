@@ -20,3 +20,4 @@ class TranslationRequest(BaseModel):
     chunks_cache_dir: Path
     source_metadata_context: str | None = None
     parent_pre_pass_context: str | None = None
+    official_subtitle_path: Path | None = None

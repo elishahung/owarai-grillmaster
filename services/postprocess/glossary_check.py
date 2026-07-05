@@ -36,6 +36,10 @@ _PROMPT_TEMPLATE = (
     Path(__file__).parent / "prompts" / "glossary_check.md"
 ).read_text(encoding="utf-8")
 
+_OFFICIAL_SUBTITLE_TEMPLATE = (
+    Path(__file__).parent / "prompts" / "official_subtitle_reference.md"
+).read_text(encoding="utf-8")
+
 _FIXED_GLOSSARY_MD_PATH = FIXED_GLOSSARY_PATH.with_suffix(".md")
 
 # Flag a block only when its text has a RUN of >=2 consecutive Latin
@@ -208,10 +212,12 @@ def glossary_check_subtitles(project: Project) -> None:
                 f"it: {_FIXED_GLOSSARY_MD_PATH}"
             )
 
-        prompt = (
-            _PROMPT_TEMPLATE
-            + "\n\nPriority suspect blocks (review these first; this is not "
-            + "the full edit scope):\n"
+        prompt = _PROMPT_TEMPLATE
+        if project.official_subtitle_path.exists():
+            prompt += "\n\n" + _OFFICIAL_SUBTITLE_TEMPLATE
+        prompt += (
+            "\n\nPriority suspect blocks (review these first; this is not "
+            "the full edit scope):\n"
             + _render_suspect_list(suspects)
             + "\n"
         )

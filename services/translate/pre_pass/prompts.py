@@ -19,6 +19,7 @@ def _load(name: str) -> str:
 
 pre_pass_instruction = _load("pre_pass.md")
 OFFICIAL_SOURCE_METADATA_INSTRUCTION = _load("official_source_metadata.md")
+OFFICIAL_SUBTITLE_INSTRUCTION = _load("official_subtitle.md")
 FIXED_GLOSSARY_INSTRUCTION = _load("fixed_glossary.md")
 FIXED_GLOSSARY_FULL_INSTRUCTION = _load("fixed_glossary_full.md")
 PARENT_PRE_PASS_INSTRUCTION = _load("parent_pre_pass.md")

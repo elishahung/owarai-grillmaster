@@ -30,7 +30,8 @@ services/translate/
 │   ├── pre_pass.py  # whole-film analysis → pre_pass.json
 │   ├── schema.py    # PrePassResult / characters / catchphrases / SegmentSummary
 │   └── prompts.py + prompts/   # pre_pass.md, fixed_glossary*.md,
-│                               # official_source_metadata.md, parent_pre_pass.md
+│                               # official_source_metadata.md, parent_pre_pass.md,
+│                               # official_subtitle.md
 └── chunk/
     ├── chunk_worker.py    # translate_chunk: cache → infer → validate → fix
     ├── prompts.py + prompts/   # chunk.md, structural_fix.md (audio-conditioned)
@@ -55,6 +56,20 @@ alias's own rendering, never the full name; alias identity goes in `role_note`)
 **`pre_pass.json` never self-invalidates**: once it exists it is reused as-is
 (cost 0), regardless of backend/model/prompt changes. To re-run the pre-pass,
 delete `.pre_pass/`.
+
+## Official CC reference (optional input to both stages)
+
+When `TranslationRequest.official_subtitle_path` points at an existing
+`video.official.ja.srt` (platform CC fetched at download, see
+**project-architecture**), the facade injects it as a ground-truth reference:
+pre-pass gets the full text plus the `official_subtitle.md` instruction block;
+each chunk worker gets the CC blocks overlapping its time range (±2 s padding,
+`_slice_official_subtitle`). It is a **content/wording reference only** — the
+ASR SRT remains the sole block/timecode scaffold, and its presence or absence
+does not touch chunk cache keys or `pre_pass.json` reuse. Corollary: a
+`pre_pass.json` generated before the CC existed is still reused as-is — delete
+`.pre_pass/` to fold CC evidence in. A corrupt official file is ignored with a
+warning (best-effort), never a stage failure.
 
 ## Chunk translation (stage 8) — `chunk_worker.translate_chunk`
 

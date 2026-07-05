@@ -10,10 +10,12 @@ from .info import (
     get_tver_episode_talents,
     get_video_info,
 )
+from .subtitles import normalize_official_subtitle
 
 __all__ = [
     "download_video",
     "parse_section_time",
+    "normalize_official_subtitle",
     "get_abema_episode_talents",
     "get_tver_episode_talents",
     "get_video_info",

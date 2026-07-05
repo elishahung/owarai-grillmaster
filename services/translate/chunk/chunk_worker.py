@@ -15,6 +15,7 @@ from services.inference import (
     run_inference,
 )
 from services.inference.tools import build_chunk_frame_tool_instruction
+from services.media import MediaProcessor
 from ..assets import ChunkMediaAssets
 from ..errors import ChunkTranslationError
 from .prompts import build_chunk_instruction
@@ -51,12 +52,39 @@ def _find_segment_summary(
     return None
 
 
+# CC timing is broadcast-derived and approximate against the ASR timeline, so
+# the per-chunk slice keeps a small margin around the chunk's time range.
+_OFFICIAL_SUBTITLE_PADDING_SECONDS = 2.0
+
+
+def _slice_official_subtitle(
+    official_subtitle_blocks: list[SrtBlock] | None,
+    start_seconds: float,
+    end_seconds: float,
+) -> list[SrtBlock]:
+    """Select official CC blocks overlapping the chunk's padded time range."""
+    if not official_subtitle_blocks:
+        return []
+    range_start = start_seconds - _OFFICIAL_SUBTITLE_PADDING_SECONDS
+    range_end = end_seconds + _OFFICIAL_SUBTITLE_PADDING_SECONDS
+    return [
+        block
+        for block in official_subtitle_blocks
+        if (
+            (r := MediaProcessor.parse_timecode_line(block.timecode))
+            and r.end_seconds > range_start
+            and r.start_seconds < range_end
+        )
+    ]
+
+
 def _build_user_message(
     chunk: list[SrtBlock],
     chunk_index: int,
     total_chunks: int,
     pre_pass: PrePassResult,
     media_assets: ChunkMediaAssets,
+    official_subtitle_blocks: list[SrtBlock] | None = None,
 ) -> str:
     """Compose chunk-worker user message: briefing (global + local) + SRT slice."""
     from_index = chunk[0].index
@@ -88,6 +116,22 @@ def _build_user_message(
         ]
     )
 
+    official_slice = _slice_official_subtitle(
+        official_subtitle_blocks,
+        media_assets.time_range.start_seconds,
+        media_assets.time_range.end_seconds,
+    )
+    official_section = (
+        (
+            "【官方CC字幕參照（僅涵蓋部分口說台詞，時間軸為近似參考）】\n"
+            "---\n"
+            + "\n\n".join(block.raw for block in official_slice)
+            + "\n\n"
+        )
+        if official_slice
+        else ""
+    )
+
     return (
         f"你是第 {chunk_index + 1}/{total_chunks} 塊翻譯員，負責 SRT index "
         f"{from_index}–{to_index}。\n\n"
@@ -98,6 +142,7 @@ def _build_user_message(
         f"{frame_lines or '無'}\n\n"
         f"【Pre-pass 簡報】\n"
         f"{json.dumps(briefing, ensure_ascii=False, indent=2)}\n\n"
+        f"{official_section}"
         f"【SRT 區段（index {from_index}–{to_index}，共 {len(chunk)} block）】\n"
         f"---\n{srt_slice}"
     )
@@ -136,6 +181,7 @@ async def translate_chunk(
     chunk_index: int,
     total_chunks: int,
     pre_pass: PrePassResult,
+    official_subtitle_blocks: list[SrtBlock] | None = None,
 ) -> ChunkTranslationResult:
     """Translate one chunk with persistent media cache and response caching.
 
@@ -145,7 +191,12 @@ async def translate_chunk(
     backend.
     """
     user_message = _build_user_message(
-        chunk, chunk_index, total_chunks, pre_pass, media_assets
+        chunk,
+        chunk_index,
+        total_chunks,
+        pre_pass,
+        media_assets,
+        official_subtitle_blocks=official_subtitle_blocks,
     )
 
     prefix = f"[chunk {chunk_index + 1}/{total_chunks}]"

@@ -193,6 +193,9 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.pre_pass_path = Path("projects/demo/.pre_pass/pre_pass.json")
         project.pre_pass_cache_dir = Path("projects/demo/.pre_pass")
         project.chunks_cache_dir = Path("projects/demo/.chunks")
+        project.official_subtitle_path = Path(
+            "projects/demo/video.official.ja.srt"
+        )
         project.source_metadata_context.return_value = None
         project.parent_pre_pass_context.return_value = None
 

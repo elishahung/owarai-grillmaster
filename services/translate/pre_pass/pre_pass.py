@@ -36,6 +36,7 @@ from .prompts import (
     FIXED_GLOSSARY_FULL_INSTRUCTION,
     FIXED_GLOSSARY_INSTRUCTION,
     OFFICIAL_SOURCE_METADATA_INSTRUCTION,
+    OFFICIAL_SUBTITLE_INSTRUCTION,
     PARENT_PRE_PASS_INSTRUCTION,
     build_pre_pass_instruction,
 )
@@ -54,6 +55,7 @@ def _build_user_message(
     video_description: str | None,
     source_metadata_context: str | None,
     parent_pre_pass_context: str | None,
+    official_subtitle_context: str | None,
     fixed_glossary: FixedGlossary,
     fixed_glossary_full: bool,
     srt_text: str,
@@ -79,6 +81,11 @@ def _build_user_message(
     )
     if glossary_block:
         parts.append(glossary_block)
+    if official_subtitle_context:
+        parts.append(
+            "\n【官方CC字幕（僅涵蓋部分口說台詞，時間軸為參考）】\n---\n"
+            f"{official_subtitle_context}"
+        )
     parts.append(
         "\n【Chunk 邊界】下游會將字幕切成以下 index 區間平行翻譯，請為每段輸出一個 segment_summary："
         f"\n{json.dumps(boundaries, ensure_ascii=False)}"
@@ -102,6 +109,7 @@ def run_pre_pass(
     pre_pass_cache_dir: Path,
     source_metadata_context: str | None = None,
     parent_pre_pass_context: str | None = None,
+    official_subtitle_context: str | None = None,
 ) -> tuple[PrePassResult, float]:
     """Run the single pre-pass call. Returns (parsed result, cost in USD).
 
@@ -158,6 +166,7 @@ def run_pre_pass(
         video_description,
         source_metadata_context,
         parent_pre_pass_context,
+        official_subtitle_context,
         fixed_glossary,
         fixed_glossary_full,
         srt_text,
@@ -167,6 +176,8 @@ def run_pre_pass(
     system_instruction = build_pre_pass_instruction(has_audio=has_audio)
     if source_metadata_context:
         system_instruction += f"\n\n{OFFICIAL_SOURCE_METADATA_INSTRUCTION}"
+    if official_subtitle_context:
+        system_instruction += f"\n\n{OFFICIAL_SUBTITLE_INSTRUCTION}"
     if fixed_glossary:
         system_instruction += (
             f"\n\n{FIXED_GLOSSARY_FULL_INSTRUCTION}"
@@ -198,6 +209,8 @@ def run_pre_pass(
 
     if parent_pre_pass_context:
         logger.info(f"[pre-pass] Parent pre-pass context injected")
+    if official_subtitle_context:
+        logger.info("[pre-pass] Official CC subtitle context injected")
 
     logger.info(
         f"[pre-pass] Backend: {active_backend} (model={spec.model}, "

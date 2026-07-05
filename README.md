@@ -159,6 +159,7 @@ ENABLE_POSTPROCESS_GLOSSARY_CHECK=true    # 潤飾後再用 agent 校對殘留�
 ENABLE_COVER_GENERATION=true              # 下載後並行 Codex 風格化封面圖
 
 # 可選：下載/歸檔/封裝
+ENABLE_OFFICIAL_SUBTITLES=true     # 下載時順抓平台官方 CC 字幕（TVer/Abema 等），作為翻譯的 ground truth 參照
 COOKIES_TXT_PATH=cookies.txt       # 影片來源網站 cookies (供 yt-dlp 使用)
 ARCHIVED_PATH=NAS:\video\ai\     # 歸檔路徑 - 處理完直接移至指定資料夾並將資料夾名稱改為影片名稱
 PACKAGE_PATH=NAS:\video\package\ # 封裝路徑 - 將 ASS 字幕燒錄進影片並複製封面到 <package_path>/<id>_<name>/

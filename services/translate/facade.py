@@ -73,6 +73,16 @@ class Translate:
             )
         return srt_text, chunks
 
+    @staticmethod
+    def _read_official_subtitle_text(request: TranslationRequest) -> str | None:
+        """Read the platform CC reference, if the download produced one."""
+        if (
+            request.official_subtitle_path is None
+            or not request.official_subtitle_path.exists()
+        ):
+            return None
+        return request.official_subtitle_path.read_text(encoding="utf-8")
+
     def run_pre_pass(self, request: TranslationRequest) -> TranslationResult:
         """Run the pre-pass only and persist pre_pass.json.
 
@@ -95,6 +105,9 @@ class Translate:
                 request.pre_pass_cache_dir,
                 request.source_metadata_context,
                 request.parent_pre_pass_context,
+                official_subtitle_context=self._read_official_subtitle_text(
+                    request
+                ),
             )
         except PrePassError as e:
             summary = TranslationResult(
@@ -188,6 +201,23 @@ class Translate:
             request.pre_pass_path.read_text(encoding="utf-8")
         )
 
+        official_subtitle_text = self._read_official_subtitle_text(request)
+        official_subtitle_blocks = None
+        if official_subtitle_text:
+            # The reference is best-effort: a corrupt file must not fail the
+            # translation stage.
+            try:
+                official_subtitle_blocks = parse_srt(official_subtitle_text)
+            except ValueError as e:
+                logger.warning(
+                    f"Official subtitle reference unparsable; ignoring: {e}"
+                )
+        if official_subtitle_blocks:
+            logger.info(
+                f"Official subtitle reference loaded: "
+                f"{len(official_subtitle_blocks)} blocks"
+            )
+
         request.chunks_cache_dir.mkdir(parents=True, exist_ok=True)
         chunk_backend = Backend(settings.agent_chunk_backend)
         has_audio = backend_supports_audio(chunk_backend)
@@ -227,6 +257,7 @@ class Translate:
                         i,
                         len(chunks),
                         pre_pass_result,
+                        official_subtitle_blocks=official_subtitle_blocks,
                     )
                 except Exception as e:
                     if progress is not None:

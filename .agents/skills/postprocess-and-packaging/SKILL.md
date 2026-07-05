@@ -27,8 +27,11 @@ non-empty text) — semantic quality is the agent's responsibility via prompts.
   once; the updated pre-pass must still validate against `PrePassResult`). Its
   prompt ends with a required name-form audit (honorific/name-span parity vs
   `video.ja.srt`) as the final defense against dropped honorifics and
-  full-name expansion. If the SRT or pre-pass changed, `glossary_check.md`
-  (the report) must exist; packaging copies reports only if present.
+  full-name expansion. When `video.official.ja.srt` exists (platform CC, see
+  **project-architecture**), the conditional `official_subtitle_reference.md`
+  block is appended: CC wording outranks ASR as source evidence. If the SRT or
+  pre-pass changed, `glossary_check.md` (the report) must exist; packaging
+  copies reports only if present.
 - `cover.py` — stylize the poster. **Always Codex** (image generation),
   regardless of the post-process backend setting. Runs async from the workflow
   (see **project-architecture** for the ThreadPoolExecutor/join rules).

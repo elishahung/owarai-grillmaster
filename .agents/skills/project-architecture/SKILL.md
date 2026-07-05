@@ -51,8 +51,8 @@ the stages below in order. Each maps 1:1 to a `ProgressStage` enum value and a
 | # | Stage (`ProgressStage`)         | What happens                                                                 | Module |
 |---|----------------------------------|------------------------------------------------------------------------------|--------|
 | 1 | `METADATA_FETCHED`               | `get_video_info`; for TVer/Abema also fetch cast/talents                     | `services/ytdlp` |
-| 2 | `DOWNLOADED`                     | `download_video` (yt-dlp). **Kicks off async cover gen here** if enabled     | `services/ytdlp`, `services/postprocess/cover` |
-| 3 | `VIDEO_PROCESSED`                | `MediaProcessor.combine_videos` (ffmpeg concat) → `video.mp4`                | `services/media` |
+| 2 | `DOWNLOADED`                     | `download_video` (yt-dlp); also best-effort fetches platform CC subs (`ENABLE_OFFICIAL_SUBTITLES`). **Kicks off async cover gen here** if enabled | `services/ytdlp`, `services/postprocess/cover` |
+| 3 | `VIDEO_PROCESSED`                | `MediaProcessor.combine_videos` (ffmpeg concat) → `video.mp4`; normalizes downloaded CC → `video.official.ja.srt` (section runs rebase/filter timestamps) | `services/media`, `services/ytdlp/subtitles` |
 | 4 | `AUDIO_PROCESSED`                | `MediaProcessor.extract_audio` → `.asr/audio.ogg` (mono 16 kHz libopus)      | `services/media` |
 | 5 | `ASR_COMPLETED`                  | ElevenLabs Scribe → `.asr/asr.json`; adds cost                               | `services/elevenlabs` |
 | 6 | `SRT_COMPLETED`                  | `convert_file` ASR JSON → `video.ja.srt`                                     | `services/elevenlabs/srt_builder` |
@@ -117,7 +117,12 @@ Key control-flow details that are easy to break:
   `-nostdin` (headless safety) and **validates output duration** afterward
   (`BURN_IN_DURATION_TOLERANCE_SECONDS`, 2 s): ffmpeg can exit 0 yet silently
   truncate, so a too-short output raises instead of shipping.
-- `services/ytdlp/` — download + metadata + TVer/Abema talent scraping. Two
+- `services/ytdlp/` — download + metadata + TVer/Abema talent scraping +
+  `subtitles.py` (platform CC → `video.official.ja.srt`; single video part
+  only — multi-part is skipped with a warning and the pipeline continues
+  without the reference; same-part language variants prefer exact `ja`;
+  consumed as ground-truth reference by the translate stages and glossary
+  check — see **translate-pipeline** / **postprocess-and-packaging**). Two
   BiliBili gotchas live in `client.py`: (1) a **temporary monkey-patch** falls
   back from `/x/player/wbi/playurl` (HTTP 412 on some videos in current yt-dlp)
   to `/x/player/playurl` — remove when upstream fixes it; (2) BiliBili inputs

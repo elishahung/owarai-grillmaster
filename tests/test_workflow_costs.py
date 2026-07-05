@@ -29,6 +29,7 @@ class WorkflowGeminiCostTests(unittest.TestCase):
         project.pre_pass_path = base / ".pre_pass" / "pre_pass.json"
         project.pre_pass_cache_dir = base / ".pre_pass"
         project.chunks_cache_dir = base / ".chunks"
+        project.official_subtitle_path = base / "video.official.ja.srt"
         project.source_metadata_context.return_value = None
         project.parent_pre_pass_context.return_value = None
         return project

@@ -113,6 +113,39 @@ class GlossaryCheckTests(unittest.TestCase):
 
         return _side_effect
 
+    def test_prompt_omits_official_subtitle_reference_when_absent(self):
+        project = self._make_project()
+        self._write_refined(project, _HAN_ONLY_SRT)
+
+        with patch.object(
+            gc, "run_inference", side_effect=self._valid_codex(project)
+        ) as run_codex:
+            gc.glossary_check_subtitles(project)
+
+        prompt = run_codex.call_args.kwargs["prompt"]
+        self.assertNotIn("video.official.ja.srt", prompt)
+
+    def test_prompt_includes_official_subtitle_reference_when_present(self):
+        project = self._make_project()
+        self._write_refined(project, _HAN_ONLY_SRT)
+        project.official_subtitle_path.write_text(
+            "1\n00:00:01,000 --> 00:00:02,000\nCC台詞\n", encoding="utf-8"
+        )
+
+        with patch.object(
+            gc, "run_inference", side_effect=self._valid_codex(project)
+        ) as run_codex:
+            gc.glossary_check_subtitles(project)
+
+        prompt = run_codex.call_args.kwargs["prompt"]
+        self.assertIn("video.official.ja.srt", prompt)
+        self.assertIn("Official CC reference", prompt)
+        # The CC section slots between the base template and the suspect list.
+        self.assertLess(
+            prompt.index("Official CC reference"),
+            prompt.index("Priority suspect blocks"),
+        )
+
     def test_exact_glossary_zh_token_is_skipped(self):
         project = self._make_project()
         self._write_refined(

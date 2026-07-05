@@ -154,6 +154,10 @@ class Settings(BaseSettings):
         description="Frame budget interval in seconds for SRT-start-based chunk translation frame sampling",
     )
     # --- Download & pipeline extras -----------------------------------------
+    enable_official_subtitles: bool = Field(
+        default=True,
+        description="Fetch platform closed captions (TVer/Abema/...) at download time and inject them as ground-truth reference into pre-pass and chunk translation. Best-effort: absence never fails a stage.",
+    )
     cookies_txt_path: Path | None = Field(
         default=None,
         description="Path to cookies.txt file used for downloading content",

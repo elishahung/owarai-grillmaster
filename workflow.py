@@ -27,6 +27,7 @@ from services.ytdlp import (
     get_abema_episode_talents,
     get_tver_episode_talents,
     get_video_info,
+    normalize_official_subtitle,
 )
 
 # Upper bound for joining the async cover-generation future before archive.
@@ -121,6 +122,11 @@ def _make_translation_request(project: Project) -> TranslationRequest:
         chunks_cache_dir=project.chunks_cache_dir,
         source_metadata_context=project.source_metadata_context(),
         parent_pre_pass_context=project.parent_pre_pass_context(),
+        official_subtitle_path=(
+            project.official_subtitle_path
+            if project.official_subtitle_path.exists()
+            else None
+        ),
     )
 
 
@@ -305,6 +311,21 @@ def _process_project_impl(
                     project.downloaded_video_paths,
                     project.video_path,
                 )
+            # Best-effort: platform CC (if downloaded) becomes the official
+            # ground-truth subtitle reference for the translate stages.
+            if settings.enable_official_subtitles:
+                try:
+                    normalize_official_subtitle(
+                        project.downloaded_subtitle_paths,
+                        project.official_subtitle_path,
+                        section_start=section_start,
+                        section_end=section_end,
+                    )
+                except Exception as subtitle_error:
+                    logger.warning(
+                        "Official subtitle normalization failed: "
+                        f"{subtitle_error}"
+                    )
             project.mark_progress(ProgressStage.VIDEO_PROCESSED)
             logger.success("Stage complete: Video processed")
         else:

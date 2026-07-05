@@ -10,6 +10,8 @@ from loguru import logger
 from pathlib import Path
 from typing import Any, cast
 
+from settings import settings
+
 from .client import get_ytdlp_download_options_for_url
 
 
@@ -80,6 +82,26 @@ def download_video(
         ],
         "concurrent_fragment_downloads": 8 if partial_download else 1,
     }
+
+    if settings.enable_official_subtitles:
+        # Best-effort platform closed captions (TVer/Abema/... 字幕放送).
+        # Manual subs only — writeautomaticsub stays off so YouTube
+        # auto-captions are never fetched. Programs without CC simply
+        # produce no subtitle file. yt-dlp names subtitles `<part>.<lang>.srt`
+        # (e.g. `0.ja.srt`) next to the numbered video parts —
+        # Project.downloaded_subtitle_paths and normalize_official_subtitle
+        # rely on that shape.
+        ydl_opts.update(
+            {
+                "writesubtitles": True,
+                "subtitleslangs": ["ja", "ja-*"],
+                "subtitlesformat": "vtt/best",
+            }
+        )
+        ydl_opts["postprocessors"] = [
+            *ydl_opts["postprocessors"],
+            {"key": "FFmpegSubtitlesConvertor", "format": "srt"},
+        ]
 
     # Execute download
     try:

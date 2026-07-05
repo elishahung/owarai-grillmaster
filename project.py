@@ -24,6 +24,7 @@ FULL_VIDEO_FILE_NAME = "video.full.mp4"
 AUDIO_FILE_NAME = "audio.ogg"
 ASR_FILE_NAME = "asr.json"
 SRT_FILE_NAME = "video.ja.srt"
+OFFICIAL_SUBTITLE_FILE_NAME = "video.official.ja.srt"
 TRANSLATED_FILE_NAME = "video.cht.srt"
 REFINED_SRT_FILE_NAME = "video.cht.refined.srt"
 FINALIZED_SRT_FILE_NAME = "video.cht.finalized.srt"
@@ -529,6 +530,31 @@ class Project(BaseModel):
             Path to srt.srt.
         """
         return self.project_path / SRT_FILE_NAME
+
+    @property
+    def official_subtitle_path(self) -> Path:
+        """Get the path to the normalized platform closed-caption SRT.
+
+        Returns:
+            Path to video.official.ja.srt. Only exists when the source
+            platform published closed captions for this program.
+        """
+        return self.project_path / OFFICIAL_SUBTITLE_FILE_NAME
+
+    @property
+    def downloaded_subtitle_paths(self) -> list[Path]:
+        """Get raw subtitle files written by yt-dlp alongside the video parts.
+
+        Returns:
+            List of paths to downloaded `.srt` files, excluding the pipeline's
+            own SRT outputs (source/official/translated and derivatives).
+        """
+        return [
+            subtitle_file
+            for subtitle_file in self.project_path.glob("*.srt")
+            if subtitle_file.is_file()
+            and not subtitle_file.name.startswith("video.")
+        ]
 
     @property
     def translated_path(self) -> Path:

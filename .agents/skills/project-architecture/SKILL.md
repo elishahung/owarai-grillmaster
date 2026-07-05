@@ -1,16 +1,16 @@
 ---
 name: project-architecture
 description: >-
-  Detailed architecture reference for the Owarai GrillMaster pipeline (video
-  download → ASR → two-stage translation → post-process → finalize → package).
-  Consult this skill BEFORE making non-trivial changes anywhere under
-  `services/`, `workflow.py`, `project.py`, or `settings.py` — whenever you
-  touch the pipeline stages, the unified inference layer, the translate package
-  (pre-pass / chunk / structural-fix), post-processing, finalize, packaging, or
-  add/rename a backend, stage, or setting. Read it to learn where a concern
-  lives and which invariants must hold, so a change lands in the right module
-  instead of being bolted on. Also consult it when onboarding to the codebase
-  or when a task spans more than one service module.
+  Orchestration-level architecture of the Owarai GrillMaster pipeline: the
+  resumable stage machine in `workflow.py`, project state and path layout in
+  `project.py`, settings/`.env`/ModelSpec in `settings.py`, the Typer CLI in
+  `main.py`, and the supporting services (`services/srt/`, `services/media.py`,
+  `services/ytdlp/`, `services/elevenlabs/`, `services/fixed_glossary/`,
+  `services/progress.py`). Read this before adding/reordering a pipeline stage,
+  changing resumability or cost accounting, adding a setting, adding a source
+  platform, or any task that spans more than one service module. Deep dives
+  live in the sibling skills inference-layer, translate-pipeline, and
+  postprocess-and-packaging.
 ---
 
 # Owarai GrillMaster — Architecture
@@ -19,6 +19,12 @@ A single-user CLI that turns a Japanese variety-show video ID/URL into Tradition
 Chinese subtitles (SRT + styled ASS), optionally burning them into the video.
 Everything is local and resumable; there is no server, queue, or database — state
 lives entirely in `projects/<id>/`.
+
+Sibling skills own the deep detail — read the one whose files you're touching:
+
+- **inference-layer** — `services/inference/` (backends, schema repair, frame tools)
+- **translate-pipeline** — `services/translate/` (pre-pass, chunking, chunk workers, caches)
+- **postprocess-and-packaging** — `services/postprocess/`, `services/finalize/`, `services/package/`
 
 ## Mental model
 
@@ -33,7 +39,8 @@ preserve it**.
 The expensive model-driven stages additionally cache their *intermediate* media
 and responses under dot-dirs (`.asr/`, `.pre_pass/`, `.chunks/`, …) so that a
 resume after a crash does not re-extract audio, re-sample frames, or re-call the
-model for chunks that already succeeded.
+model for chunks that already succeeded. These caches never self-invalidate;
+forcing a re-run means deleting the dot-dir.
 
 ## The pipeline (`workflow.py`)
 
@@ -71,6 +78,9 @@ Key control-flow details that are easy to break:
 - **Cover generation runs in a background `ThreadPoolExecutor`** started right
   after download and joined in the `finally` block — even on pipeline failure,
   because the Codex subscription cost is already incurred. Don't move the join.
+  The join timeout is the hardcoded `_COVER_JOIN_TIMEOUT_SECS`. Note
+  `is_cover_generated` is a `Project` boolean but **not** a `ProgressStage`:
+  it is set directly in the `finally` block, not via `mark_progress`.
 - **Optional stages are gated twice**: by a `settings.enable_*` toggle OR a
   per-run `--refine/--glossary-check/--cover` flag (the flag force-enables).
 - **Cost accounting**: metered stages call `project.add_cost(service, amount)`,
@@ -98,174 +108,27 @@ Key control-flow details that are easy to break:
   add a stage you MUST add both the enum value and the boolean field, or import
   fails fast.
 
-## The unified inference layer (`services/inference/`)
-
-This is the most important abstraction and the subject of the recent refactor
-(it was previously split as `agent_exec` + `gemini`). **One entry point**:
-
-```python
-run_inference(*, backend, prompt, system_prompt=None, cwd=None,
-              images=None, audio=None, schema=None, model=None,
-              reasoning_effort="high", ...) -> InferenceResult
-```
-
-Four backends (`Backend` StrEnum in `base.py`):
-
-| Backend       | Auth            | Audio? | Schema handling | Cost |
-|---------------|-----------------|--------|-----------------|------|
-| `gemini-api`  | API key         | ✅     | native `response_json_schema` | metered (the only paid backend) |
-| `gemini-cli`  | subscription    | ✅     | prompt-appended + repair loop | free |
-| `gemini-agy`  | subscription    | ❌     | prompt-appended + repair loop | free |
-| `codex`       | subscription    | ❌     | prompt-appended + repair loop | free |
-| `claude`      | subscription    | ❌     | prompt-appended + repair loop | free |
-
-Design rules baked into this layer — preserve them:
-
-- **One call, parameterized — not modes.** `schema=None` → return the model's raw
-  final text (agentic file-writing callers pass `cwd` and inspect files after).
-  `schema=<Model>` → JSON guaranteed-parseable for that model.
-- **Capability gating lives in `base.py`** (`backend_supports_audio`,
-  `is_agent_backend`, `is_gemini_backend`). Passing audio to a non-audio backend
-  raises `UnsupportedMediaError`. Callers must gate audio on the *backend's*
-  capability, not just on whether an audio asset exists.
-- **Schema enforcement is shared, not per-backend** (`schema_enforce.py`): for the
-  three prompt-based backends, `run_inference` appends the schema instruction
-  once and runs the validate-and-repair loop centrally. Each backend's only job
-  is `prompt → text`. The retry cap is the hardcoded `MAX_SCHEMA_RETRIES`
-  constant there (not a setting).
-
-Backend files: `gemini_api.py`, `gemini_cli.py`, `gemini_agy.py` (Antigravity
-CLI; must run under a pty and stage the prompt to a file — `agy -p` drops stdout
-on a non-TTY and takes the prompt as an argv arg), `codex.py`, `claude_sdk.py`;
-shared: `base.py` (contract/errors), `result.py` (`InferenceResult`),
-`schema_enforce.py`.
-
-**Agent-facing tools/instructions (`services/inference/tools/`)** — `get_frames.py`
-is a CLI agent backends run mid-session to extract up to 20 frames at specific
-`--times` for a moment they need to see. Stage-specific wrapper scripts pre-fill
-the stage and output directory; the agent should only pass `--project-dir` and
-replace the `--times` value. Extra frames are written next to the stage artifacts:
-`.pre_pass/media/extra_frames/`, `.chunks/media/extra_frames/`,
-`.refine/extra_frames/`, and `.glossary_check/extra_frames/`. Treat files in
-these directories as the audit signal for whether the tool was actually used.
-Gemini CLI allows only these wrappers via policy/include-dirs instead of
-`--yolo`, because yolo's sandboxing breaks project-local frame reads.
-`build_*_frame_tool_instruction` renders frame usage, while
-`build_pre_pass_agent_instruction` combines pre-pass frame guidance with bounded
-agent-only web-search guidance for external facts. These blocks append to
-pre-pass/chunk/refine/glossary-check prompts **only when
-`is_agent_backend(backend)`** — gemini-api cannot run local tools, so it never
-sees them.
-
-## The translate package (`services/translate/`)
-
-Two-stage translation orchestrated by `facade.py` (`class Translate`). Both
-stages call `Translate._prepare`, which parses the SRT and splits it into
-char-balanced chunks **deterministically** so pre-pass and chunk stages always
-agree on boundaries — this determinism is load-bearing.
-
-```
-services/translate/
-├── facade.py        # Translate: run_pre_pass + translate_chunks (asyncio)
-├── chunker.py       # split_into_chunks (char-balanced)
-├── assets.py        # frame sampling + per-chunk audio slicing (ffmpeg), cached
-├── request.py       # TranslationRequest (paths + context bundle)
-├── errors.py        # TranslationError / ChunkTranslationError + cost summaries
-├── pre_pass/
-│   ├── pre_pass.py  # whole-film analysis → pre_pass.json
-│   ├── schema.py    # PrePassResult / characters / catchphrases / SegmentSummary
-│   └── prompts/     # *.md prompt templates
-└── chunk/
-    ├── chunk_worker.py    # translate_chunk: cache → infer → validate → fix
-    ├── prompts.py + prompts/   # system instruction, audio-conditioned
-    ├── validation.py / validate_chunk.py  # structural validation
-    ├── structural_fix.py  # agent self-validating repair (fix_chunk_structure)
-    └── normalizer.py      # merge + reindex across chunks
-```
-
-### Pre-pass (stage 7)
-
-One call over the **whole** film (full SRT + program info + full audio for gemini
-backends + 20-40 SRT-start-aligned representative frames + optional fixed-glossary + optional
-parent context). Produces a `PrePassResult` briefing: character roster, proper
-nouns / ASR-correction dict, catchphrase fixed translations, overall tone, and a
-**per-segment summary keyed by the exact chunk index ranges**. Persisted to
-`.pre_pass/pre_pass.json` — this file is the explicit hand-off to the chunk stage.
-`proper_nouns` entries must be honorific-free and same-span (alias → that
-alias's own rendering, never the full name; alias identity goes in `role_note`)
-— chunk workers apply them verbatim, so a violating entry propagates globally.
-
-### Chunk translation (stage 8) — `chunk_worker.translate_chunk`
-
-Per chunk, concurrently (semaphore-bounded: `chunk_api_concurrency` for the
-network `gemini-api` backend, lower `chunk_agent_concurrency` for the agent
-backends — gemini-cli/codex/claude — since each spawns a heavy local process;
-`is_agent_backend` is "everything except gemini-api"). The worker is a careful
-cache-and-repair ladder:
-
-1. **Raw cache** (`chunk_XXXX-YYYY.raw.srt`) keyed on the chunk range only — an
-   existing file skips the model call entirely. Caches never self-invalidate:
-   changing backend/model/prompt/settings mid-project requires manually deleting
-   `.chunks/` (and `.pre_pass/` for the pre-pass) to force a re-run.
-2. Build the user message: pre-pass briefing (global + this segment's summary) +
-   the chunk's frame timestamps + the SRT slice. Call `run_inference`
-   (`schema=None`, free-form SRT out) with retries + exponential backoff.
-3. **Strict structural validation** (`validate_chunk_structure`) checks that
-   every source timecode appears exactly once, there are no unexpected or
-   duplicate timecodes, the block count matches, and every output block has
-   non-empty translated text.
-4. On validation failure, the worker invokes the **agent fix layer**
-   (`fix_chunk_structure`): hand raw output + the source skeleton + the error to
-   an agent backend that self-validates until it passes. The agent may translate
-   a genuinely missing block from `source.srt`, but it must preserve the source
-   skeleton and cannot leave blank placeholder blocks. The repaired result is
-   cached as `chunk_XXXX-YYYY.fixed.srt`.
-
-`facade._translate_chunks_async` gathers all chunks (collecting partial costs and
-per-chunk failures into a `TranslationError` summary on failure), then
-`normalizer.normalize_translated_blocks` merges and **reindexes to contiguous
-1..N** before writing `video.cht.srt`.
-
-## Post-processing (`services/postprocess/`)
-
-Optional agent passes, each a thin orchestrator over `run_inference` where the
-agent reads/writes files in the project dir and we validate afterward
-(`_srt_guard.py` guards line-count/structure):
-
-- `refine.py` — polish TC subtitles (`AGENT_POSTPROCESS_BACKEND`).
-- `glossary_check.py` — full-text terminology/factual consistency check after
-  refine. It always runs when enabled unless `video.cht.glossary_checked.srt`
-  already exists, treats Latin/kana blocks only as priority hints, may use web
-  search or on-demand frames, and may correct `.pre_pass/pre_pass.json` after
-  preserving the original as `.pre_pass/pre_pass.raw.json`. The updated
-  pre-pass must still validate against `PrePassResult`. Its prompt ends with a
-  required name-form audit (honorific/name-span parity vs `video.ja.srt`) as
-  the final defense against dropped honorifics and full-name expansion.
-- `cover.py` — stylize the poster. **Always Codex** (image generation), regardless
-  of the post-process backend setting. Runs async (see pipeline notes).
-
-`__init__.py` uses lazy `__getattr__` imports so importing the package doesn't
-drag in every backend.
-
-## Other services
+## Supporting services
 
 - `services/srt/` — SRT primitives: `SrtBlock`, `parse_srt`, `serialize_srt`,
   timecode math. The shared subtitle data model used everywhere.
-- `services/finalize/` — SRT → styled ASS + cleaned SRT. Applies Netflix-TC
-  punctuation rules (strip terminal commas/periods, collapse ellipses, convert
-  mid-line `。`→`，`, etc.). The ASS style header lives here.
 - `services/media.py` — `MediaProcessor`: ffmpeg wrappers (combine, extract
-  audio, frame sampling, burn-in). FFmpeg must be on PATH.
-- `services/ytdlp/` — download + metadata + TVer/Abema talent scraping.
+  audio, frame sampling, burn-in). FFmpeg must be on PATH. Burn-in runs with
+  `-nostdin` (headless safety) and **validates output duration** afterward
+  (`BURN_IN_DURATION_TOLERANCE_SECONDS`, 2 s): ffmpeg can exit 0 yet silently
+  truncate, so a too-short output raises instead of shipping.
+- `services/ytdlp/` — download + metadata + TVer/Abema talent scraping. Two
+  BiliBili gotchas live in `client.py`: (1) a **temporary monkey-patch** falls
+  back from `/x/player/wbi/playurl` (HTTP 412 on some videos in current yt-dlp)
+  to `/x/player/playurl` — remove when upstream fixes it; (2) BiliBili inputs
+  are **anonymous by default** (cookies disabled) because authenticated
+  cookies can lock the format list to 480p; other platforms keep cookies.
 - `services/elevenlabs/` — ASR client + ASR-JSON → SRT builder. Source SRT
   formatting constants are hard-coded at the top of the builder (maintainer-tuned,
   intentionally not settings).
 - `services/fixed_glossary/` — loads `fixed_glossary.json` / `.md` (canonical
-  term translations) consumed by pre-pass, glossary-check, and finalize.
-- `services/package/` — deliverable assembly: burn ASS into video (`core.py`),
-  copy cover and analysis artifacts (`pre_pass.json`, optional
-  `refine.md`/`glossary_check.md`), plus a `noise`/`remix` packaging path
-  (`noise.py`, `remix.py`).
+  term translations) consumed by pre-pass, glossary-check, **and finalize** (it
+  is a runtime input for name spacing, not just prompt content).
 - `services/progress.py` — Rich progress reporter (`create_progress_reporter`,
   `NoopProgressReporter`) threaded through chunk translation and packaging.
 
@@ -274,32 +137,29 @@ drag in every backend.
 Pydantic-settings, loaded from `.env`. Notable patterns:
 
 - **Per-stage backend selection**: pre-pass, chunk, and post-process each pick a
-  backend + model independently (`AGENT_*_BACKEND`, `AGENT_*_MODEL`).
+  backend + model independently (`agent_*_backend` / `agent_*_model` fields,
+  i.e. `AGENT_*_BACKEND` / `AGENT_*_MODEL` in `.env`).
 - **`ModelSpec`**: `*_MODEL` is written as `"model"` or `"model/effort"` (effort
   ∈ low/medium/high, default high) and parsed into `.model` + `.reasoning_effort`.
   `effort` is mapped per client (gemini thinking_level, codex
   model_reasoning_effort, claude effort). The `ModelSpecField` annotation uses
-  `NoDecode` so pydantic-settings doesn't JSON-decode the shorthand string.
+  `NoDecode` so pydantic-settings doesn't JSON-decode the shorthand string —
+  any new spec-shaped field needs the same annotation.
 - `AGENT_GEMINI_API_KEY` is required **only** when a stage uses `gemini-api`.
-- `AGENT_GEMINI_GCP_PROJECT` is optional and applies **only** to `gemini-cli`:
-  the subprocess receives it as temporary `GOOGLE_CLOUD_PROJECT` for
-  subscription / Code Assist auth. API-key env vars are still scrubbed from the
-  CLI subprocess so it does not silently switch to API-key billing.
+- `AGENT_GEMINI_GCP_PROJECT` is optional and applies **only** to `gemini-cli`
+  (see **inference-layer** for the env handling).
 
 ## Prompts are `.md` files
 
 Every prompt template is a `.md` under the owning module's `prompts/` dir, loaded
 by a sibling `prompts.py`. **Edit the `.md` for wording; edit `prompts.py` only
-for assembly logic.** The pre-pass and chunk instructions have audio-conditioned
-variants: `build_*_instruction(has_audio=...)` applies verbatim find/replace
-pairs to strip audio references for agent backends. When editing `chunk.md` or
-`pre_pass.md`, keep the strings the no-audio substitution searches for intact —
-a unit test in `tests/test_translate_prompts.py` asserts they still occur.
+for assembly logic.** See **translate-pipeline** for the audio-conditioned
+substitution rules guarded by tests.
 
 ## Testing
 
 ```bash
-uv run --with pytest python -m pytest          # full suite (~281 tests, seconds)
+uv run --with pytest python -m pytest          # full suite (~350 tests, seconds)
 uv run --with pytest python -m pytest tests/test_inference.py        # one file
 uv run --with pytest python -m pytest -k chunk_validation            # by keyword
 ```
@@ -314,10 +174,10 @@ fast and fully offline (model/network calls are mocked); there is no CI.
 - New pipeline stage → add `ProgressStage` value **and** `Project.is_*` field
   (import-time sync check), wire it into `_process_project_impl` with the
   skip-if-done + `mark_progress` pattern, add path properties on `Project`.
-- New model backend → add to `Backend` enum + capability sets in
-  `inference/base.py`, a `run_*` backend file, dispatch in `run_inference`.
-- New translate behavior → it almost always belongs in `pre_pass/` or `chunk/`,
-  not `facade.py`. Keep chunk-boundary determinism intact.
+- New model backend → **inference-layer**.
+- New translate behavior → **translate-pipeline** (keep chunk-boundary
+  determinism intact).
+- Refine/glossary/cover/finalize/packaging → **postprocess-and-packaging**.
 - Prompt wording → the `.md`, never inline strings.
 - New tunable → a `settings.py` field with a `description`; read it at the call
   site, don't thread it through constructors.

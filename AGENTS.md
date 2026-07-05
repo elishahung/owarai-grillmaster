@@ -1,10 +1,20 @@
 # AGENTS.md
 
 This file is the first-glance handoff for any agent working in this repository.
-It is intentionally short — the **detailed architecture lives in the
-`project-architecture` skill** (`.agents/skills/project-architecture/SKILL.md`).
-Read that skill before any non-trivial change under `services/`, `workflow.py`,
-`project.py`, or `settings.py`.
+It is intentionally short — the detailed architecture lives in the domain
+skills under `.agents/skills/`. Pick the skill that owns the files you are
+touching:
+
+| Touching…                                                                 | Read first |
+|---------------------------------------------------------------------------|------------|
+| `workflow.py`, `project.py`, `settings.py`, `main.py`, or `services/` srt / media / ytdlp / elevenlabs / fixed_glossary / progress | **project-architecture** |
+| `services/inference/` (backends, schema repair, frame tools)              | **inference-layer** |
+| `services/translate/` (pre-pass, chunking, chunk workers, caches, prompts) | **translate-pipeline** |
+| `services/postprocess/`, `services/finalize/`, `services/package/`        | **postprocess-and-packaging** |
+
+For a change that spans modules (new stage, new setting, new platform), start
+with **project-architecture** — it holds the orchestration contract and the
+repo-wide invariants.
 
 ## What this project is
 
@@ -30,8 +40,8 @@ Entry point: `main.py` (Typer CLI) → `workflow.submit_project`. Run with
   with `uv sync` (or `pip install -e .`).
 - **FFmpeg** must be installed and on `PATH` (media combine/extract/burn-in).
 - Config via a `.env` file (see `README.md` for the full key list). Model
-  backends are selectable per stage (`gemini-api` / `gemini-cli` / `claude` /
-  `codex`); only `gemini-api` is metered.
+  backends are selectable per stage (`gemini-api` / `gemini-cli` / `gemini-agy`
+  / `claude` / `codex`); only `gemini-api` is metered.
 
 ### Running tests
 
@@ -48,13 +58,13 @@ no CI, so run them yourself before considering a change done.
 
 ## Keep the docs current (important)
 
-After any change to the codebase, **check whether the `project-architecture`
-skill needs updating** so the next agent inherits an accurate map. Update
-`.agents/skills/project-architecture/SKILL.md` whenever you:
+After any change, **update the skill that owns the touched area** so the next
+agent inherits an accurate map — a stale skill is worse than no skill. Update
+it whenever you:
 
 - add/rename/remove a pipeline stage, service module, or model backend;
 - change a cross-cutting invariant (resumability, stage↔field sync, chunk-
-  boundary determinism, cover-always-Codex);
+  boundary determinism, cover-always-Codex, caches-never-self-invalidate);
 - add or rename a setting or an `.env` key.
 
 Keep skill updates proportional. Document facts the next agent must know to
@@ -65,9 +75,6 @@ implementation minutiae, or local workaround history into top-level guidance;
 fold small local details into the relevant existing paragraph, or leave them out
 when the code/tests are the clearer source of truth.
 
-The project is small enough today to document in this one skill. As it grows,
-the intended path is to **split the codebase into multiple focused skills** (one
-per subsystem) so an agent reads only the skill relevant to the part it is
-changing — rather than loading one giant document. If you find yourself adding a
-large, self-contained subsystem, factor it into its own skill instead of bloating
-`project-architecture`.
+If you add a large, self-contained subsystem, factor it into its own skill
+under `.agents/skills/` (and add a row to the table above) instead of bloating
+an existing one. AGENTS.md itself stays thin — detail belongs in skills.

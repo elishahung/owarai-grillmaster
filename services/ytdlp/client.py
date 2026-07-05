@@ -5,9 +5,7 @@ for consistent logging across the application.
 """
 
 import yt_dlp
-from yt_dlp.utils import DownloadError
 from loguru import logger
-from pathlib import Path
 from typing import Any, cast
 from settings import settings
 
@@ -99,6 +97,37 @@ def _apply_bilibili_412_playurl_patch() -> None:
     logger.debug("Applied temporary BiliBili yt-dlp HTTP 412 playurl patch")
 
 
+def _build_ytdlp_options(
+    input_str: str | None,
+    opts: dict | None,
+    *,
+    use_loguru_logger: bool,
+) -> dict:
+    """Merge shared yt-dlp defaults with source-specific options.
+
+    Keep option selection separate from logging policy: metadata extraction uses
+    the loguru adapter for consistent app logs, while downloads should keep
+    yt-dlp's native progress renderer. With a custom logger, yt-dlp sends every
+    progress redraw through `debug()`, which floods the terminal.
+    """
+    _apply_bilibili_412_playurl_patch()
+
+    opts = {} if opts is None else opts.copy()
+    ydl_opts: dict[str, Any] = {"cookiefile": cookies_txt_path}
+    if use_loguru_logger:
+        ydl_opts["logger"] = YtDlpLoguruAdapter()
+
+    if (
+        input_str is not None
+        and _is_bilibili_input(input_str)
+        and "cookiefile" not in opts
+    ):
+        ydl_opts["cookiefile"] = None
+
+    ydl_opts.update(opts)
+    return ydl_opts
+
+
 def get_ytdlp_client(opts: dict | None = None):
     """Create a configured yt-dlp client instance.
 
@@ -111,16 +140,11 @@ def get_ytdlp_client(opts: dict | None = None):
     Returns:
         A configured yt_dlp.YoutubeDL instance.
     """
-    _apply_bilibili_412_playurl_patch()
-
-    if opts is None:
-        opts = {}
-
-    ydl_opts = {
-        "cookiefile": cookies_txt_path,
-        "logger": YtDlpLoguruAdapter(),
-        **opts,
-    }
+    ydl_opts = _build_ytdlp_options(
+        input_str=None,
+        opts=opts,
+        use_loguru_logger=True,
+    )
 
     return yt_dlp.YoutubeDL(cast(Any, ydl_opts))
 
@@ -133,12 +157,21 @@ def get_ytdlp_client_for_url(input_str: str, opts: dict | None = None):
     BV16D4y1H7Wk: cookie -> max 480p, anonymous -> 1080p). Other sources still
     inherit the configured cookies because TVer/ABEMA may need them.
     """
-    if opts is None:
-        opts = {}
-    else:
-        opts = opts.copy()
+    ydl_opts = _build_ytdlp_options(
+        input_str=input_str,
+        opts=opts,
+        use_loguru_logger=True,
+    )
 
-    if _is_bilibili_input(input_str) and "cookiefile" not in opts:
-        opts["cookiefile"] = None
+    return yt_dlp.YoutubeDL(cast(Any, ydl_opts))
 
-    return get_ytdlp_client(opts)
+
+def get_ytdlp_download_options_for_url(
+    input_str: str, opts: dict | None = None
+) -> dict:
+    """Build yt-dlp options for real downloads without a custom logger."""
+    return _build_ytdlp_options(
+        input_str=input_str,
+        opts=opts,
+        use_loguru_logger=False,
+    )

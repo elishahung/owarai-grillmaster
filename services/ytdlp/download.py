@@ -4,11 +4,11 @@ This module handles video downloads from various sources with automatic
 thumbnail extraction, metadata embedding, and format conversion.
 """
 
-import yt_dlp
 from yt_dlp.utils import DownloadError, parse_duration
 from loguru import logger
 from pathlib import Path
-from typing import Any, cast
+
+from .client import get_ytdlp_client
 
 
 def parse_section_time(value: str) -> float:
@@ -83,7 +83,7 @@ def download_video(
     try:
         logger.info(f"Starting yt-dlp process for: {url}")
 
-        with yt_dlp.YoutubeDL(cast(Any, ydl_opts)) as ydl:
+        with get_ytdlp_client(ydl_opts) as ydl:
             # extract_info with download=True performs the download
             info_dict = ydl.extract_info(url, download=True)
 

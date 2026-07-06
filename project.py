@@ -185,6 +185,7 @@ class Project(BaseModel):
                 parts = path.strip("/").split("/")
                 if parts:
                     # Abema: /video/episode/90-979_s1_p123 -> 90-979_s1_p123
+                    #        /channels/<ch>/slots/DGzv6KEKhRHpe3 -> DGzv6KEKhRHpe3
                     # TVer: /episodes/ep12345 -> ep12345
                     # Bilibili: /video/BV1ZArvBaEqL -> BV1ZArvBaEqL
                     return parts[-1]
@@ -445,6 +446,12 @@ class Project(BaseModel):
             return f"https://tver.jp/episodes/{self.id}"
 
         if self.source == VideoSource.ABEMA:
+            # Slot (live archive) IDs are pure alphanumeric (e.g.
+            # DGzv6KEKhRHpe3); episode IDs always contain '-'/'_' (e.g.
+            # 194-25_s2_p1). yt-dlp's slot extractor never reads the channel
+            # segment, so a placeholder channel is fine.
+            if self.id.isalnum():
+                return f"https://abema.tv/channels/_/slots/{self.id}"
             return f"https://abema.tv/video/episode/{self.id}"
 
         if self.source == VideoSource.YOUTUBE:

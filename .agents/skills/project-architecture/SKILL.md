@@ -96,7 +96,9 @@ Key control-flow details that are easy to break:
 - **Identity**: `parse_source_str` extracts the canonical ID from an ID or URL
   across Bilibili (`BV…`), YouTube (stored as `v=…`), TVer (`ep…`/`sh…`), Abema
   (fallback). `source` and `source_url` are derived from the ID's shape — keep
-  these consistent if you add a platform.
+  these consistent if you add a platform. Abema has two URL kinds: episode IDs
+  contain `-`/`_`; pure-alphanumeric IDs are slots (live archives) and rebuild
+  as `channels/_/slots/<id>` (yt-dlp ignores the channel segment).
 - **All path properties** (`video_path`, `srt_path`, `pre_pass_path`,
   `chunks_cache_dir`, …). **Never hard-code a project file path elsewhere** — add
   or read a property here so the layout stays in one place.

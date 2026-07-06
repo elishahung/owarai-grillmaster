@@ -167,6 +167,28 @@ class SourceParsingTests(unittest.TestCase):
             "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         )
 
+    def test_parse_abema_slot_url(self):
+        self.assertEqual(
+            Project.parse_source_str(
+                "https://abema.tv/channels/special-plus/slots/DGzv6KEKhRHpe3"
+            ),
+            "DGzv6KEKhRHpe3",
+        )
+
+    def test_abema_slot_source_url(self):
+        # Slot IDs are pure alphanumeric; they must rebuild as a slots URL
+        # (the channel segment is a placeholder yt-dlp never reads).
+        self.assertEqual(
+            Project(id="DGzv6KEKhRHpe3").source_url,
+            "https://abema.tv/channels/_/slots/DGzv6KEKhRHpe3",
+        )
+
+    def test_abema_episode_source_url(self):
+        self.assertEqual(
+            Project(id="90-979_s1_p360").source_url,
+            "https://abema.tv/video/episode/90-979_s1_p360",
+        )
+
     def test_existing_sources_not_regressed(self):
         self.assertEqual(
             Project(id="BV1ZArvBaEqL").source, VideoSource.BILIBILI

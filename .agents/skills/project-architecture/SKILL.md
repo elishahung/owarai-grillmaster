@@ -151,11 +151,13 @@ Pydantic-settings, loaded from `.env`. Notable patterns:
   backend + model independently (`agent_*_backend` / `agent_*_model` fields,
   i.e. `AGENT_*_BACKEND` / `AGENT_*_MODEL` in `.env`).
 - **`ModelSpec`**: `*_MODEL` is written as `"model"` or `"model/effort"` (effort
-  ∈ low/medium/high, default high) and parsed into `.model` + `.reasoning_effort`.
-  `effort` is mapped per client (gemini thinking_level, codex
-  model_reasoning_effort, claude effort). The `ModelSpecField` annotation uses
-  `NoDecode` so pydantic-settings doesn't JSON-decode the shorthand string —
-  any new spec-shaped field needs the same annotation.
+  is one of low/medium/high/extra, default high) and parsed into `.model` +
+  `.reasoning_effort`. `effort` is mapped per client (gemini thinking_level,
+  codex model_reasoning_effort, claude effort); backends without an extra-high
+  value clamp repo-level `extra` to their highest supported value. The
+  `ModelSpecField` annotation uses `NoDecode` so pydantic-settings doesn't
+  JSON-decode the shorthand string — any new spec-shaped field needs the same
+  annotation.
 - `AGENT_GEMINI_API_KEY` is required **only** when a stage uses `gemini-api`.
 - `AGENT_GEMINI_GCP_PROJECT` is optional and applies **only** to `gemini-cli`
   (see **inference-layer** for the env handling).

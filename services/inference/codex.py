@@ -23,6 +23,25 @@ class CodexNotInstalledError(CodexInvocationError):
 # Codex model / reasoning effort used when a caller does not pass them.
 _DEFAULT_MODEL = "gpt-5.5"
 _DEFAULT_REASONING_EFFORT = "high"
+_CODEX_REASONING_EFFORT_BY_EFFORT = {
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "extra": "xhigh",
+}
+
+
+def resolve_codex_reasoning_effort(reasoning_effort: str) -> str:
+    """Map the repo effort enum to Codex CLI's config value."""
+    effort = reasoning_effort.strip().lower()
+    mapped = _CODEX_REASONING_EFFORT_BY_EFFORT.get(effort)
+    if mapped is None:
+        supported = ", ".join(_CODEX_REASONING_EFFORT_BY_EFFORT)
+        raise CodexInvocationError(
+            f"unsupported reasoning_effort for codex: "
+            f"{reasoning_effort!r}. Use one of: {supported}."
+        )
+    return mapped
 
 
 def run_codex_exec(
@@ -44,7 +63,9 @@ def run_codex_exec(
     abs_cwd = cwd.resolve()
     effective_timeout = timeout or DEFAULT_TIMEOUT_SECS
     effective_model = model or _DEFAULT_MODEL
-    effective_effort = (reasoning_effort or _DEFAULT_REASONING_EFFORT).lower()
+    effective_effort = resolve_codex_reasoning_effort(
+        reasoning_effort or _DEFAULT_REASONING_EFFORT
+    )
 
     if output_last_message_path is not None:
         capture_path = output_last_message_path.resolve()

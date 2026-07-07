@@ -114,6 +114,33 @@ _AUDIO_MIME = {
 }
 
 
+_THINKING_LEVEL_BY_EFFORT = {
+    "low": "LOW",
+    "medium": "MEDIUM",
+    "high": "HIGH",
+    "extra": "HIGH",
+}
+
+
+def resolve_gemini_thinking_level(
+    reasoning_effort: str,
+) -> "genai.types.ThinkingLevel":
+    """Map the repo effort enum to Gemini's SDK enum.
+
+    The SDK currently exposes LOW/MEDIUM/HIGH/MINIMAL; the repo's "extra" has
+    no Gemini API equivalent, so it intentionally clamps to HIGH.
+    """
+    effort = reasoning_effort.strip().lower()
+    level_name = _THINKING_LEVEL_BY_EFFORT.get(effort)
+    if level_name is None:
+        supported = ", ".join(_THINKING_LEVEL_BY_EFFORT)
+        raise GeminiApiError(
+            f"unsupported reasoning_effort for gemini-api: "
+            f"{reasoning_effort!r}. Use one of: {supported}."
+        )
+    return genai.types.ThinkingLevel[level_name]
+
+
 def _mime_for(path: Path, table: dict[str, str]) -> str:
     mime = table.get(path.suffix.lower())
     if mime is None:
@@ -155,7 +182,7 @@ def run_gemini_api(
 ) -> InferenceResult:
     """One genai SDK generation. Native schema enforcement, metered cost."""
     client = _api_client()
-    thinking_level = genai.types.ThinkingLevel[reasoning_effort.upper()]
+    thinking_level = resolve_gemini_thinking_level(reasoning_effort)
     # The genai SDK takes its per-request timeout in milliseconds; the rest of
     # the inference layer speaks seconds, so convert here.
     timeout_secs = timeout or DEFAULT_TIMEOUT_SECS

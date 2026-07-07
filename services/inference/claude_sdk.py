@@ -58,6 +58,25 @@ _IMAGE_MEDIA_TYPES = {
 # Claude model / reasoning effort used when a caller does not pass them.
 _DEFAULT_MODEL = "claude-opus-4-8"
 _DEFAULT_REASONING_EFFORT = "high"
+_CLAUDE_REASONING_EFFORT_BY_EFFORT = {
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "extra": "xhigh",
+}
+
+
+def resolve_claude_reasoning_effort(reasoning_effort: str) -> str:
+    """Map the repo effort enum to Claude Agent SDK's effort value."""
+    effort = reasoning_effort.strip().lower()
+    mapped = _CLAUDE_REASONING_EFFORT_BY_EFFORT.get(effort)
+    if mapped is None:
+        supported = ", ".join(_CLAUDE_REASONING_EFFORT_BY_EFFORT)
+        raise ClaudeSDKExecError(
+            f"unsupported reasoning_effort for claude: "
+            f"{reasoning_effort!r}. Use one of: {supported}."
+        )
+    return mapped
 
 
 def run_claude_sdk_exec(
@@ -93,7 +112,9 @@ def run_claude_sdk_exec(
     abs_cwd = cwd.resolve()
     effective_timeout = timeout or DEFAULT_TIMEOUT_SECS
     effective_model = model or _DEFAULT_MODEL
-    effective_effort = (reasoning_effort or _DEFAULT_REASONING_EFFORT).lower()
+    effective_effort = resolve_claude_reasoning_effort(
+        reasoning_effort or _DEFAULT_REASONING_EFFORT
+    )
 
     options = ClaudeAgentOptions(
         cwd=str(abs_cwd),

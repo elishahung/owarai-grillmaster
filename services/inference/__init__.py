@@ -117,10 +117,11 @@ def run_inference(
 
     * **gemini-api** enforces a schema natively (`response_json_schema`) and is
       the sole metered backend, so it has its own branch.
-    * **gemini-cli / codex / claude** are single-shot text generators. Schema
-      handling is identical for all three and lives HERE (not in the backends):
-      the JSON-Schema instruction is appended once and `enforce_schema` runs the
-      shared validate-and-repair loop. Each backend's only job is `prompt → text`.
+    * **gemini-cli / gemini-agy / codex / claude** are single-shot text
+      generators. Schema handling is identical for all four and lives HERE (not
+      in the backends): the JSON-Schema instruction is appended once and
+      `enforce_schema` runs the shared validate-and-repair loop. Each backend's
+      only job is `prompt → text`.
 
     See `services.inference.base` for the full contract. When `schema` is given
     the result `.text` is guaranteed-parseable JSON for that model.

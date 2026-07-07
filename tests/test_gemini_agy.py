@@ -29,6 +29,10 @@ class ResolveAgyModelTests(unittest.TestCase):
             resolve_agy_model("gemini-3.1-pro", "low"),
             "Gemini 3.1 Pro (Low)",
         )
+        self.assertEqual(
+            resolve_agy_model("gemini-3.1-pro", "extra"),
+            "Gemini 3.1 Pro (High)",
+        )
 
     def test_case_insensitive_inputs(self):
         self.assertEqual(

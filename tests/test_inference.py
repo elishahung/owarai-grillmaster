@@ -262,6 +262,13 @@ class RunInferenceDispatchTests(unittest.TestCase):
         self.assertEqual(m.call_count, MAX_SCHEMA_RETRIES)
 
 
+class GeminiApiReasoningTests(unittest.TestCase):
+    def test_extra_clamps_to_high_thinking_level(self):
+        from services.inference.gemini_api import resolve_gemini_thinking_level
+
+        self.assertEqual(resolve_gemini_thinking_level("extra").name, "HIGH")
+
+
 class CodexCommandTests(unittest.TestCase):
     """codex argv carries the passed model + the mapped reasoning effort."""
 
@@ -290,6 +297,29 @@ class CodexCommandTests(unittest.TestCase):
         self.assertIn("gpt-5.5", cmd)
         self.assertIn("model_reasoning_effort=low", cmd)
 
+    def test_codex_extra_maps_to_xhigh(self):
+        from types import SimpleNamespace
+
+        import services.inference.codex as codex
+
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            return SimpleNamespace(returncode=0, stdout="done", stderr="")
+
+        with (
+            patch.object(codex.shutil, "which", return_value="codex"),
+            patch.object(codex.subprocess, "run", side_effect=fake_run),
+        ):
+            codex.run_codex_exec(
+                prompt="hi",
+                cwd=Path("."),
+                model="gpt-5.5",
+                reasoning_effort="extra",
+            )
+        self.assertIn("model_reasoning_effort=xhigh", captured["cmd"])
+
     def test_codex_falls_back_to_default_model(self):
         from types import SimpleNamespace
 
@@ -307,6 +337,32 @@ class CodexCommandTests(unittest.TestCase):
         ):
             codex.run_codex_exec(prompt="hi", cwd=Path("."))
         self.assertIn(codex._DEFAULT_MODEL, captured["cmd"])
+
+
+class ClaudeCommandTests(unittest.TestCase):
+    def test_claude_extra_maps_to_xhigh(self):
+        import claude_agent_sdk
+        import services.inference.claude_sdk as claude
+
+        captured = {}
+
+        async def fake_query(*, prompt, options):
+            captured["prompt"] = prompt
+            captured["effort"] = options.effort
+            if False:
+                yield None
+
+        with patch.object(claude_agent_sdk, "query", fake_query):
+            result = claude.run_claude_sdk_exec(
+                prompt="hi",
+                cwd=Path("."),
+                model="claude-opus-4-8",
+                reasoning_effort="extra",
+            )
+
+        self.assertEqual(result, "")
+        self.assertEqual(captured["prompt"], "hi")
+        self.assertEqual(captured["effort"], "xhigh")
 
 
 if __name__ == "__main__":

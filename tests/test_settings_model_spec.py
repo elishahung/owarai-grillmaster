@@ -26,6 +26,15 @@ class ModelSpecParseTests(unittest.TestCase):
         self.assertEqual(s.agent_postprocess_model.model, "gpt-5.5")
         self.assertEqual(s.agent_postprocess_model.reasoning_effort, "medium")
 
+    def test_extra_effort_is_supported_and_normalized(self):
+        s = Settings(agent_chunk_model="gpt-5.5/EXTRA")
+        self.assertEqual(s.agent_chunk_model.model, "gpt-5.5")
+        self.assertEqual(s.agent_chunk_model.reasoning_effort, "extra")
+
+    def test_unknown_effort_raises(self):
+        with self.assertRaises(ValueError):
+            Settings(agent_chunk_model="gpt-5.5/xhigh")
+
     def test_str_roundtrip(self):
         self.assertEqual(
             str(ModelSpec(model="m", reasoning_effort="low")), "m/low"

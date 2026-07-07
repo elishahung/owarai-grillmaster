@@ -65,14 +65,20 @@ _END_MARKER = "<<<AGY_END>>>"
 # agy bakes the reasoning effort into the model name (it has no separate effort
 # flag), and its --model value is the exact display string `agy models` prints.
 # To keep this backend's config consistent with gemini-api / gemini-cli (which
-# take ID-form models like "gemini-3.1-pro" plus a low/medium/high effort), we
-# map (model id, effort) -> agy display name here. Only the Gemini models agy
-# exposes are wired; each maps to the efforts agy actually offers for it.
+# take ID-form models like "gemini-3.1-pro" plus a low/medium/high/extra
+# effort), we map (model id, effort) -> agy display name here. Only the Gemini
+# models agy exposes are wired; each maps to the efforts agy actually offers
+# for it.
 _AGY_MODEL_BASES = {
     "gemini-3.5-flash": "Gemini 3.5 Flash",
     "gemini-3.1-pro": "Gemini 3.1 Pro",
 }
-_AGY_EFFORTS = {"low": "Low", "medium": "Medium", "high": "High"}
+_AGY_EFFORTS = {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "extra": "High",
+}
 _AGY_VALID_EFFORTS = {
     "Gemini 3.5 Flash": {"Low", "Medium", "High"},
     "Gemini 3.1 Pro": {"Low", "High"},
@@ -147,7 +153,8 @@ def resolve_agy_model(model: str, reasoning_effort: str) -> str:
 
     e.g. ``("gemini-3.5-flash", "high") -> "Gemini 3.5 Flash (High)"``. Raises
     ``GeminiAgyError`` for an unknown model or an effort that model does not
-    expose, listing the valid combinations so config typos fail loudly.
+    expose, listing the valid combinations so config typos fail loudly. agy has
+    no extra-high option, so repo-level ``extra`` clamps to ``High``.
     """
     base = _AGY_MODEL_BASES.get(model.strip().lower())
     effort = _AGY_EFFORTS.get(reasoning_effort.strip().lower())

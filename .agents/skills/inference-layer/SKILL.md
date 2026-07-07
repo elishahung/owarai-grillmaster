@@ -47,6 +47,12 @@ Design rules baked into this layer — preserve them:
   and runs the validate-and-repair loop centrally. Each backend's only job is
   `prompt → text`. The retry cap is the hardcoded `MAX_SCHEMA_RETRIES` constant
   there (not a setting).
+- **Reasoning effort is repo-normalized**: callers pass
+  `reasoning_effort` as low/medium/high/extra. Backend wrappers map that to
+  their real values: Codex and Claude use `xhigh` for repo-level `extra`;
+  Gemini API and gemini-agy have no extra-high value and clamp `extra` to
+  `HIGH` / `High`; gemini-cli exposes no separate effort flag, so only the
+  model id is passed to that CLI.
 
 Backend runtime gotchas:
 

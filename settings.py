@@ -1,21 +1,35 @@
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, Field
+from pydantic import BaseModel, BeforeValidator, Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+ReasoningEffort = Literal["low", "medium", "high", "extra"]
 
 
 class ModelSpec(BaseModel):
     """A backend model plus its reasoning effort.
 
     Written in env/config as ``"model"`` or ``"model/effort"`` (effort is one of
-    low/medium/high). A bare ``"gpt-5.5"`` defaults the effort to ``high``;
+    low/medium/high/extra). A bare ``"gpt-5.5"`` defaults the effort to ``high``;
     ``"gpt-5.5/medium"`` sets it explicitly. The split happens here so call
     sites just read ``.model`` and ``.reasoning_effort``.
     """
 
     model: str
-    reasoning_effort: str = "high"
+    reasoning_effort: ReasoningEffort = "high"
+
+    @field_validator("reasoning_effort", mode="before")
+    @classmethod
+    def _normalize_reasoning_effort(cls, value: object) -> str:
+        effort = str(value).strip().lower()
+        allowed = ("low", "medium", "high", "extra")
+        if effort not in allowed:
+            raise ValueError(
+                "reasoning_effort must be one of: "
+                + ", ".join(allowed)
+            )
+        return effort
 
     def __str__(self) -> str:
         return f"{self.model}/{self.reasoning_effort}"
@@ -78,10 +92,12 @@ class Settings(BaseSettings):
     # sets its own backend + model + reasoning_effort; the model and effort are
     # passed to whichever backend the stage selected (set them to values that
     # backend understands). Each *_model is written as "model" or "model/effort"
-    # (effort low/medium/high, default high) and parsed into a ModelSpec; effort
-    # is mapped per client (gemini thinking_level, codex model_reasoning_effort,
-    # claude effort). The schema validate-and-repair cap is NOT configurable — it
-    # is the hardcoded MAX_SCHEMA_RETRIES constant in
+    # (effort low/medium/high/extra, default high) and parsed into a ModelSpec;
+    # effort is mapped per client (gemini thinking_level, codex
+    # model_reasoning_effort, claude effort). Backends without an extra-high
+    # setting clamp "extra" to their highest supported value. The schema
+    # validate-and-repair cap is NOT configurable — it is the hardcoded
+    # MAX_SCHEMA_RETRIES constant in
     # services/inference/schema_enforce.py.
     agent_gemini_api_key: str | None = Field(
         default=None,
@@ -98,7 +114,7 @@ class Settings(BaseSettings):
     )
     agent_prepass_model: ModelSpecField = Field(
         default="gemini-3-flash-preview",
-        description="Pre-pass model as 'model' or 'model/effort' (effort low/medium/high, default high), passed to the selected backend.",
+        description="Pre-pass model as 'model' or 'model/effort' (effort low/medium/high/extra, default high), passed to the selected backend.",
     )
 
     agent_chunk_backend: str = Field(
@@ -107,7 +123,7 @@ class Settings(BaseSettings):
     )
     agent_chunk_model: ModelSpecField = Field(
         default="gemini-3-flash-preview",
-        description="Chunk model as 'model' or 'model/effort' (effort low/medium/high, default high), passed to the selected backend.",
+        description="Chunk model as 'model' or 'model/effort' (effort low/medium/high/extra, default high), passed to the selected backend.",
     )
 
     agent_postprocess_backend: str = Field(
@@ -116,7 +132,7 @@ class Settings(BaseSettings):
     )
     agent_postprocess_model: ModelSpecField = Field(
         default="gpt-5.5/medium",
-        description="Post-processing model as 'model' or 'model/effort' (effort low/medium/high, default high), passed to the selected backend.",
+        description="Post-processing model as 'model' or 'model/effort' (effort low/medium/high/extra, default high), passed to the selected backend.",
     )
 
     video_frame_max_side: int = Field(

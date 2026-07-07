@@ -130,6 +130,10 @@ Key control-flow details that are easy to break:
   to `/x/player/playurl` — remove when upstream fixes it; (2) BiliBili inputs
   are **anonymous by default** (cookies disabled) because authenticated
   cookies can lock the format list to 480p; other platforms keep cookies.
+  `download.py` registers a jpeg-extension fixup PP before the thumbnail
+  convertor (Abema slot thumbnails are JPEG bytes named `.png`, which breaks
+  the extension-driven image2 demuxer) — keep the convertor out of the opts
+  dict so the fixup stays first.
 - `services/elevenlabs/` — ASR client + ASR-JSON → SRT builder. Source SRT
   formatting constants are hard-coded at the top of the builder (maintainer-tuned,
   intentionally not settings).

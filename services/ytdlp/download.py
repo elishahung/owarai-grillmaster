@@ -4,8 +4,12 @@ This module handles video downloads from various sources with automatic
 thumbnail extraction, metadata embedding, and format conversion.
 """
 
+import os
+
 import yt_dlp
-from yt_dlp.utils import DownloadError, parse_duration
+from yt_dlp.postprocessor import FFmpegThumbnailsConvertorPP
+from yt_dlp.postprocessor.common import PostProcessor
+from yt_dlp.utils import DownloadError, parse_duration, replace_extension
 from loguru import logger
 from pathlib import Path
 from typing import Any, cast
@@ -13,6 +17,40 @@ from typing import Any, cast
 from settings import settings
 
 from .client import get_ytdlp_download_options_for_url
+
+
+class _JpegThumbnailFixupPP(PostProcessor):
+    """Rename thumbnails whose bytes are JPEG but whose extension is not.
+
+    Abema slot (live archive) thumbnails are served as JPEG bytes under a
+    `.png` filename. FFmpegThumbnailsConvertorPP forces the image2 demuxer,
+    which picks the decoder from the file extension, so converting the
+    mislabeled file fails with "Conversion failed!". Mirrors yt-dlp's own
+    `fixup_webp` handling, which covers webp but not jpeg.
+    """
+
+    def run(self, info):
+        for thumbnail in info.get("thumbnails") or []:
+            filepath = thumbnail.get("filepath")
+            if not filepath or not os.path.exists(filepath):
+                continue
+            if os.path.splitext(filepath)[1].lower() in (".jpg", ".jpeg"):
+                continue
+            with open(filepath, "rb") as f:
+                if f.read(3) != b"\xff\xd8\xff":
+                    continue
+            self.to_screen(
+                f'Correcting thumbnail "{filepath}" extension to jpg'
+            )
+            jpg_filepath = replace_extension(filepath, "jpg")
+            os.replace(filepath, jpg_filepath)
+            thumbnail["filepath"] = jpg_filepath
+            files_to_move = info.get("__files_to_move") or {}
+            if filepath in files_to_move:
+                files_to_move[jpg_filepath] = replace_extension(
+                    files_to_move.pop(filepath), "jpg"
+                )
+        return [], info
 
 
 def parse_section_time(value: str) -> float:
@@ -62,12 +100,9 @@ def download_video(
         },
         "merge_output_format": "mp4",
         "format": "bestvideo+bestaudio/best",
+        # NB: the thumbnail convertor is not declared here — it is added via
+        # add_post_processor below so the jpeg-extension fixup can run first.
         "postprocessors": [
-            {
-                "key": "FFmpegThumbnailsConvertor",
-                "format": "jpg",
-                "when": "before_dl",
-            },
             {
                 # Embed thumbnail into the video file
                 "key": "EmbedThumbnail",
@@ -109,6 +144,13 @@ def download_video(
 
         download_opts = get_ytdlp_download_options_for_url(url, ydl_opts)
         with yt_dlp.YoutubeDL(cast(Any, download_opts)) as ydl:
+            # Fixup must precede the convertor within the before_dl chain;
+            # opts-declared postprocessors always run before ones added here,
+            # so both are registered via add_post_processor.
+            ydl.add_post_processor(_JpegThumbnailFixupPP(), when="before_dl")
+            ydl.add_post_processor(
+                FFmpegThumbnailsConvertorPP(format="jpg"), when="before_dl"
+            )
             # extract_info with download=True performs the download
             info_dict = ydl.extract_info(url, download=True)
 

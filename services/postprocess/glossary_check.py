@@ -245,6 +245,7 @@ def glossary_check_subtitles(project: Project) -> None:
             cwd=project.project_path,
             model=spec.model,
             reasoning_effort=spec.reasoning_effort,
+            web_search=is_agent_backend(backend),
         )
 
         if not project.glossary_checked_srt_path.exists():

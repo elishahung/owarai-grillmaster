@@ -258,6 +258,7 @@ async def translate_chunk(
                     cwd=media_assets.video_path.parent,
                     model=spec.model,
                     reasoning_effort=spec.reasoning_effort,
+                    web_search=is_agent_backend(backend),
                 )
                 raw_text = io_result.text
                 api_cost += io_result.cost

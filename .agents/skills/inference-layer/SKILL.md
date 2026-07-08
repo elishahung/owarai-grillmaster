@@ -48,6 +48,9 @@ Design rules baked into this layer — preserve them:
   not add the tool) and gemini-cli (policy allow rules for
   `google_web_search`/`web_fetch`); claude and gemini-agy already expose them
   under their permission bypass, so their runners treat the flag as a no-op.
+  Every agent-instruction stage (pre-pass, chunk, refine, glossary check,
+  date research) passes `web_search=is_agent_backend(backend)` (date research
+  hardcodes `True` since its backends are always agentic).
 - **Schema enforcement is shared, not per-backend** (`schema_enforce.py`): for
   the prompt-based backends, `run_inference` appends the schema instruction once
   and runs the validate-and-repair loop centrally. Each backend's only job is

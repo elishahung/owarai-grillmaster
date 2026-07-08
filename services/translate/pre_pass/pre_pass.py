@@ -250,6 +250,9 @@ def run_pre_pass(
             cwd=pre_pass_cache_dir.parent,
             model=spec.model,
             reasoning_effort=spec.reasoning_effort,
+            # The agent instruction invites built-in web search; make sure the
+            # backend actually has the tool enabled (agent backends only).
+            web_search=agent_instruction_enabled,
         )
     except GeminiCliQuotaError as e:
         logger.error(f"[pre-pass] Gemini CLI quota exhausted: {e}")

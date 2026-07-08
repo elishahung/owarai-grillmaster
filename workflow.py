@@ -265,7 +265,13 @@ def _process_project_impl(
                 video_info=video_data,
             )
             if broadcast_date is not None:
+                logger.info(f"Resolved broadcast date: {broadcast_date:%Y-%m-%d}")
                 project.update_broadcast_date(broadcast_date)
+            else:
+                logger.warning(
+                    "Broadcast date could not be resolved; "
+                    "deliverables will use the undated name"
+                )
             project.mark_progress(ProgressStage.METADATA_FETCHED)
             logger.success("Stage complete: Metadata fetched")
         else:

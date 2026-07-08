@@ -2,7 +2,7 @@
 name: project-architecture
 description: >-
   Orchestration-level architecture of the Owarai GrillMaster pipeline: the
-  resumable stage machine in `workflow.py`, project state and path layout in
+  resumable stage machine in `workflow/`, project state and path layout in
   `project.py`, settings/`.env`/ModelSpec in `settings.py`, the Typer CLI in
   `main.py`, and the supporting services (`services/srt/`, `services/media.py`,
   `services/ytdlp/`, `services/elevenlabs/`, `services/fixed_glossary/`,
@@ -30,7 +30,7 @@ Sibling skills own the deep detail — read the one whose files you're touching:
 
 The whole program is a **linear, idempotent, resumable stage machine**. One
 `Project` (a Pydantic model persisted as `projects/<id>/project.json`) carries a
-boolean per stage. `workflow.py` runs the stages in order; each stage checks its
+boolean per stage. The `workflow/` package runs the stages in order; each stage checks its
 boolean, skips if already done, and on success calls `project.mark_progress(...)`
 which flips the boolean and re-saves the JSON. Re-running the same ID resumes
 exactly where it left off. This is the central invariant — **every new stage must
@@ -42,11 +42,16 @@ resume after a crash does not re-extract audio, re-sample frames, or re-call the
 model for chunks that already succeeded. These caches never self-invalidate;
 forcing a re-run means deleting the dot-dir.
 
-## The pipeline (`workflow.py`)
+## The pipeline (`workflow/`)
 
-`submit_project` creates/loads the `Project`, then `_process_project_impl` runs
-the stages below in order. Each maps 1:1 to a `ProgressStage` enum value and a
-`Project.is_*` boolean (see "Stage ↔ field sync" invariant).
+`workflow/__init__.py` is the public facade (`submit_project`, `process_project`,
+`ProgressStage`). `workflow/api.py` creates/loads the `Project`, then
+`_process_project_impl` runs the stages below in order through
+`WorkflowRunner`. Each maps 1:1 to a `ProgressStage` enum value and a
+`Project.is_*` boolean (see "Stage ↔ field sync" invariant). Stage bodies live
+under `workflow/stages/` by subsystem; post-finalize archive/package is in
+`workflow/delivery.py`; cover/date background futures are managed by
+`workflow/side_tasks.py`.
 
 | # | Stage (`ProgressStage`)         | What happens                                                                 | Module |
 |---|----------------------------------|------------------------------------------------------------------------------|--------|
@@ -85,7 +90,8 @@ Key control-flow details that are easy to break:
 - **Cover generation runs in a background `ThreadPoolExecutor`** started right
   after download and joined in the `finally` block — even on pipeline failure,
   because the Codex subscription cost is already incurred. Don't move the join.
-  The join timeout is the hardcoded `_COVER_JOIN_TIMEOUT_SECS`. Note
+  The join timeout is the hardcoded `_COVER_JOIN_TIMEOUT_SECS` in
+  `workflow/side_tasks.py`. Note
   `is_cover_generated` is a `Project` boolean but **not** a `ProgressStage`:
   it is set directly in the `finally` block, not via `mark_progress`.
 - **Broadcast-date research** (`ENABLE_BROADCAST_DATE_AGENT_FALLBACK` /
@@ -105,8 +111,17 @@ Key control-flow details that are easy to break:
 - **Cost accounting**: metered stages call `project.add_cost(service, amount)`,
   which accumulates into `project.json`. `TranslationError` carries a partial
   cost summary so a mid-run failure still records what was spent.
+- **Stage timing logs**: successful main stages go through `WorkflowRunner`,
+  which logs `Stage complete: ... (<elapsed>)` after the action and
+  `mark_progress` finish. Cover/date side tasks use the same elapsed suffix,
+  measured from async dispatch to join.
 - **Finalize input precedence**: glossary-checked SRT → refined SRT → translated
   SRT (first that exists wins).
+- **Future architecture direction**: the package still keeps the pipeline as an
+  explicit ordered sequence in `workflow/api.py`. If stage count or branching
+  grows, the next step is a declarative stage registry built on `StageSpec` and
+  `WorkflowRunner`, but do not introduce that extra indirection until it removes
+  real branching or repetition.
 
 ## Project state (`project.py`)
 
@@ -208,8 +223,8 @@ fast and fully offline (model/network calls are mocked); there is no CI.
 ## Where to make a change (cheat sheet)
 
 - New pipeline stage → add `ProgressStage` value **and** `Project.is_*` field
-  (import-time sync check), wire it into `_process_project_impl` with the
-  skip-if-done + `mark_progress` pattern, add path properties on `Project`.
+  (import-time sync check), add the stage body under `workflow/stages/`, wire it
+  into `workflow/api.py` with `WorkflowRunner`, add path properties on `Project`.
 - New model backend → **inference-layer**.
 - New translate behavior → **translate-pipeline** (keep chunk-boundary
   determinism intact).

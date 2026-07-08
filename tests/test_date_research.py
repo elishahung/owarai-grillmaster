@@ -10,6 +10,9 @@ from pydantic import ValidationError
 
 import project as project_module
 import workflow as workflow_module
+import workflow.api as workflow_api
+import workflow.side_tasks as side_tasks
+import workflow.stages.media as media_stage
 from project import Project
 from services.postprocess.date_research import (
     DateResearchResult,
@@ -251,32 +254,32 @@ class WorkflowDateResearchGateTests(unittest.TestCase):
         found = DateResearchResult.model_validate_json(_found_result_json())
         with (
             patch.object(
-                workflow_module.Project,
+                workflow_api.Project,
                 "from_source_str",
                 return_value=project,
             ),
             patch.object(
-                workflow_module,
+                side_tasks,
                 "load_cached_date_research",
                 return_value=cached,
             ) as load_cached,
             patch.object(
-                workflow_module,
+                side_tasks,
                 "research_broadcast_date",
                 return_value=found,
             ) as research,
             patch.object(
-                workflow_module, "apply_date_research_result"
+                side_tasks, "apply_date_research_result"
             ) as apply_result,
-            patch.object(workflow_module.settings, "archived_path", None),
-            patch.object(workflow_module.settings, "package_path", None),
+            patch.object(workflow_api.settings, "archived_path", None),
+            patch.object(workflow_api.settings, "package_path", None),
             patch.object(
-                workflow_module.settings,
+                workflow_api.settings,
                 "enable_broadcast_date_agent_fallback",
                 False,
             ),
             patch.object(
-                workflow_module.settings, "enable_cover_generation", False
+                workflow_api.settings, "enable_cover_generation", False
             ),
         ):
             workflow_module.process_project(
@@ -324,6 +327,92 @@ class WorkflowDateResearchGateTests(unittest.TestCase):
         )
         research.assert_not_called()
         apply_result.assert_called_once_with(project, cached)
+
+    def test_side_tasks_join_after_later_stage_failure(self):
+        project = self._build_completed_project_mock()
+        project.is_video_processed = False
+        project.is_cover_generated = False
+        found = DateResearchResult.model_validate_json(_found_result_json())
+
+        with (
+            patch.object(
+                workflow_api.Project,
+                "from_source_str",
+                return_value=project,
+            ),
+            patch.object(
+                side_tasks,
+                "load_cached_date_research",
+                return_value=None,
+            ),
+            patch.object(
+                side_tasks,
+                "research_broadcast_date",
+                return_value=found,
+            ) as research,
+            patch.object(side_tasks, "generate_cover") as generate_cover,
+            patch.object(
+                side_tasks, "apply_date_research_result"
+            ) as apply_result,
+            patch.object(
+                media_stage,
+                "process_video",
+                side_effect=RuntimeError("video failed"),
+            ),
+            patch.object(
+                workflow_api.settings,
+                "enable_broadcast_date_agent_fallback",
+                False,
+            ),
+            patch.object(
+                workflow_api.settings, "enable_cover_generation", False
+            ),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "video failed"):
+                workflow_module.process_project(
+                    "demo",
+                    enable_cover=True,
+                    enable_date_research=True,
+                )
+
+        research.assert_called_once_with(project)
+        generate_cover.assert_called_once_with(project)
+        apply_result.assert_called_once_with(project, found)
+        self.assertTrue(project.is_cover_generated)
+        project.save.assert_called_once()
+
+    def test_break_after_suppresses_forced_side_task_dispatch(self):
+        project = self._build_completed_project_mock()
+        project.is_broadcast_date_researched = False
+        project.broadcast_date = None
+        project.is_cover_generated = False
+
+        with (
+            patch.object(
+                workflow_api.Project,
+                "from_source_str",
+                return_value=project,
+            ),
+            patch.object(
+                side_tasks,
+                "load_cached_date_research",
+                return_value=None,
+            ),
+            patch.object(
+                side_tasks,
+                "research_broadcast_date",
+            ) as research,
+            patch.object(side_tasks, "generate_cover") as generate_cover,
+        ):
+            workflow_module.process_project(
+                "demo",
+                break_after=workflow_module.ProgressStage.DOWNLOADED,
+                enable_cover=True,
+                enable_date_research=True,
+            )
+
+        research.assert_not_called()
+        generate_cover.assert_not_called()
 
 
 if __name__ == "__main__":

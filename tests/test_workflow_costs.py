@@ -3,6 +3,9 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import workflow as workflow_module
+import workflow.api as workflow_api
+import workflow.stages.transcription as transcription_stage
+import workflow.stages.translation as translation_stage
 from services.elevenlabs.asr import ElevenLabsTranscriptionResult
 from services.translate.errors import TranslationCostSummary, TranslationError
 
@@ -13,6 +16,8 @@ class WorkflowGeminiCostTests(unittest.TestCase):
         project.id = "demo"
         project.translation_hint = "hint"
         project.total_cost = 0.0
+        for stage in workflow_module.ProgressStage:
+            setattr(project, stage.value, False)
         project.is_metadata_fetched = True
         project.is_downloaded = True
         project.is_video_processed = True
@@ -20,7 +25,12 @@ class WorkflowGeminiCostTests(unittest.TestCase):
         project.is_asr_completed = True
         project.is_srt_completed = True
         project.is_prepass_completed = True
-        project.is_chunk_translated = False
+        project.is_srt_refined = True
+        project.is_glossary_checked = True
+        project.is_finalized = True
+        project.is_cover_generated = True
+        project.is_broadcast_date_researched = True
+        project.broadcast_date = None
         base = Path("projects/demo")
         project.srt_path = base / "video.ja.srt"
         project.video_path = base / "video.mp4"
@@ -49,11 +59,11 @@ class WorkflowGeminiCostTests(unittest.TestCase):
 
         with (
             patch.object(
-                workflow_module.Project, "from_source_str", return_value=project
+                workflow_api.Project, "from_source_str", return_value=project
             ),
-            patch.object(workflow_module, "Translate") as gemini_cls,
-            patch.object(workflow_module.settings, "archived_path", None),
-            patch.object(workflow_module.settings, "package_path", None),
+            patch.object(translation_stage, "Translate") as gemini_cls,
+            patch.object(workflow_api.settings, "archived_path", None),
+            patch.object(workflow_api.settings, "package_path", None),
         ):
             gemini_cls.return_value.translate_chunks.return_value = summary
             workflow_module.process_project("demo")
@@ -81,10 +91,10 @@ class WorkflowGeminiCostTests(unittest.TestCase):
 
         with (
             patch.object(
-                workflow_module.Project, "from_source_str", return_value=project
+                workflow_api.Project, "from_source_str", return_value=project
             ),
-            patch.object(workflow_module, "Translate") as gemini_cls,
-            patch.object(workflow_module.settings, "archived_path", None),
+            patch.object(translation_stage, "Translate") as gemini_cls,
+            patch.object(workflow_api.settings, "archived_path", None),
         ):
             gemini_cls.return_value.translate_chunks.side_effect = (
                 TranslationError("translation failed", summary)
@@ -111,9 +121,9 @@ class WorkflowGeminiCostTests(unittest.TestCase):
 
         with (
             patch.object(
-                workflow_module.Project, "from_source_str", return_value=project
+                workflow_api.Project, "from_source_str", return_value=project
             ),
-            patch.object(workflow_module, "Translate") as gemini_cls,
+            patch.object(translation_stage, "Translate") as gemini_cls,
         ):
             gemini = gemini_cls.return_value
             gemini.run_pre_pass.return_value = summary
@@ -134,14 +144,15 @@ class WorkflowElevenLabsCostTests(unittest.TestCase):
         project = MagicMock()
         project.id = "demo"
         project.total_cost = 0.0
+        for stage in workflow_module.ProgressStage:
+            setattr(project, stage.value, False)
         project.is_metadata_fetched = True
         project.is_downloaded = True
         project.is_video_processed = True
         project.is_audio_processed = True
-        project.is_asr_completed = False
-        project.is_srt_completed = False
-        project.is_prepass_completed = False
-        project.is_chunk_translated = False
+        project.is_cover_generated = True
+        project.is_broadcast_date_researched = True
+        project.broadcast_date = None
         base = Path("projects/demo")
         project.audio_path = base / ".asr" / "audio.ogg"
         project.asr_path = base / ".asr" / "asr.json"
@@ -157,11 +168,13 @@ class WorkflowElevenLabsCostTests(unittest.TestCase):
 
         with (
             patch.object(
-                workflow_module.Project, "from_source_str", return_value=project
+                workflow_api.Project, "from_source_str", return_value=project
             ),
-            patch.object(workflow_module, "ElevenLabsASR") as elevenlabs_cls,
-            patch.object(workflow_module, "convert_file") as convert_file,
-            patch.object(workflow_module, "Translate") as gemini_cls,
+            patch.object(
+                transcription_stage, "ElevenLabsASR"
+            ) as elevenlabs_cls,
+            patch.object(transcription_stage, "convert_file") as convert_file,
+            patch.object(translation_stage, "Translate") as gemini_cls,
         ):
             elevenlabs_cls.return_value.transcribe_to_file.return_value = result
             workflow_module.process_project(

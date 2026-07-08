@@ -1,0 +1,44 @@
+"""Post-pipeline archive and package delivery."""
+
+from pathlib import Path
+
+from loguru import logger
+
+from project import Project
+from services.package import package_project
+from services.progress import NoopProgressReporter
+from settings import settings
+
+
+def deliver_project(
+    *,
+    project: Project,
+    project_id: str,
+    progress: NoopProgressReporter,
+    remix_noise_name: str | None,
+    remix_prefix: bool,
+) -> None:
+    """Archive and package a completed project."""
+    logger.success(f"Project processing complete: {project_id}")
+
+    archived_location: Path | None = None
+    if settings.archived_path is not None:
+        archived_location = project.archive()
+    else:
+        logger.warning("Archived path is not set, skipping archiving")
+
+    if settings.package_path is not None:
+        source_root = archived_location or project.project_path
+        package_project(
+            project,
+            source_root,
+            settings.package_path,
+            progress,
+            remix_noise_name=remix_noise_name,
+            remix_prefix=remix_prefix,
+        )
+
+    logger.info(
+        f"Project {project_id} total accumulated API cost: "
+        f"${project.total_cost:.4f}"
+    )

@@ -7,6 +7,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import workflow as workflow_module
+import workflow.api as workflow_api
+import workflow.stages.translation as translation_stage
 from services.translate.chunk.chunk_worker import ChunkTranslationResult
 from services.translate.errors import (
     ChunkTranslationError,
@@ -82,6 +84,8 @@ class WorkflowProgressTests(unittest.TestCase):
         project.id = "demo"
         project.translation_hint = "hint"
         project.total_cost = 0.0
+        for stage in workflow_module.ProgressStage:
+            setattr(project, stage.value, False)
         project.is_metadata_fetched = True
         project.is_downloaded = True
         project.is_video_processed = True
@@ -89,10 +93,9 @@ class WorkflowProgressTests(unittest.TestCase):
         project.is_asr_completed = True
         project.is_srt_completed = True
         project.is_prepass_completed = True
-        project.is_chunk_translated = False
-        project.is_srt_refined = False
-        project.is_glossary_checked = False
         project.is_cover_generated = False
+        project.is_broadcast_date_researched = True
+        project.broadcast_date = None
         project.is_finalized = True
         base = Path("projects/demo")
         project.srt_path = base / "video.ja.srt"
@@ -123,11 +126,11 @@ class WorkflowProgressTests(unittest.TestCase):
 
         with (
             patch.object(
-                workflow_module.Project, "from_source_str", return_value=project
+                workflow_api.Project, "from_source_str", return_value=project
             ),
-            patch.object(workflow_module, "Translate") as gemini_cls,
-            patch.object(workflow_module.settings, "archived_path", None),
-            patch.object(workflow_module.settings, "package_path", None),
+            patch.object(translation_stage, "Translate") as gemini_cls,
+            patch.object(workflow_api.settings, "archived_path", None),
+            patch.object(workflow_api.settings, "package_path", None),
         ):
             gemini_cls.return_value.translate_chunks.return_value = summary
             workflow_module.process_project("demo", progress=progress)

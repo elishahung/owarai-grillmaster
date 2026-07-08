@@ -7,7 +7,7 @@ touching:
 
 | Touching…                                                                 | Read first |
 |---------------------------------------------------------------------------|------------|
-| `workflow.py`, `project.py`, `settings.py`, `main.py`, or `services/` srt / media / ytdlp / elevenlabs / fixed_glossary / progress | **project-architecture** |
+| `workflow/`, `project.py`, `settings.py`, `main.py`, or `services/` srt / media / ytdlp / elevenlabs / fixed_glossary / progress | **project-architecture** |
 | `services/inference/` (backends, schema repair, frame tools)              | **inference-layer** |
 | `services/translate/` (pre-pass, chunking, chunk workers, caches, prompts) | **translate-pipeline** |
 | `services/postprocess/`, `services/finalize/`, `services/package/`        | **postprocess-and-packaging** |

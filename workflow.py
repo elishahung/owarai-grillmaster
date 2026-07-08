@@ -28,6 +28,7 @@ from services.ytdlp import (
     get_tver_episode_talents,
     get_video_info,
     normalize_official_subtitle,
+    resolve_broadcast_date,
 )
 
 # Upper bound for joining the async cover-generation future before archive.
@@ -258,6 +259,13 @@ def _process_project_impl(
                 talents = get_abema_episode_talents(project.id)
                 if talents:
                     project.update_from_source_talents(talents)
+            broadcast_date = resolve_broadcast_date(
+                source=project.source,
+                video_id=project.id,
+                video_info=video_data,
+            )
+            if broadcast_date is not None:
+                project.update_broadcast_date(broadcast_date)
             project.mark_progress(ProgressStage.METADATA_FETCHED)
             logger.success("Stage complete: Metadata fetched")
         else:

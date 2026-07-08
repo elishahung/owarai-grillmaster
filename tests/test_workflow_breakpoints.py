@@ -1,4 +1,5 @@
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -246,6 +247,11 @@ class WorkflowBreakpointTests(unittest.TestCase):
                     )
                 ],
             ) as get_tver_episode_talents,
+            patch.object(
+                workflow_module,
+                "resolve_broadcast_date",
+                return_value=date(2026, 7, 8),
+            ) as resolve_broadcast_date,
         ):
             workflow_module.process_project(
                 project_id,
@@ -257,10 +263,15 @@ class WorkflowBreakpointTests(unittest.TestCase):
             f"https://tver.jp/episodes/{project_id}"
         )
         get_tver_episode_talents.assert_called_once_with(project_id)
+        resolve_broadcast_date.assert_called_once()
         self.assertTrue(loaded.is_metadata_fetched)
         self.assertEqual(
             loaded.source_metadata.talents[0].name,
             "山内　健司",
+        )
+        self.assertEqual(loaded.broadcast_date, date(2026, 7, 8))
+        self.assertEqual(
+            loaded.deliverable_name, f"260708_{project_id}_{loaded.name}"
         )
 
     def test_metadata_stage_fetches_abema_talents(self):
@@ -293,6 +304,11 @@ class WorkflowBreakpointTests(unittest.TestCase):
                 workflow_module,
                 "get_tver_episode_talents",
             ) as get_tver_episode_talents,
+            patch.object(
+                workflow_module,
+                "resolve_broadcast_date",
+                return_value=None,
+            ),
         ):
             workflow_module.process_project(
                 project_id,
@@ -309,6 +325,10 @@ class WorkflowBreakpointTests(unittest.TestCase):
         self.assertEqual(
             loaded.source_metadata.talents[0].name,
             "渡部健（アンジャッシュ）",
+        )
+        self.assertIsNone(loaded.broadcast_date)
+        self.assertEqual(
+            loaded.deliverable_name, f"{project_id}_{loaded.name}"
         )
 
 

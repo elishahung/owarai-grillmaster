@@ -7,7 +7,7 @@ and translation.
 
 from pydantic import BaseModel, Field
 from pathlib import Path
-from datetime import datetime
+from datetime import date, datetime
 import json
 import shutil
 from enum import Enum
@@ -116,6 +116,7 @@ class Project(BaseModel):
     name: str = Field(default="video")
     translation_hint: str | None = None
     parent_project_path: Path | None = None
+    broadcast_date: date | None = None
     source_metadata: SourceMetadata = Field(default_factory=SourceMetadata)
     total_cost: float = 0.0
     service_costs: dict[str, float] = Field(default_factory=dict)
@@ -287,6 +288,11 @@ class Project(BaseModel):
                 )
         self.save()
 
+    def update_broadcast_date(self, broadcast_date: date) -> None:
+        """Persist the announced broadcast/publication date."""
+        self.broadcast_date = broadcast_date
+        self.save()
+
     def update_from_source_talents(
         self, talents: list[SourceTalentInfo]
     ) -> None:
@@ -381,7 +387,7 @@ class Project(BaseModel):
             return None
 
         archived_root = settings.archived_path
-        archived_path = archived_root / f"{self.id}_{self.name}"
+        archived_path = archived_root / self.deliverable_name
 
         if not self.project_path.exists():
             logger.error(
@@ -458,6 +464,19 @@ class Project(BaseModel):
             return f"https://www.youtube.com/watch?v={self.id[2:]}"
 
         raise ValueError(f"Invalid video source: {self.source}")
+
+    @property
+    def deliverable_name(self) -> str:
+        """Directory name shared by archive and package outputs.
+
+        Prefixes the announced broadcast date as YYMMDD when known, so
+        deliverables sort chronologically; older projects without the date
+        keep the plain `{id}_{name}` form.
+        """
+        base = f"{self.id}_{self.name}"
+        if self.broadcast_date is None:
+            return base
+        return f"{self.broadcast_date:%y%m%d}_{base}"
 
     # Files management
     @property

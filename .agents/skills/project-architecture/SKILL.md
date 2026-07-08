@@ -50,7 +50,7 @@ the stages below in order. Each maps 1:1 to a `ProgressStage` enum value and a
 
 | # | Stage (`ProgressStage`)         | What happens                                                                 | Module |
 |---|----------------------------------|------------------------------------------------------------------------------|--------|
-| 1 | `METADATA_FETCHED`               | `get_video_info`; for TVer/Abema also fetch cast/talents                     | `services/ytdlp` |
+| 1 | `METADATA_FETCHED`               | `get_video_info`; for TVer/Abema also fetch cast/talents; `resolve_broadcast_date` persists `Project.broadcast_date` (best-effort) | `services/ytdlp` |
 | 2 | `DOWNLOADED`                     | `download_video` (yt-dlp); also best-effort fetches platform CC subs (`ENABLE_OFFICIAL_SUBTITLES`). **Kicks off async cover gen here** if enabled | `services/ytdlp`, `services/postprocess/cover` |
 | 3 | `VIDEO_PROCESSED`                | `MediaProcessor.combine_videos` (ffmpeg concat) → `video.mp4`; normalizes downloaded CC → `video.official.ja.srt` (section runs rebase/filter timestamps) | `services/media`, `services/ytdlp/subtitles` |
 | 4 | `AUDIO_PROCESSED`                | `MediaProcessor.extract_audio` → `.asr/audio.ogg` (mono 16 kHz libopus)      | `services/media` |
@@ -64,7 +64,10 @@ the stages below in order. Each maps 1:1 to a `ProgressStage` enum value and a
 
 After `FINALIZED` (and only if no `--break-after`): join the async cover future,
 optionally `archive()` the project dir, then `package_project` (burn-in + cover
-copy / remix). Archive and package are **post-loop**, not stages.
+copy / remix). Archive and package are **post-loop**, not stages. Both name
+their output dir `Project.deliverable_name` — `YYMMDD_{id}_{name}` when
+`broadcast_date` is known (announced on-air/publish date, platform-local
+timezone), plain `{id}_{name}` otherwise.
 
 Key control-flow details that are easy to break:
 
@@ -120,6 +123,10 @@ Key control-flow details that are easy to break:
   (`BURN_IN_DURATION_TOLERANCE_SECONDS`, 2 s): ffmpeg can exit 0 yet silently
   truncate, so a too-short output raises instead of shipping.
 - `services/ytdlp/` — download + metadata + TVer/Abema talent scraping +
+  `broadcast_date.py` (resolves the announced on-air/publish date: YouTube/
+  BiliBili from yt-dlp timestamps, TVer from `broadcastDateLabel` month/day +
+  year inferred from the availability start, Abema from program `broadcastAt`
+  or slot `startAt`; all best-effort → None) +
   `subtitles.py` (platform CC → `video.official.ja.srt`; single video part
   only — multi-part is skipped with a warning and the pipeline continues
   without the reference; same-part language variants prefer exact `ja`;

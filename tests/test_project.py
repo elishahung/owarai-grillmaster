@@ -1,6 +1,7 @@
 import json
 import shutil
 import unittest
+from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
@@ -100,6 +101,97 @@ class ProjectTests(unittest.TestCase):
         )
         self.assertIn("濱家　隆一 / ハマイエ　リュウイチ", context)
         self.assertIn("お笑い芸人", context)
+
+
+class ArchiveLayoutTests(unittest.TestCase):
+    def _make_temp_dir(self, name: str) -> Path:
+        base = Path(__file__).resolve().parents[1] / "tmp_test_artifacts"
+        base.mkdir(parents=True, exist_ok=True)
+        path = base / name
+        shutil.rmtree(path, ignore_errors=True)
+        path.mkdir(parents=True, exist_ok=True)
+        self.addCleanup(lambda: shutil.rmtree(path, ignore_errors=True))
+        return path
+
+    def test_archive_subpath_dated_uses_yy_mm_subdirs(self):
+        project = Project(
+            id="ep123", name="demo", broadcast_date=date(2026, 5, 3)
+        )
+        self.assertEqual(
+            project.archive_subpath,
+            Path("26") / "05" / "260503_ep123_demo",
+        )
+
+    def test_archive_subpath_undated_falls_back_to_etc(self):
+        project = Project(id="ep123", name="demo")
+        self.assertEqual(
+            project.archive_subpath, Path("etc") / "ep123_demo"
+        )
+
+    def _archive(self, project: Project) -> Path:
+        root = self._make_temp_dir("tmp_archive_projects")
+        archived_root = self._make_temp_dir("tmp_archive_dest")
+        project_dir = root / project.id
+        project_dir.mkdir(parents=True, exist_ok=True)
+        (project_dir / "project.json").write_text("{}", encoding="utf-8")
+
+        with (
+            patch.object(project_module, "PROJECT_ROOT_NAME", str(root)),
+            patch.object(
+                project_module.settings, "archived_path", archived_root
+            ),
+        ):
+            result = project.archive()
+
+        self.assertEqual(result, archived_root / project.archive_subpath)
+        self.assertTrue(result.is_dir())
+        self.assertFalse(project_dir.exists())
+        return archived_root
+
+    def test_archive_moves_dated_project_into_yy_mm(self):
+        project = Project(
+            id="ep123", name="demo", broadcast_date=date(2026, 5, 3)
+        )
+        archived_root = self._archive(project)
+        self.assertTrue(
+            (archived_root / "26" / "05" / "260503_ep123_demo").is_dir()
+        )
+
+    def test_archive_moves_undated_project_into_etc(self):
+        project = Project(id="ep123", name="demo")
+        archived_root = self._archive(project)
+        self.assertTrue((archived_root / "etc" / "ep123_demo").is_dir())
+
+    def test_archive_replaces_only_the_leaf_dir(self):
+        project = Project(
+            id="ep123", name="demo", broadcast_date=date(2026, 5, 3)
+        )
+        root = self._make_temp_dir("tmp_archive_projects")
+        archived_root = self._make_temp_dir("tmp_archive_dest")
+        project_dir = root / project.id
+        project_dir.mkdir(parents=True, exist_ok=True)
+        (project_dir / "project.json").write_text("{}", encoding="utf-8")
+
+        # Pre-existing leaf with stale content, plus a sibling project in
+        # the same YY/MM dir that must survive the rmtree.
+        leaf = archived_root / project.archive_subpath
+        leaf.mkdir(parents=True, exist_ok=True)
+        (leaf / "stale.txt").write_text("old", encoding="utf-8")
+        sibling = leaf.parent / "260510_other_show"
+        sibling.mkdir(parents=True, exist_ok=True)
+
+        with (
+            patch.object(project_module, "PROJECT_ROOT_NAME", str(root)),
+            patch.object(
+                project_module.settings, "archived_path", archived_root
+            ),
+        ):
+            result = project.archive()
+
+        self.assertEqual(result, leaf)
+        self.assertFalse((leaf / "stale.txt").exists())
+        self.assertTrue((leaf / "project.json").exists())
+        self.assertTrue(sibling.is_dir())
 
 
 class SourceParsingTests(unittest.TestCase):

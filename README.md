@@ -161,8 +161,8 @@ ENABLE_COVER_GENERATION=true              # 下載後並行 Codex 風格化封�
 # 可選：下載/歸檔/封裝
 ENABLE_OFFICIAL_SUBTITLES=true     # 下載時順抓平台官方 CC 字幕（TVer/Abema 等），作為翻譯的 ground truth 參照
 COOKIES_TXT_PATH=cookies.txt       # 影片來源網站 cookies (供 yt-dlp 使用)
-ARCHIVED_PATH=NAS:\video\ai\     # 歸檔路徑 - 處理完移至 <archived_path>/YYMMDD_<id>_<name>/（YYMMDD 為放送/發布日期，無日期時省略前綴）
-PACKAGE_PATH=NAS:\video\package\ # 封裝路徑 - 將 ASS 字幕燒錄進影片並複製封面到 <package_path>/YYMMDD_<id>_<name>/（同上）
+ARCHIVED_PATH=NAS:\video\ai\     # 歸檔路徑 - 處理完移至 <archived_path>/YY/MM/YYMMDD_<id>_<name>/（YYMMDD 為放送/發布日期，無日期時移至 <archived_path>/etc/<id>_<name>/）
+PACKAGE_PATH=NAS:\video\package\ # 封裝路徑 - 將 ASS 字幕燒錄進影片並複製封面到 <package_path>/YYMMDD_<id>_<name>/（平面，不分子目錄；無日期時省略前綴）
 ```
 
 ## 專案結構

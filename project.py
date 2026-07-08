@@ -387,7 +387,7 @@ class Project(BaseModel):
             return None
 
         archived_root = settings.archived_path
-        archived_path = archived_root / self.deliverable_name
+        archived_path = archived_root / self.archive_subpath
 
         if not self.project_path.exists():
             logger.error(
@@ -397,10 +397,11 @@ class Project(BaseModel):
                 f"Project directory not found: {self.project_path}"
             )
 
-        # Create archived directory if it doesn't exist
-        archived_root.mkdir(parents=True, exist_ok=True)
+        # Create the YY/MM (or etc) parent directories if they don't exist
+        archived_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # If archived path already exists, remove it first
+        # If archived path already exists, remove it first (leaf dir only —
+        # never the shared YY/MM or etc parents)
         if archived_path.exists():
             logger.warning(
                 f"Archived project already exists, removing: {archived_path}"
@@ -467,7 +468,7 @@ class Project(BaseModel):
 
     @property
     def deliverable_name(self) -> str:
-        """Directory name shared by archive and package outputs.
+        """Directory name used by package output and as the archive leaf dir.
 
         Prefixes the announced broadcast date as YYMMDD when known, so
         deliverables sort chronologically; older projects without the date
@@ -477,6 +478,23 @@ class Project(BaseModel):
         if self.broadcast_date is None:
             return base
         return f"{self.broadcast_date:%y%m%d}_{base}"
+
+    @property
+    def archive_subpath(self) -> Path:
+        """Archive location relative to ARCHIVED_PATH.
+
+        Dated projects are grouped under YY/MM subdirectories
+        (e.g. 26/05/260503_{id}_{name}); undated projects fall back to
+        etc/{id}_{name}. Package output does NOT use this — it stays flat
+        under PACKAGE_PATH/{deliverable_name}.
+        """
+        if self.broadcast_date is None:
+            return Path("etc") / self.deliverable_name
+        return (
+            Path(f"{self.broadcast_date:%y}")
+            / f"{self.broadcast_date:%m}"
+            / self.deliverable_name
+        )
 
     # Files management
     @property

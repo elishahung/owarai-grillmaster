@@ -64,10 +64,13 @@ the stages below in order. Each maps 1:1 to a `ProgressStage` enum value and a
 
 After `FINALIZED` (and only if no `--break-after`): join the async cover future,
 optionally `archive()` the project dir, then `package_project` (burn-in + cover
-copy / remix). Archive and package are **post-loop**, not stages. Both name
-their output dir `Project.deliverable_name` — `YYMMDD_{id}_{name}` when
+copy / remix). Archive and package are **post-loop**, not stages. Package output
+is flat: `PACKAGE_PATH/{deliverable_name}` — `YYMMDD_{id}_{name}` when
 `broadcast_date` is known (announced on-air/publish date, platform-local
-timezone), plain `{id}_{name}` otherwise.
+timezone), plain `{id}_{name}` otherwise. Archive nests by date instead:
+`ARCHIVED_PATH / Project.archive_subpath` = `YY/MM/YYMMDD_{id}_{name}` when
+dated, `etc/{id}_{name}` otherwise; `archive()` only rmtree's the leaf dir,
+never the shared `YY/MM`/`etc` parents.
 
 Key control-flow details that are easy to break:
 

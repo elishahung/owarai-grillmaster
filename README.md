@@ -157,6 +157,7 @@ CHUNK_MISSING_BLOCK_TOLERANCE=2        # 每塊允許未對齊/缺漏字幕區�
 ENABLE_POSTPROCESS_REFINE=true            # 翻譯後再用 agent 潤飾繁中字幕
 ENABLE_POSTPROCESS_GLOSSARY_CHECK=true    # 潤飾後再用 agent 校對殘留的英文/假名專名
 ENABLE_COVER_GENERATION=true              # 下載後並行 Codex 風格化封面圖
+ENABLE_BROADCAST_DATE_AGENT_FALLBACK=true # metadata 解析不到放送日時，並行派 agent 上網研究放送日（結果存 .artifacts/date_research.json）
 
 # 可選：下載/歸檔/封裝
 ENABLE_OFFICIAL_SUBTITLES=true     # 下載時順抓平台官方 CC 字幕（TVer/Abema 等），作為翻譯的 ground truth 參照

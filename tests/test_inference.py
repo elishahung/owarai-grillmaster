@@ -338,6 +338,42 @@ class CodexCommandTests(unittest.TestCase):
             codex.run_codex_exec(prompt="hi", cwd=Path("."))
         self.assertIn(codex._DEFAULT_MODEL, captured["cmd"])
 
+    def test_codex_web_search_flag_enables_tool(self):
+        from types import SimpleNamespace
+
+        import services.inference.codex as codex
+
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            return SimpleNamespace(returncode=0, stdout="done", stderr="")
+
+        with (
+            patch.object(codex.shutil, "which", return_value="codex"),
+            patch.object(codex.subprocess, "run", side_effect=fake_run),
+        ):
+            codex.run_codex_exec(prompt="hi", cwd=Path("."), web_search=True)
+        self.assertIn("tools.web_search=true", captured["cmd"])
+
+    def test_codex_web_search_off_by_default(self):
+        from types import SimpleNamespace
+
+        import services.inference.codex as codex
+
+        captured = {}
+
+        def fake_run(cmd, **kwargs):
+            captured["cmd"] = cmd
+            return SimpleNamespace(returncode=0, stdout="done", stderr="")
+
+        with (
+            patch.object(codex.shutil, "which", return_value="codex"),
+            patch.object(codex.subprocess, "run", side_effect=fake_run),
+        ):
+            codex.run_codex_exec(prompt="hi", cwd=Path("."))
+        self.assertNotIn("tools.web_search=true", captured["cmd"])
+
 
 class ClaudeCommandTests(unittest.TestCase):
     def test_claude_extra_maps_to_xhigh(self):

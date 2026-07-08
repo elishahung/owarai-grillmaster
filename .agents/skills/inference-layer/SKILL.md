@@ -19,7 +19,7 @@ description: >-
 run_inference(*, backend, prompt, system_prompt=None, cwd=None,
               images=None, audio=None, schema=None, model=None,
               reasoning_effort="high", output_last_message_path=None,
-              timeout=None) -> InferenceResult
+              timeout=None, web_search=False) -> InferenceResult
 ```
 
 Five backends (`Backend` StrEnum in `base.py`):
@@ -42,6 +42,12 @@ Design rules baked into this layer — preserve them:
   raises `UnsupportedMediaError`. Callers must gate audio on the *backend's*
   capability, not just on whether an audio asset exists. `is_agent_backend` is
   "everything except gemini-api".
+- **`web_search=True` enables the backend's built-in web tools** (agent
+  backends only; gemini-api raises). Explicit enablement is required for codex
+  (`-c tools.web_search=true` — off by default in `codex exec`; `--yolo` does
+  not add the tool) and gemini-cli (policy allow rules for
+  `google_web_search`/`web_fetch`); claude and gemini-agy already expose them
+  under their permission bypass, so their runners treat the flag as a no-op.
 - **Schema enforcement is shared, not per-backend** (`schema_enforce.py`): for
   the prompt-based backends, `run_inference` appends the schema instruction once
   and runs the validate-and-repair loop centrally. Each backend's only job is

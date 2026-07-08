@@ -52,8 +52,14 @@ def run_codex_exec(
     timeout: int | None = None,
     model: str | None = None,
     reasoning_effort: str | None = None,
+    web_search: bool = False,
 ) -> str:
-    """Invoke `codex exec` non-interactively and return the final assistant message."""
+    """Invoke `codex exec` non-interactively and return the final assistant message.
+
+    ``web_search`` enables Codex's built-in web-search tool for this call
+    (off by default in ``codex exec``; ``--yolo`` only lifts the sandbox, it
+    does not add the tool).
+    """
     executable = shutil.which("codex")
     if executable is None:
         raise CodexNotInstalledError(
@@ -93,6 +99,8 @@ def run_codex_exec(
         "--output-last-message",
         str(capture_path),
     ]
+    if web_search:
+        cmd += ["-c", "tools.web_search=true"]
     for img in images or []:
         cmd += ["--image", str(img.resolve())]
     cmd.append("--")

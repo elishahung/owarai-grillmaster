@@ -110,8 +110,14 @@ def run_inference(
     reasoning_effort: str = "high",
     output_last_message_path: Path | None = None,
     timeout: int | None = None,
+    web_search: bool = False,
 ) -> InferenceResult:
     """Run `prompt` through `backend`, returning an `InferenceResult`.
+
+    ``web_search=True`` ensures the backend's built-in web tools are enabled
+    for this call (agent backends only): codex gets ``tools.web_search=true``,
+    gemini-cli gets the web tools allow-listed in its policy, and
+    claude/gemini-agy already expose them under their permission bypass.
 
     Two shapes only:
 
@@ -137,6 +143,11 @@ def run_inference(
     if is_gemini_backend(backend) and not model:
         raise InferenceError(
             f"backend {backend.value!r} requires an explicit model"
+        )
+
+    if web_search and not is_agent_backend(backend):
+        raise InferenceError(
+            f"backend {backend.value!r} has no built-in web-search tool"
         )
 
     # gemini-api: native schema + metered cost + raw system_instruction.
@@ -171,6 +182,7 @@ def run_inference(
                         media_files=[*(audio or []), *(images or [])],
                         cwd=cwd,
                         timeout=timeout,
+                        web_search=web_search,
                     )
                     return cli.response, cli.requests
                 if backend == Backend.GEMINI_AGY:
@@ -199,6 +211,7 @@ def run_inference(
                     reasoning_effort=reasoning_effort,
                     output_last_message_path=output_last_message_path,
                     timeout=timeout,
+                    web_search=web_search,
                 )
                 return text, 1
 

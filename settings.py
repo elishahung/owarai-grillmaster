@@ -200,6 +200,10 @@ class Settings(BaseSettings):
         default=False,
         description="Enable optional agent-driven cover image stylization (runs async after DOWNLOADED, joined before archive). Skipped entirely when break_after is set.",
     )
+    enable_broadcast_date_agent_fallback: bool = Field(
+        default=False,
+        description="Research the original broadcast date with a web-searching agent (agent_postprocess backend) when platform metadata yields none. Runs async after METADATA_FETCHED, joined before archive. Skipped entirely when break_after is set.",
+    )
 
 
 settings = Settings()

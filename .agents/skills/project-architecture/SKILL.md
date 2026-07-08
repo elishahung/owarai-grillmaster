@@ -50,7 +50,7 @@ the stages below in order. Each maps 1:1 to a `ProgressStage` enum value and a
 
 | # | Stage (`ProgressStage`)         | What happens                                                                 | Module |
 |---|----------------------------------|------------------------------------------------------------------------------|--------|
-| 1 | `METADATA_FETCHED`               | `get_video_info`; for TVer/Abema also fetch cast/talents; `resolve_broadcast_date` persists `Project.broadcast_date` (best-effort) | `services/ytdlp` |
+| 1 | `METADATA_FETCHED`               | `get_video_info`; for TVer/Abema also fetch cast/talents; `resolve_broadcast_date` persists `Project.broadcast_date` (best-effort). **Kicks off async broadcast-date research after this stage** if enabled and the date is still None | `services/ytdlp`, `services/postprocess/date_research` |
 | 2 | `DOWNLOADED`                     | `download_video` (yt-dlp); also best-effort fetches platform CC subs (`ENABLE_OFFICIAL_SUBTITLES`). **Kicks off async cover gen here** if enabled | `services/ytdlp`, `services/postprocess/cover` |
 | 3 | `VIDEO_PROCESSED`                | `MediaProcessor.combine_videos` (ffmpeg concat) → `video.mp4`; normalizes downloaded CC → `video.official.ja.srt` (section runs rebase/filter timestamps) | `services/media`, `services/ytdlp/subtitles` |
 | 4 | `AUDIO_PROCESSED`                | `MediaProcessor.extract_audio` → `.asr/audio.ogg` (mono 16 kHz libopus)      | `services/media` |
@@ -62,7 +62,8 @@ the stages below in order. Each maps 1:1 to a `ProgressStage` enum value and a
 | 10| `GLOSSARY_CHECKED` (optional)    | Agent checks full-text terminology/facts, may correct `pre_pass.json` → `video.cht.glossary_checked.srt`| `services/postprocess/glossary_check` |
 | 11| `FINALIZED`                      | Punctuation cleanup → styled `video.cht.ass` + `video.cht.finalized.srt`     | `services/finalize` |
 
-After `FINALIZED` (and only if no `--break-after`): join the async cover future,
+After `FINALIZED` (and only if no `--break-after`): join the async cover and
+date-research futures,
 optionally `archive()` the project dir, then `package_project` (burn-in + cover
 copy / remix). Archive and package are **post-loop**, not stages. Package output
 is flat: `PACKAGE_PATH/{deliverable_name}` — `YYMMDD_{id}_{name}` when
@@ -87,8 +88,20 @@ Key control-flow details that are easy to break:
   The join timeout is the hardcoded `_COVER_JOIN_TIMEOUT_SECS`. Note
   `is_cover_generated` is a `Project` boolean but **not** a `ProgressStage`:
   it is set directly in the `finally` block, not via `mark_progress`.
+- **Broadcast-date research** (`ENABLE_BROADCAST_DATE_AGENT_FALLBACK` /
+  `--date-research`, default off) follows the same side-task pattern: started
+  after `METADATA_FETCHED` when `broadcast_date` is None, joined in the same
+  `finally` before archive/package (the deliverable name needs the date).
+  The worker only writes `.artifacts/date_research.json` (fixed-filename
+  cache; corrupt files count as a miss; delete to re-run); the main thread
+  applies the verdict and sets `is_broadcast_date_researched` (also not a
+  `ProgressStage`) — set even on an "unknown" verdict so a resume doesn't
+  re-spend tokens. A completed artifact left by a previous run is applied at
+  kick-off even when the fallback is disabled (the result is already paid
+  for); only the agent dispatch is gated on the flag.
 - **Optional stages are gated twice**: by a `settings.enable_*` toggle OR a
-  per-run `--refine/--glossary-check/--cover` flag (the flag force-enables).
+  per-run `--refine/--glossary-check/--cover/--date-research` flag (the flag
+  force-enables).
 - **Cost accounting**: metered stages call `project.add_cost(service, amount)`,
   which accumulates into `project.json`. `TranslationError` carries a partial
   cost summary so a mid-run failure still records what was spent.

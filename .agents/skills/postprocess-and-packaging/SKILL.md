@@ -2,7 +2,8 @@
 name: postprocess-and-packaging
 description: >-
   Optional agent post-processing and deliverable assembly: `services/postprocess/`
-  (refine.py, glossary_check.py, cover.py, _srt_guard.py and their prompt .md
+  (refine.py, glossary_check.py, cover.py, date_research.py, _srt_guard.py and
+  their prompt .md
   files), `services/finalize/` (SRT → styled ASS + Netflix-TC punctuation), and
   `services/package/` (burn-in, cover copy, noise/remix). Read this before
   changing refine, glossary check, cover generation, finalize punctuation or
@@ -35,6 +36,16 @@ non-empty text) — semantic quality is the agent's responsibility via prompts.
 - `cover.py` — stylize the poster. **Always Codex** (image generation),
   regardless of the post-process backend setting. Runs async from the workflow
   (see **project-architecture** for the ThreadPoolExecutor/join rules).
+- `date_research.py` — broadcast-date web research fallback
+  (`AGENT_POSTPROCESS_BACKEND`, called with `web_search=True` and `cwd=None`
+  so the agent gets a throwaway temp dir, never the project dir). Unlike the
+  others the agent writes no files: it returns schema-validated JSON
+  (`DateResearchResult`: status/date/trust tier/sources), Python persists it
+  to `.artifacts/date_research.json` (fixed-filename cache — a parseable file
+  skips the agent, a corrupt one counts as a miss and is overwritten; delete
+  to re-run) and `apply_date_research_result` writes `Project.broadcast_date`
+  on the main thread at join time (below-high trust is adopted with a
+  warning). Runs async from the workflow like cover.
 
 `__init__.py` uses lazy `__getattr__` imports so importing the package doesn't
 drag in every backend.

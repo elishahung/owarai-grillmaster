@@ -13,9 +13,12 @@ from loguru import logger
 from settings import settings
 from services.finalize import finalize_and_export
 from services.postprocess import (
+    apply_date_research_result,
     generate_cover,
     glossary_check_subtitles,
+    load_cached_date_research,
     refine_subtitles,
+    research_broadcast_date,
 )
 from services.elevenlabs import ElevenLabsASR, convert_file
 from services.translate import Translate, TranslationError, TranslationRequest
@@ -35,6 +38,10 @@ from services.ytdlp import (
 # Generous (2x a generation timeout) so a slow-but-progressing cover still lands.
 _COVER_JOIN_TIMEOUT_SECS = 1800
 
+# Upper bound for joining the async broadcast-date research future before
+# archive (web research is normally much faster than cover generation).
+_DATE_RESEARCH_JOIN_TIMEOUT_SECS = 1800
+
 
 def submit_project(
     source_str: str,
@@ -44,6 +51,7 @@ def submit_project(
     enable_refine: bool = False,
     enable_glossary_check: bool = False,
     enable_cover: bool = False,
+    enable_date_research: bool = False,
     remix_noise_name: str | None = None,
     remix_prefix: bool = False,
     section_start: float | None = None,
@@ -71,6 +79,10 @@ def submit_project(
         enable_cover: Force-enable the optional async cover image stylization.
             Overrides ``settings.enable_cover_generation`` when True. Always
             skipped when ``break_after`` is set.
+        enable_date_research: Force-enable the optional async broadcast-date
+            research agent. Overrides
+            ``settings.enable_broadcast_date_agent_fallback`` when True.
+            Always skipped when ``break_after`` is set.
         remix_noise_name: Optional prepared noise set name for remix packaging.
         remix_prefix: Whether remix packaging should prepend a standalone
             noise output before the two mixed outputs.
@@ -99,6 +111,7 @@ def submit_project(
         enable_refine=enable_refine,
         enable_glossary_check=enable_glossary_check,
         enable_cover=enable_cover,
+        enable_date_research=enable_date_research,
         remix_noise_name=remix_noise_name,
         remix_prefix=remix_prefix,
         section_start=section_start,
@@ -137,6 +150,7 @@ def process_project(
     enable_refine: bool = False,
     enable_glossary_check: bool = False,
     enable_cover: bool = False,
+    enable_date_research: bool = False,
     remix_noise_name: str | None = None,
     remix_prefix: bool = False,
     section_start: float | None = None,
@@ -156,6 +170,7 @@ def process_project(
             enable_refine=enable_refine,
             enable_glossary_check=enable_glossary_check,
             enable_cover=enable_cover,
+            enable_date_research=enable_date_research,
             remix_noise_name=remix_noise_name,
             remix_prefix=remix_prefix,
             section_start=section_start,
@@ -170,6 +185,7 @@ def _process_project_impl(
     enable_refine: bool = False,
     enable_glossary_check: bool = False,
     enable_cover: bool = False,
+    enable_date_research: bool = False,
     remix_noise_name: str | None = None,
     remix_prefix: bool = False,
     section_start: float | None = None,
@@ -206,6 +222,10 @@ def _process_project_impl(
         enable_cover: Force-enable the optional async cover image stylization.
             Overrides ``settings.enable_cover_generation`` when True. Always
             skipped when ``break_after`` is set.
+        enable_date_research: Force-enable the optional async broadcast-date
+            research agent. Overrides
+            ``settings.enable_broadcast_date_agent_fallback`` when True.
+            Always skipped when ``break_after`` is set.
         remix_noise_name: Optional prepared noise set name for remix packaging.
         remix_prefix: Whether remix packaging should prepend a standalone
             noise output before the two mixed outputs.
@@ -224,8 +244,13 @@ def _process_project_impl(
         enable_glossary_check or settings.enable_postprocess_glossary_check
     )
     do_cover = enable_cover or settings.enable_cover_generation
+    do_date_research = (
+        enable_date_research or settings.enable_broadcast_date_agent_fallback
+    )
     cover_executor: ThreadPoolExecutor | None = None
     cover_future: Future | None = None
+    date_executor: ThreadPoolExecutor | None = None
+    date_future: Future | None = None
     project: Project | None = None
     pipeline_error: Exception | None = None
     if progress is None:
@@ -278,6 +303,37 @@ def _process_project_impl(
             logger.debug("Stage skipped: Metadata already fetched")
         if should_stop_after_stage(ProgressStage.METADATA_FETCHED):
             return
+
+        # Apply a completed research verdict left by a previous run even when
+        # the fallback is disabled this run — the result is already paid for.
+        # Only the agent dispatch below is gated on do_date_research.
+        if (
+            project.broadcast_date is None
+            and not project.is_broadcast_date_researched
+        ):
+            cached_verdict = load_cached_date_research(project)
+            if cached_verdict is not None:
+                apply_date_research_result(project, cached_verdict)
+
+        # Start async broadcast-date research (parallel to remaining stages).
+        # The worker only writes .artifacts/date_research.json; the verdict is
+        # applied to project.json at join time on the main thread.
+        if (
+            do_date_research
+            and break_after is None
+            and project.broadcast_date is None
+            and not project.is_broadcast_date_researched
+        ):
+            logger.info(
+                f"Stage: Starting async broadcast-date research for "
+                f"{project_id}"
+            )
+            date_executor = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="date-research"
+            )
+            date_future = date_executor.submit(
+                research_broadcast_date, project
+            )
 
         # Download video
         if not project.is_downloaded:
@@ -518,6 +574,21 @@ def _process_project_impl(
                 logger.warning(f"Cover generation failed: {cover_error}")
         if cover_executor is not None:
             cover_executor.shutdown(wait=False)
+        # Likewise join broadcast-date research before archive/package so the
+        # deliverable name picks up any researched date.
+        if date_future is not None and project is not None:
+            try:
+                date_result = date_future.result(
+                    timeout=_DATE_RESEARCH_JOIN_TIMEOUT_SECS
+                )
+                apply_date_research_result(project, date_result)
+                logger.success("Stage complete: Broadcast-date research")
+            except Exception as date_error:
+                logger.warning(
+                    f"Broadcast-date research failed: {date_error}"
+                )
+        if date_executor is not None:
+            date_executor.shutdown(wait=False)
 
     if pipeline_error is not None:
         raise pipeline_error

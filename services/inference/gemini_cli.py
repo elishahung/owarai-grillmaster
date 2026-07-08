@@ -258,6 +258,7 @@ def run_gemini_cli(
     cwd: Path | None = None,
     include_directories: list[Path] | None = None,
     timeout: int | None = None,
+    web_search: bool = False,
 ) -> GeminiCliResult:
     """Invoke the Gemini CLI once and return the parsed result (single-shot).
 
@@ -272,6 +273,9 @@ def run_gemini_cli(
     roots so agent file tools can read project-local frame artifacts. The CLI
     runs in ``auto_edit`` mode with a temporary policy that allows only the
     project-owned frame extraction command instead of using ``--yolo``.
+    ``web_search`` additionally allow-lists the CLI's built-in
+    ``google_web_search`` / ``web_fetch`` tools in that policy (they would
+    otherwise be denied in the non-interactive run).
 
     This is a pure text generator: it never enforces a response schema. Schema
     handling (the JSON-Schema prompt suffix + the validate-and-repair loop) is
@@ -327,6 +331,18 @@ def run_gemini_cli(
                     "",
                 ]
             )
+        if web_search:
+            for tool_name in ("google_web_search", "web_fetch"):
+                policy_rules.extend(
+                    [
+                        "[[rule]]",
+                        f'toolName = "{tool_name}"',
+                        'decision = "allow"',
+                        "priority = 900",
+                        'modes = ["default", "autoEdit", "yolo"]',
+                        "",
+                    ]
+                )
         policy_path.write_text("\n".join(policy_rules), encoding="utf-8")
         base_include_dirs = [_REPO_ROOT]
         if cwd is not None:

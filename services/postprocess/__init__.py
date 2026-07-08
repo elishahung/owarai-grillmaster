@@ -1,18 +1,24 @@
 """Optional agent-driven post-processing tasks.
 
 `cover` (image stylization, always Codex), `refine` and `glossary_check`
-(subtitle passes, backend chosen by `settings.agent_postprocess_backend`). Each task is
-a thin orchestrator over `services.inference`; the agent does its work by
-reading/writing files in the project directory and we validate them afterward.
+(subtitle passes, backend chosen by `settings.agent_postprocess_backend`), and
+`date_research` (broadcast-date web research, same backend setting). Each task
+is a thin orchestrator over `services.inference`; the agent does its work by
+reading/writing files in the project directory (or, for date research,
+returning schema-validated JSON) and we validate it afterward.
 """
 
 __all__ = [
     "CoverFileMissingError",
+    "DateResearchResult",
     "GlossaryCheckError",
     "RefinementValidationError",
+    "apply_date_research_result",
     "generate_cover",
     "glossary_check_subtitles",
+    "load_cached_date_research",
     "refine_subtitles",
+    "research_broadcast_date",
 ]
 
 
@@ -30,6 +36,25 @@ def __getattr__(name: str):
         return {
             "CoverFileMissingError": CoverFileMissingError,
             "generate_cover": generate_cover,
+        }[name]
+    if name in {
+        "DateResearchResult",
+        "apply_date_research_result",
+        "load_cached_date_research",
+        "research_broadcast_date",
+    }:
+        from .date_research import (
+            DateResearchResult,
+            apply_date_research_result,
+            load_cached_date_research,
+            research_broadcast_date,
+        )
+
+        return {
+            "DateResearchResult": DateResearchResult,
+            "apply_date_research_result": apply_date_research_result,
+            "load_cached_date_research": load_cached_date_research,
+            "research_broadcast_date": research_broadcast_date,
         }[name]
     if name in {"GlossaryCheckError", "glossary_check_subtitles"}:
         from .glossary_check import (

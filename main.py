@@ -39,6 +39,7 @@ def _run_process(
     refine: bool,
     glossary_check: bool,
     cover: bool,
+    date_research: bool,
     remix: str | None,
     prefix: bool,
     start: str | None = None,
@@ -48,7 +49,8 @@ def _run_process(
         f"CLI invoked with source_str={source_str}, "
         f"translation_hint={translation_hint}, break_after={break_after}, "
         f"parent_project={parent_project}, refine={refine}, "
-        f"glossary_check={glossary_check}, cover={cover}, remix={remix}, "
+        f"glossary_check={glossary_check}, cover={cover}, "
+        f"date_research={date_research}, remix={remix}, "
         f"prefix={prefix}, start={start}, to={to}"
     )
 
@@ -79,6 +81,7 @@ def _run_process(
             enable_refine=refine,
             enable_glossary_check=glossary_check,
             enable_cover=cover,
+            enable_date_research=date_research,
             remix_noise_name=remix,
             remix_prefix=prefix,
             section_start=section_start,
@@ -169,6 +172,17 @@ def process(
             ),
         ),
     ] = False,
+    date_research: Annotated[
+        bool,
+        typer.Option(
+            "--date-research",
+            help=(
+                "Force-enable the async broadcast-date research agent for "
+                "this run. Overrides ENABLE_BROADCAST_DATE_AGENT_FALLBACK. "
+                "Skipped entirely when --break-after is also set."
+            ),
+        ),
+    ] = False,
     remix: Annotated[
         str | None,
         typer.Option(
@@ -217,6 +231,7 @@ def process(
         refine=refine,
         glossary_check=glossary_check,
         cover=cover,
+        date_research=date_research,
         remix=remix,
         prefix=prefix,
         start=start,

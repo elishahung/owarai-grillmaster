@@ -36,6 +36,8 @@ PRE_PASS_RAW_FILE_NAME = "pre_pass.raw.json"
 REFINE_REPORT_FILE_NAME = "report.md"
 GLOSSARY_CHECKED_SRT_FILE_NAME = "video.cht.glossary_checked.srt"
 GLOSSARY_CHECK_REPORT_FILE_NAME = "report.md"
+DATE_RESEARCH_FILE_NAME = "date_research.json"
+ARTIFACTS_DIR_NAME = ".artifacts"
 ASR_CACHE_DIR_NAME = ".asr"
 CHUNKS_CACHE_DIR_NAME = ".chunks"
 PRE_PASS_CACHE_DIR_NAME = ".pre_pass"
@@ -109,6 +111,7 @@ class Project(BaseModel):
         is_glossary_checked: Whether the optional Codex-driven fixed-glossary localization check has been completed.
         is_finalized: Whether the final ASS + SRT outputs have been generated.
         is_cover_generated: Whether the optional Codex-driven cover image has been generated.
+        is_broadcast_date_researched: Whether the optional agent-driven broadcast-date research has completed (found or not).
     """
 
     id: str
@@ -134,6 +137,7 @@ class Project(BaseModel):
     is_glossary_checked: bool = False
     is_finalized: bool = False
     is_cover_generated: bool = False
+    is_broadcast_date_researched: bool = False
 
     @staticmethod
     def parse_source_str(source_str: str) -> str:
@@ -735,6 +739,16 @@ class Project(BaseModel):
     def glossary_check_report_path(self) -> Path:
         """Get the path to the Codex-written glossary-check summary report."""
         return self.glossary_check_cache_dir / GLOSSARY_CHECK_REPORT_FILE_NAME
+
+    @property
+    def artifacts_dir(self) -> Path:
+        """Get the general-purpose directory for auxiliary analysis artifacts."""
+        return self.project_path / ARTIFACTS_DIR_NAME
+
+    @property
+    def date_research_path(self) -> Path:
+        """Get the path to the agent-written broadcast-date research result."""
+        return self.artifacts_dir / DATE_RESEARCH_FILE_NAME
 
 
 # Runtime check enum values match field names

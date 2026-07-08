@@ -87,12 +87,17 @@ def run_claude_sdk_exec(
     timeout: int | None = None,
     model: str | None = None,
     reasoning_effort: str | None = None,
+    web_search: bool = False,
 ) -> str:
     """Invoke the Claude Agent SDK once and return the final assistant message.
 
     Synchronous facade over an async query so existing call sites stay sync.
     Safe because refine/glossary run on the main thread with no live event
     loop; `asyncio.run` would raise if one were already running.
+
+    ``web_search`` is accepted for signature parity with the codex runner:
+    the SDK's built-in WebSearch tool is already available under
+    ``bypassPermissions``, so no option change is needed here.
     """
     try:
         from claude_agent_sdk import (  # noqa: PLC0415 — optional dependency

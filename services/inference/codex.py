@@ -21,8 +21,8 @@ class CodexNotInstalledError(CodexInvocationError):
 
 
 # Codex model / reasoning effort used when a caller does not pass them.
-_DEFAULT_MODEL = "gpt-5.5"
-_DEFAULT_REASONING_EFFORT = "high"
+_DEFAULT_MODEL = "gpt-5.6-sol"
+_DEFAULT_REASONING_EFFORT = "medium"
 _CODEX_REASONING_EFFORT_BY_EFFORT = {
     "low": "low",
     "medium": "medium",

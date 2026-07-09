@@ -138,7 +138,7 @@ AGENT_PREPASS_MODEL=gemini-3.1-pro-preview     # "model" 或 "model/effort"（�
 AGENT_CHUNK_BACKEND=gemini-api                 # gemini-api / gemini-cli / gemini-agy / claude / codex
 AGENT_CHUNK_MODEL=gemini-3-flash-preview       # "model" 或 "model/effort"
 AGENT_POSTPROCESS_BACKEND=codex                # 後處理（refine/glossary/chunk 結構修正）：codex / claude / gemini-cli / gemini-agy；封面固定用 codex
-AGENT_POSTPROCESS_MODEL=gpt-5.5/medium         # "model" 或 "model/effort"
+AGENT_POSTPROCESS_MODEL=gpt-5.6-sol/medium         # "model" 或 "model/effort"
 
 # 可選：pre-pass 圖片抽樣與固定譯名表
 PREPASS_FRAME_INTERVAL_SECONDS=120     # pre-pass 全片圖片抽樣頻率（每幾秒一張，另外固定包含影片首尾幀）

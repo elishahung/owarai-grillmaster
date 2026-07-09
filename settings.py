@@ -11,8 +11,8 @@ class ModelSpec(BaseModel):
     """A backend model plus its reasoning effort.
 
     Written in env/config as ``"model"`` or ``"model/effort"`` (effort is one of
-    low/medium/high/extra). A bare ``"gpt-5.5"`` defaults the effort to ``high``;
-    ``"gpt-5.5/medium"`` sets it explicitly. The split happens here so call
+    low/medium/high/extra). A bare ``"gpt-5.6-sol"`` defaults the effort to ``medium``;
+    ``"gpt-5.6-sol/medium"`` sets it explicitly. The split happens here so call
     sites just read ``.model`` and ``.reasoning_effort``.
     """
 
@@ -26,8 +26,7 @@ class ModelSpec(BaseModel):
         allowed = ("low", "medium", "high", "extra")
         if effort not in allowed:
             raise ValueError(
-                "reasoning_effort must be one of: "
-                + ", ".join(allowed)
+                "reasoning_effort must be one of: " + ", ".join(allowed)
             )
         return effort
 
@@ -131,7 +130,7 @@ class Settings(BaseSettings):
         description="Backend for agent-driven post-processing (subtitle refine + glossary_check + chunk structural fix): 'codex', 'claude', 'gemini-cli', or 'gemini-agy'. Cover is always Codex (image generation).",
     )
     agent_postprocess_model: ModelSpecField = Field(
-        default="gpt-5.5/medium",
+        default="gpt-5.6-sol/medium",
         description="Post-processing model as 'model' or 'model/effort' (effort low/medium/high/extra, default high), passed to the selected backend.",
     )
 

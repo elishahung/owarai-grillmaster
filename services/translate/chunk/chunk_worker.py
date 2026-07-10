@@ -185,7 +185,7 @@ async def translate_chunk(
 ) -> ChunkTranslationResult:
     """Translate one chunk with persistent media cache and response caching.
 
-    The backend is chosen per `settings.agent_chunk_backend`; agent backends drop
+    The backend is chosen per `settings.agent_chunk_model`; agent backends drop
     audio and translate on frames + SRT only. Output is free-form SRT (no JSON
     schema) — structural validation happens downstream, identical for every
     backend.
@@ -202,9 +202,9 @@ async def translate_chunk(
     prefix = f"[chunk {chunk_index + 1}/{total_chunks}]"
     from_index = chunk[0].index
     to_index = chunk[-1].index
-    backend = Backend(settings.agent_chunk_backend)
-    has_audio = backend_supports_audio(backend)
     spec = settings.agent_chunk_model
+    backend = Backend(spec.backend)
+    has_audio = backend_supports_audio(backend)
     system_instruction = build_chunk_instruction(has_audio=has_audio)
     if is_agent_backend(backend):
         system_instruction += "\n\n" + build_chunk_frame_tool_instruction(
@@ -243,7 +243,7 @@ async def translate_chunk(
         for attempt in range(1, max_retries + 1):
             try:
                 logger.info(
-                    f"{prefix} Translating ({settings.agent_chunk_backend}) index "
+                    f"{prefix} Translating ({spec.backend}) index "
                     f"{from_index}–{to_index} ({len(chunk)} blocks, "
                     f"attempt {attempt}/{max_retries})"
                 )

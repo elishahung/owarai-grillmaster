@@ -3,8 +3,9 @@
 ``run_pre_pass`` builds the system instruction (audio-conditioned on the
 selected backend's capability) and the user message, then delegates to
 ``services.inference.run_inference`` with the ``PrePassResult`` schema. The
-backend is chosen by ``settings.agent_prepass_backend`` (gemini-api / gemini-cli /
-claude / codex); agent backends drop audio and run on frames + SRT only. The
+backend is chosen by ``settings.agent_prepass_model.backend`` (gemini-api /
+gemini-cli / claude / codex); agent backends drop audio and run on frames +
+SRT only. The
 parsed result is written as the explicit ``pre_pass.json`` hand-off.
 """
 
@@ -113,12 +114,13 @@ def run_pre_pass(
 ) -> tuple[PrePassResult, float]:
     """Run the single pre-pass call. Returns (parsed result, cost in USD).
 
-    The backend is chosen by ``settings.agent_prepass_backend``. Agent backends
+    The backend is chosen by ``settings.agent_prepass_model``. Agent backends
     (claude/codex) cannot ingest audio, so audio extraction is skipped and the
     instruction is rendered without audio claims. Cost is 0.0 for every backend
     except gemini-api. Raises ``PrePassError`` on failure.
     """
-    backend = Backend(settings.agent_prepass_backend)
+    spec = settings.agent_prepass_model
+    backend = Backend(spec.backend)
     has_audio = backend_supports_audio(backend)
     pre_pass_assets = prepare_pre_pass_media_assets(
         video_path=video_path,
@@ -187,8 +189,7 @@ def run_pre_pass(
     if parent_pre_pass_context:
         system_instruction += f"\n\n{PARENT_PRE_PASS_INSTRUCTION}"
 
-    active_backend = settings.agent_prepass_backend
-    spec = settings.agent_prepass_model
+    active_backend = spec.backend
 
     agent_instruction_enabled = is_agent_backend(backend)
     manifest_path = pre_pass_cache_dir / "manifest.json"

@@ -37,7 +37,7 @@ class Translate:
     Flow: parse SRT → split into N char-balanced chunks → run one pre-pass
     analysis call → translate chunks concurrently (bounded by a semaphore) →
     normalize merged indices → write output. Each stage picks its backend via
-    `settings.agent_prepass_backend` / `settings.agent_chunk_backend`.
+    `settings.agent_prepass_model` / `settings.agent_chunk_model`.
     """
 
     def __init__(self):
@@ -88,7 +88,7 @@ class Translate:
 
         Blocks until complete. The persisted briefing is the explicit hand-off
         consumed by `translate_chunks`; this stage does no chunk translation.
-        The backend is chosen per `settings.agent_prepass_backend`.
+        The backend is chosen per `settings.agent_prepass_model`.
         """
         start_time = time.time()
         logger.info(f"Starting pre-pass for SRT file: {request.srt_path}")
@@ -219,7 +219,7 @@ class Translate:
             )
 
         request.chunks_cache_dir.mkdir(parents=True, exist_ok=True)
-        chunk_backend = Backend(settings.agent_chunk_backend)
+        chunk_backend = Backend(settings.agent_chunk_model.backend)
         has_audio = backend_supports_audio(chunk_backend)
         # Agent backends (gemini-cli / codex / claude) spawn a heavy local
         # process per chunk, so bound them more tightly than the network

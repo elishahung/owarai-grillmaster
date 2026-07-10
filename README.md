@@ -126,19 +126,17 @@ ELEVENLABS_API_KEY=xxx
 ELEVENLABS_STT_MODEL=scribe_v2
 ELEVENLABS_STT_LANGUAGE_CODE=jpn
 
-# Agent / 模型 backends（每個階段可獨立選 backend + model；gemini-cli/gemini-agy/claude/codex
+# Agent / 模型 backends（每個階段一條 spec；gemini-cli/gemini-agy/claude/codex
 #   走訂閱制省 API 費用；claude/codex/gemini-agy 無法吃音訊，只用影格+字幕；gemini-agy 為
 #   Antigravity CLI）。AGENT_GEMINI_API_KEY 只在某階段用 gemini-api 時才需要。*_MODEL 寫成
-#   "model" 或 "model/effort"（effort 為 low/medium/high/extra，省略則預設 high）。
+#   "backend/model" 或 "backend/model/effort"（effort 為 low/medium/high/extra，省略則預設 high）。
 AGENT_GEMINI_API_KEY=xxx
 AGENT_GEMINI_GCP_PROJECT=your-project-id       # 可選；gemini-cli 訂閱/Code Assist auth 時，臨時注入為 GOOGLE_CLOUD_PROJECT
 
-AGENT_PREPASS_BACKEND=gemini-api               # gemini-api / gemini-cli / gemini-agy / claude / codex
-AGENT_PREPASS_MODEL=gemini-3.1-pro-preview     # "model" 或 "model/effort"（如 claude-opus-4-8/high）
-AGENT_CHUNK_BACKEND=gemini-api                 # gemini-api / gemini-cli / gemini-agy / claude / codex
-AGENT_CHUNK_MODEL=gemini-3-flash-preview       # "model" 或 "model/effort"
-AGENT_POSTPROCESS_BACKEND=codex                # 後處理（refine/glossary/chunk 結構修正）：codex / claude / gemini-cli / gemini-agy；封面固定用 codex
-AGENT_POSTPROCESS_MODEL=gpt-5.6-sol/medium         # "model" 或 "model/effort"
+AGENT_PREPASS_MODEL=gemini-api/gemini-3.1-pro-preview  # backend: gemini-api / gemini-cli / gemini-agy / claude / codex
+AGENT_CHUNK_MODEL=gemini-api/gemini-3-flash-preview    # "backend/model" 或 "backend/model/effort"
+AGENT_POSTPROCESS_MODEL=codex/gpt-5.6-sol/medium       # 後處理（refine/glossary）：codex / claude / gemini-cli / gemini-agy
+AGENT_COMMON_MODEL=codex/gpt-5.5/medium                # 輕量工具 agent（chunk 結構修正、播出日調查）；封面固定用 codex 並沿用此 effort
 
 # 可選：pre-pass 圖片抽樣與固定譯名表
 PREPASS_FRAME_INTERVAL_SECONDS=120     # pre-pass 全片圖片抽樣頻率（每幾秒一張，另外固定包含影片首尾幀）

@@ -42,11 +42,11 @@ def refine_subtitles(project: Project) -> None:
 
     project.refine_cache_dir.mkdir(parents=True, exist_ok=True)
 
-    backend = Backend(settings.agent_postprocess_backend)
+    spec = settings.agent_postprocess_model
+    backend = Backend(spec.backend)
     logger.info(
         f"Invoking {backend.value} for subtitle refinement: {project.id}"
     )
-    spec = settings.agent_postprocess_model
     # Offer the on-demand frame tool only to a backend that can run it. The
     # stage-specific wrapper writes into `.refine/extra_frames`; window = the
     # whole video.

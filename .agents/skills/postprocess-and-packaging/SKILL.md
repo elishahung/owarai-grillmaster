@@ -19,7 +19,7 @@ agent reads/writes files in the project dir and we validate afterward.
 `_srt_guard.py` validates **structure only** (block count, indexes, timecodes,
 non-empty text) — semantic quality is the agent's responsibility via prompts.
 
-- `refine.py` — polish TC subtitles (`AGENT_POSTPROCESS_BACKEND`).
+- `refine.py` — polish TC subtitles (`AGENT_POSTPROCESS_MODEL`).
 - `glossary_check.py` — full-text terminology/factual consistency check after
   refine. Runs when enabled unless `video.cht.glossary_checked.srt` already
   exists, treats Latin/kana blocks only as priority hints, may use web search
@@ -34,10 +34,11 @@ non-empty text) — semantic quality is the agent's responsibility via prompts.
   pre-pass changed, `glossary_check.md` (the report) must exist; packaging
   copies reports only if present.
 - `cover.py` — stylize the poster. **Always Codex** (image generation),
-  regardless of the post-process backend setting. Runs async from the workflow
+  regardless of the backend settings; effort comes from `AGENT_COMMON_MODEL`.
+  Runs async from the workflow
   (see **project-architecture** for the ThreadPoolExecutor/join rules).
 - `date_research.py` — broadcast-date web research fallback
-  (`AGENT_POSTPROCESS_BACKEND`, called with `web_search=True` and `cwd=None`
+  (`AGENT_COMMON_MODEL`, called with `web_search=True` and `cwd=None`
   so the agent gets a throwaway temp dir, never the project dir). Unlike the
   others the agent writes no files: it returns schema-validated JSON
   (`DateResearchResult`: status/date/trust tier/sources), Python persists it

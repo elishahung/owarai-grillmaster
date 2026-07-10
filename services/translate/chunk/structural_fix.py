@@ -1,7 +1,7 @@
 """Agent-driven structural repair for broken chunk SRT outputs.
 
 When a translated chunk fails `validate_chunk_structure`, we hand the problem
-to a coding agent (Codex or Claude, per `settings.agent_postprocess_backend`):
+to a coding agent (Codex or Claude, per `settings.agent_common_model`):
 it gets the authoritative source SRT, the broken output, and a validator command
 it runs itself, iterating until the output matches the source skeleton. The
 Python worker re-validates the agent's `fixed.srt` as a final guard.
@@ -68,12 +68,12 @@ async def fix_chunk_structure(
     fixed_path.unlink(missing_ok=True)
 
     prompt = _PROMPT + _concrete_section(error)
-    backend = Backend(settings.agent_postprocess_backend)
+    spec = settings.agent_common_model
+    backend = Backend(spec.backend)
     logger.info(
         f"{log_prefix} Invoking {backend.value} to repair chunk structure "
         f"in {workspace_dir}"
     )
-    spec = settings.agent_postprocess_model
     await asyncio.to_thread(
         run_inference,
         backend=backend,

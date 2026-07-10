@@ -221,7 +221,8 @@ def glossary_check_subtitles(project: Project) -> None:
             + _render_suspect_list(suspects)
             + "\n"
         )
-        backend = Backend(settings.agent_postprocess_backend)
+        spec = settings.agent_postprocess_model
+        backend = Backend(spec.backend)
         if is_agent_backend(backend):
             try:
                 video_end = MediaProcessor.get_media_duration(
@@ -238,7 +239,6 @@ def glossary_check_subtitles(project: Project) -> None:
             f"Invoking {backend.value} for glossary check "
             f"({len(suspects)} priority suspect blocks): {project.id}"
         )
-        spec = settings.agent_postprocess_model
         run_inference(
             backend=backend,
             prompt=prompt,

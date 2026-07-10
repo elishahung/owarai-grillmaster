@@ -54,7 +54,7 @@ class CapabilityTests(unittest.TestCase):
 
     def test_postprocess_backend_string_values(self):
         # Post-processing selects a backend from the "codex"/"claude" strings
-        # stored in settings.agent_postprocess_backend.
+        # stored in the settings.agent_*_model backend segment.
         self.assertEqual(Backend("codex"), Backend.CODEX)
         self.assertEqual(Backend("claude"), Backend.CLAUDE)
 

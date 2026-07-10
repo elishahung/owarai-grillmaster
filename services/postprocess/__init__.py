@@ -1,8 +1,9 @@
 """Optional agent-driven post-processing tasks.
 
 `cover` (image stylization, always Codex), `refine` and `glossary_check`
-(subtitle passes, backend chosen by `settings.agent_postprocess_backend`), and
-`date_research` (broadcast-date web research, same backend setting). Each task
+(subtitle passes, backend chosen by `settings.agent_postprocess_model`), and
+`date_research` (broadcast-date web research, `settings.agent_common_model`).
+Each task
 is a thin orchestrator over `services.inference`; the agent does its work by
 reading/writing files in the project directory (or, for date research,
 returning schema-validated JSON) and we validate it afterward.

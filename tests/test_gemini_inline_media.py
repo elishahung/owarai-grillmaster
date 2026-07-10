@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 
 from google import genai
 
+from settings import ModelSpec
 from services.inference import InferenceResult
 import services.inference.gemini_api as gemini_api
 from services.inference.gemini_api import run_gemini_api
@@ -155,7 +156,11 @@ class ChunkDispatchTests(unittest.IsolatedAsyncioTestCase):
 
         # Pin the backend so the test is independent of the developer's .env.
         with (
-            patch.object(cw.settings, "agent_chunk_backend", "gemini-api"),
+            patch.object(
+                cw.settings,
+                "agent_chunk_model",
+                ModelSpec(backend="gemini-api", model="test-model"),
+            ),
             patch.object(
                 cw,
                 "run_inference",
@@ -190,7 +195,11 @@ class ChunkDispatchTests(unittest.IsolatedAsyncioTestCase):
         # to the chunk's time range. run_inference is mocked, so no real CLI /
         # ffmpeg runs and the video file need not exist.
         with (
-            patch.object(cw.settings, "agent_chunk_backend", "claude"),
+            patch.object(
+                cw.settings,
+                "agent_chunk_model",
+                ModelSpec(backend="claude", model="test-model"),
+            ),
             patch.object(
                 cw,
                 "run_inference",
@@ -220,7 +229,11 @@ class ChunkDispatchTests(unittest.IsolatedAsyncioTestCase):
         fixed_srt = "1\n00:00:01,000 --> 00:00:02,000\ntranslated\n"
 
         with (
-            patch.object(cw.settings, "agent_chunk_backend", "gemini-api"),
+            patch.object(
+                cw.settings,
+                "agent_chunk_model",
+                ModelSpec(backend="gemini-api", model="test-model"),
+            ),
             patch.object(
                 cw,
                 "run_inference",

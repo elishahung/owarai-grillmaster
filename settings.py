@@ -8,14 +8,16 @@ ReasoningEffort = Literal["low", "medium", "high", "extra"]
 
 
 class ModelSpec(BaseModel):
-    """A backend model plus its reasoning effort.
+    """An inference backend, its model, and the reasoning effort.
 
-    Written in env/config as ``"model"`` or ``"model/effort"`` (effort is one of
-    low/medium/high/extra). A bare ``"gpt-5.6-sol"`` defaults the effort to ``medium``;
-    ``"gpt-5.6-sol/medium"`` sets it explicitly. The split happens here so call
-    sites just read ``.model`` and ``.reasoning_effort``.
+    Written in env/config as ``"backend/model"`` or ``"backend/model/effort"``
+    (effort is one of low/medium/high/extra, default high) — e.g.
+    ``"gemini-api/gemini-3-flash-preview"`` or ``"codex/gpt-5.5/medium"``. The
+    split happens here so call sites just read ``.backend``, ``.model``, and
+    ``.reasoning_effort``.
     """
 
+    backend: str
     model: str
     reasoning_effort: ReasoningEffort = "high"
 
@@ -31,22 +33,28 @@ class ModelSpec(BaseModel):
         return effort
 
     def __str__(self) -> str:
-        return f"{self.model}/{self.reasoning_effort}"
+        return f"{self.backend}/{self.model}/{self.reasoning_effort}"
 
 
 def _parse_model_spec(value: object) -> object:
     if isinstance(value, str):
-        model, sep, effort = value.partition("/")
-        parsed: dict[str, str] = {"model": model.strip()}
-        if sep and effort.strip():
-            parsed["reasoning_effort"] = effort.strip()
+        parts = [part.strip() for part in value.split("/")]
+        if len(parts) < 2 or not parts[0] or not parts[1] or len(parts) > 3:
+            raise ValueError(
+                "model spec must be written as 'backend/model' or "
+                f"'backend/model/effort', got: {value!r}"
+            )
+        parsed: dict[str, str] = {"backend": parts[0], "model": parts[1]}
+        if len(parts) == 3 and parts[2]:
+            parsed["reasoning_effort"] = parts[2]
         return parsed
     return value
 
 
-# A ModelSpec field that accepts the "model[/effort]" shorthand string. NoDecode
-# stops pydantic-settings from JSON-decoding the env value (it would otherwise
-# treat a BaseModel field as complex), so the raw string reaches the validator.
+# A ModelSpec field that accepts the "backend/model[/effort]" shorthand string.
+# NoDecode stops pydantic-settings from JSON-decoding the env value (it would
+# otherwise treat a BaseModel field as complex), so the raw string reaches the
+# validator.
 ModelSpecField = Annotated[
     ModelSpec, NoDecode, BeforeValidator(_parse_model_spec)
 ]
@@ -81,22 +89,21 @@ class Settings(BaseSettings):
     # the maintainer, not exposed as configuration.
 
     # --- Agent / model backends (shared) ------------------------------------
-    # Every model-driven stage (pre-pass, chunk, post-processing) picks one
-    # backend: 'gemini-api', 'gemini-cli', 'claude', or 'codex'. gemini-cli /
-    # claude / codex use subscription/OAuth auth; gemini-api uses
-    # AGENT_GEMINI_API_KEY (only then is the key required). gemini-cli can
-    # additionally receive AGENT_GEMINI_GCP_PROJECT as subprocess-only
-    # GOOGLE_CLOUD_PROJECT for Code Assist subscription auth. claude / codex
-    # cannot ingest audio, so those stages run on frames + SRT only. Each stage
-    # sets its own backend + model + reasoning_effort; the model and effort are
-    # passed to whichever backend the stage selected (set them to values that
-    # backend understands). Each *_model is written as "model" or "model/effort"
-    # (effort low/medium/high/extra, default high) and parsed into a ModelSpec;
-    # effort is mapped per client (gemini thinking_level, codex
-    # model_reasoning_effort, claude effort). Backends without an extra-high
-    # setting clamp "extra" to their highest supported value. The schema
-    # validate-and-repair cap is NOT configurable — it is the hardcoded
-    # MAX_SCHEMA_RETRIES constant in
+    # Every model-driven stage picks one backend: 'gemini-api', 'gemini-cli',
+    # 'gemini-agy', 'claude', or 'codex'. gemini-cli / gemini-agy / claude /
+    # codex use subscription/OAuth auth; gemini-api uses AGENT_GEMINI_API_KEY
+    # (only then is the key required). gemini-cli can additionally receive
+    # AGENT_GEMINI_GCP_PROJECT as subprocess-only GOOGLE_CLOUD_PROJECT for Code
+    # Assist subscription auth. Agent backends cannot ingest audio, so those
+    # stages run on frames + SRT only. Each stage sets one AGENT_*_MODEL spec
+    # written as "backend/model" or "backend/model/effort" (effort
+    # low/medium/high/extra, default high) and parsed into a ModelSpec; the
+    # model and effort are passed to the selected backend (set them to values
+    # that backend understands). Effort is mapped per client (gemini
+    # thinking_level, codex model_reasoning_effort, claude effort); backends
+    # without an extra-high setting clamp "extra" to their highest supported
+    # value. The schema validate-and-repair cap is NOT configurable — it is the
+    # hardcoded MAX_SCHEMA_RETRIES constant in
     # services/inference/schema_enforce.py.
     agent_gemini_api_key: str | None = Field(
         default=None,
@@ -107,31 +114,24 @@ class Settings(BaseSettings):
         description="Optional Google Cloud project ID injected as GOOGLE_CLOUD_PROJECT for the gemini-cli subprocess only.",
     )
 
-    agent_prepass_backend: str = Field(
-        default="gemini-api",
-        description="Backend for the pre-pass stage: 'gemini-api', 'gemini-cli', 'gemini-agy', 'claude', or 'codex'.",
-    )
     agent_prepass_model: ModelSpecField = Field(
-        default="gemini-3-flash-preview",
-        description="Pre-pass model as 'model' or 'model/effort' (effort low/medium/high/extra, default high), passed to the selected backend.",
+        default="gemini-api/gemini-3-flash-preview",
+        description="Pre-pass spec as 'backend/model[/effort]'. Backend: 'gemini-api', 'gemini-cli', 'gemini-agy', 'claude', or 'codex'.",
     )
 
-    agent_chunk_backend: str = Field(
-        default="gemini-api",
-        description="Backend for chunk translation: 'gemini-api', 'gemini-cli', 'gemini-agy', 'claude', or 'codex'.",
-    )
     agent_chunk_model: ModelSpecField = Field(
-        default="gemini-3-flash-preview",
-        description="Chunk model as 'model' or 'model/effort' (effort low/medium/high/extra, default high), passed to the selected backend.",
+        default="gemini-api/gemini-3-flash-preview",
+        description="Chunk translation spec as 'backend/model[/effort]'. Backend: 'gemini-api', 'gemini-cli', 'gemini-agy', 'claude', or 'codex'.",
     )
 
-    agent_postprocess_backend: str = Field(
-        default="codex",
-        description="Backend for agent-driven post-processing (subtitle refine + glossary_check + chunk structural fix): 'codex', 'claude', 'gemini-cli', or 'gemini-agy'. Cover is always Codex (image generation).",
-    )
     agent_postprocess_model: ModelSpecField = Field(
-        default="gpt-5.6-sol/medium",
-        description="Post-processing model as 'model' or 'model/effort' (effort low/medium/high/extra, default high), passed to the selected backend.",
+        default="codex/gpt-5.6-sol/medium",
+        description="Post-processing spec (subtitle refine + glossary_check) as 'backend/model[/effort]'. Backend: 'codex', 'claude', 'gemini-cli', or 'gemini-agy'.",
+    )
+
+    agent_common_model: ModelSpecField = Field(
+        default="codex/gpt-5.5/medium",
+        description="Spec for lightweight utility agents (chunk structural fix + broadcast-date research) as 'backend/model[/effort]'. Backend: 'codex', 'claude', 'gemini-cli', or 'gemini-agy'. Cover generation is always Codex (image generation) but reuses this effort.",
     )
 
     video_frame_max_side: int = Field(
@@ -201,7 +201,7 @@ class Settings(BaseSettings):
     )
     enable_broadcast_date_agent_fallback: bool = Field(
         default=False,
-        description="Research the original broadcast date with a web-searching agent (agent_postprocess backend) when platform metadata yields none. Runs async after METADATA_FETCHED, joined before archive. Skipped entirely when break_after is set.",
+        description="Research the original broadcast date with a web-searching agent (agent_common_model) when platform metadata yields none. Runs async after METADATA_FETCHED, joined before archive. Skipped entirely when break_after is set.",
     )
 
 

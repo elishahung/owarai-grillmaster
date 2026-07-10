@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("AGENT_GEMINI_API_KEY", "test-key")
 
+from settings import ModelSpec
 from services.inference import gemini_cli as cli_mod
 from services.translate.pre_pass import pre_pass as pp
 from services.translate.assets import LocalMediaRef, PrePassMediaAssets
@@ -329,7 +330,11 @@ class RunPrePassDispatchTests(unittest.TestCase):
             patch.object(
                 pp, "format_fixed_glossary_block", return_value=""
             ),
-            patch.object(pp.settings, "agent_prepass_backend", backend),
+            patch.object(
+                pp.settings,
+                "agent_prepass_model",
+                ModelSpec(backend=backend, model="test-model"),
+            ),
         ]:
             self.addCleanup(p.stop)
             p.start()

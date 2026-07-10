@@ -2,7 +2,7 @@
 
 Runs only when the deterministic platform-metadata resolver
 (`services.ytdlp.broadcast_date`) yielded no date. A web-searching agent
-(the `agent_postprocess` backend) researches the original Japanese broadcast
+(the `agent_common_model` backend) researches the original Japanese broadcast
 date and returns a schema-validated verdict; the full evidence report is
 persisted to `.artifacts/date_research.json` for manual review. The worker
 never touches `project.json` — the workflow applies the result at join time
@@ -120,8 +120,8 @@ def research_broadcast_date(project: Project) -> DateResearchResult:
         )
         return cached
 
-    backend = Backend(settings.agent_postprocess_backend)
-    spec = settings.agent_postprocess_model
+    spec = settings.agent_common_model
+    backend = Backend(spec.backend)
     logger.info(
         f"Invoking {backend.value} for broadcast-date research: {project.id}"
     )

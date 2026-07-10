@@ -42,7 +42,7 @@ def generate_cover(project: Project) -> None:
         prompt=_PROMPT,
         cwd=project.project_path,
         images=[project.poster_path],
-        reasoning_effort=settings.agent_postprocess_model.reasoning_effort,
+        reasoning_effort=settings.agent_common_model.reasoning_effort,
     )
 
     if not project.poster_cover_path.exists():

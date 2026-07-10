@@ -111,7 +111,7 @@ def run_claude_sdk_exec(
     except ImportError as exc:
         raise ClaudeSDKNotInstalledError(
             "claude-agent-sdk is not installed; run `uv add claude-agent-sdk` "
-            "or switch AGENT_POSTPROCESS_BACKEND back to 'codex'"
+            "or switch the stage's AGENT_*_MODEL backend back to 'codex'"
         ) from exc
 
     abs_cwd = cwd.resolve()

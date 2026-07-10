@@ -185,12 +185,15 @@ Key control-flow details that are easy to break:
 
 Pydantic-settings, loaded from `.env`. Notable patterns:
 
-- **Per-stage backend selection**: pre-pass, chunk, and post-process each pick a
-  backend + model independently (`agent_*_backend` / `agent_*_model` fields,
-  i.e. `AGENT_*_BACKEND` / `AGENT_*_MODEL` in `.env`).
-- **`ModelSpec`**: `*_MODEL` is written as `"model"` or `"model/effort"` (effort
-  is one of low/medium/high/extra, default high) and parsed into `.model` +
-  `.reasoning_effort`. `effort` is mapped per client (gemini thinking_level,
+- **Per-stage backend selection**: pre-pass, chunk, post-process, and the
+  common utility agents (chunk structural fix + broadcast-date research) each
+  pick one spec (`agent_prepass_model` / `agent_chunk_model` /
+  `agent_postprocess_model` / `agent_common_model`, i.e. `AGENT_*_MODEL` in
+  `.env`).
+- **`ModelSpec`**: `*_MODEL` is written as `"backend/model"` or
+  `"backend/model/effort"` (effort is one of low/medium/high/extra, default
+  high) and parsed into `.backend` + `.model` + `.reasoning_effort`. `effort`
+  is mapped per client (gemini thinking_level,
   codex model_reasoning_effort, claude effort); backends without an extra-high
   value clamp repo-level `extra` to their highest supported value. The
   `ModelSpecField` annotation uses `NoDecode` so pydantic-settings doesn't

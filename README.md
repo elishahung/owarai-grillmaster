@@ -19,11 +19,13 @@
 
 ### ASR
 
-`ElevenLabs Scribe v2` 日文辨識效果穩定，尤其在一堆人大聲喧嘩，或者裝傻吐槽之間無間隔狀況都能分析出來。
+`ElevenLabs Scribe v2` 日文辨識效果穩定，尤其在一堆人大聲喧嘩，或者裝傻吐槽之間無間隔狀況都能分析出來
 
 ### 翻譯
 
-測試多種模型還是 `Gemini 3 Flash` 的潤飾最能抓住日本綜藝的韻味 (Pro 更好，但成本...)，加上圖片音檔的理解真的很好，但 `Gemini 3 Flash` 的輸出常常會漏 Index 或弄錯時間軸，所以如果驗證錯誤，會交給 agent (Codex/Claude) 驗證修正結構
+測試多種模型還是 `Gemini 3` 系列的潤飾最能抓住日本綜藝的韻味，加上圖片音檔的理解真的很好，但 `Gemini 3` 的輸出常常會漏 Index 或弄錯時間軸，所以如果驗證錯誤，會交給其他 agent (Codex/Claude) 驗證修正結構
+
+目前翻譯也預設使用 `Gemini CLI` 的 Agent 搭配工具去主動取得影片截圖和網路搜尋確認資訊。
 
 進行**兩階段翻譯**：
 
@@ -35,6 +37,8 @@
 ![](doc/image4.jpg)
 
 另外，翻譯過程的 chunk / pre-pass 資源與回應會保留在專案資料夾中，方便失敗後直接 resume，不用每次都重切音訊、重抽圖、重跑整個翻譯
+
+> 目前只有 `Gemini CLI` 可以輸入音訊
 
 ## 流程
 
@@ -51,13 +55,13 @@ Video ID
     ↓
 產生 SRT 字幕
     ↓
-Pre-pass 分析 (Gemini: 全片簡報，定調人物/專名/語氣/分段摘要)
+Pre-pass 分析 (全片簡報，定調人物/專名/語氣/分段摘要)
     ↓
-併發 chunk 翻譯 (Gemini: 分塊平行翻譯 → 組裝驗證修正)
+併發 chunk 翻譯 (分塊平行翻譯 → 組裝驗證修正)
     ↓
 潤飾字幕 (agent, 可選)
     ↓
-固定詞彙校對 (agent)
+固定詞彙校對 (agent, 可選)
     ↓
 Finalize：格式清理，輸出 ASS (套樣式) + SRT
     ↓
@@ -133,10 +137,10 @@ ELEVENLABS_STT_LANGUAGE_CODE=jpn
 AGENT_GEMINI_API_KEY=xxx
 AGENT_GEMINI_GCP_PROJECT=your-project-id       # 可選；gemini-cli 訂閱/Code Assist auth 時，臨時注入為 GOOGLE_CLOUD_PROJECT
 
-AGENT_PREPASS_MODEL=gemini-api/gemini-3.1-pro-preview  # backend: gemini-api / gemini-cli / gemini-agy / claude / codex
-AGENT_CHUNK_MODEL=gemini-api/gemini-3-flash-preview    # "backend/model" 或 "backend/model/effort"
-AGENT_POSTPROCESS_MODEL=codex/gpt-5.6-sol/medium       # 後處理（refine/glossary）：codex / claude / gemini-cli / gemini-agy
-AGENT_COMMON_MODEL=codex/gpt-5.5/medium                # 輕量工具 agent（chunk 結構修正、播出日調查）；封面固定用 codex 並沿用此 effort
+AGENT_PREPASS_MODEL=gemini-cli/gemini-3.1-pro-preview/high  # backend: gemini-api / gemini-cli / gemini-agy / claude / codex
+AGENT_CHUNK_MODEL=gemini-cli/gemini-3.1-pro-preview/high    # "backend/model" 或 "backend/model/effort"
+AGENT_POSTPROCESS_MODEL=codex/gpt-5.6-sol/extra             # 後處理（refine/glossary）：codex / claude / gemini-cli / gemini-agy
+AGENT_COMMON_MODEL=codex/gpt-5.5/medium                     # 輕量工具 agent（chunk 結構修正、播出日調查）；封面固定用 codex 並沿用此 effort
 
 # 可選：pre-pass 圖片抽樣與固定譯名表
 PREPASS_FRAME_INTERVAL_SECONDS=120     # pre-pass 全片圖片抽樣頻率（每幾秒一張，另外固定包含影片首尾幀）
@@ -151,7 +155,7 @@ CHUNK_MAX_RETRIES=3                    # chunk 失敗重試次數
 CHUNK_FRAME_INTERVAL_SECONDS=30        # chunk 圖片抽樣頻率（每幾秒一張，另外固定包含每段首尾幀）
 CHUNK_MISSING_BLOCK_TOLERANCE=2        # 每塊允許未對齊/缺漏字幕區塊數上限
 
-# 可選：後處理開關（codex 需安裝 Codex CLI；claude 用本機 Claude 訂閱）
+# 可選：後處理開關
 ENABLE_POSTPROCESS_REFINE=true            # 翻譯後再用 agent 潤飾繁中字幕
 ENABLE_POSTPROCESS_GLOSSARY_CHECK=true    # 潤飾後再用 agent 校對殘留的英文/假名專名
 ENABLE_COVER_GENERATION=true              # 下載後並行 Codex 風格化封面圖
@@ -174,7 +178,7 @@ projects/{video_id}/
 ├── .asr/                     # ASR 音檔與 ElevenLabs 原始結果
 │   ├── audio.ogg
 │   └── asr.json
-├── .pre_pass/                # Gemini pre-pass 簡報與圖片快取
+├── .pre_pass/                # pre-pass 簡報與圖片快取
 │   ├── pre_pass.json
 │   └── pre_pass.raw.json     # glossary-check 更正 pre_pass 前的原始備份（可選）
 ├── .chunks/                  # chunk 音檔 / 圖片 / 翻譯回應快取（供 resume）

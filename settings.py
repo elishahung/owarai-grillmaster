@@ -115,12 +115,12 @@ class Settings(BaseSettings):
     )
 
     agent_prepass_model: ModelSpecField = Field(
-        default="gemini-api/gemini-3-flash-preview",
+        default="gemini-cli/gemini-3.1-pro-preview",
         description="Pre-pass spec as 'backend/model[/effort]'. Backend: 'gemini-api', 'gemini-cli', 'gemini-agy', 'claude', or 'codex'.",
     )
 
     agent_chunk_model: ModelSpecField = Field(
-        default="gemini-api/gemini-3-flash-preview",
+        default="gemini-cli/gemini-3.1-pro-preview",
         description="Chunk translation spec as 'backend/model[/effort]'. Backend: 'gemini-api', 'gemini-cli', 'gemini-agy', 'claude', or 'codex'.",
     )
 

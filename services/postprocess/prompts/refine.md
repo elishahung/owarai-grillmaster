@@ -79,6 +79,12 @@ Review workflow:
   expansion (ja uses surname/nickname only but the Chinese has the full name),
   recurring term drift, joke-function loss, overly formal phrasing that hurts
   timing, and awkward line wrapping.
+- Among these, unsupported subject insertion is a mandatory per-window check,
+  not just one priority among many: in every window, check each block whose
+  Chinese carries an explicit subject (我/你/他/她/我們/大家 or a name) against
+  the Japanese source line. If the source speaks no subject and the immediate
+  context does not unambiguously support it, remove the subject and restore
+  subjectless phrasing rather than guessing the intended person.
 - When a candidate edit is visually grounded and the timestamp is known, use the
   on-demand frame tool before committing the edit if the pre-sampled frames do
   not already settle it.

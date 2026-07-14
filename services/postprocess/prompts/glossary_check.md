@@ -43,7 +43,8 @@ Name-form audit (final defense, required):
   against `video.ja.srt` in stable windows of about 200 blocks (`1-200`,
   `201-400`, …). Treat the stage as incomplete until every window has been
   audited.
-- In each window, for every block that mentions a person, compare with the
+- In each window, for every block that mentions a person or carries an
+  explicit subject (我/你/他/她/我們/大家 or a name), compare with the
   Japanese source line:
   - Honorific parity: if the source attaches さん/ちゃん/くん/様 to a name,
     the Chinese must carry the matching 桑/醬/君/大人 on that name — restore
@@ -57,6 +58,14 @@ Name-form audit (final defense, required):
     kana nickname that has no natural standalone Chinese form (e.g. ノブ for
     信子), the person's canonical short name IS the correct rendering; keep
     it, and do not re-render it as romaji or force a shorter span.
+  - Subject parity: if the Chinese line carries an explicit subject —
+    我/你/他/她/我們/大家 or a specific name — that the source line does not
+    speak, and the immediate context does not unambiguously support it, remove
+    it and restore subjectless Chinese phrasing. Japanese routinely omits
+    subjects, and an invented subject frequently points at the wrong person
+    (他 for the speaker's own words, or the reverse). Prefer deleting the
+    unsupported subject over guessing the intended person. If the source line
+    does speak a subject, the Chinese subject must match that person.
   - The ASR line may itself mis-hear the name; use `pre_pass.json`
     characters/proper_nouns to identify WHO is meant, but take the span and
     the honorific from the source line.
@@ -130,7 +139,7 @@ write `.glossary_check/report.md` as a compact Traditional Chinese debug note,
 not a formal audit table. Group repeated subtitle edits by correction, mention
 representative block numbers, and include the decisive evidence (frame filename,
 web source, or `video.ja.srt` line) only where it mattered. Name-form audit
-fixes (honorific/name-span) are grouped and reported the same way. If `pre_pass.json`
+fixes (honorific/name-span/subject) are grouped and reported the same way. If `pre_pass.json`
 changed, add a short `Pre-pass corrections` section listing only changed fields
 as `field: old -> new; reason/evidence`. If you changed nothing, do not create
 the report.

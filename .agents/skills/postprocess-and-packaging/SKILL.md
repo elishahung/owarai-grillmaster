@@ -26,9 +26,10 @@ non-empty text) — semantic quality is the agent's responsibility via prompts.
   or on-demand frames, and may correct `.pre_pass/pre_pass.json` after
   preserving the original as `.pre_pass/pre_pass.raw.json` (backup happens
   once; the updated pre-pass must still validate against `PrePassResult`). Its
-  prompt ends with a required name-form audit (honorific/name-span parity vs
-  `video.ja.srt`) as the final defense against dropped honorifics and
-  full-name expansion. When `video.official.ja.srt` exists (platform CC, see
+  prompt ends with a required name-form audit (honorific/name-span/subject
+  parity vs `video.ja.srt`) as the final defense against dropped honorifics,
+  full-name expansion, and invented subjects (refine also mandates the
+  subject check per window). When `video.official.ja.srt` exists (platform CC, see
   **project-architecture**), the conditional `official_subtitle_reference.md`
   block is appended: CC wording outranks ASR as source evidence. If the SRT or
   pre-pass changed, `glossary_check.md` (the report) must exist; packaging

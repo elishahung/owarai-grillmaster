@@ -18,6 +18,9 @@ Optional agent passes, each a thin orchestrator over `run_inference` where the
 agent reads/writes files in the project dir and we validate afterward.
 `_srt_guard.py` validates **structure only** (block count, indexes, timecodes,
 non-empty text) — semantic quality is the agent's responsibility via prompts.
+Agent-written SRTs may carry a UTF-8 BOM (Codex does this); every reader of
+`video.cht.refined.srt` / `video.cht.glossary_checked.srt` — including
+finalize — must read with `utf-8-sig`.
 
 - `refine.py` — polish TC subtitles (`AGENT_POSTPROCESS_MODEL`).
 - `glossary_check.py` — full-text terminology/factual consistency check after

@@ -161,8 +161,9 @@ def _srt_text_changed(project: Project) -> bool:
     if not project.glossary_checked_srt_path.exists():
         return False
     return (
-        project.refined_srt_path.read_text(encoding="utf-8")
-        != project.glossary_checked_srt_path.read_text(encoding="utf-8")
+        # utf-8-sig so a Codex-written BOM on one side doesn't read as a change.
+        project.refined_srt_path.read_text(encoding="utf-8-sig")
+        != project.glossary_checked_srt_path.read_text(encoding="utf-8-sig")
     )
 
 

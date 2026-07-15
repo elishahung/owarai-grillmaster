@@ -264,6 +264,25 @@ class AssConvertFileTests(unittest.TestCase):
             out,
         )
 
+    def test_convert_file_tolerates_utf8_bom(self):
+        # Codex-written refined/glossary-checked SRTs sometimes carry a BOM.
+        tmp = self._make_temp_dir()
+        srt_path = tmp / "input.srt"
+        ass_path = tmp / "output.ass"
+
+        srt_path.write_text(
+            "1\n00:00:01,000 --> 00:00:02,000\n你好。\n",
+            encoding="utf-8-sig",
+        )
+
+        finalize_and_export(srt_path, ass_path)
+
+        out = ass_path.read_text(encoding="utf-8")
+        self.assertIn(
+            "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,你好",
+            out,
+        )
+
     def test_convert_file_creates_output_parent_directory(self):
         tmp = self._make_temp_dir()
         srt_path = tmp / "input.srt"

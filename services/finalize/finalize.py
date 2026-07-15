@@ -282,7 +282,9 @@ def finalize_and_export(
     input_path = Path(input_path)
     finalized_ass_path = Path(finalized_ass_path)
 
-    srt_text = input_path.read_text(encoding="utf-8")
+    # utf-8-sig tolerates the UTF-8 BOM that Codex-written refined/
+    # glossary-checked SRTs sometimes carry.
+    srt_text = input_path.read_text(encoding="utf-8-sig")
     blocks = parse_srt(srt_text)
     space_latin_names = _build_latin_name_spacer(
         _load_latin_name_units(pre_pass_path) + _curated_name_units()

@@ -2,11 +2,12 @@ import asyncio
 import json
 import os
 import shutil
+import subprocess
 import unittest
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("AGENT_GEMINI_API_KEY", "test-key")
 
@@ -119,7 +120,7 @@ class RunGeminiCliTests(unittest.TestCase):
         p.start()
 
     def _patch_run(self, **kwargs):
-        p = patch.object(cli_mod.subprocess, "run", **kwargs)
+        p = patch.object(cli_mod, "_run_cli", **kwargs)
         self.addCleanup(p.stop)
         return p.start()
 
@@ -298,9 +299,57 @@ class RunGeminiCliTests(unittest.TestCase):
             FRAME_TOOL_SCRIPTS[FrameToolStage.GLOSSARY_CHECK].exists()
         )
 
+    def test_timeout_raises_gemini_cli_error(self):
+        self._patch_which()
+        self._patch_run(
+            side_effect=subprocess.TimeoutExpired(cmd="gemini", timeout=5)
+        )
+        with self.assertRaises(GeminiCliError) as ctx:
+            run_gemini_cli("hi", model="m")
+        self.assertIn("timed out", str(ctx.exception))
+
     # NOTE: schema enforcement is no longer a gemini-cli concern — run_gemini_cli
     # is a single-shot text generator. The validate-and-repair loop is exercised
     # uniformly for all prompt-based backends in tests/test_inference.py.
+
+
+class RunCliTreeKillTests(unittest.TestCase):
+    """The timeout path must tree-kill before draining pipes (see _run_cli)."""
+
+    def test_timeout_tree_kills_then_drains_and_reraises(self):
+        proc = MagicMock()
+        proc.communicate.side_effect = [
+            subprocess.TimeoutExpired(cmd="gemini", timeout=1),
+            ("", ""),
+        ]
+        with (
+            patch.object(cli_mod.subprocess, "Popen", return_value=proc),
+            patch.object(cli_mod, "_kill_process_tree") as kill,
+        ):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                cli_mod._run_cli(
+                    ["gemini"], input="hi", timeout=1, env={}, cwd=None
+                )
+        kill.assert_called_once_with(proc)
+        # The drain after the kill must itself be time-bounded.
+        self.assertEqual(proc.communicate.call_count, 2)
+        self.assertEqual(
+            proc.communicate.call_args.kwargs["timeout"],
+            cli_mod._POST_KILL_DRAIN_SECS,
+        )
+
+    def test_success_returns_completed_process(self):
+        proc = MagicMock()
+        proc.communicate.return_value = ("out", "err")
+        proc.returncode = 0
+        with patch.object(cli_mod.subprocess, "Popen", return_value=proc):
+            result = cli_mod._run_cli(
+                ["gemini"], input="hi", timeout=1, env={}, cwd=None
+            )
+        self.assertEqual(result.stdout, "out")
+        self.assertEqual(result.stderr, "err")
+        self.assertEqual(result.returncode, 0)
+        proc.communicate.assert_called_once_with("hi", timeout=1)
 
 
 class RunPrePassDispatchTests(unittest.TestCase):

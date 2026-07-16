@@ -70,7 +70,11 @@ Backend runtime gotchas:
   include-dirs instead of `--yolo` (yolo's sandboxing breaks project-local
   frame reads). `AGENT_GEMINI_GCP_PROJECT` is injected as a temporary
   `GOOGLE_CLOUD_PROJECT`; API-key env vars are scrubbed from the subprocess so
-  it never silently switches to API-key billing.
+  it never silently switches to API-key billing. The subprocess runs via
+  `_run_cli`, which **tree-kills on timeout** (`taskkill /T /F` on Windows,
+  killpg on POSIX) — plain `subprocess.run(timeout=)` kills only the cmd.exe
+  shim and then blocks forever draining pipes the hung node grandchild still
+  holds; do not revert to it.
 - `gemini_agy.py` (Antigravity CLI) **must run under a pty** (`pywinpty` on
   Windows, stdlib `pty` on POSIX) — `agy -p` drops stdout on a non-TTY — and
   stages the prompt (and images) into a temporary workspace file referenced by

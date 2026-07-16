@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 from pathlib import Path
@@ -47,6 +48,10 @@ _CLI_EXECUTABLE = "gemini"
 # subscription auth is used (the whole reason for the CLI backend).
 _API_KEY_ENV_VARS = ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_API_KEY")
 _REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Bound on the post-tree-kill pipe drain. With every descendant dead the drain
+# returns immediately; the bound only guards against a kill that failed.
+_POST_KILL_DRAIN_SECS = 30
 
 
 class GeminiCliError(InferenceError):
@@ -172,6 +177,71 @@ def _classify_envelope_error(error: object) -> GeminiCliError:
     return GeminiCliError(message)
 
 
+def _kill_process_tree(process: subprocess.Popen) -> None:
+    """Forcefully terminate the CLI process and every descendant.
+
+    On Windows ``gemini`` resolves to a batch shim (cmd.exe -> node), and the
+    agent may spawn shell-tool children of its own. ``Popen.kill`` reaches
+    only the direct child; a surviving descendant keeps the inherited
+    stdout/stderr handles open, which would block the post-kill pipe drain
+    indefinitely.
+    """
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+            check=False,
+            capture_output=True,
+        )
+    else:
+        # POSIX: _run_cli starts the child in its own session, so its process
+        # group id equals its pid and killpg reaps the whole tree.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            process.kill()
+
+
+def _run_cli(
+    cmd: list[str],
+    *,
+    input: str,
+    timeout: int,
+    env: dict[str, str],
+    cwd: str | None,
+) -> subprocess.CompletedProcess:
+    """``subprocess.run`` replacement that tree-kills the CLI on timeout.
+
+    ``subprocess.run(timeout=...)`` kills only the direct child and then
+    drains stdout/stderr with no time bound. When the node grandchild hangs
+    (observed: a stalled model stream mid-turn), it keeps those pipes open
+    forever, turning a 20-minute timeout into a permanently wedged worker.
+    """
+    process = subprocess.Popen(
+        cmd,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        cwd=cwd,
+        start_new_session=(os.name != "nt"),
+    )
+    try:
+        stdout, stderr = process.communicate(input, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_process_tree(process)
+        try:
+            process.communicate(timeout=_POST_KILL_DRAIN_SECS)
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            pass
+        raise
+    return subprocess.CompletedProcess(
+        cmd, process.returncode, stdout, stderr
+    )
+
+
 def _invoke_once(
     executable: str,
     model: str,
@@ -203,15 +273,10 @@ def _invoke_once(
         f"(via stdin) cwd={cwd} timeout={timeout}s"
     )
     try:
-        result = subprocess.run(
+        result = _run_cli(
             cmd,
-            check=False,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            capture_output=True,
             input=prompt,
+            timeout=timeout,
             env=_gemini_cli_env(),
             cwd=str(cwd) if cwd is not None else None,
         )

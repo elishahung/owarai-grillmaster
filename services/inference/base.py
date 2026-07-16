@@ -16,6 +16,9 @@ Claude) cannot ingest audio and raise `UnsupportedMediaError` if given any.
 
 from __future__ import annotations
 
+import os
+import signal
+import subprocess
 from enum import StrEnum
 
 # Per-invocation timeout shared by every backend. A maintainer constant, not
@@ -83,6 +86,77 @@ def truncate_middle(text: str, *, head: int = 50, tail: int = 50) -> str:
         return text
     omitted = len(text) - head - tail
     return f"{text[:head]} ... [{omitted} chars omitted] ... {text[-tail:]}"
+
+
+# Bound on the post-tree-kill pipe drain in `run_cli`. With every descendant
+# dead the drain returns immediately; the bound only guards a failed kill.
+_POST_KILL_DRAIN_SECS = 30
+
+
+def kill_process_tree(process: subprocess.Popen) -> None:
+    """Forcefully terminate a CLI process and every descendant.
+
+    On Windows the agent CLIs resolve to batch shims (cmd.exe -> node), and an
+    agent may spawn shell-tool children of its own. ``Popen.kill`` reaches
+    only the direct child; a surviving descendant keeps the inherited
+    stdout/stderr handles open, which would block a post-kill pipe drain
+    indefinitely.
+    """
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+            check=False,
+            capture_output=True,
+        )
+    else:
+        # POSIX: run_cli starts the child in its own session, so its process
+        # group id equals its pid and killpg reaps the whole tree.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            process.kill()
+
+
+def run_cli(
+    cmd: list[str],
+    *,
+    input: str,
+    timeout: int,
+    env: dict[str, str] | None = None,
+    cwd: str | None = None,
+) -> subprocess.CompletedProcess:
+    """``subprocess.run`` replacement that tree-kills the CLI on timeout.
+
+    ``subprocess.run(timeout=...)`` kills only the direct child and then
+    drains stdout/stderr with no time bound. When a node grandchild hangs
+    (observed: a stalled model stream mid-turn), it keeps those pipes open
+    forever, turning the timeout into a permanently wedged worker. Every
+    CLI-shim backend (gemini-cli, codex) must go through this instead.
+    """
+    process = subprocess.Popen(
+        cmd,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        cwd=cwd,
+        start_new_session=(os.name != "nt"),
+    )
+    try:
+        stdout, stderr = process.communicate(input, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill_process_tree(process)
+        try:
+            process.communicate(timeout=_POST_KILL_DRAIN_SECS)
+        except (subprocess.TimeoutExpired, OSError, ValueError):
+            pass
+        raise
+    return subprocess.CompletedProcess(
+        cmd, process.returncode, stdout, stderr
+    )
 
 
 class InferenceError(RuntimeError):

@@ -285,7 +285,7 @@ class CodexCommandTests(unittest.TestCase):
 
         with (
             patch.object(codex.shutil, "which", return_value="codex"),
-            patch.object(codex.subprocess, "run", side_effect=fake_run),
+            patch.object(codex, "run_cli", side_effect=fake_run),
         ):
             codex.run_codex_exec(
                 prompt="hi",
@@ -310,7 +310,7 @@ class CodexCommandTests(unittest.TestCase):
 
         with (
             patch.object(codex.shutil, "which", return_value="codex"),
-            patch.object(codex.subprocess, "run", side_effect=fake_run),
+            patch.object(codex, "run_cli", side_effect=fake_run),
         ):
             codex.run_codex_exec(
                 prompt="hi",
@@ -333,7 +333,7 @@ class CodexCommandTests(unittest.TestCase):
 
         with (
             patch.object(codex.shutil, "which", return_value="codex"),
-            patch.object(codex.subprocess, "run", side_effect=fake_run),
+            patch.object(codex, "run_cli", side_effect=fake_run),
         ):
             codex.run_codex_exec(prompt="hi", cwd=Path("."))
         self.assertIn(codex._DEFAULT_MODEL, captured["cmd"])
@@ -351,7 +351,7 @@ class CodexCommandTests(unittest.TestCase):
 
         with (
             patch.object(codex.shutil, "which", return_value="codex"),
-            patch.object(codex.subprocess, "run", side_effect=fake_run),
+            patch.object(codex, "run_cli", side_effect=fake_run),
         ):
             codex.run_codex_exec(prompt="hi", cwd=Path("."), web_search=True)
         self.assertIn("tools.web_search=true", captured["cmd"])
@@ -369,7 +369,7 @@ class CodexCommandTests(unittest.TestCase):
 
         with (
             patch.object(codex.shutil, "which", return_value="codex"),
-            patch.object(codex.subprocess, "run", side_effect=fake_run),
+            patch.object(codex, "run_cli", side_effect=fake_run),
         ):
             codex.run_codex_exec(prompt="hi", cwd=Path("."))
         self.assertNotIn("tools.web_search=true", captured["cmd"])

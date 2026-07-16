@@ -9,7 +9,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from .base import DEFAULT_TIMEOUT_SECS, InferenceError
+from .base import DEFAULT_TIMEOUT_SECS, InferenceError, run_cli
 
 
 class CodexInvocationError(InferenceError):
@@ -113,15 +113,10 @@ def run_codex_exec(
 
     try:
         try:
-            result = subprocess.run(
+            result = run_cli(
                 cmd,
-                check=False,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=effective_timeout,
-                capture_output=True,
                 input=prompt,
+                timeout=effective_timeout,
             )
         except subprocess.TimeoutExpired as exc:
             raise CodexInvocationError(

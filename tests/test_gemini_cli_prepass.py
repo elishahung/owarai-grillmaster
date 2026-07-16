@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 os.environ.setdefault("AGENT_GEMINI_API_KEY", "test-key")
 
 from settings import ModelSpec
+from services.inference import base as base_mod
 from services.inference import gemini_cli as cli_mod
 from services.translate.pre_pass import pre_pass as pp
 from services.translate.assets import LocalMediaRef, PrePassMediaAssets
@@ -120,7 +121,7 @@ class RunGeminiCliTests(unittest.TestCase):
         p.start()
 
     def _patch_run(self, **kwargs):
-        p = patch.object(cli_mod, "_run_cli", **kwargs)
+        p = patch.object(cli_mod, "run_cli", **kwargs)
         self.addCleanup(p.stop)
         return p.start()
 
@@ -314,7 +315,7 @@ class RunGeminiCliTests(unittest.TestCase):
 
 
 class RunCliTreeKillTests(unittest.TestCase):
-    """The timeout path must tree-kill before draining pipes (see _run_cli)."""
+    """The timeout path must tree-kill before draining pipes (see base.run_cli)."""
 
     def test_timeout_tree_kills_then_drains_and_reraises(self):
         proc = MagicMock()
@@ -323,29 +324,25 @@ class RunCliTreeKillTests(unittest.TestCase):
             ("", ""),
         ]
         with (
-            patch.object(cli_mod.subprocess, "Popen", return_value=proc),
-            patch.object(cli_mod, "_kill_process_tree") as kill,
+            patch.object(base_mod.subprocess, "Popen", return_value=proc),
+            patch.object(base_mod, "kill_process_tree") as kill,
         ):
             with self.assertRaises(subprocess.TimeoutExpired):
-                cli_mod._run_cli(
-                    ["gemini"], input="hi", timeout=1, env={}, cwd=None
-                )
+                base_mod.run_cli(["gemini"], input="hi", timeout=1)
         kill.assert_called_once_with(proc)
         # The drain after the kill must itself be time-bounded.
         self.assertEqual(proc.communicate.call_count, 2)
         self.assertEqual(
             proc.communicate.call_args.kwargs["timeout"],
-            cli_mod._POST_KILL_DRAIN_SECS,
+            base_mod._POST_KILL_DRAIN_SECS,
         )
 
     def test_success_returns_completed_process(self):
         proc = MagicMock()
         proc.communicate.return_value = ("out", "err")
         proc.returncode = 0
-        with patch.object(cli_mod.subprocess, "Popen", return_value=proc):
-            result = cli_mod._run_cli(
-                ["gemini"], input="hi", timeout=1, env={}, cwd=None
-            )
+        with patch.object(base_mod.subprocess, "Popen", return_value=proc):
+            result = base_mod.run_cli(["gemini"], input="hi", timeout=1)
         self.assertEqual(result.stdout, "out")
         self.assertEqual(result.stderr, "err")
         self.assertEqual(result.returncode, 0)

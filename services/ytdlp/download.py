@@ -5,6 +5,7 @@ thumbnail extraction, metadata embedding, and format conversion.
 """
 
 import os
+from time import monotonic, sleep
 
 import yt_dlp
 from yt_dlp.postprocessor import FFmpegThumbnailsConvertorPP
@@ -15,8 +16,80 @@ from pathlib import Path
 from typing import Any, cast
 
 from settings import settings
+from services.progress import NoopProgressReporter
 
-from .client import get_ytdlp_download_options_for_url
+from .client import YtDlpLoguruAdapter, get_ytdlp_download_options_for_url
+
+
+# Some platforms (notably Abema) regularly fail the first download attempt
+# and succeed on the second, so one automatic retry is built in.
+_DOWNLOAD_ATTEMPTS = 2
+_DOWNLOAD_RETRY_DELAY_SECS = 5
+
+
+class _ReporterProgressHook:
+    """Feed yt-dlp progress into the reporter as one bar per output file.
+
+    Used only for screen-owning reporters (full-screen TUI), where yt-dlp's
+    native stdout progress renderer would corrupt the display.
+    """
+
+    _MIN_UPDATE_INTERVAL = 0.25  # seconds; yt-dlp fires hooks very frequently
+
+    def __init__(self, progress: NoopProgressReporter) -> None:
+        self.progress = progress
+        self._task = None
+        self._filename: str | None = None
+        self._fraction = 0.0
+        self._last_update = 0.0
+
+    def __call__(self, event: dict) -> None:
+        status = event.get("status")
+        filename = event.get("filename") or ""
+        if status == "downloading":
+            if filename != self._filename:
+                self._finish_current()
+                self._filename = filename
+                self._fraction = 0.0
+                self._task = self.progress.start_stage(
+                    f"Downloading {os.path.basename(filename)}", total=1.0
+                )
+            now = monotonic()
+            if now - self._last_update < self._MIN_UPDATE_INTERVAL:
+                return
+            self._last_update = now
+            total = (
+                event.get("total_bytes")
+                or event.get("total_bytes_estimate")
+                or 0
+            )
+            downloaded = event.get("downloaded_bytes") or 0
+            if total <= 0:
+                return
+            fraction = min(1.0, downloaded / total)
+            if fraction <= self._fraction:
+                return
+            speed = event.get("speed")
+            eta = event.get("eta")
+            description = f"Downloading {os.path.basename(filename)}"
+            if speed:
+                description += f" · {speed / 1024 / 1024:.1f} MiB/s"
+            if eta:
+                description += f" · eta {int(eta)}s"
+            self.progress.advance(
+                self._task, fraction - self._fraction, description=description
+            )
+            self._fraction = fraction
+        elif status == "finished":
+            self._finish_current()
+
+    def _finish_current(self) -> None:
+        if self._task is not None:
+            self.progress.advance(self._task, 1.0 - self._fraction)
+            self.progress.finish(self._task, "done")
+        self._task = None
+        self._filename = None
+        self._fraction = 0.0
 
 
 class _JpegThumbnailFixupPP(PostProcessor):
@@ -69,7 +142,10 @@ def parse_section_time(value: str) -> float:
 
 
 def download_video(
-    url: str, output_path: Path, partial_download: bool = False
+    url: str,
+    output_path: Path,
+    partial_download: bool = False,
+    progress: NoopProgressReporter | None = None,
 ) -> None:
     """Download a video from the given URL using yt-dlp.
 
@@ -82,6 +158,9 @@ def download_video(
         output_path: Directory path where downloaded files will be saved.
         partial_download: If True, enables concurrent fragment downloads
             for faster partial downloads.
+        progress: Optional reporter. When it owns the screen (full-screen
+            TUI), yt-dlp's native stdout renderer is replaced with progress
+            hooks feeding the reporter; otherwise the native renderer stays.
 
     Raises:
         DownloadError: If yt-dlp fails to download the video.
@@ -89,6 +168,34 @@ def download_video(
     """
     logger.info(f"Initiating download task for input: {url}")
 
+    for attempt in range(_DOWNLOAD_ATTEMPTS):
+        try:
+            # Options (and the stateful progress hook) are rebuilt per
+            # attempt; yt-dlp resumes partial .part files on its own.
+            _download_video_once(url, output_path, partial_download, progress)
+            return
+        except Exception as e:
+            if attempt + 1 < _DOWNLOAD_ATTEMPTS:
+                logger.warning(
+                    f"Download attempt {attempt + 1} failed for {url}: {e}; "
+                    f"retrying in {_DOWNLOAD_RETRY_DELAY_SECS}s"
+                )
+                sleep(_DOWNLOAD_RETRY_DELAY_SECS)
+                continue
+            if isinstance(e, DownloadError):
+                logger.error(f"yt-dlp download failed for {url}: {e}")
+            else:
+                logger.error(f"Unexpected error during download execution: {e}")
+            raise
+
+
+def _download_video_once(
+    url: str,
+    output_path: Path,
+    partial_download: bool,
+    progress: NoopProgressReporter | None,
+) -> None:
+    """Build yt-dlp options and run one download attempt."""
     # Configure yt-dlp options
     ydl_opts = {
         "writethumbnail": True,
@@ -118,6 +225,17 @@ def download_video(
         "concurrent_fragment_downloads": 8 if partial_download else 1,
     }
 
+    if progress is not None and progress.owns_screen:
+        # Full-screen reporter: no raw stdout allowed. Route yt-dlp status
+        # lines through loguru and progress redraws through reporter hooks.
+        ydl_opts.update(
+            {
+                "logger": YtDlpLoguruAdapter(),
+                "noprogress": True,
+                "progress_hooks": [_ReporterProgressHook(progress)],
+            }
+        )
+
     if settings.enable_official_subtitles:
         # Best-effort platform closed captions (TVer/Abema/... 字幕放送).
         # Manual subs only — writeautomaticsub stays off so YouTube
@@ -138,34 +256,27 @@ def download_video(
             {"key": "FFmpegSubtitlesConvertor", "format": "srt"},
         ]
 
-    # Execute download
-    try:
-        logger.info(f"Starting yt-dlp process for: {url}")
+    # Execute download; failures propagate to the retry loop in
+    # download_video, which owns the error logging.
+    logger.info(f"Starting yt-dlp process for: {url}")
 
-        download_opts = get_ytdlp_download_options_for_url(url, ydl_opts)
-        with yt_dlp.YoutubeDL(cast(Any, download_opts)) as ydl:
-            # Fixup must precede the convertor within the before_dl chain;
-            # opts-declared postprocessors always run before ones added here,
-            # so both are registered via add_post_processor.
-            ydl.add_post_processor(_JpegThumbnailFixupPP(), when="before_dl")
-            ydl.add_post_processor(
-                FFmpegThumbnailsConvertorPP(format="jpg"), when="before_dl"
-            )
-            # extract_info with download=True performs the download
-            info_dict = ydl.extract_info(url, download=True)
+    download_opts = get_ytdlp_download_options_for_url(url, ydl_opts)
+    with yt_dlp.YoutubeDL(cast(Any, download_opts)) as ydl:
+        # Fixup must precede the convertor within the before_dl chain;
+        # opts-declared postprocessors always run before ones added here,
+        # so both are registered via add_post_processor.
+        ydl.add_post_processor(_JpegThumbnailFixupPP(), when="before_dl")
+        ydl.add_post_processor(
+            FFmpegThumbnailsConvertorPP(format="jpg"), when="before_dl"
+        )
+        # extract_info with download=True performs the download
+        info_dict = ydl.extract_info(url, download=True)
 
-            # Safely get title for logging
-            video_title = (
-                info_dict.get("title", "Unknown Title")
-                if info_dict
-                else "Unknown"
-            )
+        # Safely get title for logging
+        video_title = (
+            info_dict.get("title", "Unknown Title")
+            if info_dict
+            else "Unknown"
+        )
 
-        logger.success(f"Successfully downloaded: {video_title}")
-
-    except DownloadError as e:
-        logger.error(f"yt-dlp download failed for {url}: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error during download execution: {e}")
-        raise
+    logger.success(f"Successfully downloaded: {video_title}")

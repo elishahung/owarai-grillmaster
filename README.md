@@ -2,6 +2,7 @@
 
 下載日本綜藝節目，生成繁體中文 SRT / ASS 字幕方便個人使用識讀
 
+![](/doc/tui.png)
 ![](/doc/image2.jpg)
 ![](/doc/image3.png)
 ![](/doc/image1.png)

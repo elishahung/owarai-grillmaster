@@ -1,5 +1,6 @@
 """Command-line interface for the video captioning pipeline."""
 
+import os
 from pathlib import Path
 import sys
 
@@ -72,25 +73,49 @@ def _run_process(
         logger.error("--to must be later than --start")
         raise typer.Exit(code=1)
 
-    try:
-        submit_project(
-            source_str=source_str,
-            translation_hint=translation_hint,
-            break_after=break_after,
-            parent_project_path=parent_project,
-            enable_refine=refine,
-            enable_glossary_check=glossary_check,
-            enable_cover=cover,
-            enable_date_research=date_research,
-            remix_noise_name=remix,
-            remix_prefix=prefix,
-            section_start=section_start,
-            section_end=section_end,
+    submit_kwargs = dict(
+        source_str=source_str,
+        translation_hint=translation_hint,
+        break_after=break_after,
+        parent_project_path=parent_project,
+        enable_refine=refine,
+        enable_glossary_check=glossary_check,
+        enable_cover=cover,
+        enable_date_research=date_research,
+        remix_noise_name=remix,
+        remix_prefix=prefix,
+        section_start=section_start,
+        section_end=section_end,
+    )
+
+    if _is_interactive_terminal():
+        # Interactive runs always get the full-screen dashboard; plain
+        # logging remains for pipes/CI only.
+        from services.tui import run_process_ui
+
+        code = run_process_ui(
+            lambda progress: submit_project(**submit_kwargs, progress=progress)
         )
+        if code != 0:
+            logger.error(f"Failed to process video {source_str}")
+            raise typer.Exit(code=code)
+        logger.success(f"Successfully completed processing for {source_str}")
+        return
+
+    try:
+        submit_project(**submit_kwargs)
         logger.success(f"Successfully completed processing for {source_str}")
     except Exception as e:
         logger.error(f"Failed to process video {source_str}: {e}")
         raise typer.Exit(code=1)
+
+
+def _is_interactive_terminal() -> bool:
+    return (
+        sys.stdout.isatty()
+        and not os.environ.get("CI")
+        and not os.environ.get("NO_COLOR")
+    )
 
 
 @legacy_app.command()

@@ -6,7 +6,7 @@ description: >-
   `project.py`, settings/`.env`/ModelSpec in `settings.py`, the Typer CLI in
   `main.py`, and the supporting services (`services/srt/`, `services/media.py`,
   `services/ytdlp/`, `services/elevenlabs/`, `services/fixed_glossary/`,
-  `services/progress.py`). Read this before adding/reordering a pipeline stage,
+  `services/progress.py`, `services/tui/`). Read this before adding/reordering a pipeline stage,
   changing resumability or cost accounting, adding a setting, adding a source
   platform, or any task that spans more than one service module. Deep dives
   live in the sibling skills inference-layer, translate-pipeline, and
@@ -171,15 +171,33 @@ Key control-flow details that are easy to break:
   `download.py` registers a jpeg-extension fixup PP before the thumbnail
   convertor (Abema slot thumbnails are JPEG bytes named `.png`, which breaks
   the extension-driven image2 demuxer) — keep the convertor out of the opts
-  dict so the fixup stays first.
+  dict so the fixup stays first. Downloads auto-retry once after a short
+  delay (Abema regularly fails the first attempt); options and the progress
+  hook are rebuilt per attempt.
 - `services/elevenlabs/` — ASR client + ASR-JSON → SRT builder. Source SRT
   formatting constants are hard-coded at the top of the builder (maintainer-tuned,
   intentionally not settings).
 - `services/fixed_glossary/` — loads `fixed_glossary.json` / `.md` (canonical
   term translations) consumed by pre-pass, glossary-check, **and finalize** (it
   is a runtime input for name spacing, not just prompt content).
-- `services/progress.py` — Rich progress reporter (`create_progress_reporter`,
-  `NoopProgressReporter`) threaded through chunk translation and packaging.
+- `services/progress.py` — the reporter contract. `NoopProgressReporter` is the
+  base protocol: legacy bars (`start_stage/advance/finish`), chunk callbacks,
+  and structured lifecycle events (`pipeline_started(project, plan)` with
+  `PlannedStage` entries, `stage_started/completed/skipped`, `side_task_*`,
+  `pipeline_completed/failed`) emitted by `WorkflowRunner`, `SideTaskManager`,
+  and `delivery.py`. **Test fakes must subclass `NoopProgressReporter`.**
+  `create_progress_reporter` (Rich) now serves only `package`/`noise` and
+  non-TTY runs.
+- `services/tui/` — full-screen Textual dashboard, the default interactive
+  experience for `process` (non-TTY falls back to plain logs; no opt-out flag).
+  `state.py` is a lock-guarded model mutated by `reporter.py`
+  (`TuiProgressReporter`, `owns_screen=True`) from the pipeline **worker
+  thread**; `app.py` renders it on a timer on the main thread
+  (`run_process_ui` in `__init__.py` owns the lifecycle; abort = double-q,
+  relies on stage resumability). Log lines and bars are attributed to stages
+  by loguru/thread name (`date-research*`/`cover*` → side tasks). yt-dlp
+  switches from its native stdout renderer to `progress_hooks` only when
+  `reporter.owns_screen` is set.
 
 ## Settings & configuration (`settings.py`)
 

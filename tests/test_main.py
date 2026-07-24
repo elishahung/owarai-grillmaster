@@ -13,6 +13,44 @@ class MainCliTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         return root
 
+    def test_process_uses_dashboard_on_interactive_terminal(self):
+        with (
+            patch.object(
+                main_module, "_is_interactive_terminal", return_value=True
+            ),
+            patch("services.tui.run_process_ui", return_value=0) as run_ui,
+            patch.object(main_module, "submit_project") as submit_project,
+        ):
+            main_module.main(["process", "demo"])
+
+            run_ui.assert_called_once()
+            # The dashboard drives submit_project itself via the callback;
+            # invoke it while the patch is active.
+            submit_project.assert_not_called()
+            pipeline = run_ui.call_args.args[0]
+            reporter = object()
+            pipeline(reporter)
+            self.assertIs(
+                submit_project.call_args.kwargs["progress"], reporter
+            )
+            self.assertEqual(
+                submit_project.call_args.kwargs["source_str"], "demo"
+            )
+
+    def test_process_falls_back_to_plain_logs_without_terminal(self):
+        with (
+            patch.object(
+                main_module, "_is_interactive_terminal", return_value=False
+            ),
+            patch("services.tui.run_process_ui") as run_ui,
+            patch.object(main_module, "submit_project") as submit_project,
+        ):
+            main_module.main(["process", "demo"])
+
+        run_ui.assert_not_called()
+        submit_project.assert_called_once()
+        self.assertNotIn("progress", submit_project.call_args.kwargs)
+
     def test_package_command_uses_configured_package_path(self):
         root = self._make_temp_dir()
         project_dir = root / "project"

@@ -14,6 +14,8 @@ dependencies = [
     "pydantic-settings>=2.12.0",
     "pywinpty>=2.0.0; sys_platform == 'win32'",
     "rich>=14.3.1",
+    "textual>=6.0.0",
+    "textual-image>=0.8.0",
     "typer>=0.21.1",
     "yt-dlp>=2026.6.9",
 ]

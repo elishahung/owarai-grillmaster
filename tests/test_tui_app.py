@@ -119,6 +119,38 @@ class GrillMasterAppTests(unittest.IsolatedAsyncioTestCase):
                 await pilot.press("q")
                 await pilot.pause()
 
+    async def test_cover_widget_survives_archived_image_path(self):
+        # A 1x1 transparent PNG; enough for textual-image/PIL to open.
+        import base64
+        import tempfile
+
+        png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ"
+            "AAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            state, reporter = _scripted_state(Path(tmp))
+            cover_path = state.project.poster_cover_path
+            cover_path.write_bytes(png)
+            reporter.side_task_started("cover", "Cover generation")
+            reporter.side_task_completed("cover", 2.0, "cover.png")
+            app = GrillMasterApp(state)
+            async with app.run_test(size=(120, 40)) as pilot:
+                await pilot.pause()
+                # Select the cover side task (chunks → finalize → cover).
+                await pilot.press("down", "down")
+                app.refresh_all()
+                await pilot.pause()
+                if app._image_cls is not None:
+                    self.assertTrue(app.query("#cover-image"))
+
+                # Archive moves the project folder away; the cached preview
+                # still points at the old path. The refresh must not crash.
+                cover_path.unlink()
+                app.refresh_all()
+                await pilot.pause()
+                self.assertFalse(app.query("#cover-image"))
+
     async def test_quit_immediately_when_finished(self):
         import tempfile
 

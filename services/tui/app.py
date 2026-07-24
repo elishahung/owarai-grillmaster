@@ -407,14 +407,14 @@ class GrillMasterApp(App):
             if preview is not None:
                 body += [Text(), *preview.renderables]
                 if preview.image_path is not None:
-                    body.append(
-                        Text(
-                            "(rendered below via textual-image)"
-                            if self._image_cls is not None
-                            else "(install textual-image for inline preview)",
-                            style="grey42",
-                        )
-                    )
+                    if not preview.image_path.exists():
+                        # Archive may have moved the project folder away.
+                        hint = "(file moved — no longer previewable)"
+                    elif self._image_cls is not None:
+                        hint = "(rendered below via textual-image)"
+                    else:
+                        hint = "(install textual-image for inline preview)"
+                    body.append(Text(hint, style="grey42"))
         elif item.state is ItemState.FAILED:
             body.append(Text("✘ failed", style="bold red"))
             if item.error:
@@ -606,15 +606,25 @@ class GrillMasterApp(App):
             and not (self.state.finished and self.follow)
             else None
         )
+        # The preview is cached at first render, but the archive stage can
+        # move the whole project folder afterwards — re-check the file each
+        # tick so a stale path never reaches the image widget.
         show = (
             self._image_cls is not None
             and preview is not None
             and preview.image_path is not None
+            and preview.image_path.exists()
         )
         existing = self.query("#cover-image")
         if show and not existing:
-            self.query_one("#detail-scroll", VerticalScroll).mount(
-                self._image_cls(str(preview.image_path), id="cover-image")
-            )
+            try:
+                widget = self._image_cls(
+                    str(preview.image_path), id="cover-image"
+                )
+            except Exception:
+                # File vanished between the exists() check and PIL opening
+                # it (archive runs concurrently) — skip the inline render.
+                return
+            self.query_one("#detail-scroll", VerticalScroll).mount(widget)
         elif not show and existing:
             existing.remove()

@@ -1,12 +1,13 @@
 """Shared stage execution helpers for the resumable workflow."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import perf_counter
 
 from loguru import logger
 
 from project import Project, ProgressStage
+from services.progress import NoopProgressReporter
 from .timing import format_elapsed
 
 
@@ -15,10 +16,12 @@ class StageSpec:
     """Log and progress metadata for one resumable workflow stage."""
 
     stage: ProgressStage
+    key: str
     start_message: str
     complete_message: str
     skipped_message: str
     on_skip: Callable[[], None] | None = None
+    params: dict[str, str] = field(default_factory=dict)
 
 
 class WorkflowRunner:
@@ -30,10 +33,12 @@ class WorkflowRunner:
         project: Project,
         project_id: str,
         break_after: ProgressStage | None,
+        progress: NoopProgressReporter | None = None,
     ) -> None:
         self.project = project
         self.project_id = project_id
         self.break_after = break_after
+        self.progress = progress if progress is not None else NoopProgressReporter()
 
     def run(self, spec: StageSpec, action: Callable[[], None]) -> bool:
         """Run a stage action if incomplete and return whether to stop."""
@@ -41,13 +46,17 @@ class WorkflowRunner:
             if spec.on_skip is not None:
                 spec.on_skip()
             logger.debug(f"Stage skipped: {spec.skipped_message}")
+            self.progress.stage_skipped(spec.key, "already-complete")
             return self._should_stop_after_stage(spec.stage)
 
         logger.info(f"Stage: {spec.start_message} for {self.project_id}")
+        self.progress.stage_started(spec.key, spec.start_message)
         started_at = perf_counter()
         action()
         self.project.mark_progress(spec.stage)
-        elapsed = format_elapsed(perf_counter() - started_at)
+        elapsed_seconds = perf_counter() - started_at
+        self.progress.stage_completed(spec.key, elapsed_seconds)
+        elapsed = format_elapsed(elapsed_seconds)
         logger.success(f"Stage complete: {spec.complete_message} ({elapsed})")
         return self._should_stop_after_stage(spec.stage)
 
@@ -62,6 +71,7 @@ class WorkflowRunner:
         """Run an optional stage when enabled."""
         if not enabled:
             logger.debug(f"Stage skipped: {disabled_message}")
+            self.progress.stage_skipped(spec.key, "disabled")
             return False
         return self.run(spec, action)
 

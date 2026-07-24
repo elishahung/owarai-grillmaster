@@ -14,6 +14,7 @@ import workflow.stages.translation as translation_stage
 import project as project_module
 from project import Project
 from services.elevenlabs.asr import ElevenLabsTranscriptionResult
+from services.progress import NoopProgressReporter
 from services.ytdlp.info import AbemaTalent, TVerTalent, YtDlpVideoInfo
 
 
@@ -239,7 +240,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
 
     def test_successful_project_calls_delivery_with_remix_options(self):
         project = self._build_completed_project_mock()
-        progress = object()
+        progress = NoopProgressReporter()
 
         with (
             patch.object(

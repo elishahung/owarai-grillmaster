@@ -10,6 +10,7 @@ from workflow.timing import format_elapsed
 def _spec(stage: ProgressStage = ProgressStage.DOWNLOADED) -> StageSpec:
     return StageSpec(
         stage=stage,
+        key="download",
         start_message="Downloading video",
         complete_message="Video downloaded",
         skipped_message="Video already downloaded",
@@ -91,7 +92,12 @@ class SideTaskManagerTests(unittest.TestCase):
 
         with (
             patch("workflow.side_tasks.generate_cover") as generate_cover,
-            patch("workflow.side_tasks.perf_counter", side_effect=[1.0, 2.5]),
+            # Three reads: start, the worker done-callback, and join. The
+            # callback/join order is racy, so the last two values are equal.
+            patch(
+                "workflow.side_tasks.perf_counter",
+                side_effect=[1.0, 2.5, 2.5],
+            ),
             patch("workflow.side_tasks.logger") as logger,
         ):
             manager = SideTaskManager(project)
@@ -117,7 +123,10 @@ class SideTaskManagerTests(unittest.TestCase):
             patch(
                 "workflow.side_tasks.apply_date_research_result"
             ) as apply_result,
-            patch("workflow.side_tasks.perf_counter", side_effect=[3.0, 4.0]),
+            patch(
+                "workflow.side_tasks.perf_counter",
+                side_effect=[3.0, 4.0, 4.0],
+            ),
             patch("workflow.side_tasks.logger") as logger,
         ):
             manager = SideTaskManager(project)

@@ -10,9 +10,10 @@ from project import Project
 from services import package as package_module
 from services.package import core as package_core
 from services.package import remix as package_remix
+from services.progress import NoopProgressReporter
 
 
-class FakeProgressReporter:
+class FakeProgressReporter(NoopProgressReporter):
     def __init__(self):
         self.events = []
         self._next_task = 1

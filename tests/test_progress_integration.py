@@ -18,12 +18,12 @@ from services.translate.errors import (
 from services.translate.facade import Translate, TranslationRequest
 from services.translate.pre_pass.pre_pass import PrePassResult
 from services.media import MediaProcessor
-from services.progress import RichProgressReporter
+from services.progress import NoopProgressReporter, RichProgressReporter
 from services.srt import SrtBlock, parse_srt
 from rich.console import Console
 
 
-class FakeProgressReporter:
+class FakeProgressReporter(NoopProgressReporter):
     def __init__(self):
         self.events = []
         self._next_task = 1
@@ -76,6 +76,38 @@ class FakeProgressReporter:
         self, index: int, message: str, retries: int = 0, cost: float = 0.0
     ):
         self.events.append(("chunk_failed", index, message, retries, cost))
+
+    def pipeline_started(self, project, plan):
+        self.events.append(
+            ("pipeline_started", [entry.key for entry in plan])
+        )
+
+    def stage_started(self, key: str, label: str):
+        self.events.append(("stage_started", key))
+
+    def stage_completed(self, key, elapsed_seconds, result=None):
+        self.events.append(("stage_completed", key))
+
+    def stage_skipped(self, key: str, reason: str):
+        self.events.append(("stage_skipped", key, reason))
+
+    def side_task_started(self, key: str, label: str):
+        self.events.append(("side_task_started", key))
+
+    def side_task_completed(self, key, elapsed_seconds, result=None):
+        self.events.append(("side_task_completed", key))
+
+    def side_task_failed(self, key: str, message: str):
+        self.events.append(("side_task_failed", key))
+
+    def side_task_skipped(self, key: str, reason: str):
+        self.events.append(("side_task_skipped", key, reason))
+
+    def pipeline_completed(self):
+        self.events.append(("pipeline_completed",))
+
+    def pipeline_failed(self, message: str):
+        self.events.append(("pipeline_failed", message))
 
 
 class WorkflowProgressTests(unittest.TestCase):
@@ -131,6 +163,24 @@ class WorkflowProgressTests(unittest.TestCase):
             patch.object(translation_stage, "Translate") as gemini_cls,
             patch.object(workflow_api.settings, "archived_path", None),
             patch.object(workflow_api.settings, "package_path", None),
+            # Pin the optional-stage toggles so the expected event list does
+            # not depend on the local .env.
+            patch.object(
+                workflow_api.settings, "enable_postprocess_refine", False
+            ),
+            patch.object(
+                workflow_api.settings,
+                "enable_postprocess_glossary_check",
+                False,
+            ),
+            patch.object(
+                workflow_api.settings, "enable_cover_generation", False
+            ),
+            patch.object(
+                workflow_api.settings,
+                "enable_broadcast_date_agent_fallback",
+                False,
+            ),
         ):
             gemini_cls.return_value.translate_chunks.return_value = summary
             workflow_module.process_project("demo", progress=progress)
@@ -142,7 +192,47 @@ class WorkflowProgressTests(unittest.TestCase):
             ],
             progress,
         )
-        self.assertEqual(progress.events, [])
+        # All stages except chunk translation are cached/disabled on this
+        # project mock, so the reporter sees only lifecycle events — no
+        # start_stage/advance bars.
+        self.assertEqual(
+            progress.events,
+            [
+                (
+                    "pipeline_started",
+                    [
+                        "metadata",
+                        "download",
+                        "combine",
+                        "audio",
+                        "asr",
+                        "srt",
+                        "prepass",
+                        "chunks",
+                        "refine",
+                        "glossary",
+                        "finalize",
+                        "date",
+                        "cover",
+                    ],
+                ),
+                ("stage_skipped", "metadata", "already-complete"),
+                ("side_task_skipped", "date", "disabled"),
+                ("stage_skipped", "download", "already-complete"),
+                ("side_task_skipped", "cover", "disabled"),
+                ("stage_skipped", "combine", "already-complete"),
+                ("stage_skipped", "audio", "already-complete"),
+                ("stage_skipped", "asr", "already-complete"),
+                ("stage_skipped", "srt", "already-complete"),
+                ("stage_skipped", "prepass", "already-complete"),
+                ("stage_started", "chunks"),
+                ("stage_completed", "chunks"),
+                ("stage_skipped", "refine", "disabled"),
+                ("stage_skipped", "glossary", "disabled"),
+                ("stage_skipped", "finalize", "already-complete"),
+                ("pipeline_completed",),
+            ],
+        )
 
 
 class GeminiProgressTests(unittest.TestCase):

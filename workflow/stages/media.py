@@ -4,12 +4,15 @@ from loguru import logger
 
 from project import Project
 from services.media import MediaProcessor
+from services.progress import NoopProgressReporter
 from services.ytdlp import download_video, normalize_official_subtitle
 from settings import settings
 
 
-def download_project_video(project: Project) -> None:
-    download_video(project.source_url, project.project_path)
+def download_project_video(
+    project: Project, progress: NoopProgressReporter | None = None
+) -> None:
+    download_video(project.source_url, project.project_path, progress=progress)
 
 
 def process_video(

@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import workflow.delivery as delivery
+from services.progress import NoopProgressReporter
 
 
 class WorkflowDeliveryTests(unittest.TestCase):
@@ -11,7 +12,7 @@ class WorkflowDeliveryTests(unittest.TestCase):
         project.project_path = Path("projects/demo")
         project.archive.return_value = Path("archive/demo")
         project.total_cost = 1.25
-        progress = object()
+        progress = NoopProgressReporter()
 
         with (
             patch.object(delivery.settings, "archived_path", Path("archive")),

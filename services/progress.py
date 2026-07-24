@@ -6,6 +6,7 @@ import os
 import sys
 import threading
 from contextlib import contextmanager
+from dataclasses import dataclass, field
 from types import TracebackType
 from typing import Any
 
@@ -23,8 +24,31 @@ from rich.progress import (
 )
 
 
+@dataclass(frozen=True)
+class PlannedStage:
+    """One entry of the run plan announced via ``pipeline_started``.
+
+    ``key`` is a stable short identifier (e.g. "download", "chunks", "cover")
+    used to correlate later stage/side-task events with this plan entry.
+    """
+
+    key: str
+    label: str
+    params: dict[str, str] = field(default_factory=dict)
+    kind: str = "stage"  # "stage" | "side_task"
+    enabled: bool = True
+
+
 class NoopProgressReporter:
-    """Progress reporter implementation for non-interactive runs and tests."""
+    """Progress reporter implementation for non-interactive runs and tests.
+
+    Also defines the full reporter contract: subclasses (Rich, TUI, test
+    fakes) inherit no-op defaults for every event they do not care about.
+    """
+
+    # True only for reporters that own the whole terminal screen (full-screen
+    # TUI); services use it to avoid writing raw output to stdout/stderr.
+    owns_screen: bool = False
 
     def __enter__(self) -> "NoopProgressReporter":
         return self
@@ -58,6 +82,46 @@ class NoopProgressReporter:
     @contextmanager
     def suspend(self):
         yield
+
+    # ---- structured pipeline lifecycle events (all optional to consume) ----
+
+    def pipeline_started(
+        self, project: Any, plan: list[PlannedStage]
+    ) -> None:
+        return None
+
+    def stage_started(self, key: str, label: str) -> None:
+        return None
+
+    def stage_completed(
+        self, key: str, elapsed_seconds: float, result: str | None = None
+    ) -> None:
+        return None
+
+    def stage_skipped(self, key: str, reason: str) -> None:
+        """``reason`` is "already-complete" (resume) or "disabled"."""
+        return None
+
+    def side_task_started(self, key: str, label: str) -> None:
+        return None
+
+    def side_task_completed(
+        self, key: str, elapsed_seconds: float, result: str | None = None
+    ) -> None:
+        return None
+
+    def side_task_failed(self, key: str, message: str) -> None:
+        return None
+
+    def side_task_skipped(self, key: str, reason: str) -> None:
+        """``reason`` is "already-complete" or "disabled"."""
+        return None
+
+    def pipeline_completed(self) -> None:
+        return None
+
+    def pipeline_failed(self, message: str) -> None:
+        return None
 
     def chunk_started(
         self, index: int, total: int, from_index: int, to_index: int

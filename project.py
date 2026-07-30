@@ -15,6 +15,7 @@ from loguru import logger
 from settings import settings
 import re
 from urllib.parse import urlparse, parse_qs
+from services.paths import fit_dir_name
 from services.ytdlp.info import SourceTalentInfo, YtDlpVideoInfo
 
 PROJECT_ROOT_NAME = "projects"
@@ -43,6 +44,15 @@ CHUNKS_CACHE_DIR_NAME = ".chunks"
 PRE_PASS_CACHE_DIR_NAME = ".pre_pass"
 REFINE_CACHE_DIR_NAME = ".refine"
 GLOSSARY_CHECK_CACHE_DIR_NAME = ".glossary_check"
+
+# Path units to keep free inside a project directory for its own contents,
+# counting the leading separator. The deepest artifact is the structural-fix
+# workspace (`/.chunks/responses/chunk_0001-0042_fix/source.srt`, ~49 units);
+# the rest is headroom for files the repair agent writes in that workspace.
+PROJECT_INNER_PATH_RESERVE = 80
+
+# Package output is flat — the longest entry is `/poster.cover.png`.
+PACKAGE_INNER_PATH_RESERVE = 24
 
 
 class ProgressStage(str, Enum):
@@ -390,8 +400,7 @@ class Project(BaseModel):
             logger.warning("Archived path is not set, skipping archiving")
             return None
 
-        archived_root = settings.archived_path
-        archived_path = archived_root / self.archive_subpath
+        archived_path = self.archive_dir(settings.archived_path)
 
         if not self.project_path.exists():
             logger.error(
@@ -471,33 +480,61 @@ class Project(BaseModel):
         raise ValueError(f"Invalid video source: {self.source}")
 
     @property
+    def deliverable_stem(self) -> str:
+        """Identity part of the deliverable name: `YYMMDD_{id}`, or `{id}` when undated.
+
+        Never shortened by path fitting, so a deliverable directory always
+        traces back to its source video even under a deep output root.
+        """
+        if self.broadcast_date is None:
+            return self.id
+        return f"{self.broadcast_date:%y%m%d}_{self.id}"
+
+    @property
     def deliverable_name(self) -> str:
-        """Directory name used by package output and as the archive leaf dir.
+        """Full directory name for package output and the archive leaf dir.
 
         Prefixes the announced broadcast date as YYMMDD when known, so
         deliverables sort chronologically; older projects without the date
-        keep the plain `{id}_{name}` form.
+        keep the plain `{id}_{name}` form. This is the untrimmed form — the
+        name actually created on disk comes from `archive_dir` / `package_dir`,
+        which shorten `name` to fit the platform path limit.
         """
-        base = f"{self.id}_{self.name}"
-        if self.broadcast_date is None:
-            return base
-        return f"{self.broadcast_date:%y%m%d}_{base}"
+        return f"{self.deliverable_stem}_{self.name}"
 
     @property
-    def archive_subpath(self) -> Path:
-        """Archive location relative to ARCHIVED_PATH.
+    def archive_group_subpath(self) -> Path:
+        """Shared parent directories under ARCHIVED_PATH.
 
-        Dated projects are grouped under YY/MM subdirectories
-        (e.g. 26/05/260503_{id}_{name}); undated projects fall back to
-        etc/{id}_{name}. Package output does NOT use this — it stays flat
-        under PACKAGE_PATH/{deliverable_name}.
+        Dated projects are grouped under YY/MM subdirectories (e.g. 26/05);
+        undated projects fall back to etc. Package output does NOT nest — it
+        stays flat under PACKAGE_PATH.
         """
         if self.broadcast_date is None:
-            return Path("etc") / self.deliverable_name
-        return (
-            Path(f"{self.broadcast_date:%y}")
-            / f"{self.broadcast_date:%m}"
-            / self.deliverable_name
+            return Path("etc")
+        return Path(f"{self.broadcast_date:%y}") / f"{self.broadcast_date:%m}"
+
+    def archive_dir(self, archived_root: Path) -> Path:
+        """Archive destination for this project under `archived_root`.
+
+        The leaf directory name is shortened as needed so that the project's
+        own nested artifacts still fit the platform path limit.
+        """
+        parent = archived_root / self.archive_group_subpath
+        return parent / fit_dir_name(
+            parent=parent,
+            keep=self.deliverable_stem,
+            tail=self.name,
+            reserve=PROJECT_INNER_PATH_RESERVE,
+        )
+
+    def package_dir(self, package_root: Path) -> Path:
+        """Package destination for this project (flat under `package_root`)."""
+        return package_root / fit_dir_name(
+            parent=package_root,
+            keep=self.deliverable_stem,
+            tail=self.name,
+            reserve=PACKAGE_INNER_PATH_RESERVE,
         )
 
     # Files management

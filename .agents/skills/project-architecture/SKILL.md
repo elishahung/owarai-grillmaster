@@ -6,7 +6,7 @@ description: >-
   `project.py`, settings/`.env`/ModelSpec in `settings.py`, the Typer CLI in
   `main.py`, and the supporting services (`services/srt/`, `services/media.py`,
   `services/ytdlp/`, `services/elevenlabs/`, `services/fixed_glossary/`,
-  `services/progress.py`, `services/tui/`). Read this before adding/reordering a pipeline stage,
+  `services/progress.py`, `services/paths.py`, `services/tui/`). Read this before adding/reordering a pipeline stage,
   changing resumability or cost accounting, adding a setting, adding a source
   platform, or any task that spans more than one service module. Deep dives
   live in the sibling skills inference-layer, translate-pipeline, and
@@ -71,12 +71,17 @@ After `FINALIZED` (and only if no `--break-after`): join the async cover and
 date-research futures,
 optionally `archive()` the project dir, then `package_project` (burn-in + cover
 copy / remix). Archive and package are **post-loop**, not stages. Package output
-is flat: `PACKAGE_PATH/{deliverable_name}` — `YYMMDD_{id}_{name}` when
-`broadcast_date` is known (announced on-air/publish date, platform-local
-timezone), plain `{id}_{name}` otherwise. Archive nests by date instead:
-`ARCHIVED_PATH / Project.archive_subpath` = `YY/MM/YYMMDD_{id}_{name}` when
-dated, `etc/{id}_{name}` otherwise; `archive()` only rmtree's the leaf dir,
-never the shared `YY/MM`/`etc` parents.
+is flat: `Project.package_dir(PACKAGE_PATH)` = `{deliverable_name}` —
+`YYMMDD_{id}_{name}` when `broadcast_date` is known (announced on-air/publish
+date, platform-local timezone), plain `{id}_{name}` otherwise. Archive nests by
+date instead: `Project.archive_dir(ARCHIVED_PATH)` =
+`YY/MM/YYMMDD_{id}_{name}`, `etc/{id}_{name}` when undated; `archive()` only
+rmtree's the leaf dir, never the shared `YY/MM`/`etc` parents. Both destinations
+go through `services/paths.fit_dir_name`, which trims `{name}` (never the
+`deliverable_stem` identity prefix) so the deepest nested artifact stays inside
+the platform path limit — Windows MAX_PATH 260, since ffmpeg/yt-dlp are not
+long-path aware. So the on-disk leaf can be shorter than `deliverable_name`;
+always resolve destinations through those two methods.
 
 Key control-flow details that are easy to break:
 
@@ -174,6 +179,11 @@ Key control-flow details that are easy to break:
   dict so the fixup stays first. Downloads auto-retry once after a short
   delay (Abema regularly fails the first attempt); options and the progress
   hook are rebuilt per attempt.
+- `services/paths.py` — platform path-length mechanics (`measure`,
+  `fit_dir_name`, `MAX_PATH_UNITS`/`MAX_COMPONENT_UNITS`). Owns *how* to fit a
+  name; `project.py` owns the per-destination reserves
+  (`PROJECT_INNER_PATH_RESERVE`, `PACKAGE_INNER_PATH_RESERVE`) — bump the
+  project reserve if a deeper artifact path is ever added.
 - `services/elevenlabs/` — ASR client + ASR-JSON → SRT builder. Source SRT
   formatting constants are hard-coded at the top of the builder (maintainer-tuned,
   intentionally not settings).

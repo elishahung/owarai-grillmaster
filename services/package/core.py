@@ -155,7 +155,7 @@ def copy_auxiliary_artifacts(source_root: Path, target_dir: Path) -> None:
 
 
 def _prepare_target_dir(project: Project, package_root: Path) -> Path:
-    target_dir = package_root / project.deliverable_name
+    target_dir = project.package_dir(package_root)
     if target_dir.exists():
         shutil.rmtree(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)

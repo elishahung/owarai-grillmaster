@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import project as project_module
+import services.paths as paths_module
 from project import Project, VideoSource
 from services.ytdlp.info import SourceTalentInfo
 
@@ -113,20 +114,67 @@ class ArchiveLayoutTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(path, ignore_errors=True))
         return path
 
-    def test_archive_subpath_dated_uses_yy_mm_subdirs(self):
+    def test_archive_dir_dated_uses_yy_mm_subdirs(self):
         project = Project(
             id="ep123", name="demo", broadcast_date=date(2026, 5, 3)
         )
+        archived_root = self._make_temp_dir("tmp_archive_dest")
         self.assertEqual(
-            project.archive_subpath,
-            Path("26") / "05" / "260503_ep123_demo",
+            project.archive_dir(archived_root),
+            archived_root / "26" / "05" / "260503_ep123_demo",
         )
 
-    def test_archive_subpath_undated_falls_back_to_etc(self):
+    def test_archive_dir_undated_falls_back_to_etc(self):
         project = Project(id="ep123", name="demo")
+        archived_root = self._make_temp_dir("tmp_archive_dest")
         self.assertEqual(
-            project.archive_subpath, Path("etc") / "ep123_demo"
+            project.archive_dir(archived_root),
+            archived_root / "etc" / "ep123_demo",
         )
+
+    def test_archive_dir_trims_long_name_to_fit_path_limit(self):
+        project = Project(
+            id="ep123", name="a" * 200, broadcast_date=date(2026, 5, 3)
+        )
+        archived_root = self._make_temp_dir("tmp_archive_dest")
+        parent = archived_root / "26" / "05"
+        # Room for the identity prefix plus 30 characters of the title.
+        limit = (
+            len(str(parent))
+            + 1
+            + len(project.deliverable_stem)
+            + 30
+            + project_module.PROJECT_INNER_PATH_RESERVE
+        )
+
+        with patch.object(paths_module, "MAX_PATH_UNITS", limit):
+            archive_dir = project.archive_dir(archived_root)
+
+        # Identity prefix survives, the title is trimmed, and the deepest
+        # nested artifact still fits within the (patched) limit.
+        self.assertEqual(archive_dir.name, f"260503_ep123_{'a' * 29}")
+        self.assertLess(len(archive_dir.name), len(project.deliverable_name))
+        self.assertLessEqual(
+            len(str(parent)) + 1 + len(archive_dir.name),
+            limit - project_module.PROJECT_INNER_PATH_RESERVE,
+        )
+
+    def test_package_dir_drops_name_when_root_leaves_no_room(self):
+        project = Project(
+            id="ep123", name="a" * 200, broadcast_date=date(2026, 5, 3)
+        )
+        package_root = self._make_temp_dir("tmp_package_dest")
+        limit = (
+            len(str(package_root.resolve()))
+            + 1
+            + len(project.deliverable_stem)
+            + project_module.PACKAGE_INNER_PATH_RESERVE
+        )
+
+        with patch.object(paths_module, "MAX_PATH_UNITS", limit):
+            package_dir = project.package_dir(package_root)
+
+        self.assertEqual(package_dir.name, "260503_ep123")
 
     def _archive(self, project: Project) -> Path:
         root = self._make_temp_dir("tmp_archive_projects")
@@ -143,7 +191,7 @@ class ArchiveLayoutTests(unittest.TestCase):
         ):
             result = project.archive()
 
-        self.assertEqual(result, archived_root / project.archive_subpath)
+        self.assertEqual(result, project.archive_dir(archived_root))
         self.assertTrue(result.is_dir())
         self.assertFalse(project_dir.exists())
         return archived_root
@@ -174,7 +222,7 @@ class ArchiveLayoutTests(unittest.TestCase):
 
         # Pre-existing leaf with stale content, plus a sibling project in
         # the same YY/MM dir that must survive the rmtree.
-        leaf = archived_root / project.archive_subpath
+        leaf = project.archive_dir(archived_root)
         leaf.mkdir(parents=True, exist_ok=True)
         (leaf / "stale.txt").write_text("old", encoding="utf-8")
         sibling = leaf.parent / "260510_other_show"

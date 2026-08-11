@@ -76,6 +76,10 @@ Backend runtime gotchas:
   Windows, killpg on POSIX) — plain `subprocess.run(timeout=)` kills only the
   cmd.exe shim and then blocks forever draining pipes the hung node
   grandchild still holds; do not revert to it.
+- `claude_sdk.py` preserves structured error details from the stream before the
+  SDK replaces them with its opaque trailing exception: HTTP 401 includes the
+  subscription re-login command, 429 remains `ClaudeSDKRateLimitError`, and
+  other API failures retain their HTTP status and provider message.
 - `gemini_agy.py` (Antigravity CLI) **must run under a pty** (`pywinpty` on
   Windows, stdlib `pty` on POSIX) — `agy -p` drops stdout on a non-TTY — and
   stages the prompt (and images) into a temporary workspace file referenced by

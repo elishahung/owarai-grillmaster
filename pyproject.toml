@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Japanese variety show transcription"
 requires-python = ">=3.13"
 dependencies = [
-    "claude-agent-sdk>=0.2.104",
+    "claude-agent-sdk>=0.2.135",
     "elevenlabs>=2.24.0",
     "ffmpeg-python>=0.2.0",
     "google-genai>=1.60.0",

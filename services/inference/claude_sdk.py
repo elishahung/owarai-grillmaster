@@ -141,10 +141,10 @@ def run_claude_sdk_exec(
         f"images={len(images or [])} timeout={effective_timeout}s"
     )
 
-    # Populated mid-stream if the CLI reports a 429. Checked after the loop so
-    # the limit is surfaced as ClaudeSDKRateLimitError instead of the opaque
-    # "returned an error result: success" the SDK raises on the trailing exit.
+    # Populated mid-stream before the SDK replaces the structured result with
+    # the opaque "returned an error result: success" exception on exit.
     rate_limit: dict[str, str] = {}
+    result_error: dict[str, str | int] = {}
 
     async def _collect() -> str:
         final_message = ""
@@ -154,12 +154,18 @@ def run_claude_sdk_exec(
                 if info is not None and info.status == "rejected":
                     rate_limit.setdefault("text", _rate_limit_text(info))
             elif isinstance(message, ResultMessage):
-                if (
-                    message.is_error
-                    and getattr(message, "api_error_status", None) == 429
-                    and message.result
-                ):
-                    rate_limit["text"] = message.result
+                if message.is_error:
+                    status = getattr(message, "api_error_status", None)
+                    detail = message.result or "; ".join(message.errors or [])
+                    if status == 429:
+                        if detail:
+                            rate_limit["text"] = detail
+                    else:
+                        if status is not None:
+                            result_error["status"] = status
+                        result_error["subtype"] = message.subtype
+                        if detail:
+                            result_error["text"] = detail
             elif isinstance(message, AssistantMessage):
                 text = "".join(
                     block.text
@@ -171,6 +177,10 @@ def run_claude_sdk_exec(
                 if getattr(message, "error", None) == "rate_limit":
                     if text:
                         rate_limit["text"] = text
+                elif error_code := getattr(message, "error", None):
+                    result_error.setdefault("code", error_code)
+                    if text:
+                        result_error.setdefault("text", text)
                 elif text:
                     final_message = text
         return final_message
@@ -194,6 +204,10 @@ def run_claude_sdk_exec(
             raise ClaudeSDKRateLimitError(
                 f"Claude rate limit hit: {rate_limit['text']}"
             ) from exc
+        if result_error:
+            raise ClaudeSDKExecError(
+                _result_error_text(result_error)
+            ) from exc
         raise ClaudeSDKExecError(
             f"claude-agent-sdk query failed: {exc}"
         ) from exc
@@ -204,6 +218,8 @@ def run_claude_sdk_exec(
         raise ClaudeSDKRateLimitError(
             f"Claude rate limit hit: {rate_limit['text']}"
         )
+    if result_error:
+        raise ClaudeSDKExecError(_result_error_text(result_error))
 
     if output_last_message_path is not None:
         capture_path = output_last_message_path.resolve()
@@ -213,6 +229,31 @@ def run_claude_sdk_exec(
     # The final message is logged centrally by `run_inference` (one site for
     # every backend, with middle-truncation), not here.
     return final_message
+
+
+def _result_error_text(error: dict[str, str | int]) -> str:
+    """Render a structured Claude result error as an actionable message."""
+    status = error.get("status")
+    code = error.get("code")
+    subtype = error.get("subtype")
+    detail = error.get("text")
+
+    if status == 401:
+        prefix = "Claude authentication failed (HTTP 401)"
+        suffix = " Run `claude auth login --claudeai` to re-authenticate."
+    elif status is not None:
+        prefix = f"Claude API request failed (HTTP {status})"
+        suffix = ""
+    elif code:
+        prefix = f"Claude Code error ({code})"
+        suffix = ""
+    else:
+        prefix = f"Claude Code returned an error result ({subtype or 'unknown'})"
+        suffix = ""
+
+    if detail:
+        return f"{prefix}: {detail}{suffix}"
+    return f"{prefix}.{suffix}".rstrip()
 
 
 def _rate_limit_text(info) -> str:

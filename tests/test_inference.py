@@ -400,6 +400,83 @@ class ClaudeCommandTests(unittest.TestCase):
         self.assertEqual(captured["prompt"], "hi")
         self.assertEqual(captured["effort"], "xhigh")
 
+    def test_claude_surfaces_authentication_error_result(self):
+        import claude_agent_sdk
+        import services.inference.claude_sdk as claude
+
+        async def fake_query(*, prompt, options):
+            yield claude_agent_sdk.ResultMessage(
+                subtype="success",
+                duration_ms=100,
+                duration_api_ms=50,
+                is_error=True,
+                num_turns=1,
+                session_id="session",
+                result=(
+                    "Failed to authenticate. API Error: 401 OAuth access "
+                    "token has expired."
+                ),
+                api_error_status=401,
+            )
+            raise Exception("Claude Code returned an error result: success")
+
+        with patch.object(claude_agent_sdk, "query", fake_query):
+            with self.assertRaisesRegex(
+                claude.ClaudeSDKExecError,
+                r"Claude authentication failed \(HTTP 401\).*"
+                r"claude auth login --claudeai",
+            ):
+                claude.run_claude_sdk_exec(prompt="hi", cwd=Path("."))
+
+    def test_claude_surfaces_other_api_error_result(self):
+        import claude_agent_sdk
+        import services.inference.claude_sdk as claude
+
+        async def fake_query(*, prompt, options):
+            yield claude_agent_sdk.ResultMessage(
+                subtype="success",
+                duration_ms=100,
+                duration_api_ms=50,
+                is_error=True,
+                num_turns=1,
+                session_id="session",
+                result="The selected model is not available.",
+                api_error_status=403,
+            )
+            raise Exception("Claude Code returned an error result: success")
+
+        with patch.object(claude_agent_sdk, "query", fake_query):
+            with self.assertRaisesRegex(
+                claude.ClaudeSDKExecError,
+                r"Claude API request failed \(HTTP 403\): "
+                r"The selected model is not available\.",
+            ):
+                claude.run_claude_sdk_exec(prompt="hi", cwd=Path("."))
+
+    def test_claude_keeps_rate_limit_error_specialized(self):
+        import claude_agent_sdk
+        import services.inference.claude_sdk as claude
+
+        async def fake_query(*, prompt, options):
+            yield claude_agent_sdk.ResultMessage(
+                subtype="success",
+                duration_ms=100,
+                duration_api_ms=50,
+                is_error=True,
+                num_turns=1,
+                session_id="session",
+                result="Session limit reached; resets at midnight.",
+                api_error_status=429,
+            )
+            raise Exception("Claude Code returned an error result: success")
+
+        with patch.object(claude_agent_sdk, "query", fake_query):
+            with self.assertRaisesRegex(
+                claude.ClaudeSDKRateLimitError,
+                "Session limit reached",
+            ):
+                claude.run_claude_sdk_exec(prompt="hi", cwd=Path("."))
+
 
 if __name__ == "__main__":
     unittest.main()

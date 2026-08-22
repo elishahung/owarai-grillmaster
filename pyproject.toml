@@ -17,5 +17,5 @@ dependencies = [
     "textual>=6.0.0",
     "textual-image>=0.8.0",
     "typer>=0.21.1",
-    "yt-dlp>=2026.6.9",
+    "yt-dlp>=2026.8.19",
 ]

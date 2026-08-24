@@ -16,7 +16,7 @@ from loguru import logger
 from pydantic import BaseModel
 
 from settings import settings
-from .base import DEFAULT_TIMEOUT_SECS, InferenceError
+from .base import InferenceError, default_timeout_secs
 from .result import InferenceResult
 
 
@@ -185,7 +185,7 @@ def run_gemini_api(
     thinking_level = resolve_gemini_thinking_level(reasoning_effort)
     # The genai SDK takes its per-request timeout in milliseconds; the rest of
     # the inference layer speaks seconds, so convert here.
-    timeout_secs = timeout or DEFAULT_TIMEOUT_SECS
+    timeout_secs = timeout or default_timeout_secs()
     config_kwargs = dict(
         system_instruction=system_prompt,
         safety_settings=_safety_off(),

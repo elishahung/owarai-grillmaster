@@ -142,6 +142,7 @@ AGENT_PREPASS_MODEL=gemini-cli/gemini-3.1-pro-preview/high  # backend: gemini-ap
 AGENT_CHUNK_MODEL=gemini-cli/gemini-3.1-pro-preview/high    # "backend/model" 或 "backend/model/effort"
 AGENT_POSTPROCESS_MODEL=codex/gpt-5.6-sol/extra             # 後處理（refine/glossary）：codex / claude / gemini-cli / gemini-agy
 AGENT_COMMON_MODEL=codex/gpt-5.5/medium                     # 輕量工具 agent（chunk 結構修正、播出日調查）；封面固定用 codex 並沿用此 effort
+AGENT_TIMEOUT_MINUTES=40                                    # 單次模型呼叫逾時（分鐘），所有 backend 共用；高 effort 階段跑太久可調高
 
 # 可選：pre-pass 圖片抽樣與固定譯名表
 PREPASS_FRAME_INTERVAL_SECONDS=120     # pre-pass 全片圖片抽樣頻率（每幾秒一張，另外固定包含影片首尾幀）

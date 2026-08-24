@@ -269,6 +269,32 @@ class GeminiApiReasoningTests(unittest.TestCase):
         self.assertEqual(resolve_gemini_thinking_level("extra").name, "HIGH")
 
 
+class TimeoutSettingTests(unittest.TestCase):
+    """The shared per-invocation timeout comes from AGENT_TIMEOUT_MINUTES."""
+
+    def test_default_timeout_follows_setting(self):
+        from types import SimpleNamespace
+
+        import services.inference.base as base
+        import services.inference.codex as codex
+
+        with patch.object(base, "settings", SimpleNamespace(agent_timeout_minutes=7)):
+            self.assertEqual(base.default_timeout_secs(), 7 * 60)
+
+            captured = {}
+
+            def fake_run(cmd, **kwargs):
+                captured["timeout"] = kwargs["timeout"]
+                return SimpleNamespace(returncode=0, stdout="done", stderr="")
+
+            with (
+                patch.object(codex.shutil, "which", return_value="codex"),
+                patch.object(codex, "run_cli", side_effect=fake_run),
+            ):
+                codex.run_codex_exec(prompt="hi", cwd=Path("."))
+        self.assertEqual(captured["timeout"], 7 * 60)
+
+
 class CodexCommandTests(unittest.TestCase):
     """codex argv carries the passed model + the mapped reasoning effort."""
 

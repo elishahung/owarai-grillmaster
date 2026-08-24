@@ -22,7 +22,7 @@ from pathlib import Path
 from loguru import logger
 
 from .base import (
-    DEFAULT_TIMEOUT_SECS,
+    default_timeout_secs,
     InferenceError,
     InferenceNotInstalledError,
 )
@@ -115,7 +115,7 @@ def run_claude_sdk_exec(
         ) from exc
 
     abs_cwd = cwd.resolve()
-    effective_timeout = timeout or DEFAULT_TIMEOUT_SECS
+    effective_timeout = timeout or default_timeout_secs()
     effective_model = model or _DEFAULT_MODEL
     effective_effort = resolve_claude_reasoning_effort(
         reasoning_effort or _DEFAULT_REASONING_EFFORT

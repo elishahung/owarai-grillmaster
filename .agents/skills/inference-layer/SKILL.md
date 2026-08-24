@@ -56,6 +56,10 @@ Design rules baked into this layer — preserve them:
   and runs the validate-and-repair loop centrally. Each backend's only job is
   `prompt → text`. The retry cap is the hardcoded `MAX_SCHEMA_RETRIES` constant
   there (not a setting).
+- **The per-invocation timeout is one setting for every backend**:
+  `base.default_timeout_secs()` reads `AGENT_TIMEOUT_MINUTES` (default 40 min)
+  per call — never cache it in a module constant. A `timeout=` argument
+  overrides it.
 - **Reasoning effort is repo-normalized**: callers pass
   `reasoning_effort` as low/medium/high/extra. Backend wrappers map that to
   their real values: Codex and Claude use `xhigh` for repo-level `extra`;

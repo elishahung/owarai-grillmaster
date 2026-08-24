@@ -27,9 +27,9 @@ from pydantic import BaseModel
 from settings import settings
 
 from .base import (
-    DEFAULT_TIMEOUT_SECS,
     InferenceError,
     InferenceNotInstalledError,
+    default_timeout_secs,
     run_cli,
 )
 from .schema_enforce import extract_json_object
@@ -41,7 +41,7 @@ from .tools import frame_tool_command_prefixes
 _MAX_MEDIA_FILE_MB = 20
 
 # Gemini CLI executable name. Hardcoded maintainer constant. The per-invocation
-# timeout is shared across backends (`DEFAULT_TIMEOUT_SECS` in `base`).
+# timeout is shared across backends (`default_timeout_secs` in `base`).
 _CLI_EXECUTABLE = "gemini"
 
 # API-key env vars the Gemini CLI would prefer over cached OAuth. Scrubbed so
@@ -297,7 +297,7 @@ def run_gemini_cli(
                 f"({size / 1024 / 1024:.1f} MB): {media}"
             )
 
-    effective_timeout = timeout or DEFAULT_TIMEOUT_SECS
+    effective_timeout = timeout or default_timeout_secs()
 
     workspace: Path | None = None
     try:

@@ -35,9 +35,9 @@ from loguru import logger
 from pydantic import BaseModel
 
 from .base import (
-    DEFAULT_TIMEOUT_SECS,
     InferenceError,
     InferenceNotInstalledError,
+    default_timeout_secs,
 )
 
 # Hardcoded per-file size guard for staged images, mirroring gemini_cli.
@@ -361,7 +361,7 @@ def run_gemini_agy(
                 f"({size / 1024 / 1024:.1f} MB): {img}"
             )
 
-    effective_timeout = timeout or DEFAULT_TIMEOUT_SECS
+    effective_timeout = timeout or default_timeout_secs()
 
     workspace = Path(tempfile.mkdtemp(prefix="gemini_agy_"))
     try:

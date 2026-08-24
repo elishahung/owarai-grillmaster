@@ -102,9 +102,9 @@ class Settings(BaseSettings):
     # that backend understands). Effort is mapped per client (gemini
     # thinking_level, codex model_reasoning_effort, claude effort); backends
     # without an extra-high setting clamp "extra" to their highest supported
-    # value. The schema validate-and-repair cap is NOT configurable — it is the
-    # hardcoded MAX_SCHEMA_RETRIES constant in
-    # services/inference/schema_enforce.py.
+    # value. AGENT_TIMEOUT_MINUTES bounds every single invocation. The schema
+    # validate-and-repair cap is NOT configurable — it is the hardcoded
+    # MAX_SCHEMA_RETRIES constant in services/inference/schema_enforce.py.
     agent_gemini_api_key: str | None = Field(
         default=None,
         description="API key for Google Gemini. Required only when a stage uses the 'gemini-api' backend.",
@@ -112,6 +112,12 @@ class Settings(BaseSettings):
     agent_gemini_gcp_project: str | None = Field(
         default=None,
         description="Optional Google Cloud project ID injected as GOOGLE_CLOUD_PROJECT for the gemini-cli subprocess only.",
+    )
+
+    agent_timeout_minutes: int = Field(
+        default=40,
+        ge=1,
+        description="Per-invocation timeout in minutes, shared by every inference backend (agent subprocess/query timeout; converted to milliseconds for gemini-api). Raise it when a high-effort stage legitimately runs longer.",
     )
 
     agent_prepass_model: ModelSpecField = Field(

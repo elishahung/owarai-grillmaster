@@ -21,12 +21,19 @@ import signal
 import subprocess
 from enum import StrEnum
 
-# Per-invocation timeout shared by every backend. A maintainer constant, not
-# per-deployment configuration — the agent backends (gemini-cli / codex /
-# claude) pass it straight to their subprocess/query timeout; gemini-api
-# converts it to the genai SDK's milliseconds. 40 minutes covers the slowest
-# high-effort chunk translations.
-DEFAULT_TIMEOUT_SECS = 40 * 60
+from settings import settings
+
+
+def default_timeout_secs() -> int:
+    """Per-invocation timeout shared by every backend, from AGENT_TIMEOUT_MINUTES.
+
+    The agent backends (gemini-cli / gemini-agy / codex / claude) pass it
+    straight to their subprocess/query timeout; gemini-api converts it to the
+    genai SDK's milliseconds. Resolved per call rather than captured in a
+    module constant, so the configured value is honoured wherever a backend
+    falls back to the default.
+    """
+    return settings.agent_timeout_minutes * 60
 
 
 class Backend(StrEnum):

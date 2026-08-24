@@ -9,7 +9,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from .base import DEFAULT_TIMEOUT_SECS, InferenceError, run_cli
+from .base import InferenceError, default_timeout_secs, run_cli
 
 
 class CodexInvocationError(InferenceError):
@@ -67,7 +67,7 @@ def run_codex_exec(
         )
 
     abs_cwd = cwd.resolve()
-    effective_timeout = timeout or DEFAULT_TIMEOUT_SECS
+    effective_timeout = timeout or default_timeout_secs()
     effective_model = model or _DEFAULT_MODEL
     effective_effort = resolve_codex_reasoning_effort(
         reasoning_effort or _DEFAULT_REASONING_EFFORT

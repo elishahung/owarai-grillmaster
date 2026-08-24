@@ -23,9 +23,12 @@ Agent-written SRTs may carry a UTF-8 BOM (Codex does this); every reader of
 finalize — must read with `utf-8-sig`.
 
 - `refine.py` — polish TC subtitles (`AGENT_POSTPROCESS_MODEL`).
+- **Resume rule for both SRT passes**: the progress flag in `project.json` is
+  the only completion marker, so entering the stage means the last attempt
+  died (timeout/crash/failed validation). An already-present output SRT is
+  therefore deleted and the agent re-runs — never reuse it on file existence.
 - `glossary_check.py` — full-text terminology/factual consistency check after
-  refine. Runs when enabled unless `video.cht.glossary_checked.srt` already
-  exists, treats Latin/kana blocks only as priority hints, may use web search
+  refine. Treats Latin/kana blocks only as priority hints, may use web search
   or on-demand frames, and may correct `.pre_pass/pre_pass.json` after
   preserving the original as `.pre_pass/pre_pass.raw.json` (backup happens
   once; the updated pre-pass must still validate against `PrePassResult`). Its

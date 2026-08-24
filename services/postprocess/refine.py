@@ -28,17 +28,22 @@ class RefinementValidationError(RuntimeError):
 
 def refine_subtitles(project: Project) -> None:
     """Run agent refinement and structurally validate the output."""
-    if project.refined_srt_path.exists():
-        logger.info(
-            f"Refined SRT already exists, skipping agent invocation: "
-            f"{project.refined_srt_path}"
-        )
-        return
-
     if not project.translated_path.exists():
         raise RefinementValidationError(
             f"translated SRT missing before refinement: {project.translated_path}"
         )
+
+    if project.refined_srt_path.exists():
+        # `is_srt_refined` in project.json is the only completion marker, and
+        # the workflow skips this stage entirely once it is set. Reaching here
+        # means the previous attempt did NOT finish (agent timeout, crash,
+        # failed validation), so the file is that attempt's half-written
+        # output — discard it and refine again.
+        logger.warning(
+            f"Discarding refined SRT from an unfinished run: "
+            f"{project.refined_srt_path}"
+        )
+        project.refined_srt_path.unlink()
 
     project.refine_cache_dir.mkdir(parents=True, exist_ok=True)
 

@@ -208,17 +208,26 @@ class GlossaryCheckTests(unittest.TestCase):
 
         run_codex.assert_called_once()
 
-    def test_existing_output_is_idempotent(self):
+    def test_output_from_unfinished_run_is_discarded(self):
         project = self._make_project()
         self._write_refined(project, _KANA_SRT)
+        # Reaching the stage means project.json never got its flag, so this
+        # file belongs to an attempt that died mid-pass.
         project.glossary_checked_srt_path.write_text(
-            _KANA_SRT, encoding="utf-8"
+            "1\n00:00:01,000 --> 00:00:02,000\n這是純中文字幕\n",
+            encoding="utf-8",
         )
 
-        with patch.object(gc, "run_inference") as run_codex:
+        with patch.object(
+            gc, "run_inference", side_effect=self._valid_codex(project)
+        ) as run_codex:
             gc.glossary_check_subtitles(project)
 
-        run_codex.assert_not_called()
+        run_codex.assert_called_once()
+        self.assertEqual(
+            project.glossary_checked_srt_path.read_text(encoding="utf-8"),
+            _KANA_SRT,
+        )
 
     def test_pre_pass_raw_is_created_once_and_not_overwritten(self):
         project = self._make_project()

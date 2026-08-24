@@ -170,22 +170,24 @@ def _srt_text_changed(project: Project) -> bool:
 def glossary_check_subtitles(project: Project) -> None:
     """Run the agent glossary check and structurally validate the output.
 
-    Idempotent on the produced file. This pass always reviews the whole refined
-    SRT when no glossary-checked SRT exists; the Latin/kana detector only
-    provides priority hints for the agent.
+    This pass always reviews the whole refined SRT; the Latin/kana detector
+    only provides priority hints for the agent.
     """
-    if project.glossary_checked_srt_path.exists():
-        logger.info(
-            f"Glossary-checked SRT already exists, skipping agent invocation: "
-            f"{project.glossary_checked_srt_path}"
-        )
-        return
-
     if not project.refined_srt_path.exists():
         raise GlossaryCheckError(
             f"refined SRT missing before glossary check: "
             f"{project.refined_srt_path}"
         )
+
+    if project.glossary_checked_srt_path.exists():
+        # Same rule as refine: `is_glossary_checked` in project.json is the
+        # only completion marker, so an existing file here belongs to an
+        # attempt that never finished. Discard it and check again.
+        logger.warning(
+            f"Discarding glossary-checked SRT from an unfinished run: "
+            f"{project.glossary_checked_srt_path}"
+        )
+        project.glossary_checked_srt_path.unlink()
 
     suspects = _suspect_blocks(parse_srt_file(project.refined_srt_path))
     original_pre_pass = _copy_pre_pass_raw_once(project)

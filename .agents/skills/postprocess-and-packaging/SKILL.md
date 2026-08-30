@@ -77,18 +77,21 @@ refined SRT → translated SRT — first that exists wins.
 
 ## Packaging (`services/package/`)
 
-Post-loop deliverable assembly (not a pipeline stage): burn ASS into the video
-(`core.py`), copy cover and analysis artifacts (`pre_pass.json`, optional
-`refine.md`/`glossary_check.md` — silently skipped when absent), plus a
-`noise`/`remix` packaging path (`noise.py`, `remix.py`). Burn-in itself lives
+Post-loop deliverable assembly (not a pipeline stage): copy cover and analysis
+artifacts (`core.py`), then burn ASS into the video, plus a `noise`/`remix`
+packaging path (`noise.py`, `remix.py`). The copies run **before** the render so
+the folder is inspectable while ffmpeg works; a render failure still deletes the
+whole folder. Analysis output is one `info.json` — title suggestions first, then
+the pre-pass fields — with optional `refine.md`/`glossary_check.md` alongside
+(silently skipped when absent). Burn-in itself lives
 in `services/media.py` (duration-validated; see **project-architecture**).
 
 `titles.py` is the only agent call inside packaging: three TC title candidates
 derived from the source project's `pre_pass.json` (`AGENT_COMMON_MODEL`,
 `schema=TitleSuggestions`, `cwd=None`), cached at `.titles/titles.json` in the
-**source** project (fixed-filename cache; corrupt counts as a miss) and copied
-into the deliverable as `titles.json`. `ENABLE_PACKAGE_TITLE_SUGGESTION` gates
-only generating a missing file — an existing one is always reused and copied.
+**source** project (fixed-filename cache; corrupt counts as a miss) and merged
+into the deliverable's `info.json`. `ENABLE_PACKAGE_TITLE_SUGGESTION` gates
+only generating a missing file — an existing one is always reused and merged.
 Best-effort like the rest of packaging: a failure warns and packaging continues.
 Default package and remix **content** segments share one look recipe
 there (`_PACKAGE_VIDEO_FILTER` / `_PACKAGE_AUDIO_FILTER` /

@@ -1,6 +1,7 @@
 """Package orchestration for finalized projects."""
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -10,12 +11,12 @@ from project import (
     ASS_FILE_NAME,
     GLOSSARY_CHECK_CACHE_DIR_NAME,
     GLOSSARY_CHECK_REPORT_FILE_NAME,
+    INFO_FILE_NAME,
     PROJECT_FILE_NAME,
     PRE_PASS_CACHE_DIR_NAME,
     PRE_PASS_FILE_NAME,
     REFINE_CACHE_DIR_NAME,
     REFINE_REPORT_FILE_NAME,
-    TITLES_FILE_NAME,
     VIDEO_FILE_NAME,
     Project,
 )
@@ -56,6 +57,12 @@ def package_project(
     # they exist before the deliverable is built.
     ensure_titles(source_root)
 
+    # Everything that is a plain file copy lands first: the video render is
+    # the long step, and a deliverable folder that already carries its cover
+    # and analysis artifacts is inspectable while ffmpeg is still running.
+    copy_cover(source_root, target_dir)
+    copy_auxiliary_artifacts(source_root, target_dir)
+
     noise_name = resolve_remix_noise_name(
         requested=remix_noise_name,
         series=project.source_metadata.series,
@@ -85,8 +92,6 @@ def package_project(
         shutil.rmtree(target_dir, ignore_errors=True)
         return
 
-    copy_cover(source_root, target_dir)
-    copy_auxiliary_artifacts(source_root, target_dir)
     logger.success(f"Project packaged to {target_dir}")
 
 
@@ -114,15 +119,7 @@ def package_project_directory(
 
 def copy_auxiliary_artifacts(source_root: Path, target_dir: Path) -> None:
     """Copy analysis artifacts into a package directory."""
-    required_pre_pass = source_root / PRE_PASS_CACHE_DIR_NAME / PRE_PASS_FILE_NAME
-    if required_pre_pass.exists():
-        shutil.copy2(required_pre_pass, target_dir / PRE_PASS_FILE_NAME)
-        logger.info(
-            f"Copied package artifact: "
-            f"{required_pre_pass} -> {target_dir / PRE_PASS_FILE_NAME}"
-        )
-    else:
-        logger.warning(f"Package: pre-pass JSON not found at {required_pre_pass}")
+    write_info(source_root, target_dir)
 
     optional_artifacts = [
         (
@@ -135,7 +132,6 @@ def copy_auxiliary_artifacts(source_root: Path, target_dir: Path) -> None:
             / GLOSSARY_CHECK_REPORT_FILE_NAME,
             "glossary_check.md",
         ),
-        (titles_path(source_root), TITLES_FILE_NAME),
     ]
     for source, target_name in optional_artifacts:
         if not source.exists():
@@ -144,6 +140,49 @@ def copy_auxiliary_artifacts(source_root: Path, target_dir: Path) -> None:
         logger.info(
             f"Copied package artifact: {source} -> {target_dir / target_name}"
         )
+
+
+def write_info(source_root: Path, target_dir: Path) -> None:
+    """Merge the pre-pass briefing and title suggestions into `info.json`.
+
+    Titles lead the file — they are what a human reads first — and the
+    pre-pass fields follow in their own order. Either half may be missing;
+    only an empty merge writes nothing.
+    """
+    info: dict[str, object] = {}
+    titles = _read_json_object(titles_path(source_root))
+    if titles is not None:
+        info.update(titles)
+
+    pre_pass_file = source_root / PRE_PASS_CACHE_DIR_NAME / PRE_PASS_FILE_NAME
+    pre_pass = _read_json_object(pre_pass_file)
+    if pre_pass is None:
+        logger.warning(f"Package: pre-pass JSON unavailable at {pre_pass_file}")
+    else:
+        info.update(pre_pass)
+
+    if not info:
+        return
+    target = target_dir / INFO_FILE_NAME
+    target.write_text(
+        json.dumps(info, ensure_ascii=False, indent=4), encoding="utf-8"
+    )
+    logger.info(f"Wrote package artifact: {target}")
+
+
+def _read_json_object(path: Path) -> dict[str, object] | None:
+    """Load a JSON object; anything unusable counts as absent."""
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        logger.warning(f"Package: ignoring unreadable JSON ({path}): {error}")
+        return None
+    if not isinstance(data, dict):
+        logger.warning(f"Package: ignoring non-object JSON ({path})")
+        return None
+    return data
 
 
 def _prepare_target_dir(project: Project, package_root: Path) -> Path:

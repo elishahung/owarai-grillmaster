@@ -140,11 +140,12 @@ class PackageTitlesTests(unittest.TestCase):
         ):
             package_module.package_project(project, source, package_root)
 
-        packaged = package_root / "demo_show" / "titles.json"
-        self.assertTrue(packaged.exists())
-        self.assertEqual(
-            json.loads(packaged.read_text(encoding="utf-8")), _AGENT_TITLES
-        )
+        packaged = package_root / "demo_show" / "info.json"
+        info = json.loads(packaged.read_text(encoding="utf-8"))
+        # Titles lead the merged file, the pre-pass fields follow.
+        self.assertEqual(list(info), ["titles", "summary"])
+        self.assertEqual(info["titles"], _AGENT_TITLES["titles"])
+        self.assertEqual(info["summary"], "demo")
 
     def test_package_without_titles_still_completes(self):
         source = self._make_source()
@@ -169,6 +170,10 @@ class PackageTitlesTests(unittest.TestCase):
         target = package_root / "demo_show"
         self.assertTrue((target / "video.mp4").exists())
         self.assertFalse((target / "titles.json").exists())
+        self.assertEqual(
+            json.loads((target / "info.json").read_text(encoding="utf-8")),
+            {"summary": "demo"},
+        )
 
 
 if __name__ == "__main__":

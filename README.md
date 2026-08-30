@@ -168,7 +168,7 @@ ENABLE_PACKAGE_TITLE_SUGGESTION=true      # 封裝時若沒有 .titles/titles.js
 ENABLE_OFFICIAL_SUBTITLES=true     # 下載時順抓平台官方 CC 字幕（TVer/Abema 等），作為翻譯的 ground truth 參照
 COOKIES_TXT_PATH=cookies.txt       # 影片來源網站 cookies (供 yt-dlp 使用)
 ARCHIVED_PATH=NAS:\video\ai\     # 歸檔路徑 - 處理完移至 <archived_path>/YY/MM/YYMMDD_<id>_<name>/（YYMMDD 為放送/發布日期，無日期時移至 <archived_path>/etc/<id>_<name>/）
-PACKAGE_PATH=NAS:\video\package\ # 封裝路徑 - 將 ASS 字幕燒錄進影片並複製封面、pre_pass.json、報告與 titles.json 到 <package_path>/YYMMDD_<id>_<name>/（平面，不分子目錄；無日期時省略前綴）
+PACKAGE_PATH=NAS:\video\package\ # 封裝路徑 - 先複製封面、info.json（候選標題 + pre_pass）與報告，再將 ASS 字幕燒錄進影片，輸出到 <package_path>/YYMMDD_<id>_<name>/（平面，不分子目錄；無日期時省略前綴）
 ```
 
 ## 專案結構

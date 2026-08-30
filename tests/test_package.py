@@ -382,8 +382,8 @@ class PackageTests(unittest.TestCase):
         )
         self.assertTrue((target / "cover.png").exists())
         self.assertEqual(
-            (target / "pre_pass.json").read_text(encoding="utf-8"),
-            '{"summary":"demo"}',
+            json.loads((target / "info.json").read_text(encoding="utf-8")),
+            {"summary": "demo"},
         )
         self.assertEqual(
             (target / "refine.md").read_text(encoding="utf-8"),
@@ -393,6 +393,36 @@ class PackageTests(unittest.TestCase):
             (target / "glossary_check.md").read_text(encoding="utf-8"),
             "glossary report",
         )
+
+    def test_cover_and_artifacts_land_before_the_video_render(self):
+        root = self._make_temp_dir()
+        source = root / "source"
+        package_root = root / "package"
+        source.mkdir()
+        (source / "video.mp4").write_text("video", encoding="utf-8")
+        (source / "video.cht.ass").write_text("ass", encoding="utf-8")
+        (source / "poster.cover.png").write_text("cover", encoding="utf-8")
+        (source / ".pre_pass").mkdir()
+        (source / ".pre_pass" / "pre_pass.json").write_text(
+            '{"summary":"demo"}', encoding="utf-8"
+        )
+        project = Project(id="demo", name="show")
+        seen: list[str] = []
+
+        def create_video(**kwargs):
+            seen.extend(
+                sorted(item.name for item in kwargs["output_file"].parent.iterdir())
+            )
+            kwargs["output_file"].write_text("burned", encoding="utf-8")
+
+        with patch.object(
+            package_core.MediaProcessor,
+            "burn_in_subtitles",
+            side_effect=create_video,
+        ):
+            package_module.package_project(project, source, package_root)
+
+        self.assertEqual(seen, ["cover.png", "info.json"])
 
     def test_package_keeps_output_when_auxiliary_artifacts_are_missing(self):
         root = self._make_temp_dir()
@@ -417,7 +447,7 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(
             (target / "video.mp4").read_text(encoding="utf-8"), "burned"
         )
-        self.assertFalse((target / "pre_pass.json").exists())
+        self.assertFalse((target / "info.json").exists())
         self.assertFalse((target / "refine.md").exists())
         self.assertFalse((target / "glossary_check.md").exists())
 
@@ -521,8 +551,8 @@ class PackageTests(unittest.TestCase):
             "remix",
         )
         self.assertEqual(
-            (target / "pre_pass.json").read_text(encoding="utf-8"),
-            '{"summary":"remix"}',
+            json.loads((target / "info.json").read_text(encoding="utf-8")),
+            {"summary": "remix"},
         )
         state = json.loads((noise_dir / "state.json").read_text("utf-8"))
         self.assertEqual(state, {"next_index": 2, "next_seconds": 0})

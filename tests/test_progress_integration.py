@@ -20,6 +20,7 @@ from services.translate.pre_pass.pre_pass import PrePassResult
 from services.media import (
     PACKAGE_LEAD_TRIM_SECONDS,
     MediaProcessor,
+    NoiseCut,
     package_output_duration,
     package_usable_duration,
 )
@@ -654,22 +655,17 @@ class MediaProgressTests(unittest.TestCase):
         self.assertIn("a=0.008", filter_complex)
         self.assertEqual(cmd[cmd.index("-c:v") + 1], "h264_nvenc")
 
-    def test_prepare_noise_reports_existing_and_encoded_chunk_progress(self):
+    def test_encode_noise_segment_cuts_the_source_with_format_only_filters(self):
         root = Path(tempfile.mkdtemp(prefix="noise-progress-test-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
-        noise = root / "sleep.webm"
-        output_dir = root / "sleep"
-        output_dir.mkdir()
+        noise = root / "000.webm"
         noise.write_text("noise", encoding="utf-8")
-        existing = output_dir / "000.mp4"
-        existing.write_text("prepared", encoding="utf-8")
         progress = FakeProgressReporter()
 
         class FakeProcess:
             stdout = iter(
                 [
-                    "out_time_ms=500000\n",
-                    "out_time_ms=1000000\n",
+                    "out_time_ms=30000000\n",
                     "progress=end\n",
                 ]
             )
@@ -678,30 +674,25 @@ class MediaProgressTests(unittest.TestCase):
             def wait(self):
                 return 0
 
-        with (
-            patch.object(MediaProcessor, "get_media_duration", return_value=2.0),
-            patch("services.media.subprocess.Popen", return_value=FakeProcess()) as popen,
-        ):
-            MediaProcessor.prepare_noise_chunks(
-                noise_file=noise,
-                output_dir=output_dir,
-                chunk_duration_seconds=1,
+        with patch(
+            "services.media.subprocess.Popen", return_value=FakeProcess()
+        ) as popen:
+            MediaProcessor.encode_noise_segment(
+                cut=NoiseCut(
+                    source=noise,
+                    start_seconds=20800.0,
+                    duration_seconds=60.0,
+                ),
+                output_file=root / "head.mp4",
                 progress=progress,
+                progress_task=7,
+                progress_description="Noise for video_1.mp4",
             )
 
-        self.assertEqual(
-            progress.events[0],
-            ("start_stage", 1, "Preparing noise", 2),
-        )
-        self.assertIn(
-            ("advance", 1, 1, "Preparing noise 1/2"),
-            progress.events,
-        )
-        self.assertIn(
-            ("advance", 1, 0.5, "Preparing noise 2/2"),
-            progress.events,
-        )
         cmd = popen.call_args.args[0]
+        self.assertEqual(cmd[cmd.index("-ss") + 1], "20800.000")
+        self.assertEqual(cmd[cmd.index("-t") + 1], "60.000")
+        self.assertEqual(cmd[cmd.index("-i") + 1], str(noise))
         filter_complex = cmd[cmd.index("-filter_complex") + 1]
         self.assertIn(MediaProcessor._NOISE_VIDEO_FILTER, filter_complex)
         self.assertIn(MediaProcessor._NOISE_AUDIO_FILTER, filter_complex)
@@ -709,15 +700,19 @@ class MediaProgressTests(unittest.TestCase):
         self.assertNotIn(MediaProcessor._PACKAGE_AUDIO_FILTER, filter_complex)
         self.assertNotIn("anoisesrc=", filter_complex)
         self.assertEqual(cmd[cmd.index("-c:v") + 1], "h264_nvenc")
-        self.assertEqual(progress.events[-1], ("finish", 1, "done"))
+        self.assertEqual(
+            progress.events,
+            [
+                ("advance", 7, 30.0, "Noise for video_1.mp4"),
+                ("advance", 7, 30.0, "Noise for video_1.mp4"),
+            ],
+        )
 
-    def test_prepare_noise_marks_progress_failed_on_ffmpeg_failure(self):
+    def test_encode_noise_segment_raises_on_ffmpeg_failure(self):
         root = Path(tempfile.mkdtemp(prefix="noise-progress-fail-test-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
-        noise = root / "sleep.webm"
-        output_dir = root / "sleep"
+        noise = root / "000.webm"
         noise.write_text("noise", encoding="utf-8")
-        progress = FakeProgressReporter()
 
         class FakeProcess:
             stdout = iter([])
@@ -726,19 +721,18 @@ class MediaProgressTests(unittest.TestCase):
             def wait(self):
                 return 1
 
-        with (
-            patch.object(MediaProcessor, "get_media_duration", return_value=1.0),
-            patch("services.media.subprocess.Popen", return_value=FakeProcess()),
+        with patch(
+            "services.media.subprocess.Popen", return_value=FakeProcess()
         ):
-            with self.assertRaises(Exception):
-                MediaProcessor.prepare_noise_chunks(
-                    noise_file=noise,
-                    output_dir=output_dir,
-                    chunk_duration_seconds=1,
-                    progress=progress,
+            with self.assertRaises(subprocess.CalledProcessError):
+                MediaProcessor.encode_noise_segment(
+                    cut=NoiseCut(
+                        source=noise,
+                        start_seconds=0.0,
+                        duration_seconds=60.0,
+                    ),
+                    output_file=root / "head.mp4",
                 )
-
-        self.assertEqual(progress.events[-1], ("finish", 1, "failed"))
 
     def test_concat_remix_segments_captures_ffmpeg_output_and_suspends_progress(self):
         root = Path(tempfile.mkdtemp(prefix="concat-progress-test-"))
@@ -775,11 +769,16 @@ class MediaProgressTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         video = root / "video.mp4"
         subtitle = root / "video.ass"
-        head = root / "head.mp4"
-        tail = root / "tail.mp4"
+        noise = root / "000.webm"
         output = root / "out.mp4"
-        for path in (video, subtitle, head, tail):
+        for path in (video, subtitle, noise):
             path.write_text("media", encoding="utf-8")
+        head = NoiseCut(
+            source=noise, start_seconds=0.0, duration_seconds=60.0
+        )
+        tail = NoiseCut(
+            source=noise, start_seconds=60.0, duration_seconds=60.0
+        )
         progress = FakeProgressReporter()
 
         def fake_encode(**kwargs):
@@ -791,6 +790,11 @@ class MediaProgressTests(unittest.TestCase):
                 "encode_subtitled_segment",
                 side_effect=fake_encode,
             ),
+            patch.object(
+                MediaProcessor,
+                "encode_noise_segment",
+                side_effect=fake_encode,
+            ) as encode_noise_segment,
             patch.object(MediaProcessor, "concat_remix_segments") as concat,
         ):
             MediaProcessor.build_remix_output(
@@ -807,10 +811,14 @@ class MediaProgressTests(unittest.TestCase):
 
         self.assertIs(concat.call_args.kwargs["progress"], progress)
         concat_inputs = concat.call_args.args[0]
-        self.assertEqual(len(concat_inputs), 3)
-        self.assertEqual(concat_inputs[0], head)
-        self.assertEqual(concat_inputs[1].name, "target.mp4")
-        self.assertEqual(concat_inputs[2], tail)
+        self.assertEqual(
+            [path.name for path in concat_inputs],
+            ["head.mp4", "target.mp4", "tail.mp4"],
+        )
+        self.assertEqual(
+            [call.kwargs["cut"] for call in encode_noise_segment.call_args_list],
+            [head, tail],
+        )
 
 
 class RichProgressReporterTests(unittest.TestCase):

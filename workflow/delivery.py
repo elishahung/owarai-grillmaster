@@ -17,7 +17,6 @@ def deliver_project(
     project_id: str,
     progress: NoopProgressReporter,
     remix_noise_name: str | None,
-    remix_prefix: bool,
 ) -> None:
     """Archive and package a completed project."""
     logger.success(f"Project processing complete: {project_id}")
@@ -43,7 +42,6 @@ def deliver_project(
             settings.package_path,
             progress,
             remix_noise_name=remix_noise_name,
-            remix_prefix=remix_prefix,
         )
         progress.stage_completed("package", perf_counter() - started_at)
 

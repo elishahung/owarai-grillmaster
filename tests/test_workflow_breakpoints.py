@@ -252,7 +252,6 @@ class WorkflowBreakpointTests(unittest.TestCase):
                 "demo",
                 progress=progress,
                 remix_noise_name="sleep",
-                remix_prefix=True,
             )
 
         deliver_project.assert_called_once_with(
@@ -260,7 +259,6 @@ class WorkflowBreakpointTests(unittest.TestCase):
             project_id="demo",
             progress=progress,
             remix_noise_name="sleep",
-            remix_prefix=True,
         )
 
     def test_optional_refine_runs_when_forced(self):

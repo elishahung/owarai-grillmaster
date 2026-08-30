@@ -10,17 +10,14 @@ from typing_extensions import Annotated
 
 from project import ProgressStage
 from services.progress import create_progress_reporter
-from services.package import package_project_directory, prepare_noise
-from services.package.constants import (
-    DEFAULT_NOISE_NAME,
-    NOISE_CHUNK_DURATION_SECONDS,
-)
+from services.package import package_project_directory
+from services.package.constants import DEFAULT_NOISE_NAME
 from services.ytdlp import parse_section_time
 from settings import settings
 from workflow import submit_project
 
 
-RESERVED_COMMANDS = {"package", "noise", "process"}
+RESERVED_COMMANDS = {"package", "process"}
 
 legacy_app = typer.Typer(
     help=(
@@ -46,7 +43,6 @@ def _run_process(
     cover: bool,
     date_research: bool,
     remix: str | None,
-    prefix: bool,
     start: str | None = None,
     to: str | None = None,
 ) -> None:
@@ -56,12 +52,8 @@ def _run_process(
         f"parent_project={parent_project}, refine={refine}, "
         f"glossary_check={glossary_check}, cover={cover}, "
         f"date_research={date_research}, remix={remix}, "
-        f"prefix={prefix}, start={start}, to={to}"
+        f"start={start}, to={to}"
     )
-
-    if prefix and remix is None:
-        logger.error("--prefix requires --remix")
-        raise typer.Exit(code=1)
 
     try:
         section_start = parse_section_time(start) if start else None
@@ -87,7 +79,6 @@ def _run_process(
         enable_cover=cover,
         enable_date_research=date_research,
         remix_noise_name=remix,
-        remix_prefix=prefix,
         section_start=section_start,
         section_end=section_end,
     )
@@ -217,19 +208,12 @@ def process(
         typer.Option(
             "--remix",
             help=(
-                "Use a prepared noise set for remix packaging. Without a "
+                "Use a noise source set for remix packaging. Without a "
                 f"value it uses '{DEFAULT_NOISE_NAME}'."
             ),
             show_default=False,
         ),
     ] = None,
-    prefix: Annotated[
-        bool,
-        typer.Option(
-            "--prefix",
-            help="Write a standalone noise output before remix videos.",
-        ),
-    ] = False,
     start: Annotated[
         str | None,
         typer.Option(
@@ -265,7 +249,6 @@ def process(
         cover=cover,
         date_research=date_research,
         remix=remix,
-        prefix=prefix,
         start=start,
         to=to,
     )
@@ -285,24 +268,14 @@ def package_command(
         typer.Option(
             "--remix",
             help=(
-                "Use a prepared noise set for remix packaging. Without a "
+                "Use a noise source set for remix packaging. Without a "
                 f"value it uses '{DEFAULT_NOISE_NAME}'."
             ),
             show_default=False,
         ),
     ] = None,
-    prefix: Annotated[
-        bool,
-        typer.Option(
-            "--prefix",
-            help="Write a standalone noise output before remix videos.",
-        ),
-    ] = False,
 ) -> None:
     """Run only the package step for an existing project directory."""
-    if prefix and remix is None:
-        logger.error("--prefix requires --remix")
-        raise typer.Exit(code=1)
     if settings.package_path is None:
         logger.error("PACKAGE_PATH is not set; cannot package project")
         raise typer.Exit(code=1)
@@ -312,45 +285,10 @@ def package_command(
                 project_dir=project_dir,
                 package_root=settings.package_path,
                 remix_noise_name=remix,
-                remix_prefix=prefix,
                 progress=progress,
             )
     except Exception as e:
         logger.error(f"Failed to package project {project_dir}: {e}")
-        raise typer.Exit(code=1)
-
-
-@tools_app.command("noise")
-def noise_command(
-    noise_name: Annotated[
-        str,
-        typer.Argument(
-            help="Noise source name under PACKAGE_PATH/noise.",
-            show_default=False,
-        ),
-    ],
-    chunk_duration: Annotated[
-        int,
-        typer.Option(
-            "--chunk-duration",
-            help="Prepared noise chunk length in seconds.",
-        ),
-    ] = NOISE_CHUNK_DURATION_SECONDS,
-) -> None:
-    """Prepare format-matched noise chunks from PACKAGE_PATH/noise/NAME.webm."""
-    if settings.package_path is None:
-        logger.error("PACKAGE_PATH is not set; cannot prepare noise")
-        raise typer.Exit(code=1)
-    try:
-        with create_progress_reporter() as progress:
-            prepare_noise(
-                package_root=settings.package_path,
-                noise_name=noise_name,
-                chunk_duration_seconds=chunk_duration,
-                progress=progress,
-            )
-    except Exception as e:
-        logger.error(f"Failed to prepare noise {noise_name}: {e}")
         raise typer.Exit(code=1)
 
 

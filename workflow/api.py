@@ -29,7 +29,6 @@ class WorkflowOptions:
     enable_cover: bool = False
     enable_date_research: bool = False
     remix_noise_name: str | None = None
-    remix_prefix: bool = False
     section_start: float | None = None
     section_end: float | None = None
 
@@ -74,7 +73,6 @@ def submit_project(
     enable_cover: bool = False,
     enable_date_research: bool = False,
     remix_noise_name: str | None = None,
-    remix_prefix: bool = False,
     section_start: float | None = None,
     section_end: float | None = None,
     progress: NoopProgressReporter | None = None,
@@ -96,7 +94,6 @@ def submit_project(
         enable_cover=enable_cover,
         enable_date_research=enable_date_research,
         remix_noise_name=remix_noise_name,
-        remix_prefix=remix_prefix,
         section_start=section_start,
         section_end=section_end,
         progress=progress,
@@ -111,7 +108,6 @@ def process_project(
     enable_cover: bool = False,
     enable_date_research: bool = False,
     remix_noise_name: str | None = None,
-    remix_prefix: bool = False,
     section_start: float | None = None,
     section_end: float | None = None,
     progress: NoopProgressReporter | None = None,
@@ -133,7 +129,6 @@ def process_project(
                     enable_cover=enable_cover,
                     enable_date_research=enable_date_research,
                     remix_noise_name=remix_noise_name,
-                    remix_prefix=remix_prefix,
                     section_start=section_start,
                     section_end=section_end,
                 ),
@@ -445,5 +440,4 @@ def _process_project_impl(
         project_id=project_id,
         progress=progress,
         remix_noise_name=options.remix_noise_name,
-        remix_prefix=options.remix_prefix,
     )

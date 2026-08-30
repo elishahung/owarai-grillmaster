@@ -1,7 +1,6 @@
 """Remix package split selection and output assembly."""
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 from loguru import logger
@@ -13,12 +12,12 @@ from services.media import (
     TimeRange,
 )
 from services.package.constants import (
-    NOISE_CHUNKS_PER_SEGMENT,
+    NOISE_CUTS_PER_SEGMENT,
     REMIX_MIN_SEGMENT_SECONDS,
     REMIX_SEGMENT_SECONDS,
 )
 from services.package.errors import RemixPackageError
-from services.package.noise import select_noise_chunks, write_noise_state
+from services.package.noise import reserve_noise_cuts
 from services.progress import NoopProgressReporter
 
 
@@ -29,7 +28,6 @@ def package_remix(
     video_file: Path,
     subtitle_file: Path,
     noise_name: str,
-    prefix_noise: bool = False,
     progress: NoopProgressReporter | None = None,
 ) -> None:
     """Create remix package MP4 files."""
@@ -45,24 +43,18 @@ def package_remix(
     )
 
     noise_dir = package_root / "noise" / noise_name
-    noise_needed = (1 if prefix_noise else 0) + (
-        NOISE_CHUNKS_PER_SEGMENT * len(segments)
-    )
-    selection = select_noise_chunks(noise_dir, chunk_count=noise_needed)
+    noise_needed = NOISE_CUTS_PER_SEGMENT * len(segments)
+    selection = reserve_noise_cuts(noise_dir, cut_count=noise_needed)
+    noise_seconds = sum(cut.duration_seconds for cut in selection.cuts)
 
-    progress_task = None
-    try:
-        output_offset = 0
-        noise_offset = 0
-        if prefix_noise:
-            shutil.copy2(selection.chunk_paths[0], target_dir / "video_1.mp4")
-            output_offset = 1
-            noise_offset = 1
-        progress_task = (
-            progress.start_stage("Remixing subtitles", total=duration_seconds)
-            if progress is not None
-            else None
+    progress_task = (
+        progress.start_stage(
+            "Remixing subtitles", total=duration_seconds + noise_seconds
         )
+        if progress is not None
+        else None
+    )
+    try:
         for index, segment in enumerate(segments):
             start_seconds = segment.start_seconds
             if index == 0:
@@ -72,12 +64,8 @@ def package_remix(
                     "first remix segment is shorter than the "
                     f"{PACKAGE_LEAD_TRIM_SECONDS}s package lead trim"
                 )
-            head = selection.chunk_paths[
-                noise_offset + NOISE_CHUNKS_PER_SEGMENT * index
-            ]
-            tail = selection.chunk_paths[
-                noise_offset + NOISE_CHUNKS_PER_SEGMENT * index + 1
-            ]
+            head = selection.cuts[NOISE_CUTS_PER_SEGMENT * index]
+            tail = selection.cuts[NOISE_CUTS_PER_SEGMENT * index + 1]
             logger.info(
                 f"Remix segment {index + 1}/{len(segments)}: "
                 f"{start_seconds:.3f}s-{segment.end_seconds:.3f}s"
@@ -85,8 +73,7 @@ def package_remix(
             MediaProcessor.build_remix_output(
                 video_file=video_file,
                 subtitle_file=subtitle_file,
-                output_file=target_dir
-                / f"video_{index + 1 + output_offset}.mp4",
+                output_file=target_dir / f"video_{index + 1}.mp4",
                 head_noise=head,
                 tail_noise=tail,
                 start_seconds=start_seconds,
@@ -100,7 +87,6 @@ def package_remix(
         raise
     if progress is not None and progress_task is not None:
         progress.finish(progress_task)
-    write_noise_state(noise_dir, selection.next_index)
 
 
 def select_remix_segments(

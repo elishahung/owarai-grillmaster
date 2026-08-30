@@ -104,13 +104,21 @@ Default package drops the first `PACKAGE_LEAD_TRIM_SECONDS` (3 s) after
 ASS burn and before tempo; remix does the same only on the first content
 segment, then wraps noise around that already-trimmed clip. Expected
 duration is `usable / PACKAGE_TEMPO` — a same-length output on a long show
-is a failed speed-up, not a success. Noise prep writes 60 s chunks
-(`NOISE_CHUNK_DURATION_SECONDS`) with a format-only fit
-(`_NOISE_VIDEO_FILTER` / `_NOISE_AUDIO_FILTER` + the same encode args) so
-remix concat can stream-copy video; it does not apply the look filters.
-Remix splits near every 8 minutes (`REMIX_SEGMENT_SECONDS`) on a subtitle
-gap/boundary, then wraps each segment as noise + content + noise
-(`video_1.mp4`, `video_2.mp4`, …).
+is a failed speed-up, not a success. There is no noise prep step:
+`noise/<name>/` holds raw source videos named `000.*`, `001.*` … (contiguous
+three-digit stems, any container), and `noise.py` walks them **in seconds**
+with a `state.json` cursor `{next_index, next_seconds}` — each cut is
+`NOISE_CUT_DURATION_SECONDS` (60 s), a source whose remainder is under one
+full cut is consumed to its end in that same cut, and the last index wraps
+back to 0. `MediaProcessor.encode_noise_segment` transcodes each reserved cut
+at remix time with a format-only fit (`_NOISE_VIDEO_FILTER` /
+`_NOISE_AUDIO_FILTER` + the same encode args, no look filters) so remix
+concat can still stream-copy video. `reserve_noise_cuts` persists the
+advanced cursor **before** rendering, so concurrent packaging runs never draw
+the same noise — a run that then fails skips its reserved noise rather than
+reusing it. Remix splits near every 8 minutes (`REMIX_SEGMENT_SECONDS`)
+on a subtitle gap/boundary, then wraps each segment as noise + content +
+noise (`video_1.mp4`, `video_2.mp4`, …).
 
 `rc.py` reads `.packagerc` (git-ignored, at the working-directory root):
 `{series|channel: {<name>: {remix?}}}`. The download stage appends empty

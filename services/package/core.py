@@ -20,10 +20,6 @@ from project import (
     Project,
 )
 from services.media import MediaProcessor
-from services.package.constants import (
-    NOISE_CHUNK_DURATION_SECONDS,
-    NOISE_SOURCE_SUFFIX,
-)
 from services.package.cover import copy_cover
 from services.package.rc import resolve_remix_noise_name
 from services.package.remix import package_remix
@@ -37,7 +33,6 @@ def package_project(
     package_root: Path,
     progress: NoopProgressReporter | None = None,
     remix_noise_name: str | None = None,
-    remix_prefix: bool = False,
 ) -> None:
     """Create the deliverable folder.
 
@@ -83,7 +78,6 @@ def package_project(
                 video_file=video_in,
                 subtitle_file=ass_in,
                 noise_name=noise_name,
-                prefix_noise=remix_prefix,
                 progress=progress,
             )
     except Exception as e:
@@ -100,7 +94,6 @@ def package_project_directory(
     project_dir: Path,
     package_root: Path,
     remix_noise_name: str | None = None,
-    remix_prefix: bool = False,
     progress: NoopProgressReporter | None = None,
 ) -> None:
     """Package an already-finalized project directory."""
@@ -116,25 +109,6 @@ def package_project_directory(
         package_root=package_root,
         progress=progress,
         remix_noise_name=remix_noise_name,
-        remix_prefix=remix_prefix,
-    )
-
-
-def prepare_noise(
-    package_root: Path,
-    noise_name: str,
-    chunk_duration_seconds: int = NOISE_CHUNK_DURATION_SECONDS,
-    progress: NoopProgressReporter | None = None,
-) -> None:
-    """Prepare format-matched noise chunks under PACKAGE_PATH/noise."""
-    noise_root = package_root / "noise"
-    noise_file = noise_root / f"{noise_name}{NOISE_SOURCE_SUFFIX}"
-    output_dir = noise_root / noise_name
-    MediaProcessor.prepare_noise_chunks(
-        noise_file=noise_file,
-        output_dir=output_dir,
-        chunk_duration_seconds=chunk_duration_seconds,
-        progress=progress,
     )
 
 

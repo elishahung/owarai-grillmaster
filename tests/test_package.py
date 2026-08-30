@@ -10,6 +10,7 @@ from project import Project
 from services import package as package_module
 from services.package import core as package_core
 from services.package import rc as package_rc
+from services.package import noise as package_noise
 from services.package import remix as package_remix
 from services.package import titles as package_titles
 from services.progress import NoopProgressReporter
@@ -162,78 +163,136 @@ class PackageTests(unittest.TestCase):
         with self.assertRaises(package_module.RemixPackageError):
             package_module.select_remix_segments(srt, duration_seconds=100.0)
 
-    def test_select_noise_chunks_wraps_and_advances(self):
-        root = self._make_temp_dir()
+    def _make_noise_dir(self, root: Path, names: list[str]) -> Path:
         noise_dir = root / "noise" / "sleep"
         noise_dir.mkdir(parents=True)
-        for index in range(5):
-            (noise_dir / f"{index:03d}.mp4").write_text(
-                "chunk", encoding="utf-8"
-            )
-        (noise_dir / "state.json").write_text(
-            json.dumps({"next_index": 3}), encoding="utf-8"
+        for name in names:
+            (noise_dir / name).write_text("source", encoding="utf-8")
+        return noise_dir
+
+    def _patch_noise_durations(self, durations: dict[str, float]):
+        return patch.object(
+            package_noise.MediaProcessor,
+            "get_media_duration",
+            side_effect=lambda path: durations[path.name],
         )
 
-        selection = package_module.select_noise_chunks(noise_dir)
+    def test_reserve_noise_cuts_advances_within_one_source(self):
+        root = self._make_temp_dir()
+        noise_dir = self._make_noise_dir(root, ["000.mp4", "001.mp4"])
+        (noise_dir / "state.json").write_text(
+            json.dumps({"next_index": 0, "next_seconds": 120}),
+            encoding="utf-8",
+        )
+
+        with self._patch_noise_durations({"000.mp4": 600.0, "001.mp4": 600.0}):
+            selection = package_module.reserve_noise_cuts(noise_dir)
 
         self.assertEqual(
-            [path.name for path in selection.chunk_paths],
-            ["003.mp4", "004.mp4"],
+            [
+                (cut.source.name, cut.start_seconds, cut.duration_seconds)
+                for cut in selection.cuts
+            ],
+            [("000.mp4", 120.0, 60.0), ("000.mp4", 180.0, 60.0)],
         )
         self.assertEqual(selection.next_index, 0)
+        self.assertEqual(selection.next_seconds, 240)
 
-    def test_select_noise_chunks_can_use_prefix_count(self):
+    def test_reserve_noise_cuts_keeps_an_exactly_full_remainder(self):
         root = self._make_temp_dir()
-        noise_dir = root / "noise" / "sleep"
-        noise_dir.mkdir(parents=True)
-        for index in range(5):
-            (noise_dir / f"{index:03d}.mp4").write_text(
-                "chunk", encoding="utf-8"
-            )
-        (noise_dir / "state.json").write_text(
-            json.dumps({"next_index": 3}), encoding="utf-8"
-        )
+        noise_dir = self._make_noise_dir(root, ["000.mp4"])
 
-        selection = package_module.select_noise_chunks(noise_dir, chunk_count=3)
+        with self._patch_noise_durations({"000.mp4": 240.0}):
+            selection = package_module.reserve_noise_cuts(
+                noise_dir, cut_count=3
+            )
 
         self.assertEqual(
-            [path.name for path in selection.chunk_paths],
-            ["003.mp4", "004.mp4", "000.mp4"],
+            [cut.duration_seconds for cut in selection.cuts],
+            [60.0, 60.0, 60.0],
+        )
+        self.assertEqual(selection.next_index, 0)
+        self.assertEqual(selection.next_seconds, 180)
+
+    def test_reserve_noise_cuts_swallows_a_short_remainder(self):
+        root = self._make_temp_dir()
+        noise_dir = self._make_noise_dir(root, ["000.webm", "001.mp4"])
+        (noise_dir / "state.json").write_text(
+            json.dumps({"next_index": 0, "next_seconds": 120}),
+            encoding="utf-8",
+        )
+
+        with self._patch_noise_durations(
+            {"000.webm": 220.0, "001.mp4": 600.0}
+        ):
+            selection = package_module.reserve_noise_cuts(noise_dir)
+
+        self.assertEqual(
+            [
+                (cut.source.name, cut.start_seconds, cut.duration_seconds)
+                for cut in selection.cuts
+            ],
+            [("000.webm", 120.0, 100.0), ("001.mp4", 0.0, 60.0)],
         )
         self.assertEqual(selection.next_index, 1)
+        self.assertEqual(selection.next_seconds, 60)
 
-    def test_select_noise_chunks_rejects_less_than_two_chunks(self):
+    def test_reserve_noise_cuts_wraps_back_to_the_first_source(self):
         root = self._make_temp_dir()
-        noise_dir = root / "noise" / "sleep"
-        noise_dir.mkdir(parents=True)
-        (noise_dir / "000.mp4").write_text("chunk", encoding="utf-8")
+        noise_dir = self._make_noise_dir(root, ["000.mp4", "001.webm"])
 
-        with self.assertRaises(package_module.RemixPackageError):
-            package_module.select_noise_chunks(noise_dir)
+        with self._patch_noise_durations(
+            {"000.mp4": 100.0, "001.webm": 100.0}
+        ):
+            selection = package_module.reserve_noise_cuts(noise_dir)
 
-    def test_select_noise_chunks_rejects_less_than_prefix_count(self):
+        self.assertEqual(
+            [
+                (cut.source.name, cut.start_seconds, cut.duration_seconds)
+                for cut in selection.cuts
+            ],
+            [("000.mp4", 0.0, 100.0), ("001.webm", 0.0, 100.0)],
+        )
+        self.assertEqual(selection.next_index, 0)
+        self.assertEqual(selection.next_seconds, 0)
+
+    def test_reserve_noise_cuts_orders_mixed_extensions_by_index(self):
         root = self._make_temp_dir()
-        noise_dir = root / "noise" / "sleep"
-        noise_dir.mkdir(parents=True)
-        for index in range(2):
-            (noise_dir / f"{index:03d}.mp4").write_text(
-                "chunk", encoding="utf-8"
+        noise_dir = self._make_noise_dir(
+            root, ["001.mp4", "002.mkv", "000.webm"]
+        )
+
+        with self._patch_noise_durations(
+            {"000.webm": 60.0, "001.mp4": 60.0, "002.mkv": 60.0}
+        ):
+            selection = package_module.reserve_noise_cuts(
+                noise_dir, cut_count=3
             )
 
-        with self.assertRaises(package_module.RemixPackageError):
-            package_module.select_noise_chunks(noise_dir, chunk_count=3)
+        self.assertEqual(
+            [cut.source.name for cut in selection.cuts],
+            ["000.webm", "001.mp4", "002.mkv"],
+        )
+        self.assertEqual(selection.next_index, 0)
+        self.assertEqual(selection.next_seconds, 0)
 
-    def test_select_noise_chunks_rejects_non_contiguous_chunks(self):
+    def test_reserve_noise_cuts_rejects_an_empty_noise_folder(self):
         root = self._make_temp_dir()
-        noise_dir = root / "noise" / "sleep"
-        noise_dir.mkdir(parents=True)
-        for name in ["000.mp4", "001.mp4", "003.mp4", "004.mp4"]:
-            (noise_dir / name).write_text("chunk", encoding="utf-8")
+        noise_dir = self._make_noise_dir(root, [])
 
         with self.assertRaises(package_module.RemixPackageError):
-            package_module.select_noise_chunks(noise_dir)
+            package_module.reserve_noise_cuts(noise_dir)
 
-    def test_write_noise_state_happens_only_after_successful_remix(self):
+    def test_reserve_noise_cuts_rejects_non_contiguous_sources(self):
+        root = self._make_temp_dir()
+        noise_dir = self._make_noise_dir(
+            root, ["000.mp4", "001.mp4", "003.mp4"]
+        )
+
+        with self.assertRaises(package_module.RemixPackageError):
+            package_module.reserve_noise_cuts(noise_dir)
+
+    def test_noise_state_is_reserved_before_the_first_render(self):
         root = self._make_temp_dir()
         source = root / "source"
         package_root = root / "package"
@@ -242,7 +301,7 @@ class PackageTests(unittest.TestCase):
         noise_dir.mkdir(parents=True)
         for index in range(4):
             (noise_dir / f"{index:03d}.mp4").write_text(
-                "chunk", encoding="utf-8"
+                "source", encoding="utf-8"
             )
         (source / "video.mp4").write_text("video", encoding="utf-8")
         (source / "video.cht.ass").write_text("ass", encoding="utf-8")
@@ -279,7 +338,10 @@ class PackageTests(unittest.TestCase):
                 remix_noise_name="sleep",
             )
 
-        self.assertFalse((noise_dir / "state.json").exists())
+        # The cursor is a reservation, so a failed render still consumes it:
+        # a concurrent package run must never draw the same noise.
+        state = json.loads((noise_dir / "state.json").read_text("utf-8"))
+        self.assertEqual(state, {"next_index": 0, "next_seconds": 240})
         self.assertFalse((package_root / "demo_show").exists())
 
     def test_normal_package_writes_video_and_cover(self):
@@ -368,7 +430,7 @@ class PackageTests(unittest.TestCase):
         noise_dir.mkdir(parents=True)
         for index in range(4):
             (noise_dir / f"{index:03d}.mp4").write_text(
-                f"chunk {index}", encoding="utf-8"
+                f"source {index}", encoding="utf-8"
             )
         (source / "video.mp4").write_text("video", encoding="utf-8")
         (source / "video.cht.ass").write_text("ass", encoding="utf-8")
@@ -391,11 +453,14 @@ class PackageTests(unittest.TestCase):
             calls.append(kwargs)
             kwargs["output_file"].write_text("remix", encoding="utf-8")
 
+        def media_duration(path):
+            return 1000.0 if path.name == "video.mp4" else 150.0
+
         with (
             patch.object(
                 package_remix.MediaProcessor,
                 "get_media_duration",
-                return_value=1000.0,
+                side_effect=media_duration,
             ),
             patch.object(
                 package_remix.MediaProcessor,
@@ -414,16 +479,36 @@ class PackageTests(unittest.TestCase):
             [
                 (
                     call["output_file"].name,
-                    call["head_noise"].name,
-                    call["tail_noise"].name,
+                    (
+                        call["head_noise"].source.name,
+                        call["head_noise"].start_seconds,
+                        call["head_noise"].duration_seconds,
+                    ),
+                    (
+                        call["tail_noise"].source.name,
+                        call["tail_noise"].start_seconds,
+                        call["tail_noise"].duration_seconds,
+                    ),
                     call["start_seconds"],
                     call["end_seconds"],
                 )
                 for call in calls
             ],
             [
-                ("video_1.mp4", "000.mp4", "001.mp4", 3.0, 480.0),
-                ("video_2.mp4", "002.mp4", "003.mp4", 480.0, 1000.0),
+                (
+                    "video_1.mp4",
+                    ("000.mp4", 0.0, 60.0),
+                    ("000.mp4", 60.0, 90.0),
+                    3.0,
+                    480.0,
+                ),
+                (
+                    "video_2.mp4",
+                    ("001.mp4", 0.0, 60.0),
+                    ("001.mp4", 60.0, 90.0),
+                    480.0,
+                    1000.0,
+                ),
             ],
         )
         target = package_root / "demo_show"
@@ -440,7 +525,7 @@ class PackageTests(unittest.TestCase):
             '{"summary":"remix"}',
         )
         state = json.loads((noise_dir / "state.json").read_text("utf-8"))
-        self.assertEqual(state["next_index"], 0)
+        self.assertEqual(state, {"next_index": 2, "next_seconds": 0})
 
     def test_remix_package_uses_one_progress_task_for_two_target_renders(self):
         root = self._make_temp_dir()
@@ -453,7 +538,7 @@ class PackageTests(unittest.TestCase):
         noise_dir.mkdir(parents=True)
         for index in range(4):
             (noise_dir / f"{index:03d}.mp4").write_text(
-                "chunk", encoding="utf-8"
+                "source", encoding="utf-8"
             )
         (source / "video.mp4").write_text("video", encoding="utf-8")
         (source / "video.cht.ass").write_text("ass", encoding="utf-8")
@@ -498,72 +583,11 @@ class PackageTests(unittest.TestCase):
 
         self.assertEqual(
             progress.events[0],
-            ("start_stage", 1, "Remixing subtitles", 1000.0),
+            ("start_stage", 1, "Remixing subtitles", 1240.0),
         )
         self.assertIn(("advance", 1, 477.0, "video_1.mp4"), progress.events)
         self.assertIn(("advance", 1, 520.0, "video_2.mp4"), progress.events)
         self.assertEqual(progress.events[-1], ("finish", 1, "done"))
-
-    def test_remix_prefix_copies_noise_then_wraps_each_segment(self):
-        root = self._make_temp_dir()
-        source = root / "source"
-        package_root = root / "package"
-        target = package_root / "demo_show"
-        noise_dir = package_root / "noise" / "sleep"
-        source.mkdir()
-        target.mkdir(parents=True)
-        noise_dir.mkdir(parents=True)
-        for index in range(3):
-            (noise_dir / f"{index:03d}.mp4").write_text(
-                f"chunk {index}", encoding="utf-8"
-            )
-        (source / "video.mp4").write_text("video", encoding="utf-8")
-        (source / "video.cht.ass").write_text("ass", encoding="utf-8")
-        self._write_srt(
-            source / "video.cht.finalized.srt",
-            [
-                ("00:00:00,000", "00:00:01,000"),
-                ("00:00:04,000", "00:00:05,000"),
-            ],
-        )
-        calls = []
-
-        def record_render(**kwargs):
-            calls.append(kwargs)
-            kwargs["output_file"].write_text("remix", encoding="utf-8")
-
-        with (
-            patch.object(
-                package_remix.MediaProcessor,
-                "get_media_duration",
-                return_value=6.0,
-            ),
-            patch.object(
-                package_remix.MediaProcessor,
-                "build_remix_output",
-                side_effect=record_render,
-            ),
-        ):
-            package_remix.package_remix(
-                source_root=source,
-                package_root=package_root,
-                target_dir=target,
-                video_file=source / "video.mp4",
-                subtitle_file=source / "video.cht.ass",
-                noise_name="sleep",
-                prefix_noise=True,
-            )
-
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0]["head_noise"].name, "001.mp4")
-        self.assertEqual(calls[0]["tail_noise"].name, "002.mp4")
-        self.assertEqual(calls[0]["output_file"].name, "video_2.mp4")
-        self.assertEqual(calls[0]["start_seconds"], 3.0)
-        self.assertEqual(calls[0]["end_seconds"], 6.0)
-        self.assertEqual(
-            (target / "video_1.mp4").read_text(encoding="utf-8"),
-            "chunk 0",
-        )
 
     def test_packagerc_series_rule_forces_a_remix_package(self):
         root = self._make_temp_dir()
@@ -574,7 +598,7 @@ class PackageTests(unittest.TestCase):
         noise_dir.mkdir(parents=True)
         for index in range(2):
             (noise_dir / f"{index:03d}.mp4").write_text(
-                f"chunk {index}", encoding="utf-8"
+                f"source {index}", encoding="utf-8"
             )
         (source / "video.mp4").write_text("video", encoding="utf-8")
         (source / "video.cht.ass").write_text("ass", encoding="utf-8")

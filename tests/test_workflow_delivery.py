@@ -24,7 +24,6 @@ class WorkflowDeliveryTests(unittest.TestCase):
                 project_id="demo",
                 progress=progress,
                 remix_noise_name="sleep",
-                remix_prefix=True,
             )
 
         project.archive.assert_called_once_with()
@@ -34,7 +33,6 @@ class WorkflowDeliveryTests(unittest.TestCase):
             Path("package"),
             progress,
             remix_noise_name="sleep",
-            remix_prefix=True,
         )
 
 

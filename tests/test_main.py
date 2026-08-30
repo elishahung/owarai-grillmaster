@@ -78,70 +78,6 @@ class MainCliTests(unittest.TestCase):
             project_dir=project_dir,
             package_root=package_root,
             remix_noise_name="sleep",
-            remix_prefix=False,
-            progress=progress,
-        )
-
-    def test_package_command_accepts_remix_prefix(self):
-        root = self._make_temp_dir()
-        project_dir = root / "project"
-        package_root = root / "package"
-        project_dir.mkdir()
-        progress = object()
-
-        with (
-            patch.object(main_module.settings, "package_path", package_root),
-            patch.object(
-                main_module, "create_progress_reporter"
-            ) as create_progress_reporter,
-            patch.object(
-                main_module, "package_project_directory"
-            ) as package_project_directory,
-        ):
-            create_progress_reporter.return_value.__enter__.return_value = (
-                progress
-            )
-            main_module.main(
-                [
-                    "package",
-                    str(project_dir),
-                    "--remix",
-                    "sleep",
-                    "--prefix",
-                ]
-            )
-
-        package_project_directory.assert_called_once_with(
-            project_dir=project_dir,
-            package_root=package_root,
-            remix_noise_name="sleep",
-            remix_prefix=True,
-            progress=progress,
-        )
-
-    def test_noise_command_uses_configured_package_path_with_progress(self):
-        root = self._make_temp_dir()
-        package_root = root / "package"
-        progress = object()
-
-        with (
-            patch.object(main_module.settings, "package_path", package_root),
-            patch.object(
-                main_module, "create_progress_reporter"
-            ) as create_progress_reporter,
-            patch.object(main_module, "prepare_noise") as prepare_noise,
-        ):
-            create_progress_reporter.return_value.__enter__.return_value = (
-                progress
-            )
-            main_module.main(
-                ["noise", "sleep", "--chunk-duration", "120"]
-            )
-
-        prepare_noise.assert_called_once_with(
-            package_root=package_root,
-            noise_name="sleep",
-            chunk_duration_seconds=120,
             progress=progress,
         )
 
@@ -156,7 +92,6 @@ class MainCliTests(unittest.TestCase):
         self.assertEqual(
             submit_project.call_args.kwargs["remix_noise_name"], "sleep"
         )
-        self.assertFalse(submit_project.call_args.kwargs["remix_prefix"])
 
     def test_valueless_remix_uses_the_default_noise_set(self):
         with patch.object(main_module, "submit_project") as submit_project:
@@ -168,12 +103,11 @@ class MainCliTests(unittest.TestCase):
 
     def test_valueless_remix_before_another_flag(self):
         with patch.object(main_module, "submit_project") as submit_project:
-            main_module.main(["BV123", "--remix", "--prefix"])
+            main_module.main(["BV123", "--remix", "--cover"])
 
         self.assertEqual(
             submit_project.call_args.kwargs["remix_noise_name"], "default"
         )
-        self.assertTrue(submit_project.call_args.kwargs["remix_prefix"])
 
     def test_package_command_accepts_valueless_remix(self):
         root = self._make_temp_dir()
@@ -194,19 +128,6 @@ class MainCliTests(unittest.TestCase):
             package_project_directory.call_args.kwargs["remix_noise_name"],
             "default",
         )
-
-    def test_legacy_source_invocation_accepts_remix_prefix(self):
-        with patch.object(main_module, "submit_project") as submit_project:
-            main_module.main(["BV123", "--remix", "sleep", "--prefix"])
-
-        submit_project.assert_called_once()
-        self.assertTrue(submit_project.call_args.kwargs["remix_prefix"])
-
-    def test_prefix_without_remix_fails(self):
-        with patch.object(main_module, "submit_project") as submit_project:
-            main_module.main(["BV123", "--prefix"])
-
-        submit_project.assert_not_called()
 
     def test_section_flags_are_parsed_to_seconds(self):
         with patch.object(main_module, "submit_project") as submit_project:

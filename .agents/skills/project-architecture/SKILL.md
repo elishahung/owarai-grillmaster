@@ -200,8 +200,8 @@ Key control-flow details that are easy to break:
   `PlannedStage` entries, `stage_started/completed/skipped`, `side_task_*`,
   `pipeline_completed/failed`) emitted by `WorkflowRunner`, `SideTaskManager`,
   and `delivery.py`. **Test fakes must subclass `NoopProgressReporter`.**
-  `create_progress_reporter` (Rich) now serves only `package`/`noise` and
-  non-TTY runs.
+  `create_progress_reporter` (Rich) now serves only `package` and non-TTY
+  runs.
 - `services/tui/` — full-screen Textual dashboard, the default interactive
   experience for `process` (non-TTY falls back to plain logs; no opt-out flag).
   `state.py` is a lock-guarded model mutated by `reporter.py`

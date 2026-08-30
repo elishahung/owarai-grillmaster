@@ -1,11 +1,7 @@
 """Final deliverable packaging public API."""
-from services.package.core import (
-    package_project,
-    package_project_directory,
-    prepare_noise,
-)
+from services.package.core import package_project, package_project_directory
 from services.package.errors import RemixPackageError
-from services.package.noise import select_noise_chunks, write_noise_state
+from services.package.noise import reserve_noise_cuts
 from services.package.rc import (
     PackageRc,
     load_package_rc,
@@ -23,10 +19,8 @@ __all__ = [
     "load_package_rc",
     "package_project",
     "package_project_directory",
-    "prepare_noise",
     "register_package_rc_program",
+    "reserve_noise_cuts",
     "resolve_remix_noise_name",
-    "select_noise_chunks",
     "select_remix_segments",
-    "write_noise_state",
 ]

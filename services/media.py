@@ -54,6 +54,14 @@ class TimeRange(BaseModel):
         return max(0.0, self.end_seconds - self.start_seconds)
 
 
+class NoiseCut(BaseModel):
+    """One slice of a noise source, transcoded on demand at remix time."""
+
+    source: Path
+    start_seconds: float
+    duration_seconds: float
+
+
 class MediaProcessor:
     """A utility class for processing media files using ffmpeg.
 
@@ -366,97 +374,63 @@ class MediaProcessor:
             progress.finish(progress_task)
 
     @staticmethod
-    def prepare_noise_chunks(
-        noise_file: Path,
-        output_dir: Path,
-        chunk_duration_seconds: int,
+    def encode_noise_segment(
+        cut: NoiseCut,
+        output_file: Path,
         progress: NoopProgressReporter | None = None,
+        progress_task=None,
+        progress_description: str | None = None,
     ) -> None:
-        """Re-encode fixed-length noise chunks so remix can stream-copy them.
+        """Transcode one noise slice into the package output format.
 
-        Chunks are fitted to the package output format (1920x1080 yuv420p
-        @ 29.94, 44100 stereo, same encoder). The look filters — rotate,
-        grade, grain, tempo, rubberband, white-noise bed — are not applied.
+        Format-only fit (1920x1080 yuv420p @ 29.94, 44100 stereo, same
+        encoder as the content segments) so remix concat can stream-copy the
+        video. The look filters — rotate, grade, grain, tempo, rubberband,
+        white-noise bed — are not applied.
         """
-        if chunk_duration_seconds <= 0:
-            raise ValueError("chunk_duration_seconds must be positive")
-        if not noise_file.exists():
-            raise FileNotFoundError(f"noise source not found: {noise_file}")
+        if cut.duration_seconds <= 0:
+            raise ValueError("noise cut duration must be positive")
+        if not cut.source.exists():
+            raise FileNotFoundError(f"noise source not found: {cut.source}")
 
-        output_dir.mkdir(parents=True, exist_ok=True)
-        source_duration = MediaProcessor.get_media_duration(noise_file)
-        chunk_count = int(source_duration // chunk_duration_seconds)
-        if chunk_count <= 0:
-            raise ValueError(
-                f"noise source is shorter than one "
-                f"{chunk_duration_seconds}-second chunk: {noise_file}"
-            )
-
-        progress_task = (
-            progress.start_stage(
-                "Preparing noise",
-                total=chunk_count * chunk_duration_seconds,
-            )
-            if progress is not None
-            else None
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        logger.info(
+            f"Encoding noise from {cut.source.name} at "
+            f"{cut.start_seconds:.3f}s for {cut.duration_seconds:.3f}s"
         )
-        try:
-            for index in range(chunk_count):
-                output_file = output_dir / f"{index:03d}.mp4"
-                description = f"Preparing noise {index + 1}/{chunk_count}"
-                if output_file.exists() and output_file.stat().st_size > 0:
-                    logger.info(f"Skipping prepared noise chunk: {output_file}")
-                    if progress is not None:
-                        progress.advance(
-                            progress_task,
-                            chunk_duration_seconds,
-                            description=description,
-                        )
-                    continue
-                start_seconds = index * chunk_duration_seconds
-                logger.info(
-                    f"Encoding noise chunk {index:03d} from {start_seconds}s "
-                    f"for {chunk_duration_seconds}s"
-                )
-                cmd = [
-                    "ffmpeg",
-                    "-hide_banner",
-                    "-nostats",
-                    "-progress",
-                    "pipe:1",
-                    "-ss",
-                    str(start_seconds),
-                    "-t",
-                    str(chunk_duration_seconds),
-                    "-i",
-                    str(noise_file),
-                    "-filter_complex",
-                    (
-                        f"[0:v]{MediaProcessor._NOISE_VIDEO_FILTER}[v];"
-                        f"[0:a]{MediaProcessor._NOISE_AUDIO_FILTER}[a]"
-                    ),
-                    "-map",
-                    "[v]",
-                    "-map",
-                    "[a]",
-                    *MediaProcessor._PACKAGE_ENCODE_ARGS,
-                    str(output_file),
-                    "-y",
-                ]
-                MediaProcessor._run_ffmpeg_progress(
-                    cmd=cmd,
-                    progress=progress,
-                    progress_task=progress_task,
-                    duration_seconds=chunk_duration_seconds,
-                    progress_description=description,
-                    failure_label="noise preparation",
-                )
-        except Exception:
-            if progress is not None:
-                progress.finish(progress_task, "failed")
-            raise
-        if progress is not None:
-            progress.finish(progress_task)
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-nostats",
+            "-progress",
+            "pipe:1",
+            "-ss",
+            f"{cut.start_seconds:.3f}",
+            "-t",
+            f"{cut.duration_seconds:.3f}",
+            "-i",
+            str(cut.source),
+            "-filter_complex",
+            (
+                f"[0:v]{MediaProcessor._NOISE_VIDEO_FILTER}[v];"
+                f"[0:a]{MediaProcessor._NOISE_AUDIO_FILTER}[a]"
+            ),
+            "-map",
+            "[v]",
+            "-map",
+            "[a]",
+            *MediaProcessor._PACKAGE_ENCODE_ARGS,
+            str(output_file),
+            "-y",
+        ]
+        MediaProcessor._run_ffmpeg_progress(
+            cmd=cmd,
+            progress=progress,
+            progress_task=progress_task,
+            duration_seconds=cut.duration_seconds,
+            progress_description=progress_description,
+            failure_label="noise segment",
+        )
 
     @staticmethod
     def encode_subtitled_segment(
@@ -672,8 +646,8 @@ class MediaProcessor:
         video_file: Path,
         subtitle_file: Path,
         output_file: Path,
-        head_noise: Path,
-        tail_noise: Path,
+        head_noise: NoiseCut,
+        tail_noise: NoiseCut,
         start_seconds: float,
         end_seconds: float,
         progress: NoopProgressReporter | None = None,
@@ -682,7 +656,16 @@ class MediaProcessor:
         """Create one noise + subtitled segment + noise remix output."""
         temp_dir = Path(tempfile.mkdtemp(prefix="grill_remix_"))
         try:
+            head_segment = temp_dir / "head.mp4"
             target_segment = temp_dir / "target.mp4"
+            tail_segment = temp_dir / "tail.mp4"
+            MediaProcessor.encode_noise_segment(
+                cut=head_noise,
+                output_file=head_segment,
+                progress=progress,
+                progress_task=progress_task,
+                progress_description=f"Noise for {output_file.name}",
+            )
             MediaProcessor.encode_subtitled_segment(
                 video_file=video_file,
                 subtitle_file=subtitle_file,
@@ -693,8 +676,15 @@ class MediaProcessor:
                 progress_task=progress_task,
                 progress_description=f"Remixing {output_file.name}",
             )
+            MediaProcessor.encode_noise_segment(
+                cut=tail_noise,
+                output_file=tail_segment,
+                progress=progress,
+                progress_task=progress_task,
+                progress_description=f"Noise for {output_file.name}",
+            )
             MediaProcessor.concat_remix_segments(
-                [head_noise, target_segment, tail_noise],
+                [head_segment, target_segment, tail_segment],
                 output_file,
                 progress=progress,
             )

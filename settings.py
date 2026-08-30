@@ -209,6 +209,10 @@ class Settings(BaseSettings):
         default=False,
         description="Research the original broadcast date with a web-searching agent (agent_common_model) when platform metadata yields none. Runs async after METADATA_FETCHED, joined before archive. Skipped entirely when break_after is set.",
     )
+    enable_package_title_suggestion: bool = Field(
+        default=False,
+        description="At package time, derive three Traditional Chinese title candidates from pre_pass.json with agent_common_model when the source project has no .titles/titles.json yet. The file is always copied into the deliverable when it exists; this toggle only controls generating a missing one.",
+    )
 
 
 settings = Settings()

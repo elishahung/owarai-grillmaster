@@ -141,7 +141,7 @@ AGENT_GEMINI_GCP_PROJECT=your-project-id       # 可選；gemini-cli 訂閱/Code
 AGENT_PREPASS_MODEL=gemini-cli/gemini-3.1-pro-preview/high  # backend: gemini-api / gemini-cli / gemini-agy / claude / codex
 AGENT_CHUNK_MODEL=gemini-cli/gemini-3.1-pro-preview/high    # "backend/model" 或 "backend/model/effort"
 AGENT_POSTPROCESS_MODEL=codex/gpt-5.6-sol/extra             # 後處理（refine/glossary）：codex / claude / gemini-cli / gemini-agy
-AGENT_COMMON_MODEL=codex/gpt-5.5/medium                     # 輕量工具 agent（chunk 結構修正、播出日調查）；封面固定用 codex 並沿用此 effort
+AGENT_COMMON_MODEL=codex/gpt-5.5/medium                     # 輕量工具 agent（chunk 結構修正、播出日調查、封裝標題建議）；封面固定用 codex 並沿用此 effort
 AGENT_TIMEOUT_MINUTES=40                                    # 單次模型呼叫逾時（分鐘），所有 backend 共用；高 effort 階段跑太久可調高
 
 # 可選：pre-pass 圖片抽樣與固定譯名表
@@ -162,12 +162,13 @@ ENABLE_POSTPROCESS_REFINE=true            # 翻譯後再用 agent 潤飾繁中�
 ENABLE_POSTPROCESS_GLOSSARY_CHECK=true    # 潤飾後再用 agent 校對殘留的英文/假名專名
 ENABLE_COVER_GENERATION=true              # 下載後並行 Codex 風格化封面圖
 ENABLE_BROADCAST_DATE_AGENT_FALLBACK=true # metadata 解析不到放送日時，並行派 agent 上網研究放送日（結果存 .artifacts/date_research.json）
+ENABLE_PACKAGE_TITLE_SUGGESTION=true      # 封裝時若沒有 .titles/titles.json，用 pre_pass.json 產三個候選標題（已有則直接沿用）
 
 # 可選：下載/歸檔/封裝
 ENABLE_OFFICIAL_SUBTITLES=true     # 下載時順抓平台官方 CC 字幕（TVer/Abema 等），作為翻譯的 ground truth 參照
 COOKIES_TXT_PATH=cookies.txt       # 影片來源網站 cookies (供 yt-dlp 使用)
 ARCHIVED_PATH=NAS:\video\ai\     # 歸檔路徑 - 處理完移至 <archived_path>/YY/MM/YYMMDD_<id>_<name>/（YYMMDD 為放送/發布日期，無日期時移至 <archived_path>/etc/<id>_<name>/）
-PACKAGE_PATH=NAS:\video\package\ # 封裝路徑 - 將 ASS 字幕燒錄進影片並複製封面到 <package_path>/YYMMDD_<id>_<name>/（平面，不分子目錄；無日期時省略前綴）
+PACKAGE_PATH=NAS:\video\package\ # 封裝路徑 - 將 ASS 字幕燒錄進影片並複製封面、pre_pass.json、報告與 titles.json 到 <package_path>/YYMMDD_<id>_<name>/（平面，不分子目錄；無日期時省略前綴）
 ```
 
 ## 專案結構
@@ -186,6 +187,7 @@ projects/{video_id}/
 ├── .chunks/                  # chunk 音檔 / 圖片 / 翻譯回應快取（供 resume）
 ├── .refine/                  # Agent 潤飾報告（可選）
 ├── .glossary_check/          # Agent 名詞校對報告與額外取幀（可選）
+├── .titles/                  # 封裝時產生的候選標題 titles.json（可選）
 ├── poster.jpg                # yt-dlp 取得的原始封面
 ├── poster.cover.png          # Agent 風格化封面（可選）
 ├── video.cht.srt             # 繁體中文翻譯字幕

@@ -38,12 +38,14 @@ REFINE_REPORT_FILE_NAME = "report.md"
 GLOSSARY_CHECKED_SRT_FILE_NAME = "video.cht.glossary_checked.srt"
 GLOSSARY_CHECK_REPORT_FILE_NAME = "report.md"
 DATE_RESEARCH_FILE_NAME = "date_research.json"
+TITLES_FILE_NAME = "titles.json"
 ARTIFACTS_DIR_NAME = ".artifacts"
 ASR_CACHE_DIR_NAME = ".asr"
 CHUNKS_CACHE_DIR_NAME = ".chunks"
 PRE_PASS_CACHE_DIR_NAME = ".pre_pass"
 REFINE_CACHE_DIR_NAME = ".refine"
 GLOSSARY_CHECK_CACHE_DIR_NAME = ".glossary_check"
+TITLES_DIR_NAME = ".titles"
 
 # Path units to keep free inside a project directory for its own contents,
 # counting the leading separator. The deepest artifact is the structural-fix

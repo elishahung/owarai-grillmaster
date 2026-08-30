@@ -5,7 +5,7 @@ description: >-
   (refine.py, glossary_check.py, cover.py, date_research.py, _srt_guard.py and
   their prompt .md
   files), `services/finalize/` (SRT → styled ASS + Netflix-TC punctuation), and
-  `services/package/` (burn-in, cover copy, noise/remix). Read this before
+  `services/package/` (burn-in, cover copy, titles, noise/remix). Read this before
   changing refine, glossary check, cover generation, finalize punctuation or
   ASS styling, or packaging/burn-in behavior.
 ---
@@ -80,6 +80,14 @@ Post-loop deliverable assembly (not a pipeline stage): burn ASS into the video
 `refine.md`/`glossary_check.md` — silently skipped when absent), plus a
 `noise`/`remix` packaging path (`noise.py`, `remix.py`). Burn-in itself lives
 in `services/media.py` (duration-validated; see **project-architecture**).
+
+`titles.py` is the only agent call inside packaging: three TC title candidates
+derived from the source project's `pre_pass.json` (`AGENT_COMMON_MODEL`,
+`schema=TitleSuggestions`, `cwd=None`), cached at `.titles/titles.json` in the
+**source** project (fixed-filename cache; corrupt counts as a miss) and copied
+into the deliverable as `titles.json`. `ENABLE_PACKAGE_TITLE_SUGGESTION` gates
+only generating a missing file — an existing one is always reused and copied.
+Best-effort like the rest of packaging: a failure warns and packaging continues.
 Default package and remix **content** segments share one look recipe
 there (`_PACKAGE_VIDEO_FILTER` / `_PACKAGE_AUDIO_FILTER` /
 `_PACKAGE_ENCODE_ARGS`): ASS first (when present), then scale, a 0.2°

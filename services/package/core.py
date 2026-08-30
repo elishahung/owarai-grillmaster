@@ -15,6 +15,7 @@ from project import (
     PRE_PASS_FILE_NAME,
     REFINE_CACHE_DIR_NAME,
     REFINE_REPORT_FILE_NAME,
+    TITLES_FILE_NAME,
     VIDEO_FILE_NAME,
     Project,
 )
@@ -25,6 +26,7 @@ from services.package.constants import (
 )
 from services.package.cover import copy_cover
 from services.package.remix import package_remix
+from services.package.titles import ensure_titles, titles_path
 from services.progress import NoopProgressReporter
 
 
@@ -52,6 +54,11 @@ def package_project(
         logger.warning(f"Package skipped: ASS subtitle not found at {ass_in}")
         shutil.rmtree(target_dir, ignore_errors=True)
         return
+
+    # Titles are packaged like any other artifact, but unlike the reports
+    # they are produced here rather than by a pipeline stage — so make sure
+    # they exist before the deliverable is built.
+    ensure_titles(source_root)
 
     try:
         if remix_noise_name is None:
@@ -136,7 +143,7 @@ def copy_auxiliary_artifacts(source_root: Path, target_dir: Path) -> None:
     else:
         logger.warning(f"Package: pre-pass JSON not found at {required_pre_pass}")
 
-    optional_reports = [
+    optional_artifacts = [
         (
             source_root / REFINE_CACHE_DIR_NAME / REFINE_REPORT_FILE_NAME,
             "refine.md",
@@ -147,8 +154,9 @@ def copy_auxiliary_artifacts(source_root: Path, target_dir: Path) -> None:
             / GLOSSARY_CHECK_REPORT_FILE_NAME,
             "glossary_check.md",
         ),
+        (titles_path(source_root), TITLES_FILE_NAME),
     ]
-    for source, target_name in optional_reports:
+    for source, target_name in optional_artifacts:
         if not source.exists():
             continue
         shutil.copy2(source, target_dir / target_name)

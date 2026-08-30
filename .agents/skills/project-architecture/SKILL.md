@@ -70,7 +70,8 @@ under `workflow/stages/` by subsystem; post-finalize archive/package is in
 After `FINALIZED` (and only if no `--break-after`): join the async cover and
 date-research futures,
 optionally `archive()` the project dir, then `package_project` (burn-in + cover
-copy / remix). Archive and package are **post-loop**, not stages. Package output
+copy / remix; it also ensures `.titles/titles.json` — the one agent call inside
+packaging, see **postprocess-and-packaging**). Archive and package are **post-loop**, not stages. Package output
 is flat: `Project.package_dir(PACKAGE_PATH)` = `{deliverable_name}` —
 `YYMMDD_{id}_{name}` when `broadcast_date` is known (announced on-air/publish
 date, platform-local timezone), plain `{id}_{name}` otherwise. Archive nests by
@@ -217,7 +218,8 @@ Key control-flow details that are easy to break:
 Pydantic-settings, loaded from `.env`. Notable patterns:
 
 - **Per-stage backend selection**: pre-pass, chunk, post-process, and the
-  common utility agents (chunk structural fix + broadcast-date research) each
+  common utility agents (chunk structural fix, broadcast-date research,
+  package title suggestion) each
   pick one spec (`agent_prepass_model` / `agent_chunk_model` /
   `agent_postprocess_model` / `agent_common_model`, i.e. `AGENT_*_MODEL` in
   `.env`).

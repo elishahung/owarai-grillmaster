@@ -10,6 +10,7 @@ from project import Project
 from services import package as package_module
 from services.package import core as package_core
 from services.package import remix as package_remix
+from services.package import titles as package_titles
 from services.progress import NoopProgressReporter
 
 
@@ -34,6 +35,15 @@ class FakeProgressReporter(NoopProgressReporter):
 
 
 class PackageTests(unittest.TestCase):
+    def setUp(self) -> None:
+        # Title suggestion is an agent call; keep it off unless a test opts in
+        # (the maintainer's .env may well have it enabled).
+        patcher = patch.object(
+            package_titles.settings, "enable_package_title_suggestion", False
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def _make_temp_dir(self) -> Path:
         root = Path(tempfile.mkdtemp(prefix="package-test-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))

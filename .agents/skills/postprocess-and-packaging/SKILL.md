@@ -86,8 +86,11 @@ present), then scale/crop, tempo `PACKAGE_TEMPO` (1.03, via `setpts` +
 `rubberband`), grade/noise, 1920x1080 yuv420p @ 29.94 fps, 44100 stereo,
 plus a -42 dB white-noise bed (`anoisesrc` `a=0.008` mixed with
 `amix=normalize=0` so program level is unchanged).
-Expected duration is `source / PACKAGE_TEMPO` — a same-length output on a
-long show is a failed speed-up, not a success. Noise prep writes 60 s chunks
+Default package drops the first `PACKAGE_LEAD_TRIM_SECONDS` (3 s) after
+ASS burn and before tempo; remix does the same only on the first content
+segment, then wraps noise around that already-trimmed clip. Expected
+duration is `usable / PACKAGE_TEMPO` — a same-length output on a long show
+is a failed speed-up, not a success. Noise prep writes 60 s chunks
 (`NOISE_CHUNK_DURATION_SECONDS`) in that same format so remix concat can
 stream-copy video. Remix splits near every 8 minutes
 (`REMIX_SEGMENT_SECONDS`) on a subtitle gap/boundary, then wraps each

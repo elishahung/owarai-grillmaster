@@ -7,7 +7,11 @@ from pathlib import Path
 from loguru import logger
 
 from project import FINALIZED_SRT_FILE_NAME
-from services.media import MediaProcessor, TimeRange
+from services.media import (
+    PACKAGE_LEAD_TRIM_SECONDS,
+    MediaProcessor,
+    TimeRange,
+)
 from services.package.constants import (
     NOISE_CHUNKS_PER_SEGMENT,
     REMIX_MIN_SEGMENT_SECONDS,
@@ -60,6 +64,14 @@ def package_remix(
             else None
         )
         for index, segment in enumerate(segments):
+            start_seconds = segment.start_seconds
+            if index == 0:
+                start_seconds += PACKAGE_LEAD_TRIM_SECONDS
+            if start_seconds >= segment.end_seconds:
+                raise RemixPackageError(
+                    "first remix segment is shorter than the "
+                    f"{PACKAGE_LEAD_TRIM_SECONDS}s package lead trim"
+                )
             head = selection.chunk_paths[
                 noise_offset + NOISE_CHUNKS_PER_SEGMENT * index
             ]
@@ -68,7 +80,7 @@ def package_remix(
             ]
             logger.info(
                 f"Remix segment {index + 1}/{len(segments)}: "
-                f"{segment.start_seconds:.3f}s-{segment.end_seconds:.3f}s"
+                f"{start_seconds:.3f}s-{segment.end_seconds:.3f}s"
             )
             MediaProcessor.build_remix_output(
                 video_file=video_file,
@@ -77,7 +89,7 @@ def package_remix(
                 / f"video_{index + 1 + output_offset}.mp4",
                 head_noise=head,
                 tail_noise=tail,
-                start_seconds=segment.start_seconds,
+                start_seconds=start_seconds,
                 end_seconds=segment.end_seconds,
                 progress=progress,
                 progress_task=progress_task,

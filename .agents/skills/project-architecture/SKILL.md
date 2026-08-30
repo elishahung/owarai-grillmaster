@@ -157,10 +157,10 @@ Key control-flow details that are easy to break:
   audio, frame sampling, burn-in). FFmpeg must be on PATH. Burn-in runs with
   `-nostdin` (headless safety) and **validates output duration** afterward
   (`BURN_IN_DURATION_TOLERANCE_SECONDS`, 2 s) against
-  `package_output_duration(source)` (`source / PACKAGE_TEMPO`), not the raw
-  source length: ffmpeg can exit 0 yet silently truncate or skip the tempo,
-  so an output more than 2 s off the expected length raises instead of
-  shipping.
+  `package_output_duration(usable)` (`(source - lead trim) / PACKAGE_TEMPO`),
+  not the raw source length: ffmpeg can exit 0 yet silently truncate or skip
+  the tempo, so an output more than 2 s off the expected length raises
+  instead of shipping.
 - `services/ytdlp/` — download + metadata + TVer/Abema talent scraping +
   `broadcast_date.py` (resolves the announced on-air/publish date: YouTube/
   BiliBili from yt-dlp timestamps, TVer from `broadcastDateLabel` month/day +

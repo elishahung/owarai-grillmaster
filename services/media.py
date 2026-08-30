@@ -23,6 +23,18 @@ BURN_IN_DURATION_TOLERANCE_SECONDS = 2.0
 PACKAGE_TEMPO = 1.03
 PACKAGE_PITCH = 1.01
 PACKAGE_NOISE_AMPLITUDE = 0.008  # ≈ -42 dBFS
+PACKAGE_LEAD_TRIM_SECONDS = 3
+
+
+def package_usable_duration(source_duration: float) -> float:
+    """Source length left after dropping the package lead-in."""
+    usable = source_duration - PACKAGE_LEAD_TRIM_SECONDS
+    if usable <= 0:
+        raise ValueError(
+            f"video is shorter than the {PACKAGE_LEAD_TRIM_SECONDS}s "
+            "package lead trim"
+        )
+    return usable
 
 
 def package_output_duration(source_duration: float) -> float:
@@ -246,9 +258,10 @@ class MediaProcessor:
             f"Burning subtitles {subtitle_file.name} into "
             f"{video_file.name} -> {output_file}"
         )
-        duration_seconds = package_output_duration(
+        usable_duration = package_usable_duration(
             MediaProcessor.get_media_duration(video_file)
         )
+        duration_seconds = package_output_duration(usable_duration)
         cmd = [
             "ffmpeg",
             "-hide_banner",
@@ -261,8 +274,10 @@ class MediaProcessor:
             "-filter_complex",
             (
                 f"[0:v]subtitles={subtitle_file.name},"
-                f"{MediaProcessor._PACKAGE_VIDEO_FILTER}[v];"
-                f"[0:a]{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
+                f"trim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration={usable_duration:.3f},"
+                f"setpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_VIDEO_FILTER}[v];"
+                f"[0:a]atrim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration={usable_duration:.3f},"
+                f"asetpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
                 f"{MediaProcessor._white_noise_mix(duration_seconds)}"
             ),
             "-map",

@@ -411,7 +411,7 @@ class PackageTests(unittest.TestCase):
                 for call in calls
             ],
             [
-                ("video_1.mp4", "000.mp4", "001.mp4", 0.0, 480.0),
+                ("video_1.mp4", "000.mp4", "001.mp4", 3.0, 480.0),
                 ("video_2.mp4", "002.mp4", "003.mp4", 480.0, 1000.0),
             ],
         )
@@ -489,7 +489,7 @@ class PackageTests(unittest.TestCase):
             progress.events[0],
             ("start_stage", 1, "Remixing subtitles", 1000.0),
         )
-        self.assertIn(("advance", 1, 480.0, "video_1.mp4"), progress.events)
+        self.assertIn(("advance", 1, 477.0, "video_1.mp4"), progress.events)
         self.assertIn(("advance", 1, 520.0, "video_2.mp4"), progress.events)
         self.assertEqual(progress.events[-1], ("finish", 1, "done"))
 
@@ -547,6 +547,8 @@ class PackageTests(unittest.TestCase):
         self.assertEqual(calls[0]["head_noise"].name, "001.mp4")
         self.assertEqual(calls[0]["tail_noise"].name, "002.mp4")
         self.assertEqual(calls[0]["output_file"].name, "video_2.mp4")
+        self.assertEqual(calls[0]["start_seconds"], 3.0)
+        self.assertEqual(calls[0]["end_seconds"], 6.0)
         self.assertEqual(
             (target / "video_1.mp4").read_text(encoding="utf-8"),
             "chunk 0",

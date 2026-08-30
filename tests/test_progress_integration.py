@@ -17,7 +17,12 @@ from services.translate.errors import (
 )
 from services.translate.facade import Translate, TranslationRequest
 from services.translate.pre_pass.pre_pass import PrePassResult
-from services.media import MediaProcessor, package_output_duration
+from services.media import (
+    PACKAGE_LEAD_TRIM_SECONDS,
+    MediaProcessor,
+    package_output_duration,
+    package_usable_duration,
+)
 from services.progress import NoopProgressReporter, RichProgressReporter
 from services.srt import SrtBlock, parse_srt
 from rich.console import Console
@@ -401,8 +406,16 @@ class MediaProgressTests(unittest.TestCase):
             def wait(self):
                 return 0
 
+        source_duration = 10.0
+        expected_duration = package_output_duration(
+            package_usable_duration(source_duration)
+        )
         with (
-            patch.object(MediaProcessor, "get_media_duration", return_value=1.0),
+            patch.object(
+                MediaProcessor,
+                "get_media_duration",
+                side_effect=[source_duration, expected_duration],
+            ),
             patch("services.media.subprocess.Popen", return_value=FakeProcess()) as popen,
         ):
             MediaProcessor.burn_in_subtitles(
@@ -413,6 +426,14 @@ class MediaProgressTests(unittest.TestCase):
         filter_complex = cmd[cmd.index("-filter_complex") + 1]
         self.assertIn("-nostdin", cmd)
         self.assertIn("subtitles=video.ass,", filter_complex)
+        self.assertIn(
+            f"trim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration=7.000",
+            filter_complex,
+        )
+        self.assertIn(
+            f"atrim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration=7.000",
+            filter_complex,
+        )
         self.assertIn(MediaProcessor._PACKAGE_VIDEO_FILTER, filter_complex)
         self.assertIn(MediaProcessor._PACKAGE_AUDIO_FILTER, filter_complex)
         self.assertIn("anoisesrc=", filter_complex)
@@ -424,7 +445,7 @@ class MediaProgressTests(unittest.TestCase):
                 "start_stage",
                 1,
                 "Burning subtitles",
-                package_output_duration(1.0),
+                expected_duration,
             ),
             progress.events,
         )
@@ -449,7 +470,7 @@ class MediaProgressTests(unittest.TestCase):
                 return 1
 
         with (
-            patch.object(MediaProcessor, "get_media_duration", return_value=1.0),
+            patch.object(MediaProcessor, "get_media_duration", return_value=10.0),
             patch("services.media.subprocess.Popen", return_value=FakeProcess()),
         ):
             with self.assertRaises(subprocess.CalledProcessError) as raised:
@@ -462,6 +483,24 @@ class MediaProgressTests(unittest.TestCase):
 
         self.assertIn("bad filter", raised.exception.stderr)
         self.assertEqual(progress.events[-1], ("finish", 1, "failed"))
+
+    def test_burn_in_subtitles_rejects_video_shorter_than_lead_trim(self):
+        root = Path(tempfile.mkdtemp(prefix="burn-lead-trim-test-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        video = root / "video.mp4"
+        subtitle = root / "video.ass"
+        output = root / "out.mp4"
+        video.write_text("video", encoding="utf-8")
+        subtitle.write_text("subtitle", encoding="utf-8")
+
+        with (
+            patch.object(MediaProcessor, "get_media_duration", return_value=2.0),
+            patch("services.media.subprocess.Popen") as popen,
+        ):
+            with self.assertRaisesRegex(ValueError, "lead trim"):
+                MediaProcessor.burn_in_subtitles(video, subtitle, output)
+
+        popen.assert_not_called()
 
     def test_burn_in_subtitles_rejects_short_successful_output(self):
         root = Path(tempfile.mkdtemp(prefix="burn-progress-short-test-"))
@@ -484,7 +523,7 @@ class MediaProgressTests(unittest.TestCase):
             patch.object(
                 MediaProcessor,
                 "get_media_duration",
-                side_effect=[10.0, 5.0],
+                side_effect=[20.0, 5.0],
             ),
             patch("services.media.subprocess.Popen", return_value=FakeProcess()),
         ):

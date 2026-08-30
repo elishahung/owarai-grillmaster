@@ -42,7 +42,9 @@ finalize — must read with `utf-8-sig`.
   copies reports only if present.
 - `cover.py` — stylize the poster. **Always Codex** (image generation),
   regardless of the backend settings; effort comes from `AGENT_COMMON_MODEL`.
-  Runs async from the workflow
+  The cover prompt (`prompts/cover.md`) redraws the poster as a
+  Rick-and-Morty-like cartoon and strips text cards, logos, and lettering
+  so only the pictured scene remains. Runs async from the workflow
   (see **project-architecture** for the ThreadPoolExecutor/join rules).
 - `date_research.py` — broadcast-date web research fallback
   (`AGENT_COMMON_MODEL`, called with `web_search=True` and `cwd=None`

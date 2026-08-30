@@ -315,7 +315,7 @@ class PackageTests(unittest.TestCase):
         project = Project(id="demo", name="show")
 
         def fail_on_second_output(**kwargs):
-            if kwargs["output_file"].name == "video_2.mp4":
+            if kwargs["output_file"].name == "2.mp4":
                 raise subprocess.CalledProcessError(1, ["ffmpeg"])
             kwargs["output_file"].write_text("ok", encoding="utf-8")
 
@@ -526,14 +526,14 @@ class PackageTests(unittest.TestCase):
             ],
             [
                 (
-                    "video_1.mp4",
+                    "1.mp4",
                     ("000.mp4", 0.0, 60.0),
                     ("000.mp4", 60.0, 90.0),
                     3.0,
                     480.0,
                 ),
                 (
-                    "video_2.mp4",
+                    "2.mp4",
                     ("001.mp4", 0.0, 60.0),
                     ("001.mp4", 60.0, 90.0),
                     480.0,
@@ -542,12 +542,12 @@ class PackageTests(unittest.TestCase):
             ],
         )
         target = package_root / "demo_show"
-        self.assertTrue((target / "video_1.mp4").exists())
-        self.assertTrue((target / "video_2.mp4").exists())
-        self.assertFalse((target / "video_3.mp4").exists())
+        self.assertTrue((target / "1.mp4").exists())
+        self.assertTrue((target / "2.mp4").exists())
+        self.assertFalse((target / "3.mp4").exists())
         self.assertTrue((target / "cover.jpg").exists())
         self.assertEqual(
-            (target / "video_1.mp4").read_text(encoding="utf-8"),
+            (target / "1.mp4").read_text(encoding="utf-8"),
             "remix",
         )
         self.assertEqual(
@@ -615,8 +615,8 @@ class PackageTests(unittest.TestCase):
             progress.events[0],
             ("start_stage", 1, "Remixing subtitles", 1240.0),
         )
-        self.assertIn(("advance", 1, 477.0, "video_1.mp4"), progress.events)
-        self.assertIn(("advance", 1, 520.0, "video_2.mp4"), progress.events)
+        self.assertIn(("advance", 1, 477.0, "1.mp4"), progress.events)
+        self.assertIn(("advance", 1, 520.0, "2.mp4"), progress.events)
         self.assertEqual(progress.events[-1], ("finish", 1, "done"))
 
     def test_packagerc_series_rule_forces_a_remix_package(self):
@@ -669,7 +669,7 @@ class PackageTests(unittest.TestCase):
 
         burn_in_subtitles.assert_not_called()
         self.assertEqual(
-            (package_root / "demo_show" / "video_1.mp4").read_text(
+            (package_root / "demo_show" / "1.mp4").read_text(
                 encoding="utf-8"
             ),
             "remix",

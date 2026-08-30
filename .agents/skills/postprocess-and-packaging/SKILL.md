@@ -126,7 +126,7 @@ advanced cursor **before** rendering, so concurrent packaging runs never draw
 the same noise — a run that then fails skips its reserved noise rather than
 reusing it. Remix splits near every 8 minutes (`REMIX_SEGMENT_SECONDS`)
 on a subtitle gap/boundary, then wraps each segment as noise + content +
-noise (`video_1.mp4`, `video_2.mp4`, …).
+noise (`1.mp4`, `2.mp4`, …).
 
 `rc.py` reads `.packagerc` (git-ignored, at the working-directory root):
 `{series|channel: {<name>: {remix?}}}`. The download stage appends empty

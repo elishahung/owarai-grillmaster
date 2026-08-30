@@ -73,7 +73,7 @@ def package_remix(
             MediaProcessor.build_remix_output(
                 video_file=video_file,
                 subtitle_file=subtitle_file,
-                output_file=target_dir / f"video_{index + 1}.mp4",
+                output_file=target_dir / f"{index + 1}.mp4",
                 head_noise=head,
                 tail_noise=tail,
                 start_seconds=start_seconds,

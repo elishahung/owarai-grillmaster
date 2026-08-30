@@ -112,7 +112,7 @@ def prepare_noise(
     chunk_duration_seconds: int = NOISE_CHUNK_DURATION_SECONDS,
     progress: NoopProgressReporter | None = None,
 ) -> None:
-    """Prepare normalized noise chunks under PACKAGE_PATH/noise."""
+    """Prepare format-matched noise chunks under PACKAGE_PATH/noise."""
     noise_root = package_root / "noise"
     noise_file = noise_root / f"{noise_name}{NOISE_SOURCE_SUFFIX}"
     output_dir = noise_root / noise_name

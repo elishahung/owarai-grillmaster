@@ -328,7 +328,7 @@ def noise_command(
         ),
     ] = NOISE_CHUNK_DURATION_SECONDS,
 ) -> None:
-    """Prepare normalized noise chunks from PACKAGE_PATH/noise/NAME.webm."""
+    """Prepare format-matched noise chunks from PACKAGE_PATH/noise/NAME.webm."""
     if settings.package_path is None:
         logger.error("PACKAGE_PATH is not set; cannot prepare noise")
         raise typer.Exit(code=1)

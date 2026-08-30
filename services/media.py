@@ -6,6 +6,7 @@ and combining multiple video files.
 """
 
 from collections import deque
+from math import radians
 from pathlib import Path
 import ffmpeg
 import subprocess
@@ -24,6 +25,8 @@ PACKAGE_TEMPO = 1.03
 PACKAGE_PITCH = 1.01
 PACKAGE_NOISE_AMPLITUDE = 0.008  # ≈ -42 dBFS
 PACKAGE_LEAD_TRIM_SECONDS = 3
+PACKAGE_ROTATE_DEGREES = 0.2
+PACKAGE_ROTATE_RADIANS = radians(PACKAGE_ROTATE_DEGREES)
 
 
 def package_usable_duration(source_duration: float) -> float:
@@ -369,7 +372,12 @@ class MediaProcessor:
         chunk_duration_seconds: int,
         progress: NoopProgressReporter | None = None,
     ) -> None:
-        """Encode fixed-length normalized noise chunks as 000.mp4 files."""
+        """Re-encode fixed-length noise chunks so remix can stream-copy them.
+
+        Chunks are fitted to the package output format (1920x1080 yuv420p
+        @ 29.94, 44100 stereo, same encoder). The look filters — rotate,
+        grade, grain, tempo, rubberband, white-noise bed — are not applied.
+        """
         if chunk_duration_seconds <= 0:
             raise ValueError("chunk_duration_seconds must be positive")
         if not noise_file.exists():
@@ -424,9 +432,8 @@ class MediaProcessor:
                     str(noise_file),
                     "-filter_complex",
                     (
-                        f"[0:v]{MediaProcessor._PACKAGE_VIDEO_FILTER}[v];"
-                        f"[0:a]{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
-                        f"{MediaProcessor._white_noise_mix(package_output_duration(chunk_duration_seconds))}"
+                        f"[0:v]{MediaProcessor._NOISE_VIDEO_FILTER}[v];"
+                        f"[0:a]{MediaProcessor._NOISE_AUDIO_FILTER}[a]"
                     ),
                     "-map",
                     "[v]",
@@ -911,6 +918,9 @@ class MediaProcessor:
 
     _PACKAGE_VIDEO_FILTER = (
         "scale=1960:1102:flags=lanczos,"
+        f"rotate=a={PACKAGE_ROTATE_RADIANS}:"
+        f"ow=rotw({PACKAGE_ROTATE_RADIANS}):"
+        f"oh=roth({PACKAGE_ROTATE_RADIANS}):c=black,"
         "crop=1920:1080,"
         f"setpts=PTS/{PACKAGE_TEMPO},"
         "eq=brightness=0.02:contrast=1.03:saturation=1.05,"
@@ -926,13 +936,27 @@ class MediaProcessor:
         "aformat=sample_rates=44100:channel_layouts=stereo,"
         "volume=0.97"
     )
+    _NOISE_VIDEO_FILTER = "scale=1920:1080:flags=lanczos,format=yuv420p,fps=29.94"
+    _NOISE_AUDIO_FILTER = (
+        "aformat=sample_rates=44100:channel_layouts=stereo"
+    )
     _PACKAGE_ENCODE_ARGS = [
         "-c:v",
-        "libx264",
+        "h264_nvenc",
         "-preset",
-        "medium",
-        "-crf",
-        "18",
+        "p5",
+        "-tune",
+        "hq",
+        "-rc",
+        "vbr",
+        "-cq",
+        "19",
+        "-b:v",
+        "0",
+        "-profile:v",
+        "high",
+        "-spatial-aq",
+        "1",
         "-c:a",
         "aac",
         "-b:a",

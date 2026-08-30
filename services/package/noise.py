@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, ValidationError
 
 from services.package.constants import (
-    REMIX_CHUNK_COUNT,
+    NOISE_CHUNKS_PER_SEGMENT,
     NOISE_STATE_FILE_NAME,
 )
 from services.package.errors import RemixPackageError
@@ -25,7 +25,7 @@ class NoiseSelection:
 
 
 def select_noise_chunks(
-    noise_dir: Path, chunk_count: int = REMIX_CHUNK_COUNT
+    noise_dir: Path, chunk_count: int = NOISE_CHUNKS_PER_SEGMENT
 ) -> NoiseSelection:
     """Select prepared chunks and compute the next cyclic index."""
     if chunk_count <= 0:

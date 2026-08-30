@@ -80,3 +80,15 @@ Post-loop deliverable assembly (not a pipeline stage): burn ASS into the video
 `refine.md`/`glossary_check.md` — silently skipped when absent), plus a
 `noise`/`remix` packaging path (`noise.py`, `remix.py`). Burn-in itself lives
 in `services/media.py` (duration-validated; see **project-architecture**).
+Default package, remix segments, and noise chunks share one encode recipe
+there (`_PACKAGE_VIDEO_FILTER` / `_PACKAGE_AUDIO_FILTER`): ASS first (when
+present), then scale/crop, tempo `PACKAGE_TEMPO` (1.03, via `setpts` +
+`rubberband`), grade/noise, 1920x1080 yuv420p @ 29.94 fps, 44100 stereo,
+plus a -42 dB white-noise bed (`anoisesrc` `a=0.008` mixed with
+`amix=normalize=0` so program level is unchanged).
+Expected duration is `source / PACKAGE_TEMPO` — a same-length output on a
+long show is a failed speed-up, not a success. Noise prep writes 60 s chunks
+(`NOISE_CHUNK_DURATION_SECONDS`) in that same format so remix concat can
+stream-copy video. Remix splits near every 8 minutes
+(`REMIX_SEGMENT_SECONDS`) on a subtitle gap/boundary, then wraps each
+segment as noise + content + noise (`video_1.mp4`, `video_2.mp4`, …).

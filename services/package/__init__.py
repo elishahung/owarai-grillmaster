@@ -6,7 +6,7 @@ from services.package.core import (
 )
 from services.package.errors import RemixPackageError
 from services.package.noise import select_noise_chunks, write_noise_state
-from services.package.remix import select_remix_split
+from services.package.remix import select_remix_segments
 
 __all__ = [
     "RemixPackageError",
@@ -14,6 +14,6 @@ __all__ = [
     "package_project_directory",
     "prepare_noise",
     "select_noise_chunks",
-    "select_remix_split",
+    "select_remix_segments",
     "write_noise_state",
 ]

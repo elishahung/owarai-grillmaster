@@ -17,7 +17,7 @@ from services.translate.errors import (
 )
 from services.translate.facade import Translate, TranslationRequest
 from services.translate.pre_pass.pre_pass import PrePassResult
-from services.media import MediaProcessor
+from services.media import MediaProcessor, package_output_duration
 from services.progress import NoopProgressReporter, RichProgressReporter
 from services.srt import SrtBlock, parse_srt
 from rich.console import Console
@@ -410,8 +410,24 @@ class MediaProgressTests(unittest.TestCase):
             )
 
         cmd = popen.call_args.args[0]
+        filter_complex = cmd[cmd.index("-filter_complex") + 1]
         self.assertIn("-nostdin", cmd)
-        self.assertIn(("start_stage", 1, "Burning subtitles", 1.0), progress.events)
+        self.assertIn("subtitles=video.ass,", filter_complex)
+        self.assertIn(MediaProcessor._PACKAGE_VIDEO_FILTER, filter_complex)
+        self.assertIn(MediaProcessor._PACKAGE_AUDIO_FILTER, filter_complex)
+        self.assertIn("anoisesrc=", filter_complex)
+        self.assertIn("a=0.008", filter_complex)
+        self.assertIn("amix=inputs=2", filter_complex)
+        self.assertNotIn("copy", cmd[cmd.index("-c:a") + 1])
+        self.assertIn(
+            (
+                "start_stage",
+                1,
+                "Burning subtitles",
+                package_output_duration(1.0),
+            ),
+            progress.events,
+        )
         self.assertIn(("advance", 1, 0.5, None), progress.events)
         self.assertEqual(progress.events[-1], ("finish", 1, "done"))
 
@@ -472,7 +488,7 @@ class MediaProgressTests(unittest.TestCase):
             ),
             patch("services.media.subprocess.Popen", return_value=FakeProcess()),
         ):
-            with self.assertRaisesRegex(ValueError, "shorter than source"):
+            with self.assertRaisesRegex(ValueError, "differs from expected"):
                 MediaProcessor.burn_in_subtitles(
                     video,
                     subtitle,
@@ -481,6 +497,33 @@ class MediaProgressTests(unittest.TestCase):
                 )
 
         self.assertEqual(progress.events[-1], ("finish", 1, "failed"))
+
+    def test_burn_in_subtitles_rejects_output_that_skips_tempo(self):
+        root = Path(tempfile.mkdtemp(prefix="burn-progress-tempo-test-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        video = root / "video.mp4"
+        subtitle = root / "video.ass"
+        output = root / "out.mp4"
+        video.write_text("video", encoding="utf-8")
+        subtitle.write_text("subtitle", encoding="utf-8")
+
+        class FakeProcess:
+            stdout = iter(["progress=end\n"])
+            stderr = iter([])
+
+            def wait(self):
+                return 0
+
+        with (
+            patch.object(
+                MediaProcessor,
+                "get_media_duration",
+                side_effect=[400.0, 400.0],
+            ),
+            patch("services.media.subprocess.Popen", return_value=FakeProcess()),
+        ):
+            with self.assertRaisesRegex(ValueError, "differs from expected"):
+                MediaProcessor.burn_in_subtitles(video, subtitle, output)
 
     def test_remix_segment_reports_progress_to_existing_task(self):
         root = Path(tempfile.mkdtemp(prefix="remix-progress-test-"))
@@ -527,10 +570,15 @@ class MediaProgressTests(unittest.TestCase):
         )
         self.assertEqual(
             progress.events[-1],
-            ("advance", 7, 0.25, "Remixing video_1.mp4"),
+            (
+                "advance",
+                7,
+                package_output_duration(1.0) - 0.75,
+                "Remixing video_1.mp4",
+            ),
         )
 
-    def test_remix_segment_resamples_audio_to_noise_chunk_rate(self):
+    def test_remix_segment_uses_shared_package_audio_filter(self):
         root = Path(tempfile.mkdtemp(prefix="remix-audio-rate-test-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         video = root / "video.mp4"
@@ -557,7 +605,10 @@ class MediaProgressTests(unittest.TestCase):
 
         cmd = popen.call_args.args[0]
         filter_complex = cmd[cmd.index("-filter_complex") + 1]
-        self.assertIn("aresample=48000:async=1", filter_complex)
+        self.assertIn(MediaProcessor._PACKAGE_VIDEO_FILTER, filter_complex)
+        self.assertIn(MediaProcessor._PACKAGE_AUDIO_FILTER, filter_complex)
+        self.assertIn("anoisesrc=", filter_complex)
+        self.assertIn("a=0.008", filter_complex)
 
     def test_prepare_noise_reports_existing_and_encoded_chunk_progress(self):
         root = Path(tempfile.mkdtemp(prefix="noise-progress-test-"))
@@ -607,7 +658,9 @@ class MediaProgressTests(unittest.TestCase):
             progress.events,
         )
         cmd = popen.call_args.args[0]
-        self.assertEqual(cmd[cmd.index("-af") + 1], "aresample=48000:async=1")
+        filter_complex = cmd[cmd.index("-filter_complex") + 1]
+        self.assertIn(MediaProcessor._PACKAGE_AUDIO_FILTER, filter_complex)
+        self.assertIn("anoisesrc=", filter_complex)
         self.assertEqual(progress.events[-1], ("finish", 1, "done"))
 
     def test_prepare_noise_marks_progress_failed_on_ffmpeg_failure(self):
@@ -674,9 +727,10 @@ class MediaProgressTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         video = root / "video.mp4"
         subtitle = root / "video.ass"
-        noise = root / "noise.mp4"
+        head = root / "head.mp4"
+        tail = root / "tail.mp4"
         output = root / "out.mp4"
-        for path in (video, subtitle, noise):
+        for path in (video, subtitle, head, tail):
             path.write_text("media", encoding="utf-8")
         progress = FakeProgressReporter()
 
@@ -695,7 +749,8 @@ class MediaProgressTests(unittest.TestCase):
                 video_file=video,
                 subtitle_file=subtitle,
                 output_file=output,
-                noise_file=noise,
+                head_noise=head,
+                tail_noise=tail,
                 start_seconds=0.0,
                 end_seconds=1.0,
                 progress=progress,
@@ -704,9 +759,10 @@ class MediaProgressTests(unittest.TestCase):
 
         self.assertIs(concat.call_args.kwargs["progress"], progress)
         concat_inputs = concat.call_args.args[0]
-        self.assertEqual(len(concat_inputs), 2)
-        self.assertEqual(concat_inputs[0], noise)
+        self.assertEqual(len(concat_inputs), 3)
+        self.assertEqual(concat_inputs[0], head)
         self.assertEqual(concat_inputs[1].name, "target.mp4")
+        self.assertEqual(concat_inputs[2], tail)
 
 
 class RichProgressReporterTests(unittest.TestCase):

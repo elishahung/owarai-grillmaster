@@ -45,44 +45,111 @@ class PackageTests(unittest.TestCase):
             blocks.append(f"{index}\n{start} --> {end}\nLine {index}\n")
         path.write_text("\n".join(blocks), encoding="utf-8")
 
-    def test_select_remix_split_prefers_nearest_middle_gap(self):
+    def test_select_remix_segments_keeps_short_video_as_one_piece(self):
         root = self._make_temp_dir()
         srt = root / "video.cht.finalized.srt"
         self._write_srt(
             srt,
             [
                 ("00:00:00,000", "00:00:10,000"),
-                ("00:00:30,000", "00:00:35,000"),
                 ("00:01:10,000", "00:01:20,000"),
             ],
         )
 
-        split = package_module.select_remix_split(srt, duration_seconds=100.0)
+        segments = package_module.select_remix_segments(
+            srt, duration_seconds=100.0
+        )
 
-        self.assertEqual(split, 52.5)
+        self.assertEqual(len(segments), 1)
+        self.assertEqual(segments[0].start_seconds, 0.0)
+        self.assertEqual(segments[0].end_seconds, 100.0)
 
-    def test_select_remix_split_falls_back_to_nearest_boundary(self):
+    def test_select_remix_segments_snaps_eight_minute_cut_to_gap(self):
         root = self._make_temp_dir()
         srt = root / "video.cht.finalized.srt"
         self._write_srt(
             srt,
             [
-                ("00:00:00,000", "00:00:40,000"),
-                ("00:00:40,000", "00:01:40,000"),
+                ("00:00:00,000", "00:07:50,000"),
+                ("00:08:10,000", "00:16:40,000"),
             ],
         )
 
-        split = package_module.select_remix_split(srt, duration_seconds=100.0)
+        segments = package_module.select_remix_segments(
+            srt, duration_seconds=1000.0
+        )
 
-        self.assertEqual(split, 40.0)
+        self.assertEqual(
+            [(item.start_seconds, item.end_seconds) for item in segments],
+            [(0.0, 480.0), (480.0, 1000.0)],
+        )
 
-    def test_select_remix_split_rejects_empty_srt(self):
+    def test_select_remix_segments_falls_back_to_nearest_boundary(self):
+        root = self._make_temp_dir()
+        srt = root / "video.cht.finalized.srt"
+        self._write_srt(
+            srt,
+            [
+                ("00:00:00,000", "00:06:40,000"),
+                ("00:06:40,000", "00:16:40,000"),
+            ],
+        )
+
+        segments = package_module.select_remix_segments(
+            srt, duration_seconds=1000.0
+        )
+
+        self.assertEqual(
+            [(item.start_seconds, item.end_seconds) for item in segments],
+            [(0.0, 400.0), (400.0, 1000.0)],
+        )
+
+    def test_select_remix_segments_cuts_each_eight_minutes(self):
+        root = self._make_temp_dir()
+        srt = root / "video.cht.finalized.srt"
+        self._write_srt(
+            srt,
+            [
+                ("00:00:00,000", "00:07:50,000"),
+                ("00:08:10,000", "00:15:50,000"),
+                ("00:16:10,000", "00:25:00,000"),
+            ],
+        )
+
+        segments = package_module.select_remix_segments(
+            srt, duration_seconds=1500.0
+        )
+
+        self.assertEqual(
+            [(item.start_seconds, item.end_seconds) for item in segments],
+            [(0.0, 480.0), (480.0, 960.0), (960.0, 1500.0)],
+        )
+
+    def test_select_remix_segments_absorbs_tiny_remainder(self):
+        root = self._make_temp_dir()
+        srt = root / "video.cht.finalized.srt"
+        self._write_srt(
+            srt,
+            [
+                ("00:00:00,000", "00:07:50,000"),
+                ("00:08:10,000", "00:08:20,000"),
+            ],
+        )
+
+        segments = package_module.select_remix_segments(
+            srt, duration_seconds=500.0
+        )
+
+        self.assertEqual(len(segments), 1)
+        self.assertEqual(segments[0].end_seconds, 500.0)
+
+    def test_select_remix_segments_rejects_empty_srt(self):
         root = self._make_temp_dir()
         srt = root / "video.cht.finalized.srt"
         srt.write_text("no timecodes", encoding="utf-8")
 
         with self.assertRaises(package_module.RemixPackageError):
-            package_module.select_remix_split(srt, duration_seconds=100.0)
+            package_module.select_remix_segments(srt, duration_seconds=100.0)
 
     def test_select_noise_chunks_wraps_and_advances(self):
         root = self._make_temp_dir()
@@ -162,7 +229,7 @@ class PackageTests(unittest.TestCase):
         noise_dir = package_root / "noise" / "sleep"
         source.mkdir()
         noise_dir.mkdir(parents=True)
-        for index in range(3):
+        for index in range(4):
             (noise_dir / f"{index:03d}.mp4").write_text(
                 "chunk", encoding="utf-8"
             )
@@ -170,7 +237,10 @@ class PackageTests(unittest.TestCase):
         (source / "video.cht.ass").write_text("ass", encoding="utf-8")
         self._write_srt(
             source / "video.cht.finalized.srt",
-            [("00:00:00,000", "00:00:01,000")],
+            [
+                ("00:00:00,000", "00:07:50,000"),
+                ("00:08:10,000", "00:16:40,000"),
+            ],
         )
         project = Project(id="demo", name="show")
 
@@ -183,7 +253,7 @@ class PackageTests(unittest.TestCase):
             patch.object(
                 package_remix.MediaProcessor,
                 "get_media_duration",
-                return_value=10.0,
+                return_value=1000.0,
             ),
             patch.object(
                 package_remix.MediaProcessor,
@@ -299,20 +369,22 @@ class PackageTests(unittest.TestCase):
         self._write_srt(
             source / "video.cht.finalized.srt",
             [
-                ("00:00:00,000", "00:00:01,000"),
-                ("00:00:04,000", "00:00:05,000"),
+                ("00:00:00,000", "00:07:50,000"),
+                ("00:08:10,000", "00:16:40,000"),
             ],
         )
         project = Project(id="demo", name="show")
+        calls = []
 
         def create_remix_output(**kwargs):
+            calls.append(kwargs)
             kwargs["output_file"].write_text("remix", encoding="utf-8")
 
         with (
             patch.object(
                 package_remix.MediaProcessor,
                 "get_media_duration",
-                return_value=6.0,
+                return_value=1000.0,
             ),
             patch.object(
                 package_remix.MediaProcessor,
@@ -327,6 +399,22 @@ class PackageTests(unittest.TestCase):
                 remix_noise_name="sleep",
             )
 
+        self.assertEqual(
+            [
+                (
+                    call["output_file"].name,
+                    call["head_noise"].name,
+                    call["tail_noise"].name,
+                    call["start_seconds"],
+                    call["end_seconds"],
+                )
+                for call in calls
+            ],
+            [
+                ("video_1.mp4", "000.mp4", "001.mp4", 0.0, 480.0),
+                ("video_2.mp4", "002.mp4", "003.mp4", 480.0, 1000.0),
+            ],
+        )
         target = package_root / "demo_show"
         self.assertTrue((target / "video_1.mp4").exists())
         self.assertTrue((target / "video_2.mp4").exists())
@@ -341,7 +429,7 @@ class PackageTests(unittest.TestCase):
             '{"summary":"remix"}',
         )
         state = json.loads((noise_dir / "state.json").read_text("utf-8"))
-        self.assertEqual(state["next_index"], 2)
+        self.assertEqual(state["next_index"], 0)
 
     def test_remix_package_uses_one_progress_task_for_two_target_renders(self):
         root = self._make_temp_dir()
@@ -361,8 +449,8 @@ class PackageTests(unittest.TestCase):
         self._write_srt(
             source / "video.cht.finalized.srt",
             [
-                ("00:00:00,000", "00:00:01,000"),
-                ("00:00:04,000", "00:00:05,000"),
+                ("00:00:00,000", "00:07:50,000"),
+                ("00:08:10,000", "00:16:40,000"),
             ],
         )
         progress = FakeProgressReporter()
@@ -379,7 +467,7 @@ class PackageTests(unittest.TestCase):
             patch.object(
                 package_remix.MediaProcessor,
                 "get_media_duration",
-                return_value=6.0,
+                return_value=1000.0,
             ),
             patch.object(
                 package_remix.MediaProcessor,
@@ -399,13 +487,13 @@ class PackageTests(unittest.TestCase):
 
         self.assertEqual(
             progress.events[0],
-            ("start_stage", 1, "Remixing subtitles", 6.0),
+            ("start_stage", 1, "Remixing subtitles", 1000.0),
         )
-        self.assertIn(("advance", 1, 2.5, "video_1.mp4"), progress.events)
-        self.assertIn(("advance", 1, 3.5, "video_2.mp4"), progress.events)
+        self.assertIn(("advance", 1, 480.0, "video_1.mp4"), progress.events)
+        self.assertIn(("advance", 1, 520.0, "video_2.mp4"), progress.events)
         self.assertEqual(progress.events[-1], ("finish", 1, "done"))
 
-    def test_remix_prefix_copies_noise_then_uses_one_noise_chunk_per_render(self):
+    def test_remix_prefix_copies_noise_then_wraps_each_segment(self):
         root = self._make_temp_dir()
         source = root / "source"
         package_root = root / "package"
@@ -455,10 +543,10 @@ class PackageTests(unittest.TestCase):
                 prefix_noise=True,
             )
 
-        self.assertEqual(
-            [call["noise_file"].name for call in calls],
-            ["001.mp4", "002.mp4"],
-        )
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["head_noise"].name, "001.mp4")
+        self.assertEqual(calls[0]["tail_noise"].name, "002.mp4")
+        self.assertEqual(calls[0]["output_file"].name, "video_2.mp4")
         self.assertEqual(
             (target / "video_1.mp4").read_text(encoding="utf-8"),
             "chunk 0",

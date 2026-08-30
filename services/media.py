@@ -20,6 +20,14 @@ from services.progress import NoopProgressReporter
 
 
 BURN_IN_DURATION_TOLERANCE_SECONDS = 2.0
+PACKAGE_TEMPO = 1.03
+PACKAGE_PITCH = 1.01
+PACKAGE_NOISE_AMPLITUDE = 0.008  # ≈ -42 dBFS
+
+
+def package_output_duration(source_duration: float) -> float:
+    """Expected output length after the shared package tempo."""
+    return source_duration / PACKAGE_TEMPO
 
 
 class TimeRange(BaseModel):
@@ -213,7 +221,7 @@ class MediaProcessor:
         output_file: Path,
         progress: NoopProgressReporter | None = None,
     ) -> None:
-        """Burn ASS/SRT subtitles into the video.
+        """Burn ASS/SRT subtitles into the video, then apply the package filters.
 
         Implementation note: ffmpeg's ``subtitles`` filter does not handle
         absolute Windows paths reliably (colon parsing collides with filter
@@ -238,7 +246,9 @@ class MediaProcessor:
             f"Burning subtitles {subtitle_file.name} into "
             f"{video_file.name} -> {output_file}"
         )
-        duration_seconds = MediaProcessor.get_media_duration(video_file)
+        duration_seconds = package_output_duration(
+            MediaProcessor.get_media_duration(video_file)
+        )
         cmd = [
             "ffmpeg",
             "-hide_banner",
@@ -248,10 +258,18 @@ class MediaProcessor:
             "pipe:1",
             "-i",
             video_file.name,
-            "-vf",
-            f"subtitles={subtitle_file.name}",
-            "-c:a",
-            "copy",
+            "-filter_complex",
+            (
+                f"[0:v]subtitles={subtitle_file.name},"
+                f"{MediaProcessor._PACKAGE_VIDEO_FILTER}[v];"
+                f"[0:a]{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
+                f"{MediaProcessor._white_noise_mix(duration_seconds)}"
+            ),
+            "-map",
+            "[v]",
+            "-map",
+            "[a]",
+            *MediaProcessor._PACKAGE_ENCODE_ARGS,
             str(output_file),
             "-y",
         ]
@@ -312,13 +330,13 @@ class MediaProcessor:
             )
 
         output_duration = MediaProcessor.get_media_duration(output_file)
-        duration_delta = duration_seconds - output_duration
-        if duration_delta > BURN_IN_DURATION_TOLERANCE_SECONDS:
+        duration_error = abs(duration_seconds - output_duration)
+        if duration_error > BURN_IN_DURATION_TOLERANCE_SECONDS:
             if progress is not None:
                 progress.finish(progress_task, "failed")
             raise ValueError(
-                f"burn-in output is shorter than source by "
-                f"{duration_delta:.3f}s: {output_file} "
+                f"burn-in output duration differs from expected by "
+                f"{duration_error:.3f}s: {output_file} "
                 f"({output_duration:.3f}s vs {duration_seconds:.3f}s)"
             )
 
@@ -389,11 +407,17 @@ class MediaProcessor:
                     str(chunk_duration_seconds),
                     "-i",
                     str(noise_file),
-                    "-vf",
-                    MediaProcessor._REMIX_VIDEO_FILTER,
-                    "-af",
-                    "aresample=48000:async=1",
-                    *MediaProcessor._REMIX_ENCODE_ARGS,
+                    "-filter_complex",
+                    (
+                        f"[0:v]{MediaProcessor._PACKAGE_VIDEO_FILTER}[v];"
+                        f"[0:a]{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
+                        f"{MediaProcessor._white_noise_mix(package_output_duration(chunk_duration_seconds))}"
+                    ),
+                    "-map",
+                    "[v]",
+                    "-map",
+                    "[a]",
+                    *MediaProcessor._PACKAGE_ENCODE_ARGS,
                     str(output_file),
                     "-y",
                 ]
@@ -432,14 +456,16 @@ class MediaProcessor:
         duration = max(0.0, end_seconds - start_seconds)
         if duration <= 0:
             raise ValueError("segment duration must be positive")
+        output_duration = package_output_duration(duration)
 
         output_file.parent.mkdir(parents=True, exist_ok=True)
         filter_complex = (
             f"[0:v]subtitles={subtitle_file.name},"
             f"trim=start={start_seconds:.3f}:duration={duration:.3f},"
-            f"setpts=PTS-STARTPTS,{MediaProcessor._REMIX_VIDEO_FILTER}[v];"
+            f"setpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_VIDEO_FILTER}[v];"
             f"[0:a]atrim=start={start_seconds:.3f}:duration={duration:.3f},"
-            "asetpts=PTS-STARTPTS,aresample=48000:async=1[a]"
+            f"asetpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
+            f"{MediaProcessor._white_noise_mix(output_duration)}"
         )
         cmd = [
             "ffmpeg",
@@ -455,7 +481,7 @@ class MediaProcessor:
             "[v]",
             "-map",
             "[a]",
-            *MediaProcessor._REMIX_ENCODE_ARGS,
+            *MediaProcessor._PACKAGE_ENCODE_ARGS,
             str(output_file),
             "-y",
         ]
@@ -465,7 +491,7 @@ class MediaProcessor:
             cwd=video_file.parent,
             progress=progress,
             progress_task=progress_task,
-            duration_seconds=duration,
+            duration_seconds=output_duration,
             progress_description=progress_description,
             failure_label="remix segment",
             stderr_lines=stderr_lines,
@@ -624,13 +650,14 @@ class MediaProcessor:
         video_file: Path,
         subtitle_file: Path,
         output_file: Path,
-        noise_file: Path,
+        head_noise: Path,
+        tail_noise: Path,
         start_seconds: float,
         end_seconds: float,
         progress: NoopProgressReporter | None = None,
         progress_task=None,
     ) -> None:
-        """Create one noise + subtitled segment remix output."""
+        """Create one noise + subtitled segment + noise remix output."""
         temp_dir = Path(tempfile.mkdtemp(prefix="grill_remix_"))
         try:
             target_segment = temp_dir / "target.mp4"
@@ -645,7 +672,7 @@ class MediaProcessor:
                 progress_description=f"Remixing {output_file.name}",
             )
             MediaProcessor.concat_remix_segments(
-                [noise_file, target_segment],
+                [head_noise, target_segment, tail_noise],
                 output_file,
                 progress=progress,
             )
@@ -856,12 +883,35 @@ class MediaProcessor:
             + float(seconds)
         )
 
-    _REMIX_VIDEO_FILTER = (
-        "scale=1920:1080:force_original_aspect_ratio=decrease,"
-        "pad=1920:1080:(ow-iw)/2:(oh-ih)/2,"
-        "fps=30000/1001,format=yuv420p"
+    @staticmethod
+    def _white_noise_mix(duration_seconds: float) -> str:
+        """Mix a -42 dB white-noise bed under the labeled ``[a0]`` program."""
+        return (
+            f"anoisesrc=d={duration_seconds:.3f}:s=44100:"
+            f"a={PACKAGE_NOISE_AMPLITUDE}:c=white,"
+            "aformat=sample_rates=44100:channel_layouts=stereo[an];"
+            "[a0][an]amix=inputs=2:duration=first:"
+            "dropout_transition=0:normalize=0[a]"
+        )
+
+    _PACKAGE_VIDEO_FILTER = (
+        "scale=1960:1102:flags=lanczos,"
+        "crop=1920:1080,"
+        f"setpts=PTS/{PACKAGE_TEMPO},"
+        "eq=brightness=0.02:contrast=1.03:saturation=1.05,"
+        "hue=h=4,"
+        "noise=alls=3:allf=t,"
+        "format=yuv420p,"
+        "fps=29.94"
     )
-    _REMIX_ENCODE_ARGS = [
+    _PACKAGE_AUDIO_FILTER = (
+        "highpass=f=50,"
+        "lowpass=f=15000,"
+        f"rubberband=tempo={PACKAGE_TEMPO}:pitch={PACKAGE_PITCH},"
+        "aformat=sample_rates=44100:channel_layouts=stereo,"
+        "volume=0.97"
+    )
+    _PACKAGE_ENCODE_ARGS = [
         "-c:v",
         "libx264",
         "-preset",
@@ -872,6 +922,10 @@ class MediaProcessor:
         "aac",
         "-b:a",
         "192k",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
         "-movflags",
         "+faststart",
     ]

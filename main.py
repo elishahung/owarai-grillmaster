@@ -11,6 +11,7 @@ from typing_extensions import Annotated
 from project import ProgressStage
 from services.progress import create_progress_reporter
 from services.package import package_project_directory, prepare_noise
+from services.package.constants import NOISE_CHUNK_DURATION_SECONDS
 from services.ytdlp import parse_section_time
 from settings import settings
 from workflow import submit_project
@@ -325,7 +326,7 @@ def noise_command(
             "--chunk-duration",
             help="Prepared noise chunk length in seconds.",
         ),
-    ] = 300,
+    ] = NOISE_CHUNK_DURATION_SECONDS,
 ) -> None:
     """Prepare normalized noise chunks from PACKAGE_PATH/noise/NAME.webm."""
     if settings.package_path is None:

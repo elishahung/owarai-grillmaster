@@ -19,7 +19,10 @@ from project import (
     Project,
 )
 from services.media import MediaProcessor
-from services.package.constants import NOISE_SOURCE_SUFFIX
+from services.package.constants import (
+    NOISE_CHUNK_DURATION_SECONDS,
+    NOISE_SOURCE_SUFFIX,
+)
 from services.package.cover import copy_cover
 from services.package.remix import package_remix
 from services.progress import NoopProgressReporter
@@ -106,7 +109,7 @@ def package_project_directory(
 def prepare_noise(
     package_root: Path,
     noise_name: str,
-    chunk_duration_seconds: int = 300,
+    chunk_duration_seconds: int = NOISE_CHUNK_DURATION_SECONDS,
     progress: NoopProgressReporter | None = None,
 ) -> None:
     """Prepare normalized noise chunks under PACKAGE_PATH/noise."""

@@ -9,6 +9,7 @@ from unittest.mock import patch
 from project import Project
 from services import package as package_module
 from services.package import core as package_core
+from services.package import rc as package_rc
 from services.package import remix as package_remix
 from services.package import titles as package_titles
 from services.progress import NoopProgressReporter
@@ -563,6 +564,100 @@ class PackageTests(unittest.TestCase):
             (target / "video_1.mp4").read_text(encoding="utf-8"),
             "chunk 0",
         )
+
+    def test_packagerc_series_rule_forces_a_remix_package(self):
+        root = self._make_temp_dir()
+        source = root / "source"
+        package_root = root / "package"
+        noise_dir = package_root / "noise" / "default"
+        source.mkdir()
+        noise_dir.mkdir(parents=True)
+        for index in range(2):
+            (noise_dir / f"{index:03d}.mp4").write_text(
+                f"chunk {index}", encoding="utf-8"
+            )
+        (source / "video.mp4").write_text("video", encoding="utf-8")
+        (source / "video.cht.ass").write_text("ass", encoding="utf-8")
+        self._write_srt(
+            source / "video.cht.finalized.srt",
+            [("00:00:00,000", "00:01:40,000")],
+        )
+        rc_path = root / ".packagerc"
+        rc_path.write_text(
+            json.dumps({"series": {"ドキュメンタル": {"remix": True}}}),
+            encoding="utf-8",
+        )
+        project = Project(id="demo", name="show")
+        project.source_metadata.series = "ドキュメンタル"
+
+        def create_remix_output(**kwargs):
+            kwargs["output_file"].write_text("remix", encoding="utf-8")
+
+        with (
+            patch.object(
+                package_rc, "package_rc_path", return_value=rc_path
+            ),
+            patch.object(
+                package_remix.MediaProcessor,
+                "get_media_duration",
+                return_value=100.0,
+            ),
+            patch.object(
+                package_remix.MediaProcessor,
+                "build_remix_output",
+                side_effect=create_remix_output,
+            ),
+            patch.object(
+                package_core.MediaProcessor, "burn_in_subtitles"
+            ) as burn_in_subtitles,
+        ):
+            package_module.package_project(project, source, package_root)
+
+        burn_in_subtitles.assert_not_called()
+        self.assertEqual(
+            (package_root / "demo_show" / "video_1.mp4").read_text(
+                encoding="utf-8"
+            ),
+            "remix",
+        )
+
+    def test_packagerc_remix_without_default_noise_fails_the_package(self):
+        root = self._make_temp_dir()
+        source = root / "source"
+        package_root = root / "package"
+        source.mkdir()
+        (source / "video.mp4").write_text("video", encoding="utf-8")
+        (source / "video.cht.ass").write_text("ass", encoding="utf-8")
+        self._write_srt(
+            source / "video.cht.finalized.srt",
+            [("00:00:00,000", "00:01:40,000")],
+        )
+        rc_path = root / ".packagerc"
+        rc_path.write_text(
+            json.dumps({"channel": {"テレビ東京": {"remix": True}}}),
+            encoding="utf-8",
+        )
+        project = Project(id="demo", name="show")
+        project.source_metadata.channel = "テレビ東京"
+
+        with (
+            patch.object(
+                package_rc, "package_rc_path", return_value=rc_path
+            ),
+            patch.object(
+                package_remix.MediaProcessor,
+                "get_media_duration",
+                return_value=100.0,
+            ),
+            patch.object(
+                package_core.MediaProcessor, "burn_in_subtitles"
+            ) as burn_in_subtitles,
+        ):
+            package_module.package_project(project, source, package_root)
+
+        # A forced remix never degrades into a plain burn-in.
+        burn_in_subtitles.assert_not_called()
+        self.assertFalse((package_root / "demo_show").exists())
 
     def test_package_project_directory_uses_project_json(self):
         root = self._make_temp_dir()

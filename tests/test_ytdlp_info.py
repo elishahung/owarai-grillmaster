@@ -1,5 +1,8 @@
 import json
+import shutil
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from urllib.error import URLError
 
@@ -10,6 +13,7 @@ from services.ytdlp.info import (
     get_abema_episode_broadcast_at,
     get_abema_slot_start_at,
     get_tver_broadcast_date_label,
+    read_source_program_info,
 )
 
 
@@ -172,6 +176,48 @@ class YtDlpVideoInfoEpochCoercionTests(unittest.TestCase):
             {"id": "x", "title": "t", "release_timestamp": "soon"}
         )
         self.assertIsNone(info.release_timestamp)
+
+
+class SourceProgramInfoTests(unittest.TestCase):
+    def _write_info_json(self, payload: str) -> Path:
+        root = Path(tempfile.mkdtemp(prefix="info-json-test-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        info_json = root / "metadata.info.json"
+        info_json.write_text(payload, encoding="utf-8")
+        return info_json
+
+    def test_reads_series_and_channel(self):
+        info_json = self._write_info_json(
+            json.dumps(
+                {
+                    "id": "ep123",
+                    "series": " ドキュメンタル ",
+                    "channel": "Prime Video",
+                }
+            )
+        )
+        program = read_source_program_info(info_json)
+        self.assertEqual(program.series, "ドキュメンタル")
+        self.assertEqual(program.channel, "Prime Video")
+
+    def test_blank_and_non_string_fields_are_absent(self):
+        info_json = self._write_info_json(
+            json.dumps({"series": "   ", "channel": 42})
+        )
+        program = read_source_program_info(info_json)
+        self.assertIsNone(program.series)
+        self.assertIsNone(program.channel)
+
+    def test_missing_file_degrades_to_empty(self):
+        program = read_source_program_info(Path("does-not-exist.info.json"))
+        self.assertIsNone(program.series)
+        self.assertIsNone(program.channel)
+
+    def test_malformed_json_degrades_to_empty(self):
+        info_json = self._write_info_json("{not json")
+        program = read_source_program_info(info_json)
+        self.assertIsNone(program.series)
+        self.assertIsNone(program.channel)
 
 
 if __name__ == "__main__":

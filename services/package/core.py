@@ -25,6 +25,7 @@ from services.package.constants import (
     NOISE_SOURCE_SUFFIX,
 )
 from services.package.cover import copy_cover
+from services.package.rc import resolve_remix_noise_name
 from services.package.remix import package_remix
 from services.package.titles import ensure_titles, titles_path
 from services.progress import NoopProgressReporter
@@ -60,8 +61,14 @@ def package_project(
     # they exist before the deliverable is built.
     ensure_titles(source_root)
 
+    noise_name = resolve_remix_noise_name(
+        requested=remix_noise_name,
+        series=project.source_metadata.series,
+        channel=project.source_metadata.channel,
+    )
+
     try:
-        if remix_noise_name is None:
+        if noise_name is None:
             MediaProcessor.burn_in_subtitles(
                 video_file=video_in,
                 subtitle_file=ass_in,
@@ -75,7 +82,7 @@ def package_project(
                 target_dir=target_dir,
                 video_file=video_in,
                 subtitle_file=ass_in,
-                noise_name=remix_noise_name,
+                noise_name=noise_name,
                 prefix_noise=remix_prefix,
                 progress=progress,
             )

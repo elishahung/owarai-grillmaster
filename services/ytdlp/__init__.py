@@ -10,6 +10,7 @@ from .info import (
     get_abema_episode_talents,
     get_tver_episode_talents,
     get_video_info,
+    read_source_program_info,
 )
 from .subtitles import normalize_official_subtitle
 
@@ -20,5 +21,6 @@ __all__ = [
     "get_abema_episode_talents",
     "get_tver_episode_talents",
     "get_video_info",
+    "read_source_program_info",
     "resolve_broadcast_date",
 ]

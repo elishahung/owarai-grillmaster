@@ -4,8 +4,13 @@ from loguru import logger
 
 from project import Project
 from services.media import MediaProcessor
+from services.package import register_package_rc_program
 from services.progress import NoopProgressReporter
-from services.ytdlp import download_video, normalize_official_subtitle
+from services.ytdlp import (
+    download_video,
+    normalize_official_subtitle,
+    read_source_program_info,
+)
 from settings import settings
 
 
@@ -13,6 +18,24 @@ def download_project_video(
     project: Project, progress: NoopProgressReporter | None = None
 ) -> None:
     download_video(project.source_url, project.project_path, progress=progress)
+    record_source_program(project)
+
+
+def record_source_program(project: Project) -> None:
+    """Store the program identity and list it in the packaging rules.
+
+    yt-dlp only writes the info JSON as part of the download, so this runs
+    here rather than in the metadata stage. New series/channel names are
+    registered in `.packagerc` with empty rules, ready to be opted into remix
+    packaging by hand.
+    """
+    program = read_source_program_info(project.metadata_info_path)
+    if program.series is None and program.channel is None:
+        return
+    project.update_from_source_program(program)
+    register_package_rc_program(
+        series=program.series, channel=program.channel
+    )
 
 
 def process_video(

@@ -158,6 +158,43 @@ class MainCliTests(unittest.TestCase):
         )
         self.assertFalse(submit_project.call_args.kwargs["remix_prefix"])
 
+    def test_valueless_remix_uses_the_default_noise_set(self):
+        with patch.object(main_module, "submit_project") as submit_project:
+            main_module.main(["BV123", "--remix"])
+
+        self.assertEqual(
+            submit_project.call_args.kwargs["remix_noise_name"], "default"
+        )
+
+    def test_valueless_remix_before_another_flag(self):
+        with patch.object(main_module, "submit_project") as submit_project:
+            main_module.main(["BV123", "--remix", "--prefix"])
+
+        self.assertEqual(
+            submit_project.call_args.kwargs["remix_noise_name"], "default"
+        )
+        self.assertTrue(submit_project.call_args.kwargs["remix_prefix"])
+
+    def test_package_command_accepts_valueless_remix(self):
+        root = self._make_temp_dir()
+        project_dir = root / "project"
+        project_dir.mkdir()
+
+        with (
+            patch.object(
+                main_module.settings, "package_path", root / "package"
+            ),
+            patch.object(
+                main_module, "package_project_directory"
+            ) as package_project_directory,
+        ):
+            main_module.main(["package", str(project_dir), "--remix"])
+
+        self.assertEqual(
+            package_project_directory.call_args.kwargs["remix_noise_name"],
+            "default",
+        )
+
     def test_legacy_source_invocation_accepts_remix_prefix(self):
         with patch.object(main_module, "submit_project") as submit_project:
             main_module.main(["BV123", "--remix", "sleep", "--prefix"])

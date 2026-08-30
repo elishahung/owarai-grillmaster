@@ -111,3 +111,12 @@ remix concat can stream-copy video; it does not apply the look filters.
 Remix splits near every 8 minutes (`REMIX_SEGMENT_SECONDS`) on a subtitle
 gap/boundary, then wraps each segment as noise + content + noise
 (`video_1.mp4`, `video_2.mp4`, …).
+
+`rc.py` reads `.packagerc` (git-ignored, at the working-directory root):
+`{series|channel: {<name>: {remix?}}}`. The download stage appends empty
+entries for names it sees; a hand-set `"remix": true` on the project's series
+or channel forces remix packaging with `DEFAULT_NOISE_NAME` ("default") when
+`--remix` was not passed — a missing `noise/default` folder then fails the
+package instead of degrading to a burn-in. `--remix` without a value means the
+same default (expanded from argv in `main.py`; Typer has no optional-value
+options).

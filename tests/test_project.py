@@ -8,7 +8,7 @@ from unittest.mock import patch
 import project as project_module
 import services.paths as paths_module
 from project import Project, VideoSource
-from services.ytdlp.info import SourceTalentInfo
+from services.ytdlp.info import SourceProgramInfo, SourceTalentInfo
 
 
 class ProjectTests(unittest.TestCase):
@@ -102,6 +102,51 @@ class ProjectTests(unittest.TestCase):
         )
         self.assertIn("濱家　隆一 / ハマイエ　リュウイチ", context)
         self.assertIn("お笑い芸人", context)
+
+
+class SourceProgramTests(unittest.TestCase):
+    def _make_temp_dir(self) -> Path:
+        base = Path(__file__).resolve().parents[1] / "tmp_test_artifacts"
+        base.mkdir(parents=True, exist_ok=True)
+        path = base / "tmp_program_project"
+        shutil.rmtree(path, ignore_errors=True)
+        path.mkdir(parents=True, exist_ok=True)
+        self.addCleanup(lambda: shutil.rmtree(path, ignore_errors=True))
+        return path
+
+    def test_series_and_channel_persist_in_project_json(self):
+        root = self._make_temp_dir()
+        with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
+            project = Project(id="epprogram1", name="demo")
+            project.update_from_source_program(
+                SourceProgramInfo(
+                    series="ドキュメンタル", channel="Prime Video"
+                )
+            )
+            persisted = json.loads(
+                project.json_path.read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(
+            persisted["source_metadata"]["series"], "ドキュメンタル"
+        )
+        self.assertEqual(
+            persisted["source_metadata"]["channel"], "Prime Video"
+        )
+
+    def test_absent_fields_keep_previously_captured_names(self):
+        root = self._make_temp_dir()
+        with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
+            project = Project(id="epprogram2", name="demo")
+            project.update_from_source_program(
+                SourceProgramInfo(series="ドキュメンタル", channel="Prime Video")
+            )
+            project.update_from_source_program(
+                SourceProgramInfo(channel="テレビ東京")
+            )
+
+        self.assertEqual(project.source_metadata.series, "ドキュメンタル")
+        self.assertEqual(project.source_metadata.channel, "テレビ東京")
 
 
 class ArchiveLayoutTests(unittest.TestCase):

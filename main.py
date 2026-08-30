@@ -11,7 +11,10 @@ from typing_extensions import Annotated
 from project import ProgressStage
 from services.progress import create_progress_reporter
 from services.package import package_project_directory, prepare_noise
-from services.package.constants import NOISE_CHUNK_DURATION_SECONDS
+from services.package.constants import (
+    DEFAULT_NOISE_NAME,
+    NOISE_CHUNK_DURATION_SECONDS,
+)
 from services.ytdlp import parse_section_time
 from settings import settings
 from workflow import submit_project
@@ -213,7 +216,10 @@ def process(
         str | None,
         typer.Option(
             "--remix",
-            help="Use a prepared noise set for remix packaging.",
+            help=(
+                "Use a prepared noise set for remix packaging. Without a "
+                f"value it uses '{DEFAULT_NOISE_NAME}'."
+            ),
             show_default=False,
         ),
     ] = None,
@@ -278,7 +284,10 @@ def package_command(
         str | None,
         typer.Option(
             "--remix",
-            help="Use a prepared noise set for remix packaging.",
+            help=(
+                "Use a prepared noise set for remix packaging. Without a "
+                f"value it uses '{DEFAULT_NOISE_NAME}'."
+            ),
             show_default=False,
         ),
     ] = None,
@@ -345,9 +354,26 @@ def noise_command(
         raise typer.Exit(code=1)
 
 
+def _expand_valueless_remix(args: list[str]) -> list[str]:
+    """Let `--remix` stand alone, meaning the default noise set.
+
+    Typer has no equivalent of click's optional-value options, so the bare
+    flag is expanded here, before either app parses the arguments.
+    """
+    expanded: list[str] = []
+    for index, arg in enumerate(args):
+        expanded.append(arg)
+        if arg != "--remix":
+            continue
+        following = args[index + 1] if index + 1 < len(args) else None
+        if following is None or following.startswith("-"):
+            expanded.append(DEFAULT_NOISE_NAME)
+    return expanded
+
+
 def main(argv: list[str] | None = None) -> None:
     """Entry point for the CLI application."""
-    args = sys.argv[1:] if argv is None else argv
+    args = _expand_valueless_remix(sys.argv[1:] if argv is None else argv)
     standalone_mode = argv is None
     if args and args[0] in RESERVED_COMMANDS:
         tools_app(args=args, standalone_mode=standalone_mode)

@@ -1,5 +1,6 @@
 """Shared constants for final packaging."""
 
+DEFAULT_NOISE_NAME = "default"
 NOISE_CHUNK_DURATION_SECONDS = 60
 NOISE_CHUNKS_PER_SEGMENT = 2
 NOISE_SOURCE_SUFFIX = ".webm"

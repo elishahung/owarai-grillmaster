@@ -16,10 +16,15 @@ from settings import settings
 import re
 from urllib.parse import urlparse, parse_qs
 from services.paths import fit_dir_name
-from services.ytdlp.info import SourceTalentInfo, YtDlpVideoInfo
+from services.ytdlp.info import (
+    SourceProgramInfo,
+    SourceTalentInfo,
+    YtDlpVideoInfo,
+)
 
 PROJECT_ROOT_NAME = "projects"
 PROJECT_FILE_NAME = "project.json"
+METADATA_INFO_FILE_NAME = "metadata.info.json"
 VIDEO_FILE_NAME = "video.mp4"
 FULL_VIDEO_FILE_NAME = "video.full.mp4"
 AUDIO_FILE_NAME = "audio.ogg"
@@ -99,6 +104,8 @@ class SourceMetadata(BaseModel):
     """Optional metadata collected from the source platform."""
 
     talents: list[SourceTalent] = Field(default_factory=list)
+    series: str | None = None
+    channel: str | None = None
 
 
 class Project(BaseModel):
@@ -307,6 +314,19 @@ class Project(BaseModel):
     def update_broadcast_date(self, broadcast_date: date) -> None:
         """Persist the announced broadcast/publication date."""
         self.broadcast_date = broadcast_date
+        self.save()
+
+    def update_from_source_program(self, program: SourceProgramInfo) -> None:
+        """Persist the program and broadcast channel names from the source.
+
+        Absent fields leave the stored values alone: platforms expose one, the
+        other, or neither, and a later re-download must not erase what an
+        earlier one captured.
+        """
+        if program.series is not None:
+            self.source_metadata.series = program.series
+        if program.channel is not None:
+            self.source_metadata.channel = program.channel
         self.save()
 
     def update_from_source_talents(
@@ -557,6 +577,15 @@ class Project(BaseModel):
             Path to project.json.
         """
         return self.project_path / PROJECT_FILE_NAME
+
+    @property
+    def metadata_info_path(self) -> Path:
+        """Get the path to the yt-dlp info JSON written at download time.
+
+        Returns:
+            Path to metadata.info.json.
+        """
+        return self.project_path / METADATA_INFO_FILE_NAME
 
     @property
     def downloaded_video_paths(self) -> list[Path]:

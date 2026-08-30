@@ -5,6 +5,7 @@ downloading the actual video content.
 """
 
 from .client import get_ytdlp_client_for_url
+from pathlib import Path
 from typing import cast
 from pydantic import BaseModel, Field, field_validator
 from loguru import logger
@@ -60,6 +61,50 @@ class YtDlpVideoInfo(BaseModel):
         safe_name = re.sub(r"[^\w\s-]", "", text).strip()
         safe_name = re.sub(r"[-\s]+", "_", safe_name)
         return safe_name
+
+
+class SourceProgramInfo(BaseModel):
+    """Program identity carried by the yt-dlp info JSON.
+
+    Attributes:
+        series: Program name (TVer/Abema 番組名, YouTube series).
+        channel: Broadcast station or uploading channel. Platforms expose one
+            field, the other, or neither.
+    """
+
+    series: str | None = None
+    channel: str | None = None
+
+    @field_validator("series", "channel", mode="before")
+    @classmethod
+    def _normalize_label(cls, value: object) -> str | None:
+        # Extractors differ on the field contract; anything that is not a
+        # non-empty string is simply "not provided".
+        if not isinstance(value, str):
+            return None
+        return value.strip() or None
+
+
+def read_source_program_info(info_json_path: Path) -> SourceProgramInfo:
+    """Read the program identity from yt-dlp's downloaded info JSON.
+
+    Best-effort: a missing or malformed file yields empty fields so packaging
+    metadata never blocks the workflow.
+    """
+    if not info_json_path.exists():
+        logger.warning(f"Source info JSON not found: {info_json_path}")
+        return SourceProgramInfo()
+    try:
+        payload = json.loads(info_json_path.read_text(encoding="utf-8"))
+        program = SourceProgramInfo.model_validate(payload)
+    except Exception as e:
+        logger.warning(f"Failed to read source info JSON {info_json_path}: {e}")
+        return SourceProgramInfo()
+    logger.info(
+        f"Source program info: series={program.series!r} "
+        f"channel={program.channel!r}"
+    )
+    return program
 
 
 class SourceTalentInfo(BaseModel):

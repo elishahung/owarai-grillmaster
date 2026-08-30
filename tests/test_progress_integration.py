@@ -19,6 +19,7 @@ from services.translate.facade import Translate, TranslationRequest
 from services.translate.pre_pass.pre_pass import PrePassResult
 from services.media import (
     PACKAGE_LEAD_TRIM_SECONDS,
+    PACKAGE_SEEK_MARGIN_SECONDS,
     MediaProcessor,
     NoiseCut,
     package_output_duration,
@@ -654,6 +655,62 @@ class MediaProgressTests(unittest.TestCase):
         self.assertIn("anoisesrc=", filter_complex)
         self.assertIn("a=0.008", filter_complex)
         self.assertEqual(cmd[cmd.index("-c:v") + 1], "h264_nvenc")
+
+    def test_remix_segment_seeks_on_the_source_timeline(self):
+        root = Path(tempfile.mkdtemp(prefix="remix-seek-test-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        video = root / "video.mp4"
+        subtitle = root / "video.ass"
+        video.write_text("video", encoding="utf-8")
+        subtitle.write_text("subtitle", encoding="utf-8")
+
+        class FakeProcess:
+            def __init__(self):
+                self.stdout = iter(["progress=end\n"])
+                self.stderr = iter([])
+
+            def wait(self):
+                return 0
+
+        def run_segment(start_seconds: float, end_seconds: float) -> list[str]:
+            with patch(
+                "services.media.subprocess.Popen",
+                side_effect=lambda *a, **k: FakeProcess(),
+            ) as popen:
+                MediaProcessor.encode_subtitled_segment(
+                    video,
+                    subtitle,
+                    root / "segment.mp4",
+                    start_seconds=start_seconds,
+                    end_seconds=end_seconds,
+                )
+            return popen.call_args.args[0]
+
+        cmd = run_segment(100.0, 160.0)
+        # The seek must precede the input and keep source timestamps, or the
+        # absolute trim bounds and the subtitle lookup would both shift.
+        self.assertLess(cmd.index("-ss"), cmd.index("-i"))
+        self.assertIn("-copyts", cmd)
+        self.assertIn("-start_at_zero", cmd)
+        self.assertEqual(
+            cmd[cmd.index("-ss") + 1],
+            f"{100.0 - PACKAGE_SEEK_MARGIN_SECONDS:.3f}",
+        )
+        self.assertEqual(
+            cmd[cmd.index("-t") + 1],
+            f"{60.0 + 2 * PACKAGE_SEEK_MARGIN_SECONDS:.3f}",
+        )
+        filter_complex = cmd[cmd.index("-filter_complex") + 1]
+        self.assertIn("trim=start=100.000:duration=60.000", filter_complex)
+        self.assertIn("atrim=start=100.000:duration=60.000", filter_complex)
+
+        # A start inside the margin clamps the seek without shortening the read.
+        cmd = run_segment(1.0, 61.0)
+        self.assertEqual(cmd[cmd.index("-ss") + 1], "0.000")
+        self.assertEqual(
+            cmd[cmd.index("-t") + 1],
+            f"{1.0 + 60.0 + PACKAGE_SEEK_MARGIN_SECONDS:.3f}",
+        )
 
     def test_encode_noise_segment_cuts_the_source_with_format_only_filters(self):
         root = Path(tempfile.mkdtemp(prefix="noise-progress-test-"))

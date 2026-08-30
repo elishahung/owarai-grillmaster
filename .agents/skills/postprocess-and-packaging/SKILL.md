@@ -96,13 +96,18 @@ Best-effort like the rest of packaging: a failure warns and packaging continues.
 Default package and remix **content** segments share one look recipe
 there (`_PACKAGE_VIDEO_FILTER` / `_PACKAGE_AUDIO_FILTER` /
 `_PACKAGE_ENCODE_ARGS`): ASS first (when present), then scale, a 0.2°
-rotate (`PACKAGE_ROTATE_RADIANS` repeated on `a`/`rotw`/`roth`), crop,
+rotate (`PACKAGE_ROTATE_RADIANS` repeated on `a`/`rotw`/`roth`, and
+`bilinear=0` — a deliberate speed-for-edge-quality trade, not an oversight), crop,
 tempo `PACKAGE_TEMPO` (1.03, via `setpts` + `rubberband`), grade/noise, 1920x1080
 yuv420p @ 29.94 fps, 44100 stereo, plus a -42 dB white-noise bed
 (`anoisesrc` `a=0.008` mixed with `amix=normalize=0` so program level is
 unchanged). Video encode is `h264_nvenc` (p5 / hq / VBR CQ 19); the CPU
-filter graph (libass, lanczos, `noise`, `eq`/`hue`, rubberband) stays
+filter graph (libass, `scale`, `rotate`, `noise`, `eq`/`hue`, rubberband) stays
 software — there is no CUDA equivalent for those looks.
+`encode_subtitled_segment` reaches its segment with `-ss` before `-i` plus
+`-copyts -start_at_zero`, so the graph still sees source timestamps and its
+absolute `trim`/`atrim` bounds and subtitle lookup stay correct; dropping
+either flag silently shifts or empties the segment.
 Default package drops the first `PACKAGE_LEAD_TRIM_SECONDS` (3 s) after
 ASS burn and before tempo; remix does the same only on the first content
 segment, then wraps noise around that already-trimmed clip. Expected

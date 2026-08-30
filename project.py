@@ -63,6 +63,25 @@ PROJECT_INNER_PATH_RESERVE = 80
 PACKAGE_INNER_PATH_RESERVE = 24
 
 
+def _raise_if_local_directory_source(source_str: str) -> None:
+    """Reject an existing local directory passed as a video source.
+
+    Bare IDs are never treated as paths, even if a cwd folder shares the
+    name (e.g. `grill ep123` run from `projects/`). `grill package <dir>`
+    is the command for an already-finalized project directory.
+    """
+    if source_str.startswith(("https://", "http://")):
+        return
+    if "/" not in source_str and "\\" not in source_str:
+        return
+    if Path(source_str).is_dir():
+        raise ValueError(
+            f"Local directory is not a video source: {source_str}. "
+            "Use a video ID or URL, or run 'grill package <dir>' "
+            "to package an existing project."
+        )
+
+
 class ProgressStage(str, Enum):
     """Enum representing different stages in the video processing workflow.
 
@@ -165,7 +184,8 @@ class Project(BaseModel):
 
         Handles various input formats including direct IDs and full URLs.
         Supports: Bilibili (URL/BV), TVer (URL/ID), Abema (URL/ID),
-        YouTube (URL or `v=<id>` prefixed form).
+        YouTube (URL or `v=<id>` prefixed form). Existing local directories
+        are rejected — those belong to `grill package <dir>`, not process.
 
         Args:
             source_str: Video source as ID or URL.
@@ -174,8 +194,11 @@ class Project(BaseModel):
             The extracted video ID.
 
         Raises:
-            ValueError: If the URL format is not recognized.
+            ValueError: If the URL format is not recognized, or if the
+                string names an existing local directory.
         """
+        _raise_if_local_directory_source(source_str)
+
         # 1. Handle Bilibili (Most distinct format)
         bv_match = re.search(r"(BV[a-zA-Z0-9]+)", source_str)
         if bv_match:

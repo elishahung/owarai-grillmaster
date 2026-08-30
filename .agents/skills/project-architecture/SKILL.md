@@ -135,7 +135,9 @@ Key control-flow details that are easy to break:
 
 - **Identity**: `parse_source_str` extracts the canonical ID from an ID or URL
   across Bilibili (`BV…`), YouTube (stored as `v=…`), TVer (`ep…`/`sh…`), Abema
-  (fallback). `source` and `source_url` are derived from the ID's shape — keep
+  (fallback). Existing local directories are rejected (use `grill package
+  <dir>`); bare IDs are never treated as paths, even if a cwd folder shares
+  the name. `source` and `source_url` are derived from the ID's shape — keep
   these consistent if you add a platform. Abema has two URL kinds: episode IDs
   contain `-`/`_`; pure-alphanumeric IDs are slots (live archives) and rebuild
   as `channels/_/slots/<id>` (yt-dlp ignores the channel segment).

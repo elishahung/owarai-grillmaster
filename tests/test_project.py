@@ -1,5 +1,7 @@
 import json
+import os
 import shutil
+import tempfile
 import unittest
 from datetime import date
 from pathlib import Path
@@ -384,6 +386,38 @@ class SourceParsingTests(unittest.TestCase):
         self.assertEqual(
             Project(id="90-979_s1_p360").source, VideoSource.ABEMA
         )
+
+    def test_existing_local_directory_is_rejected(self):
+        root = Path(tempfile.mkdtemp(prefix="source-dir-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        archived = root / "26" / "08" / "260827_ep3dxmhg0g_demo"
+        archived.mkdir(parents=True)
+        (archived / "project.json").write_text(
+            json.dumps({"id": "ep3dxmhg0g", "name": "demo"}),
+            encoding="utf-8",
+        )
+
+        with self.assertRaises(ValueError) as ctx:
+            Project.parse_source_str(str(archived))
+        message = str(ctx.exception)
+        self.assertIn("Local directory is not a video source", message)
+        self.assertIn("grill package", message)
+
+        with self.assertRaises(ValueError):
+            Project.from_source_str(str(archived))
+
+    def test_bare_id_is_accepted_even_if_cwd_has_matching_dir(self):
+        root = Path(tempfile.mkdtemp(prefix="source-cwd-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        (root / "epknhe0jz5").mkdir()
+        previous = Path.cwd()
+        try:
+            os.chdir(root)
+            self.assertEqual(
+                Project.parse_source_str("epknhe0jz5"), "epknhe0jz5"
+            )
+        finally:
+            os.chdir(previous)
 
 
 if __name__ == "__main__":

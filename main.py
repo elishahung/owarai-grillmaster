@@ -122,7 +122,8 @@ def process(
             help=(
                 "Video source, id or url (e.g., 'BV1ZArvBaEqL', "
                 "'https://www.bilibili.com/video/BV1ZArvBaEqL', "
-                "'https://youtu.be/dQw4w9WgXcQ', 'v=dQw4w9WgXcQ')."
+                "'https://youtu.be/dQw4w9WgXcQ', 'v=dQw4w9WgXcQ'). "
+                "A local directory is not a source; use 'grill package <dir>'."
             ),
             show_default=False,
         ),

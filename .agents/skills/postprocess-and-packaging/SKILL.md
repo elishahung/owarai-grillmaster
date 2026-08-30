@@ -103,7 +103,9 @@ text; still on source timestamps — `trim` and tempo come after burn-in, same
 single encode), tempo `PACKAGE_TEMPO` (1.03, via `setpts` + `rubberband`), 1920x1080
 yuv420p @ 29.94 fps, 44100 stereo, plus a -42 dB white-noise bed
 (`anoisesrc` `a=0.008` mixed with `amix=normalize=0` so program level is
-unchanged). Video encode is `h264_nvenc` (p5 / hq / VBR CQ 19); the CPU
+unchanged). Video encode is `h264_nvenc` (p5 / hq / VBR 6000k, max 24000k
+— Bilibili 1080p recommended average/peak; CQ 19 is only the quality floor);
+the CPU
 filter graph (libass, `scale`, `rotate`, `noise`, `eq`/`hue`, rubberband) stays
 software — there is no CUDA equivalent for those looks.
 `encode_subtitled_segment` reaches its segment with `-ss` before `-i` plus

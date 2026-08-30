@@ -20,6 +20,9 @@ from services.translate.pre_pass.pre_pass import PrePassResult
 from services.media import (
     PACKAGE_LEAD_TRIM_SECONDS,
     PACKAGE_SEEK_MARGIN_SECONDS,
+    PACKAGE_VIDEO_BITRATE,
+    PACKAGE_VIDEO_BUFSIZE,
+    PACKAGE_VIDEO_MAXRATE,
     MediaProcessor,
     NoiseCut,
     package_output_duration,
@@ -456,6 +459,9 @@ class MediaProgressTests(unittest.TestCase):
         self.assertIn("a=0.008", filter_complex)
         self.assertIn("amix=inputs=2", filter_complex)
         self.assertEqual(cmd[cmd.index("-c:v") + 1], "h264_nvenc")
+        self.assertEqual(cmd[cmd.index("-b:v") + 1], PACKAGE_VIDEO_BITRATE)
+        self.assertEqual(cmd[cmd.index("-maxrate") + 1], PACKAGE_VIDEO_MAXRATE)
+        self.assertEqual(cmd[cmd.index("-bufsize") + 1], PACKAGE_VIDEO_BUFSIZE)
         self.assertNotIn("copy", cmd[cmd.index("-c:a") + 1])
         self.assertIn(
             (

@@ -28,6 +28,9 @@ PACKAGE_LEAD_TRIM_SECONDS = 3
 PACKAGE_SEEK_MARGIN_SECONDS = 2.0
 PACKAGE_ROTATE_DEGREES = 0.2
 PACKAGE_ROTATE_RADIANS = radians(PACKAGE_ROTATE_DEGREES)
+PACKAGE_VIDEO_BITRATE = "6000k"  # Bilibili 1080p recommended average
+PACKAGE_VIDEO_MAXRATE = "24000k"  # Bilibili 1080p recommended peak
+PACKAGE_VIDEO_BUFSIZE = "12000k"  # 2× average; required for -maxrate
 
 
 def package_usable_duration(source_duration: float) -> float:
@@ -952,7 +955,11 @@ class MediaProcessor:
         "-cq",
         "19",
         "-b:v",
-        "0",
+        PACKAGE_VIDEO_BITRATE,
+        "-maxrate",
+        PACKAGE_VIDEO_MAXRATE,
+        "-bufsize",
+        PACKAGE_VIDEO_BUFSIZE,
         "-profile:v",
         "high",
         "-spatial-aq",

@@ -240,7 +240,7 @@ class MediaProcessor:
         output_file: Path,
         progress: NoopProgressReporter | None = None,
     ) -> None:
-        """Burn ASS/SRT subtitles into the video, then apply the package filters.
+        """Apply the package look, then burn ASS/SRT so rotate cannot tilt text.
 
         Implementation note: ffmpeg's ``subtitles`` filter does not handle
         absolute Windows paths reliably (colon parsing collides with filter
@@ -280,9 +280,10 @@ class MediaProcessor:
             video_file.name,
             "-filter_complex",
             (
-                f"[0:v]subtitles={subtitle_file.name},"
-                f"trim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration={usable_duration:.3f},"
-                f"setpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_VIDEO_FILTER}[v];"
+                f"[0:v]{MediaProcessor._package_video_chain(
+                    subtitle_file.name,
+                    f'trim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration={usable_duration:.3f}',
+                )}[v];"
                 f"[0:a]atrim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration={usable_duration:.3f},"
                 f"asetpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
                 f"{MediaProcessor._white_noise_mix(duration_seconds)}"
@@ -424,9 +425,10 @@ class MediaProcessor:
 
         output_file.parent.mkdir(parents=True, exist_ok=True)
         filter_complex = (
-            f"[0:v]subtitles={subtitle_file.name},"
-            f"trim=start={start_seconds:.3f}:duration={duration:.3f},"
-            f"setpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_VIDEO_FILTER}[v];"
+            f"[0:v]{MediaProcessor._package_video_chain(
+                subtitle_file.name,
+                f'trim=start={start_seconds:.3f}:duration={duration:.3f}',
+            )}[v];"
             f"[0:a]atrim=start={start_seconds:.3f}:duration={duration:.3f},"
             f"asetpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
             f"{MediaProcessor._white_noise_mix(output_duration)}"
@@ -876,6 +878,22 @@ class MediaProcessor:
         )
 
     @staticmethod
+    def _package_video_chain(subtitle_name: str, trim_filter: str) -> str:
+        """Look, then ASS, then trim/tempo — one encode, upright text.
+
+        ``subtitles`` stays on the source timeline. ``trim`` and
+        ``setpts=PTS/tempo`` come after burn-in so lip-sync still tracks
+        the sped-up output. A second encode is not needed.
+        """
+        return (
+            f"{MediaProcessor._PACKAGE_VIDEO_FILTER},"
+            f"subtitles={subtitle_name},"
+            f"{trim_filter},"
+            f"setpts=PTS-STARTPTS,"
+            f"{MediaProcessor._PACKAGE_VIDEO_OUTPUT}"
+        )
+
+    @staticmethod
     def _white_noise_mix(duration_seconds: float) -> str:
         """Mix a -42 dB white-noise bed under the labeled ``[a0]`` program."""
         return (
@@ -890,8 +908,9 @@ class MediaProcessor:
     # the one knob that matters here: rotate costs about two thirds of this
     # chain, and dropping the interpolation makes a whole segment render ~1.6x
     # faster. What it buys that speed with is a sub-pixel snap, and the snap is
-    # only visible on hard edges (subtitle outlines, on-screen captions) —
-    # measured against a real episode, flat areas came out identical, temporal
+    # only visible on hard edges already in the picture (on-screen captions) —
+    # burned ASS is applied after rotate, so it stays upright and unsnapped.
+    # Measured against a real episode, flat areas came out identical, temporal
     # jitter rose under 1%, and the ``noise`` grain below covers the rest.
     # Delete ``:bilinear=0`` to go back to the smoother, slower default; nothing
     # else depends on it.
@@ -901,10 +920,12 @@ class MediaProcessor:
         f"ow=rotw({PACKAGE_ROTATE_RADIANS}):"
         f"oh=roth({PACKAGE_ROTATE_RADIANS}):c=black:bilinear=0,"
         "crop=1920:1080,"
-        f"setpts=PTS/{PACKAGE_TEMPO},"
         "eq=brightness=0.02:contrast=1.03:saturation=1.05,"
         "hue=h=4,"
-        "noise=alls=3:allf=t,"
+        "noise=alls=3:allf=t"
+    )
+    _PACKAGE_VIDEO_OUTPUT = (
+        f"setpts=PTS/{PACKAGE_TEMPO},"
         "format=yuv420p,"
         "fps=29.94"
     )

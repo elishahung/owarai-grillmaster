@@ -437,6 +437,17 @@ class MediaProgressTests(unittest.TestCase):
             filter_complex,
         )
         self.assertIn(MediaProcessor._PACKAGE_VIDEO_FILTER, filter_complex)
+        self.assertIn(MediaProcessor._PACKAGE_VIDEO_OUTPUT, filter_complex)
+        self.assertLess(
+            filter_complex.index("rotate="),
+            filter_complex.index("subtitles=video.ass,"),
+        )
+        self.assertLess(
+            filter_complex.index("subtitles=video.ass,"),
+            filter_complex.index(
+                f"trim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration=7.000"
+            ),
+        )
         self.assertIn("rotw(", filter_complex)
         self.assertIn("roth(", filter_complex)
         self.assertNotIn("rotw(a)", filter_complex)
@@ -651,9 +662,18 @@ class MediaProgressTests(unittest.TestCase):
         cmd = popen.call_args.args[0]
         filter_complex = cmd[cmd.index("-filter_complex") + 1]
         self.assertIn(MediaProcessor._PACKAGE_VIDEO_FILTER, filter_complex)
+        self.assertIn(MediaProcessor._PACKAGE_VIDEO_OUTPUT, filter_complex)
         self.assertIn(MediaProcessor._PACKAGE_AUDIO_FILTER, filter_complex)
         self.assertIn("anoisesrc=", filter_complex)
         self.assertIn("a=0.008", filter_complex)
+        self.assertLess(
+            filter_complex.index("rotate="),
+            filter_complex.index("subtitles="),
+        )
+        self.assertLess(
+            filter_complex.index("subtitles="),
+            filter_complex.index("trim="),
+        )
         self.assertEqual(cmd[cmd.index("-c:v") + 1], "h264_nvenc")
 
     def test_remix_segment_seeks_on_the_source_timeline(self):
@@ -754,6 +774,7 @@ class MediaProgressTests(unittest.TestCase):
         self.assertIn(MediaProcessor._NOISE_VIDEO_FILTER, filter_complex)
         self.assertIn(MediaProcessor._NOISE_AUDIO_FILTER, filter_complex)
         self.assertNotIn(MediaProcessor._PACKAGE_VIDEO_FILTER, filter_complex)
+        self.assertNotIn(MediaProcessor._PACKAGE_VIDEO_OUTPUT, filter_complex)
         self.assertNotIn(MediaProcessor._PACKAGE_AUDIO_FILTER, filter_complex)
         self.assertNotIn("anoisesrc=", filter_complex)
         self.assertEqual(cmd[cmd.index("-c:v") + 1], "h264_nvenc")

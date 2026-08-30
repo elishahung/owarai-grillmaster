@@ -94,11 +94,13 @@ into the deliverable's `info.json`. `ENABLE_PACKAGE_TITLE_SUGGESTION` gates
 only generating a missing file — an existing one is always reused and merged.
 Best-effort like the rest of packaging: a failure warns and packaging continues.
 Default package and remix **content** segments share one look recipe
-there (`_PACKAGE_VIDEO_FILTER` / `_PACKAGE_AUDIO_FILTER` /
-`_PACKAGE_ENCODE_ARGS`): ASS first (when present), then scale, a 0.2°
+there (`_PACKAGE_VIDEO_FILTER` / `_PACKAGE_VIDEO_OUTPUT` /
+`_PACKAGE_AUDIO_FILTER` / `_PACKAGE_ENCODE_ARGS`): scale, a 0.2°
 rotate (`PACKAGE_ROTATE_RADIANS` repeated on `a`/`rotw`/`roth`, and
 `bilinear=0` — a deliberate speed-for-edge-quality trade, not an oversight), crop,
-tempo `PACKAGE_TEMPO` (1.03, via `setpts` + `rubberband`), grade/noise, 1920x1080
+grade/noise, then ASS (after rotate so the 0.2° tilt does not reach the
+text; still on source timestamps — `trim` and tempo come after burn-in, same
+single encode), tempo `PACKAGE_TEMPO` (1.03, via `setpts` + `rubberband`), 1920x1080
 yuv420p @ 29.94 fps, 44100 stereo, plus a -42 dB white-noise bed
 (`anoisesrc` `a=0.008` mixed with `amix=normalize=0` so program level is
 unchanged). Video encode is `h264_nvenc` (p5 / hq / VBR CQ 19); the CPU

@@ -753,7 +753,7 @@ class PackageTests(unittest.TestCase):
 
         target = package_module.copy_placeholder(package_root, target_dir)
 
-        self.assertEqual(target, target_dir / "placeholder.mp4")
+        self.assertEqual(target, target_dir / "judge.mp4")
         self.assertEqual(target.read_text(encoding="utf-8"), "tenth")
         state = json.loads(
             (placeholder_dir / "state.json").read_text("utf-8")
@@ -880,7 +880,7 @@ class PackageTests(unittest.TestCase):
                 remix_noise_name="sleep",
             )
 
-        placeholder = package_root / "demo_show" / "placeholder.mp4"
+        placeholder = package_root / "demo_show" / "judge.mp4"
         self.assertEqual(placeholder.read_text(encoding="utf-8"), "fourth")
         state = json.loads(
             (placeholder_dir / "state.json").read_text("utf-8")

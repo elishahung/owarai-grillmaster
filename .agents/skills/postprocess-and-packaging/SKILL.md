@@ -139,7 +139,7 @@ reusing it. Remix splits near every 8 minutes (`REMIX_SEGMENT_SECONDS`)
 on a subtitle gap/boundary, then wraps each segment as noise + content +
 noise (`1.mp4`, `2.mp4`, …). Remix also copies one rotating clip from the
 optional `<PACKAGE_PATH>/placeholder/` folder (`001.*`, `002.*` … contiguous)
-into the deliverable as `placeholder.<ext>` (`placeholder.py`); its
+into the deliverable as `judge.<ext>` (`placeholder.py`); its
 `state.json` cursor `{next_index}` is 1-based, advanced before the copy like
 the noise reservation, and wraps to 1 past the last clip. A missing folder
 just skips the clip.

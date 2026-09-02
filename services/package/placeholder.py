@@ -2,7 +2,7 @@
 
 `<PACKAGE_PATH>/placeholder` holds `001.*`, `002.*`, … clips and a
 `state.json` cursor. Every remix deliverable takes the next clip in the
-rotation and carries it as `placeholder.<ext>`.
+rotation and carries it as `judge.<ext>`.
 """
 from __future__ import annotations
 

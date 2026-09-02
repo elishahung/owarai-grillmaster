@@ -2,6 +2,7 @@
 from services.package.core import package_project, package_project_directory
 from services.package.errors import RemixPackageError
 from services.package.noise import reserve_noise_cuts
+from services.package.placeholder import copy_placeholder
 from services.package.rc import (
     PackageRc,
     load_package_rc,
@@ -15,6 +16,7 @@ __all__ = [
     "PackageRc",
     "RemixPackageError",
     "TitleSuggestions",
+    "copy_placeholder",
     "ensure_titles",
     "load_package_rc",
     "package_project",

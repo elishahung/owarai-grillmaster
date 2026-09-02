@@ -18,6 +18,7 @@ from services.package.constants import (
 )
 from services.package.errors import RemixPackageError
 from services.package.noise import reserve_noise_cuts
+from services.package.placeholder import copy_placeholder
 from services.progress import NoopProgressReporter
 
 
@@ -41,6 +42,8 @@ def package_remix(
         f"Remix {video_file}: {len(segments)} segment(s) "
         f"over {duration_seconds:.3f}s"
     )
+
+    copy_placeholder(package_root, target_dir)
 
     noise_dir = package_root / "noise" / noise_name
     noise_needed = NOISE_CUTS_PER_SEGMENT * len(segments)

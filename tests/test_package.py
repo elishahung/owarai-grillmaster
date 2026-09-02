@@ -731,6 +731,162 @@ class PackageTests(unittest.TestCase):
             package_project.call_args.kwargs["package_root"], package_root
         )
 
+    def _make_placeholder_dir(self, package_root: Path, count: int) -> Path:
+        placeholder_dir = package_root / "placeholder"
+        placeholder_dir.mkdir(parents=True)
+        for index in range(1, count + 1):
+            (placeholder_dir / f"{index:03d}.mp4").write_text(
+                "clip", encoding="utf-8"
+            )
+        return placeholder_dir
+
+    def test_copy_placeholder_takes_the_stated_index_and_advances(self):
+        root = self._make_temp_dir()
+        package_root = root / "package"
+        target_dir = root / "target"
+        target_dir.mkdir(parents=True)
+        placeholder_dir = self._make_placeholder_dir(package_root, 12)
+        (placeholder_dir / "010.mp4").write_text("tenth", encoding="utf-8")
+        (placeholder_dir / "state.json").write_text(
+            '{"next_index": 10}', encoding="utf-8"
+        )
+
+        target = package_module.copy_placeholder(package_root, target_dir)
+
+        self.assertEqual(target, target_dir / "placeholder.mp4")
+        self.assertEqual(target.read_text(encoding="utf-8"), "tenth")
+        state = json.loads(
+            (placeholder_dir / "state.json").read_text("utf-8")
+        )
+        self.assertEqual(state, {"next_index": 11})
+
+    def test_copy_placeholder_wraps_after_the_last_clip(self):
+        root = self._make_temp_dir()
+        package_root = root / "package"
+        target_dir = root / "target"
+        target_dir.mkdir(parents=True)
+        placeholder_dir = self._make_placeholder_dir(package_root, 3)
+        (placeholder_dir / "state.json").write_text(
+            '{"next_index": 3}', encoding="utf-8"
+        )
+
+        package_module.copy_placeholder(package_root, target_dir)
+
+        state = json.loads(
+            (placeholder_dir / "state.json").read_text("utf-8")
+        )
+        self.assertEqual(state, {"next_index": 1})
+
+    def test_copy_placeholder_restarts_when_the_cursor_overruns(self):
+        root = self._make_temp_dir()
+        package_root = root / "package"
+        target_dir = root / "target"
+        target_dir.mkdir(parents=True)
+        placeholder_dir = self._make_placeholder_dir(package_root, 3)
+        (placeholder_dir / "001.mp4").write_text("first", encoding="utf-8")
+        (placeholder_dir / "state.json").write_text(
+            '{"next_index": 97}', encoding="utf-8"
+        )
+
+        target = package_module.copy_placeholder(package_root, target_dir)
+
+        self.assertEqual(target.read_text(encoding="utf-8"), "first")
+        state = json.loads(
+            (placeholder_dir / "state.json").read_text("utf-8")
+        )
+        self.assertEqual(state, {"next_index": 2})
+
+    def test_copy_placeholder_starts_at_one_without_state(self):
+        root = self._make_temp_dir()
+        package_root = root / "package"
+        target_dir = root / "target"
+        target_dir.mkdir(parents=True)
+        placeholder_dir = self._make_placeholder_dir(package_root, 2)
+        (placeholder_dir / "001.mp4").write_text("first", encoding="utf-8")
+
+        target = package_module.copy_placeholder(package_root, target_dir)
+
+        self.assertEqual(target.read_text(encoding="utf-8"), "first")
+        state = json.loads(
+            (placeholder_dir / "state.json").read_text("utf-8")
+        )
+        self.assertEqual(state, {"next_index": 2})
+
+    def test_copy_placeholder_skips_when_the_folder_is_absent(self):
+        root = self._make_temp_dir()
+        package_root = root / "package"
+        target_dir = root / "target"
+        target_dir.mkdir(parents=True)
+        package_root.mkdir()
+
+        self.assertIsNone(
+            package_module.copy_placeholder(package_root, target_dir)
+        )
+        self.assertEqual(list(target_dir.iterdir()), [])
+
+    def test_copy_placeholder_rejects_non_contiguous_clips(self):
+        root = self._make_temp_dir()
+        package_root = root / "package"
+        target_dir = root / "target"
+        target_dir.mkdir(parents=True)
+        placeholder_dir = self._make_placeholder_dir(package_root, 3)
+        (placeholder_dir / "002.mp4").unlink()
+
+        with self.assertRaises(package_module.RemixPackageError):
+            package_module.copy_placeholder(package_root, target_dir)
+
+    def test_remix_package_carries_the_next_placeholder(self):
+        root = self._make_temp_dir()
+        source = root / "source"
+        package_root = root / "package"
+        noise_dir = package_root / "noise" / "sleep"
+        source.mkdir()
+        noise_dir.mkdir(parents=True)
+        for index in range(2):
+            (noise_dir / f"{index:03d}.mp4").write_text(
+                "source", encoding="utf-8"
+            )
+        placeholder_dir = self._make_placeholder_dir(package_root, 5)
+        (placeholder_dir / "004.mp4").write_text("fourth", encoding="utf-8")
+        (placeholder_dir / "state.json").write_text(
+            '{"next_index": 4}', encoding="utf-8"
+        )
+        (source / "video.mp4").write_text("video", encoding="utf-8")
+        (source / "video.cht.ass").write_text("ass", encoding="utf-8")
+        self._write_srt(
+            source / "video.cht.finalized.srt",
+            [("00:00:00,000", "00:05:00,000")],
+        )
+        project = Project(id="demo", name="show")
+
+        with (
+            patch.object(
+                package_remix.MediaProcessor,
+                "get_media_duration",
+                return_value=300.0,
+            ),
+            patch.object(
+                package_remix.MediaProcessor,
+                "build_remix_output",
+                side_effect=lambda **kwargs: kwargs["output_file"].write_text(
+                    "ok", encoding="utf-8"
+                ),
+            ),
+        ):
+            package_module.package_project(
+                project,
+                source,
+                package_root,
+                remix_noise_name="sleep",
+            )
+
+        placeholder = package_root / "demo_show" / "placeholder.mp4"
+        self.assertEqual(placeholder.read_text(encoding="utf-8"), "fourth")
+        state = json.loads(
+            (placeholder_dir / "state.json").read_text("utf-8")
+        )
+        self.assertEqual(state, {"next_index": 5})
+
 
 if __name__ == "__main__":
     unittest.main()

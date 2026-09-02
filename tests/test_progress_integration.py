@@ -19,6 +19,7 @@ from services.translate.facade import Translate, TranslationRequest
 from services.translate.pre_pass.pre_pass import PrePassResult
 from services.media import (
     PACKAGE_LEAD_TRIM_SECONDS,
+    PACKAGE_NOISE_AMPLITUDE,
     PACKAGE_SEEK_MARGIN_SECONDS,
     PACKAGE_VIDEO_BITRATE,
     PACKAGE_VIDEO_BUFSIZE,
@@ -456,7 +457,7 @@ class MediaProgressTests(unittest.TestCase):
         self.assertNotIn("rotw(a)", filter_complex)
         self.assertIn(MediaProcessor._PACKAGE_AUDIO_FILTER, filter_complex)
         self.assertIn("anoisesrc=", filter_complex)
-        self.assertIn("a=0.008", filter_complex)
+        self.assertIn(f"a={PACKAGE_NOISE_AMPLITUDE}", filter_complex)
         self.assertIn("amix=inputs=2", filter_complex)
         self.assertEqual(cmd[cmd.index("-c:v") + 1], "h264_nvenc")
         self.assertEqual(cmd[cmd.index("-b:v") + 1], PACKAGE_VIDEO_BITRATE)
@@ -671,7 +672,7 @@ class MediaProgressTests(unittest.TestCase):
         self.assertIn(MediaProcessor._PACKAGE_VIDEO_OUTPUT, filter_complex)
         self.assertIn(MediaProcessor._PACKAGE_AUDIO_FILTER, filter_complex)
         self.assertIn("anoisesrc=", filter_complex)
-        self.assertIn("a=0.008", filter_complex)
+        self.assertIn(f"a={PACKAGE_NOISE_AMPLITUDE}", filter_complex)
         self.assertLess(
             filter_complex.index("rotate="),
             filter_complex.index("subtitles="),

@@ -23,7 +23,7 @@ from services.progress import NoopProgressReporter
 BURN_IN_DURATION_TOLERANCE_SECONDS = 2.0
 PACKAGE_TEMPO = 1.03
 PACKAGE_PITCH = 1.01
-PACKAGE_NOISE_AMPLITUDE = 0.008  # ≈ -42 dBFS
+PACKAGE_NOISE_AMPLITUDE = 0.002  # ≈ -54 dBFS
 PACKAGE_LEAD_TRIM_SECONDS = 3
 PACKAGE_SEEK_MARGIN_SECONDS = 2.0
 PACKAGE_ROTATE_DEGREES = 0.2
@@ -289,7 +289,7 @@ class MediaProcessor:
                 )}[v];"
                 f"[0:a]atrim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration={usable_duration:.3f},"
                 f"asetpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
-                f"{MediaProcessor._white_noise_mix(duration_seconds)}"
+                f"{MediaProcessor._noise_bed_mix(duration_seconds)}"
             ),
             "-map",
             "[v]",
@@ -343,7 +343,7 @@ class MediaProcessor:
         Format-only fit (1920x1080 yuv420p @ 29.94, 44100 stereo, same
         encoder as the content segments) so remix concat can stream-copy the
         video. The look filters — rotate, grade, grain, tempo, rubberband,
-        white-noise bed — are not applied.
+        noise bed — are not applied.
         """
         if cut.duration_seconds <= 0:
             raise ValueError("noise cut duration must be positive")
@@ -434,7 +434,7 @@ class MediaProcessor:
             )}[v];"
             f"[0:a]atrim=start={start_seconds:.3f}:duration={duration:.3f},"
             f"asetpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
-            f"{MediaProcessor._white_noise_mix(output_duration)}"
+            f"{MediaProcessor._noise_bed_mix(output_duration)}"
         )
         cmd = [
             "ffmpeg",
@@ -897,11 +897,16 @@ class MediaProcessor:
         )
 
     @staticmethod
-    def _white_noise_mix(duration_seconds: float) -> str:
-        """Mix a -42 dB white-noise bed under the labeled ``[a0]`` program."""
+    def _noise_bed_mix(duration_seconds: float) -> str:
+        """Mix a -54 dB pink-noise bed under the labeled ``[a0]`` program.
+
+        Pink rather than white: the program is low-passed at 15 kHz, so a
+        flat-spectrum bed sits unmasked above that ceiling and reads as
+        hiss in quiet passages.
+        """
         return (
             f"anoisesrc=d={duration_seconds:.3f}:s=44100:"
-            f"a={PACKAGE_NOISE_AMPLITUDE}:c=white,"
+            f"a={PACKAGE_NOISE_AMPLITUDE}:c=pink,"
             "aformat=sample_rates=44100:channel_layouts=stereo[an];"
             "[a0][an]amix=inputs=2:duration=first:"
             "dropout_transition=0:normalize=0[a]"

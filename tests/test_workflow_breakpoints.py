@@ -351,6 +351,11 @@ class WorkflowBreakpointTests(unittest.TestCase):
             ) as get_tver_episode_talents,
             patch.object(
                 metadata_stage,
+                "get_tver_broadcast_date_label",
+                return_value="7月8日(水)放送分",
+            ) as get_tver_broadcast_date_label,
+            patch.object(
+                metadata_stage,
                 "resolve_broadcast_date",
                 return_value=date(2026, 7, 8),
             ) as resolve_broadcast_date,
@@ -365,7 +370,17 @@ class WorkflowBreakpointTests(unittest.TestCase):
             f"https://tver.jp/episodes/{project_id}"
         )
         get_tver_episode_talents.assert_called_once_with(project_id)
+        get_tver_broadcast_date_label.assert_called_once_with(project_id)
         resolve_broadcast_date.assert_called_once()
+        self.assertEqual(
+            resolve_broadcast_date.call_args.kwargs[
+                "tver_broadcast_date_label"
+            ],
+            "7月8日(水)放送分",
+        )
+        self.assertEqual(
+            loaded.source_metadata.broadcast_date_label, "7月8日(水)放送分"
+        )
         self.assertTrue(loaded.is_metadata_fetched)
         self.assertEqual(
             loaded.source_metadata.talents[0].name,
@@ -408,6 +423,10 @@ class WorkflowBreakpointTests(unittest.TestCase):
             ) as get_tver_episode_talents,
             patch.object(
                 metadata_stage,
+                "get_tver_broadcast_date_label",
+            ) as get_tver_broadcast_date_label,
+            patch.object(
+                metadata_stage,
                 "resolve_broadcast_date",
                 return_value=None,
             ),
@@ -423,6 +442,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
         )
         get_abema_episode_talents.assert_called_once_with(project_id)
         get_tver_episode_talents.assert_not_called()
+        get_tver_broadcast_date_label.assert_not_called()
         self.assertTrue(loaded.is_metadata_fetched)
         self.assertEqual(
             loaded.source_metadata.talents[0].name,

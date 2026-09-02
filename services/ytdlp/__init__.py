@@ -4,10 +4,11 @@ This module provides a unified interface for downloading videos from various
 sources using yt-dlp, with integrated logging and metadata extraction.
 """
 
-from .broadcast_date import resolve_broadcast_date
+from .broadcast_date import parse_broadcast_label_year, resolve_broadcast_date
 from .download import download_video, parse_section_time
 from .info import (
     get_abema_episode_talents,
+    get_tver_broadcast_date_label,
     get_tver_episode_talents,
     get_video_info,
     read_source_program_info,
@@ -19,8 +20,10 @@ __all__ = [
     "parse_section_time",
     "normalize_official_subtitle",
     "get_abema_episode_talents",
+    "get_tver_broadcast_date_label",
     "get_tver_episode_talents",
     "get_video_info",
+    "parse_broadcast_label_year",
     "read_source_program_info",
     "resolve_broadcast_date",
 ]

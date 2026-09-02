@@ -78,6 +78,12 @@ def _build_project_context(project: Project) -> str:
     ]
     if project.translation_hint:
         lines.append(f"- Title / description: {project.translation_hint}")
+    if project.source_broadcast_year is not None:
+        lines.append(
+            f"- Platform-stated original broadcast year: "
+            f"{project.source_broadcast_year} "
+            f'(source label: "{project.source_metadata.broadcast_date_label}")'
+        )
     talents_context = project.source_metadata_context()
     if talents_context:
         lines.append(f"- {talents_context}")

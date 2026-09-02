@@ -8,6 +8,7 @@ from services.ytdlp.broadcast_date import (
     JST,
     date_from_epoch,
     nearest_date_for_month_day,
+    parse_broadcast_label_year,
     resolve_broadcast_date,
     resolve_tver_broadcast_date,
 )
@@ -77,6 +78,31 @@ class ResolveTverBroadcastDateTests(unittest.TestCase):
             date(2026, 7, 6),
         )
 
+    def test_label_with_explicit_year_overrides_availability_year(self):
+        # A fully dated label is authoritative: the availability start must
+        # not drag the year to the nearest one.
+        self.assertEqual(
+            resolve_tver_broadcast_date("2018年8月22日放送", self._START_AT),
+            date(2018, 8, 22),
+        )
+
+    def test_year_only_archive_label_returns_none(self):
+        # Archive re-upload: the availability start is years off the on-air
+        # date, so the deterministic resolver must yield to agent research.
+        self.assertIsNone(
+            resolve_tver_broadcast_date("2018年放送", self._START_AT)
+        )
+
+    def test_year_and_month_without_day_returns_none(self):
+        self.assertIsNone(
+            resolve_tver_broadcast_date("2018年8月放送", self._START_AT)
+        )
+
+    def test_invalid_full_date_label_falls_back(self):
+        self.assertIsNone(
+            resolve_tver_broadcast_date("2018年2月30日放送", self._START_AT)
+        )
+
     def test_missing_label_falls_back_to_availability_date(self):
         self.assertEqual(
             resolve_tver_broadcast_date(None, self._START_AT),
@@ -92,6 +118,21 @@ class ResolveTverBroadcastDateTests(unittest.TestCase):
     def test_no_inputs_returns_none(self):
         self.assertIsNone(resolve_tver_broadcast_date(None, None))
         self.assertIsNone(resolve_tver_broadcast_date("7月6日(月)放送分", None))
+
+
+class ParseBroadcastLabelYearTests(unittest.TestCase):
+    def test_year_only_label(self):
+        self.assertEqual(parse_broadcast_label_year("2018年放送"), 2018)
+
+    def test_full_date_label(self):
+        self.assertEqual(parse_broadcast_label_year("2018年8月22日放送"), 2018)
+
+    def test_month_day_label_has_no_year(self):
+        self.assertIsNone(parse_broadcast_label_year("8月26日(水)放送分"))
+
+    def test_empty_label(self):
+        self.assertIsNone(parse_broadcast_label_year(None))
+        self.assertIsNone(parse_broadcast_label_year(""))
 
 
 class ResolveBroadcastDateTests(unittest.TestCase):
@@ -124,18 +165,22 @@ class ResolveBroadcastDateTests(unittest.TestCase):
         self.assertEqual(result, date(2026, 5, 3))
 
     def test_tver_combines_label_and_release_timestamp(self):
-        with patch.object(
-            broadcast_date_module,
-            "get_tver_broadcast_date_label",
-            return_value="7月6日(月)放送分",
-        ) as get_label:
-            result = resolve_broadcast_date(
-                source="tver",
-                video_id="epdemo1",
-                video_info=_video_info(release_timestamp=1783515600),
-            )
-        get_label.assert_called_once_with("epdemo1")
+        result = resolve_broadcast_date(
+            source="tver",
+            video_id="epdemo1",
+            video_info=_video_info(release_timestamp=1783515600),
+            tver_broadcast_date_label="7月6日(月)放送分",
+        )
         self.assertEqual(result, date(2026, 7, 6))
+
+    def test_tver_archive_label_yields_no_date(self):
+        result = resolve_broadcast_date(
+            source="tver",
+            video_id="epdemo1",
+            video_info=_video_info(release_timestamp=1783515600),
+            tver_broadcast_date_label="2018年放送",
+        )
+        self.assertIsNone(result)
 
     def test_abema_episode_uses_broadcast_at(self):
         with patch.object(

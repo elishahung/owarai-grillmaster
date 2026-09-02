@@ -166,9 +166,12 @@ Key control-flow details that are easy to break:
   instead of shipping.
 - `services/ytdlp/` — download + metadata + TVer/Abema talent scraping +
   `broadcast_date.py` (resolves the announced on-air/publish date: YouTube/
-  BiliBili from yt-dlp timestamps, TVer from `broadcastDateLabel` month/day +
-  year inferred from the availability start, Abema from program `broadcastAt`
-  or slot `startAt`; all best-effort → None) +
+  BiliBili from yt-dlp timestamps, TVer from `broadcastDateLabel` (the
+  metadata stage fetches it, persists it as
+  `source_metadata.broadcast_date_label`, and passes it in) — a label year
+  wins over the availability start, and a year-only archive-reupload label
+  ("2018年放送") resolves to None so agent research takes over, Abema from
+  program `broadcastAt` or slot `startAt`; all best-effort → None) +
   `subtitles.py` (platform CC → `video.official.ja.srt`; single video part
   only — multi-part is skipped with a warning and the pipeline continues
   without the reference; same-part language variants prefer exact `ja`;

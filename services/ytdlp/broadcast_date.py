@@ -5,9 +5,12 @@ The goal is the calendar date a show's official SNS announces ("○月○日放�
 
 - YouTube: publish time (release time for premieres), JST.
 - BiliBili: pubdate, CST (UTC+8) — announcements target a CST audience.
-- TVer: the TV on-air date from `broadcastDateLabel` (month/day, no year;
-  year inferred from the TVer availability start). Falls back to the
-  availability date itself when the label is missing.
+- TVer: the TV on-air date from `broadcastDateLabel` (usually month/day with
+  no year; year inferred from the TVer availability start). Archive
+  re-uploads instead carry a year-only label ("2018年放送"), where the
+  availability start is years off the on-air date — those resolve to None so
+  the agent research fallback takes over. Falls back to the availability date
+  itself when the label is missing.
 - ABEMA: `broadcastAt` for VOD episodes, `slot.startAt` for live-archive
   slots — both the original air time, JST.
 
@@ -24,13 +27,14 @@ from .info import (
     YtDlpVideoInfo,
     get_abema_episode_broadcast_at,
     get_abema_slot_start_at,
-    get_tver_broadcast_date_label,
 )
 
 JST = timezone(timedelta(hours=9))
 CST = timezone(timedelta(hours=8))
 
+_FULL_DATE_PATTERN = re.compile(r"(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日")
 _MONTH_DAY_PATTERN = re.compile(r"(\d{1,2})月(\d{1,2})日")
+_YEAR_PATTERN = re.compile(r"(\d{4})年")
 
 
 def date_from_epoch(epoch: int | None, tz: timezone) -> date | None:
@@ -62,19 +66,52 @@ def nearest_date_for_month_day(
     return min(candidates, key=lambda candidate: abs(candidate - reference))
 
 
+def parse_broadcast_label_year(label: str | None) -> int | None:
+    """Extract the four-digit year a TVer broadcast label states, if any."""
+    if not label:
+        return None
+    match = _YEAR_PATTERN.search(label)
+    return int(match.group(1)) if match else None
+
+
 def resolve_tver_broadcast_date(
     label: str | None, release_timestamp: int | None
 ) -> date | None:
-    """Resolve a TVer on-air date from the label and availability start."""
+    """Resolve a TVer on-air date from the label and availability start.
+
+    A label that states its own year is authoritative: an explicit
+    year/month/day is taken as-is, and a year-only archive label
+    ("2018年放送") resolves to None rather than to the availability start,
+    which for a re-upload is years away from the on-air date. Only a
+    year-less month/day label may borrow the year from the availability
+    start.
+    """
     reference = date_from_epoch(release_timestamp, JST)
     if label:
-        match = _MONTH_DAY_PATTERN.search(label)
-        if match and reference is not None:
+        full_match = _FULL_DATE_PATTERN.search(label)
+        if full_match:
+            try:
+                return date(*(int(group) for group in full_match.groups()))
+            except ValueError:
+                logger.warning(f"Invalid date in TVer label: {label}")
+
+        month_day_match = _MONTH_DAY_PATTERN.search(label)
+        if month_day_match and reference is not None:
             resolved = nearest_date_for_month_day(
-                int(match.group(1)), int(match.group(2)), reference
+                int(month_day_match.group(1)),
+                int(month_day_match.group(2)),
+                reference,
             )
             if resolved is not None:
                 return resolved
+
+        if _YEAR_PATTERN.search(label):
+            logger.info(
+                f"TVer label states a year but no on-air day ({label}); "
+                "treating the availability start as unrelated to the "
+                "broadcast date"
+            )
+            return None
     return reference
 
 
@@ -93,18 +130,23 @@ def resolve_broadcast_date(
     source: str,
     video_id: str,
     video_info: YtDlpVideoInfo,
+    tver_broadcast_date_label: str | None = None,
 ) -> date | None:
     """Resolve the announced broadcast/publication date for a project.
 
     `source` is a `VideoSource` value ("youtube" / "bilibili" / "tver" /
     "abema"); it is typed as str to keep this service importable without
-    the project module. TVer and ABEMA make best-effort platform API calls.
-    Never raises: any unexpected failure degrades to None so the metadata
-    stage stays unblocked.
+    the project module. ABEMA makes a best-effort platform API call; the
+    TVer label is fetched and persisted by the metadata stage and passed in
+    as `tver_broadcast_date_label`. Never raises: any unexpected failure
+    degrades to None so the metadata stage stays unblocked.
     """
     try:
         return _resolve_broadcast_date(
-            source=source, video_id=video_id, video_info=video_info
+            source=source,
+            video_id=video_id,
+            video_info=video_info,
+            tver_broadcast_date_label=tver_broadcast_date_label,
         )
     except Exception as e:
         logger.warning(
@@ -118,6 +160,7 @@ def _resolve_broadcast_date(
     source: str,
     video_id: str,
     video_info: YtDlpVideoInfo,
+    tver_broadcast_date_label: str | None,
 ) -> date | None:
     if source == "bilibili":
         return date_from_epoch(video_info.timestamp, CST)
@@ -131,9 +174,8 @@ def _resolve_broadcast_date(
         )
 
     if source == "tver":
-        label = get_tver_broadcast_date_label(video_id)
         return resolve_tver_broadcast_date(
-            label, video_info.release_timestamp
+            tver_broadcast_date_label, video_info.release_timestamp
         )
 
     if source == "abema":

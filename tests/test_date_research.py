@@ -161,6 +161,24 @@ class DateResearchTests(unittest.TestCase):
             self.assertIn("https://tver.jp/episodes/ep123", prompt)
             self.assertIn("260202_variety_show", prompt)
             self.assertIn("番組タイトル - 企画の説明", prompt)
+            self.assertNotIn("Platform-stated original broadcast year", prompt)
+
+    def test_prompt_context_includes_archive_broadcast_year(self):
+        root = self._make_temp_root()
+        with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
+            project = Project(id="ep123", name="archive_rerun")
+            project.update_from_source_broadcast_date_label("2018年放送")
+            with patch(
+                "services.postprocess.date_research.run_inference",
+                return_value=SimpleNamespace(text=_unknown_result_json()),
+            ) as mock_inference:
+                research_broadcast_date(project)
+
+            prompt = mock_inference.call_args.kwargs["prompt"]
+            self.assertIn(
+                "Platform-stated original broadcast year: 2018", prompt
+            )
+            self.assertIn("2018年放送", prompt)
 
 
 class DateResearchResultSchemaTests(unittest.TestCase):

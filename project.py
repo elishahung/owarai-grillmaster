@@ -16,6 +16,7 @@ from settings import settings
 import re
 from urllib.parse import urlparse, parse_qs
 from services.paths import fit_dir_name
+from services.ytdlp.broadcast_date import parse_broadcast_label_year
 from services.ytdlp.info import (
     SourceProgramInfo,
     SourceTalentInfo,
@@ -126,6 +127,7 @@ class SourceMetadata(BaseModel):
     talents: list[SourceTalent] = Field(default_factory=list)
     series: str | None = None
     channel: str | None = None
+    broadcast_date_label: str | None = None
 
 
 class Project(BaseModel):
@@ -352,6 +354,23 @@ class Project(BaseModel):
         if program.channel is not None:
             self.source_metadata.channel = program.channel
         self.save()
+
+    def update_from_source_broadcast_date_label(self, label: str) -> None:
+        """Persist the platform's raw on-air label (e.g. "2018年放送").
+
+        Kept even when it yields no exact date: a year-only archive label is
+        the only evidence of the original broadcast year, and the research
+        agent uses it to reject re-upload dates.
+        """
+        self.source_metadata.broadcast_date_label = label
+        self.save()
+
+    @property
+    def source_broadcast_year(self) -> int | None:
+        """Original broadcast year stated by the source, if it stated one."""
+        return parse_broadcast_label_year(
+            self.source_metadata.broadcast_date_label
+        )
 
     def update_from_source_talents(
         self, talents: list[SourceTalentInfo]

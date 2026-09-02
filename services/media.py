@@ -922,6 +922,19 @@ class MediaProcessor:
     # jitter rose under 1%, and the ``noise`` grain below covers the rest.
     # Delete ``:bilinear=0`` to go back to the smoother, slower default; nothing
     # else depends on it.
+
+    # The grain flags are tuned for bitrate, not for looks. Temporal grain is
+    # what covers the snap above, and it is expensive: every frame differs, so
+    # inter prediction cannot reuse it. Measured on a real episode against the
+    # same chain with no grain, the old ``alls=3:allf=t`` cost +29% bitrate;
+    # ``c0s=4:c0f=t+u`` costs +17% for the same luma grain (0.18 dB apart).
+    # Two independent savings: chroma grain (``alls`` -> ``c0s``) codes badly
+    # and does no perceptual work, and the default distribution's long tail is
+    # what the encoder actually pays for, so ``u`` bounds it.
+    # Do not "save" further with the ``a`` flag or a lower strength. Both
+    # measure a frame-to-frame delta indistinguishable from no grain at all:
+    # they still look like grain in a still frame while having switched off
+    # the temporal masking this filter exists for.
     _PACKAGE_VIDEO_FILTER = (
         "scale=1960:1102:flags=bicubic,"
         f"rotate=a={PACKAGE_ROTATE_RADIANS}:"
@@ -930,7 +943,7 @@ class MediaProcessor:
         "crop=1920:1080,"
         "eq=brightness=0.02:contrast=1.03:saturation=1.05,"
         "hue=h=4,"
-        "noise=alls=3:allf=t"
+        "noise=c0s=4:c0f=t+u"
     )
     _PACKAGE_VIDEO_OUTPUT = (
         f"setpts=PTS/{PACKAGE_TEMPO},"

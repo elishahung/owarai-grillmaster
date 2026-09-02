@@ -98,7 +98,10 @@ there (`_PACKAGE_VIDEO_FILTER` / `_PACKAGE_VIDEO_OUTPUT` /
 `_PACKAGE_AUDIO_FILTER` / `_PACKAGE_ENCODE_ARGS`): scale, a 0.2°
 rotate (`PACKAGE_ROTATE_RADIANS` repeated on `a`/`rotw`/`roth`, and
 `bilinear=0` — a deliberate speed-for-edge-quality trade, not an oversight), crop,
-grade/noise, then ASS (after rotate so the 0.2° tilt does not reach the
+grade/noise (`noise=c0s=4:c0f=t+u` — luma-only and uniform purely to cut
+bitrate; its temporal component is what masks the `bilinear=0` snap, and the
+`a` flag or a lower strength measure as no grain at all, so tune it only
+against a bitrate probe), then ASS (after rotate so the 0.2° tilt does not reach the
 text; still on source timestamps — `trim` and tempo come after burn-in, same
 single encode), tempo `PACKAGE_TEMPO` (1.03, via `setpts` + `rubberband`), 1920x1080
 yuv420p @ 29.94 fps, 44100 stereo, plus a -54 dB pink-noise bed

@@ -1,6 +1,6 @@
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from services.progress import PlannedStage
 from services.tui.app import GrillMasterApp
@@ -78,6 +78,45 @@ class GrillMasterAppTests(unittest.IsolatedAsyncioTestCase):
                 await pilot.press("f")
                 self.assertTrue(app.follow)
                 await pilot.pause()
+
+    async def test_copy_log_puts_the_whole_buffer_on_the_clipboard(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            state, reporter = _scripted_state(Path(tmp))
+            # More lines than the log pane can show, so a copy that only
+            # took the visible tail would come up short.
+            for i in range(30):
+                state.append_log(None, "INFO", f"chunk line {i}")
+            app = GrillMasterApp(state)
+            with patch("services.tui.app.put_on_clipboard") as copy:
+                async with app.run_test(size=(120, 40)) as pilot:
+                    await pilot.pause()
+                    await pilot.press("c")
+            copied = copy.call_args.args[0].splitlines()
+            self.assertEqual(copied[0], "# Translating subtitles")
+            self.assertEqual(
+                copied[1:], [f"chunk line {i}" for i in range(30)]
+            )
+
+    async def test_copy_log_reports_a_clipboard_failure(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            state, reporter = _scripted_state(Path(tmp))
+            state.append_log(None, "INFO", "chunk line")
+            app = GrillMasterApp(state)
+            with (
+                patch(
+                    "services.tui.app.put_on_clipboard",
+                    side_effect=FileNotFoundError("no clip.exe"),
+                ),
+                patch.object(GrillMasterApp, "notify") as notify,
+            ):
+                async with app.run_test(size=(120, 40)) as pilot:
+                    await pilot.pause()
+                    await pilot.press("c")
+            self.assertEqual(notify.call_args.kwargs["severity"], "error")
 
     async def test_quit_gate_while_running_and_exit_after_finish(self):
         import tempfile

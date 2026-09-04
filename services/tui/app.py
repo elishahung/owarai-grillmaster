@@ -12,6 +12,8 @@ receives events directly.
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from time import monotonic
@@ -37,6 +39,11 @@ from .state import (
 
 ABORT_CONFIRM_WINDOW = 3.0  # seconds between the two `q` presses
 
+CLIPBOARD_COMMAND = {
+    "win32": ["clip.exe"],
+    "darwin": ["pbcopy"],
+}.get(sys.platform, ["xclip", "-selection", "clipboard"])
+
 STATE_ICON = {
     ItemState.PENDING: ("○", "grey58"),
     ItemState.RUNNING: ("▶", "bold yellow1"),
@@ -61,6 +68,20 @@ LOG_LEVEL_STYLE = {
     "ERROR": "bold red",
     "CRITICAL": "bold red",
 }
+
+
+def put_on_clipboard(text: str) -> None:
+    """Hand `text` to the OS clipboard, raising if the helper fails.
+
+    Textual's own copy rides OSC 52, which conhost — the terminal this
+    normally runs in — ignores, so the log pane could only be read, never
+    copied out of a failed run. The platform helper actually lands it.
+    clip.exe wants UTF-8 with no BOM: a BOM arrives as a literal
+    character in the pasted text.
+    """
+    subprocess.run(
+        CLIPBOARD_COMMAND, input=text.encode("utf-8"), check=True
+    )
 
 
 def fmt_clock(seconds: float) -> str:
@@ -93,6 +114,7 @@ class GrillMasterApp(App):
         ("r", "retry", "Retry"),
         ("f", "toggle_follow", "Follow"),
         ("o", "open_artifact", "Open artifact"),
+        ("c", "copy_log", "Copy log"),
         Binding("up", "select_prev", "Prev stage", priority=True),
         Binding("down", "select_next", "Next stage", priority=True),
         Binding("k", "select_prev", "Prev stage", show=False),
@@ -217,6 +239,25 @@ class GrillMasterApp(App):
             os.startfile(preview.open_path)  # noqa: S606 - user-initiated
         except OSError as e:
             self.notify(f"Could not open artifact: {e}", severity="error")
+
+    def action_copy_log(self) -> None:
+        """Copy the whole log buffer, not just the tail the pane shows."""
+        item = self.selected_item()
+        with self.state.lock:
+            if item is None:
+                label, lines = "pipeline", list(self.state.pipeline_log)
+            else:
+                label, lines = item.label, list(item.log)
+        if not lines:
+            self.notify("Nothing in this log yet.", severity="information")
+            return
+        text = "\n".join([f"# {label}", *(line for _, line in lines)])
+        try:
+            put_on_clipboard(text)
+        except (OSError, subprocess.SubprocessError) as e:
+            self.notify(f"Could not copy the log: {e}", severity="error")
+            return
+        self.notify(f"Copied {len(lines)} log lines to the clipboard.")
 
     def _reset_detail_scroll(self) -> None:
         self.query_one("#detail-scroll", VerticalScroll).scroll_home(

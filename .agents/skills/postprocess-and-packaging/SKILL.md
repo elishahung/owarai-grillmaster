@@ -130,7 +130,10 @@ deadlocks partway through a long range, and putting both in one
 Every package range (`_encode_subtitled_range`) is reached with `-ss` before
 `-i` plus `-copyts -start_at_zero`, so the graph still sees source timestamps
 and its absolute `trim`/`atrim` bounds and subtitle lookup stay correct;
-dropping either flag silently shifts or empties the segment.
+dropping either flag silently shifts or empties the segment. Every package
+map is stream-indexed (`0:v:0`, `0:a:0`): sources carry a cover-art mjpeg
+stream that a bare `0:v` re-encodes into a second h264 stream, which mp4
+cannot tag.
 Default package drops the first `PACKAGE_LEAD_TRIM_SECONDS` (3 s) after
 ASS burn and before tempo; remix does the same only on the first content
 segment, then wraps noise around that already-trimmed clip. Expected

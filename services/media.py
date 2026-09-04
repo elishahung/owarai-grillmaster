@@ -514,9 +514,9 @@ class MediaProcessor:
             "-af",
             MediaProcessor._NOISE_AUDIO_FILTER,
             "-map",
-            "0:v",
+            "0:v:0",
             "-map",
-            "0:a",
+            "0:a:0",
             *MediaProcessor._PACKAGE_ENCODE_ARGS,
             str(output_file),
             "-y",
@@ -583,6 +583,10 @@ class MediaProcessor:
 
         The matching audio comes from ``_encode_package_audio`` in its own
         process; see ``_render_subtitled_range`` for why.
+
+        The stream is picked as ``0:v:0``, never ``0:v``: sources carrying a
+        cover-art mjpeg stream would otherwise get it re-encoded to h264 as a
+        second video stream, which mp4 cannot tag as attached art.
         """
         if subtitle_file.parent != video_file.parent:
             raise ValueError(
@@ -611,7 +615,7 @@ class MediaProcessor:
                 f"trim=start={start_seconds:.3f}:duration={duration:.3f}",
             ),
             "-map",
-            "0:v",
+            "0:v:0",
             "-an",
             *MediaProcessor._PACKAGE_ENCODE_ARGS,
             str(output_file),

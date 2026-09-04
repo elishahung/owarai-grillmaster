@@ -185,9 +185,12 @@ Key control-flow details that are easy to break:
   `download.py` registers a jpeg-extension fixup PP before the thumbnail
   convertor (Abema slot thumbnails are JPEG bytes named `.png`, which breaks
   the extension-driven image2 demuxer) — keep the convertor out of the opts
-  dict so the fixup stays first. Downloads auto-retry once after a short
-  delay (Abema regularly fails the first attempt); options and the progress
-  hook are rebuilt per attempt.
+  dict so the fixup stays first. Downloads do **not** retry: an Abema download
+  in the same process as the metadata stage used to fail every time, because
+  yt-dlp caches the Abema token on the extractor class and only registers the
+  `abematv-license://` key handler on the YoutubeDL that mints a fresh token.
+  `reset_abema_auth_cache` (client.py) clears that cache before each download;
+  keep it if you add another yt-dlp pass ahead of the download.
 - `services/paths.py` — platform path-length mechanics (`measure`,
   `fit_dir_name`, `MAX_PATH_UNITS`/`MAX_COMPONENT_UNITS`). Owns *how* to fit a
   name; `project.py` owns the per-destination reserves

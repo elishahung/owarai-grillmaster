@@ -5,7 +5,7 @@ thumbnail extraction, metadata embedding, and format conversion.
 """
 
 import os
-from time import monotonic, sleep
+from time import monotonic
 
 import yt_dlp
 from yt_dlp.postprocessor import FFmpegThumbnailsConvertorPP
@@ -18,13 +18,11 @@ from typing import Any, cast
 from settings import settings
 from services.progress import NoopProgressReporter
 
-from .client import YtDlpLoguruAdapter, get_ytdlp_download_options_for_url
-
-
-# Some platforms (notably Abema) regularly fail the first download attempt
-# and succeed on the second, so one automatic retry is built in.
-_DOWNLOAD_ATTEMPTS = 2
-_DOWNLOAD_RETRY_DELAY_SECS = 5
+from .client import (
+    YtDlpLoguruAdapter,
+    get_ytdlp_download_options_for_url,
+    reset_abema_auth_cache,
+)
 
 
 class _ReporterProgressHook:
@@ -168,34 +166,23 @@ def download_video(
     """
     logger.info(f"Initiating download task for input: {url}")
 
-    for attempt in range(_DOWNLOAD_ATTEMPTS):
-        try:
-            # Options (and the stateful progress hook) are rebuilt per
-            # attempt; yt-dlp resumes partial .part files on its own.
-            _download_video_once(url, output_path, partial_download, progress)
-            return
-        except Exception as e:
-            if attempt + 1 < _DOWNLOAD_ATTEMPTS:
-                logger.warning(
-                    f"Download attempt {attempt + 1} failed for {url}: {e}; "
-                    f"retrying in {_DOWNLOAD_RETRY_DELAY_SECS}s"
-                )
-                sleep(_DOWNLOAD_RETRY_DELAY_SECS)
-                continue
-            if isinstance(e, DownloadError):
-                logger.error(f"yt-dlp download failed for {url}: {e}")
-            else:
-                logger.error(f"Unexpected error during download execution: {e}")
-            raise
+    try:
+        _run_download(url, output_path, partial_download, progress)
+    except DownloadError as e:
+        logger.error(f"yt-dlp download failed for {url}: {e}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error during download execution: {e}")
+        raise
 
 
-def _download_video_once(
+def _run_download(
     url: str,
     output_path: Path,
     partial_download: bool,
     progress: NoopProgressReporter | None,
 ) -> None:
-    """Build yt-dlp options and run one download attempt."""
+    """Build yt-dlp options and run the download."""
     # Configure yt-dlp options
     ydl_opts = {
         "writethumbnail": True,
@@ -256,9 +243,13 @@ def _download_video_once(
             {"key": "FFmpegSubtitlesConvertor", "format": "srt"},
         ]
 
-    # Execute download; failures propagate to the retry loop in
-    # download_video, which owns the error logging.
+    # Execute download; failures propagate to download_video, which owns the
+    # error logging.
     logger.info(f"Starting yt-dlp process for: {url}")
+
+    # yt-dlp caches ABEMA auth on the extractor class, and the download needs
+    # the fresh-token path to register its own license handler.
+    reset_abema_auth_cache(url)
 
     download_opts = get_ytdlp_download_options_for_url(url, ydl_opts)
     with yt_dlp.YoutubeDL(cast(Any, download_opts)) as ydl:

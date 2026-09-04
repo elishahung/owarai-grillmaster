@@ -150,50 +150,63 @@ class DownloadProgressModeTests(unittest.TestCase):
         self.assertNotIn("progress_hooks", opts)
 
 
-class DownloadRetryTests(unittest.TestCase):
-    def _ydl_factory(self, outcomes):
-        """Each call pops an outcome: an exception to raise or None."""
-
+class DownloadFailureTests(unittest.TestCase):
+    def test_failure_raises_without_a_second_attempt(self):
         def factory(opts):
             ydl = MagicMock()
             ydl.__enter__ = MagicMock(return_value=ydl)
             ydl.__exit__ = MagicMock(return_value=False)
-            outcome = outcomes.pop(0)
-            if outcome is not None:
-                ydl.extract_info.side_effect = outcome
-            else:
-                ydl.extract_info.return_value = {"title": "t"}
+            ydl.extract_info.side_effect = DownloadError("dead")
             return ydl
 
-        return factory
-
-    def test_first_failure_retries_once_and_succeeds(self):
-        outcomes = [DownloadError("flaky abema"), None]
-        with (
-            patch(
-                "services.ytdlp.download.yt_dlp.YoutubeDL",
-                side_effect=self._ydl_factory(outcomes),
-            ) as ydl_cls,
-            patch("services.ytdlp.download.sleep") as sleep_fn,
-        ):
-            download_video("https://example.com/v", Path("out"))
-
-        self.assertEqual(ydl_cls.call_count, 2)
-        sleep_fn.assert_called_once()
-
-    def test_persistent_failure_raises_after_retry(self):
-        outcomes = [DownloadError("dead"), DownloadError("dead again")]
-        with (
-            patch(
-                "services.ytdlp.download.yt_dlp.YoutubeDL",
-                side_effect=self._ydl_factory(outcomes),
-            ) as ydl_cls,
-            patch("services.ytdlp.download.sleep"),
-        ):
+        with patch(
+            "services.ytdlp.download.yt_dlp.YoutubeDL", side_effect=factory
+        ) as ydl_cls:
             with self.assertRaises(DownloadError):
                 download_video("https://example.com/v", Path("out"))
 
-        self.assertEqual(ydl_cls.call_count, 2)
+        self.assertEqual(ydl_cls.call_count, 1)
+
+
+class AbemaAuthCacheResetTests(unittest.TestCase):
+    """The download must re-authorize so it gets its own license handler."""
+
+    def _run_download(self, url):
+        def factory(opts):
+            ydl = MagicMock()
+            ydl.__enter__ = MagicMock(return_value=ydl)
+            ydl.__exit__ = MagicMock(return_value=False)
+            ydl.extract_info.return_value = {"title": "t"}
+            return ydl
+
+        with patch(
+            "services.ytdlp.download.yt_dlp.YoutubeDL", side_effect=factory
+        ):
+            download_video(url, Path("out"))
+
+    def _seed_token_cache(self):
+        from yt_dlp.extractor.abematv import AbemaTVBaseIE
+
+        for attr in ("_USERTOKEN", "_DEVICE_ID", "_MEDIATOKEN"):
+            self.addCleanup(
+                setattr, AbemaTVBaseIE, attr, getattr(AbemaTVBaseIE, attr)
+            )
+            setattr(AbemaTVBaseIE, attr, "stale")
+        return AbemaTVBaseIE
+
+    def test_abema_download_clears_extractor_token_cache(self):
+        ie = self._seed_token_cache()
+        self._run_download("https://abema.tv/video/episode/90-979_s1_p299")
+
+        self.assertIsNone(ie._USERTOKEN)
+        self.assertIsNone(ie._DEVICE_ID)
+        self.assertIsNone(ie._MEDIATOKEN)
+
+    def test_other_sources_leave_the_token_cache_alone(self):
+        ie = self._seed_token_cache()
+        self._run_download("https://example.com/v")
+
+        self.assertEqual(ie._USERTOKEN, "stale")
 
 
 class ReporterProgressHookTests(unittest.TestCase):

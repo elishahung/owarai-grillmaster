@@ -97,6 +97,34 @@ def _apply_bilibili_412_playurl_patch() -> None:
     logger.debug("Applied temporary BiliBili yt-dlp HTTP 412 playurl patch")
 
 
+def _is_abema_input(input_str: str) -> bool:
+    """Return True for ABEMA URLs."""
+    return "abema.tv" in input_str.lower()
+
+
+def reset_abema_auth_cache(input_str: str) -> None:
+    """Drop yt-dlp's process-wide ABEMA token cache before a download.
+
+    `AbemaTVBaseIE` caches `_USERTOKEN` / `_DEVICE_ID` / `_MEDIATOKEN` as class
+    attributes, and only the branch that mints a fresh token registers the
+    `abematv-license://` request handler — on the YoutubeDL instance that is
+    current at that moment. Once the metadata stage has authorized in this
+    process, the download's own YoutubeDL hits the cached-token early return,
+    never receives the license handler, and every HLS key fetch fails. Clearing
+    the cache makes the download re-authorize and register its own handler,
+    which is what a freshly started process was doing all along.
+    """
+    if not _is_abema_input(input_str):
+        return
+
+    from yt_dlp.extractor.abematv import AbemaTVBaseIE
+
+    AbemaTVBaseIE._USERTOKEN = None
+    AbemaTVBaseIE._DEVICE_ID = None
+    AbemaTVBaseIE._MEDIATOKEN = None
+    logger.debug("Cleared cached ABEMA device token before download")
+
+
 def _build_ytdlp_options(
     input_str: str | None,
     opts: dict | None,

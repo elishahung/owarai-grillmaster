@@ -505,8 +505,10 @@ class PackageTests(unittest.TestCase):
                 remix_noise_name="sleep",
             )
 
+        # Segments render concurrently, so compare them by name, not by the
+        # order the pool happened to start them in.
         self.assertEqual(
-            [
+            sorted(
                 (
                     call["output_file"].name,
                     (
@@ -523,7 +525,7 @@ class PackageTests(unittest.TestCase):
                     call["end_seconds"],
                 )
                 for call in calls
-            ],
+            ),
             [
                 (
                     "1.mp4",

@@ -110,15 +110,27 @@ single encode), tempo `PACKAGE_TEMPO` (1.03, via `setpts` + `rubberband`), 1920x
 yuv420p @ 29.94 fps, 44100 stereo, plus a -54 dB pink-noise bed
 (`anoisesrc` `a=PACKAGE_NOISE_AMPLITUDE` mixed with `amix=normalize=0` so
 program level is unchanged; pink because the bed bypasses the program's
-15 kHz lowpass and a flat one reads as hiss). Video encode is `h264_nvenc` (p5 / hq / VBR 6000k, max 24000k
-— Bilibili 1080p recommended average/peak; CQ 19 is only the quality floor);
-the CPU
-filter graph (libass, `scale`, `rotate`, `noise`, `eq`/`hue`, rubberband) stays
-software — there is no CUDA equivalent for those looks.
-`encode_subtitled_segment` reaches its segment with `-ss` before `-i` plus
-`-copyts -start_at_zero`, so the graph still sees source timestamps and its
-absolute `trim`/`atrim` bounds and subtitle lookup stay correct; dropping
-either flag silently shifts or empties the segment.
+15 kHz lowpass and a flat one reads as hiss). Video encode is `h264_nvenc` (p4 / hq / VBR at `PACKAGE_VIDEO_CQ`, peak
+`PACKAGE_VIDEO_MAXRATE`) — under `-rc vbr -cq` a `-b:v` is inert, so cq alone
+sets the bitrate and maxrate only caps peaks. The look filters stay on the
+CPU: they run under the encoder, and an all-CUDA path (nvdec + `scale_cuda`,
+no CPU filters at all) measures no faster — one NVENC session is the wall, so
+throughput comes from `PACKAGE_ENCODE_CONCURRENCY` (3) sessions instead.
+Remix segments render across a pool. Every render goes through
+`_render_subtitled_range`: video-only parts (`-vf`, `-an`) beside one audio
+pass (`_encode_package_audio`), concatenated and muxed. A burn-in longer than
+`PACKAGE_MIN_PART_SECONDS` takes several parts (`burn_in_parts` — boundaries
+land on whole output frames so they concatenate to the frame count a single
+pass gives); a remix segment is one part. The audio is never split: a
+rubberband seam mid-show is audible where a video seam is not. **One
+filtergraph per ffmpeg process** is load-bearing, not style: one process
+feeding both a `-vf` graph and an audio `-filter_complex` from the same input
+deadlocks partway through a long range, and putting both in one
+`-filter_complex` runs them in series (one graph, one thread).
+Every package range (`_encode_subtitled_range`) is reached with `-ss` before
+`-i` plus `-copyts -start_at_zero`, so the graph still sees source timestamps
+and its absolute `trim`/`atrim` bounds and subtitle lookup stay correct;
+dropping either flag silently shifts or empties the segment.
 Default package drops the first `PACKAGE_LEAD_TRIM_SECONDS` (3 s) after
 ASS burn and before tempo; remix does the same only on the first content
 segment, then wraps noise around that already-trimmed clip. Expected

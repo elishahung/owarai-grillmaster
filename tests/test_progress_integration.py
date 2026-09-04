@@ -18,10 +18,11 @@ from services.translate.errors import (
 from services.translate.facade import Translate, TranslationRequest
 from services.translate.pre_pass.pre_pass import PrePassResult
 from services.media import (
+    PACKAGE_ENCODE_CONCURRENCY,
     PACKAGE_LEAD_TRIM_SECONDS,
     PACKAGE_NOISE_AMPLITUDE,
     PACKAGE_SEEK_MARGIN_SECONDS,
-    PACKAGE_VIDEO_BITRATE,
+    PACKAGE_VIDEO_CQ,
     PACKAGE_VIDEO_BUFSIZE,
     PACKAGE_VIDEO_MAXRATE,
     MediaProcessor,
@@ -388,6 +389,16 @@ class GeminiProgressTests(unittest.TestCase):
         )
 
 
+def package_render_commands(popen):
+    """Split a package render's ffmpeg calls into (video parts, audio, mux)."""
+    commands = [call.args[0] for call in popen.call_args_list]
+    return (
+        [cmd for cmd in commands if "-an" in cmd],
+        next(cmd for cmd in commands if "-vn" in cmd),
+        next(cmd for cmd in commands if "concat" in cmd),
+    )
+
+
 class MediaProgressTests(unittest.TestCase):
     def test_burn_in_subtitles_reports_ffmpeg_progress(self):
         root = Path(tempfile.mkdtemp(prefix="burn-progress-test-"))
@@ -428,39 +439,46 @@ class MediaProgressTests(unittest.TestCase):
                 video, subtitle, output, progress=progress
             )
 
-        cmd = popen.call_args.args[0]
-        filter_complex = cmd[cmd.index("-filter_complex") + 1]
+        # Video and audio are separate processes so they render in parallel.
+        parts, audio, mux = package_render_commands(popen)
+        self.assertEqual(len(parts), 1)
+        cmd = parts[0]
+        video_filter = cmd[cmd.index("-vf") + 1]
+        audio_filter = audio[audio.index("-filter_complex") + 1]
+        self.assertEqual(mux[mux.index("-c") + 1], "copy")
         self.assertIn("-nostdin", cmd)
-        self.assertIn("subtitles=video.ass,", filter_complex)
+        self.assertIn("subtitles=video.ass,", video_filter)
         self.assertIn(
-            f"trim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration=7.000",
-            filter_complex,
+            f"trim=start={PACKAGE_LEAD_TRIM_SECONDS:.3f}:duration=7.000",
+            video_filter,
         )
         self.assertIn(
-            f"atrim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration=7.000",
-            filter_complex,
+            f"atrim=start={PACKAGE_LEAD_TRIM_SECONDS:.3f}:duration=7.000",
+            audio_filter,
         )
-        self.assertIn(MediaProcessor._PACKAGE_VIDEO_FILTER, filter_complex)
-        self.assertIn(MediaProcessor._PACKAGE_VIDEO_OUTPUT, filter_complex)
+        self.assertIn(MediaProcessor._PACKAGE_VIDEO_FILTER, video_filter)
+        self.assertIn(MediaProcessor._PACKAGE_VIDEO_OUTPUT, video_filter)
         self.assertLess(
-            filter_complex.index("rotate="),
-            filter_complex.index("subtitles=video.ass,"),
+            video_filter.index("rotate="),
+            video_filter.index("subtitles=video.ass,"),
         )
         self.assertLess(
-            filter_complex.index("subtitles=video.ass,"),
-            filter_complex.index(
-                f"trim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration=7.000"
+            video_filter.index("subtitles=video.ass,"),
+            video_filter.index(
+                f"trim=start={PACKAGE_LEAD_TRIM_SECONDS:.3f}:duration=7.000"
             ),
         )
-        self.assertIn("rotw(", filter_complex)
-        self.assertIn("roth(", filter_complex)
-        self.assertNotIn("rotw(a)", filter_complex)
-        self.assertIn(MediaProcessor._PACKAGE_AUDIO_FILTER, filter_complex)
-        self.assertIn("anoisesrc=", filter_complex)
-        self.assertIn(f"a={PACKAGE_NOISE_AMPLITUDE}", filter_complex)
-        self.assertIn("amix=inputs=2", filter_complex)
+        self.assertIn("rotw(", video_filter)
+        self.assertIn("roth(", video_filter)
+        self.assertNotIn("rotw(a)", video_filter)
+        self.assertIn(MediaProcessor._PACKAGE_AUDIO_FILTER, audio_filter)
+        self.assertIn("anoisesrc=", audio_filter)
+        self.assertIn(f"a={PACKAGE_NOISE_AMPLITUDE}", audio_filter)
+        self.assertIn("amix=inputs=2", audio_filter)
         self.assertEqual(cmd[cmd.index("-c:v") + 1], "h264_nvenc")
-        self.assertEqual(cmd[cmd.index("-b:v") + 1], PACKAGE_VIDEO_BITRATE)
+        # -cq is what sets the bitrate; a -b:v next to it would be inert.
+        self.assertEqual(cmd[cmd.index("-cq") + 1], PACKAGE_VIDEO_CQ)
+        self.assertNotIn("-b:v", cmd)
         self.assertEqual(cmd[cmd.index("-maxrate") + 1], PACKAGE_VIDEO_MAXRATE)
         self.assertEqual(cmd[cmd.index("-bufsize") + 1], PACKAGE_VIDEO_BUFSIZE)
         self.assertNotIn("copy", cmd[cmd.index("-c:a") + 1])
@@ -475,6 +493,61 @@ class MediaProgressTests(unittest.TestCase):
         )
         self.assertIn(("advance", 1, 0.5, None), progress.events)
         self.assertEqual(progress.events[-1], ("finish", 1, "done"))
+
+    def test_long_burn_in_renders_parts_and_one_audio_pass(self):
+        root = Path(tempfile.mkdtemp(prefix="burn-parallel-test-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        video = root / "video.mp4"
+        subtitle = root / "video.ass"
+        video.write_text("video", encoding="utf-8")
+        subtitle.write_text("subtitle", encoding="utf-8")
+
+        class FakeProcess:
+            def __init__(self):
+                self.stdout = iter(["progress=end\n"])
+                self.stderr = iter([])
+
+            def wait(self):
+                return 0
+
+        source_duration = 7203.0
+        expected_duration = package_output_duration(
+            package_usable_duration(source_duration)
+        )
+        with (
+            patch.object(
+                MediaProcessor,
+                "get_media_duration",
+                side_effect=[source_duration, expected_duration],
+            ),
+            patch(
+                "services.media.subprocess.Popen",
+                side_effect=lambda *a, **k: FakeProcess(),
+            ) as popen,
+        ):
+            MediaProcessor.burn_in_subtitles(video, subtitle, root / "out.mp4")
+
+        commands = [call.args[0] for call in popen.call_args_list]
+        parts = [cmd for cmd in commands if "-an" in cmd]
+        audio = [cmd for cmd in commands if "-vn" in cmd]
+        mux = [cmd for cmd in commands if "concat" in cmd]
+        self.assertEqual(len(parts), PACKAGE_ENCODE_CONCURRENCY)
+        self.assertEqual(len(audio), 1)
+        self.assertEqual(len(mux), 1)
+        self.assertEqual(len(commands), len(parts) + 2)
+
+        # Each part burns its own range; the single audio pass covers all of
+        # them, so no rubberband seam ever lands mid-show.
+        for cmd in parts:
+            self.assertIn("subtitles=video.ass,", cmd[cmd.index("-vf") + 1])
+            self.assertNotIn("-filter_complex", cmd)
+        audio_filter = audio[0][audio[0].index("-filter_complex") + 1]
+        self.assertIn(
+            f"atrim=start={PACKAGE_LEAD_TRIM_SECONDS:.3f}:"
+            f"duration={source_duration - PACKAGE_LEAD_TRIM_SECONDS:.3f}",
+            audio_filter,
+        )
+        self.assertEqual(mux[0][mux[0].index("-c") + 1], "copy")
 
     def test_burn_in_subtitles_collects_stderr_on_failure(self):
         root = Path(tempfile.mkdtemp(prefix="burn-progress-fail-test-"))
@@ -666,20 +739,22 @@ class MediaProgressTests(unittest.TestCase):
                 end_seconds=1.0,
             )
 
-        cmd = popen.call_args.args[0]
-        filter_complex = cmd[cmd.index("-filter_complex") + 1]
-        self.assertIn(MediaProcessor._PACKAGE_VIDEO_FILTER, filter_complex)
-        self.assertIn(MediaProcessor._PACKAGE_VIDEO_OUTPUT, filter_complex)
-        self.assertIn(MediaProcessor._PACKAGE_AUDIO_FILTER, filter_complex)
-        self.assertIn("anoisesrc=", filter_complex)
-        self.assertIn(f"a={PACKAGE_NOISE_AMPLITUDE}", filter_complex)
+        parts, audio, _ = package_render_commands(popen)
+        cmd = parts[0]
+        video_filter = cmd[cmd.index("-vf") + 1]
+        audio_filter = audio[audio.index("-filter_complex") + 1]
+        self.assertIn(MediaProcessor._PACKAGE_VIDEO_FILTER, video_filter)
+        self.assertIn(MediaProcessor._PACKAGE_VIDEO_OUTPUT, video_filter)
+        self.assertIn(MediaProcessor._PACKAGE_AUDIO_FILTER, audio_filter)
+        self.assertIn("anoisesrc=", audio_filter)
+        self.assertIn(f"a={PACKAGE_NOISE_AMPLITUDE}", audio_filter)
         self.assertLess(
-            filter_complex.index("rotate="),
-            filter_complex.index("subtitles="),
+            video_filter.index("rotate="),
+            video_filter.index("subtitles="),
         )
         self.assertLess(
-            filter_complex.index("subtitles="),
-            filter_complex.index("trim="),
+            video_filter.index("subtitles="),
+            video_filter.index("trim="),
         )
         self.assertEqual(cmd[cmd.index("-c:v") + 1], "h264_nvenc")
 
@@ -699,7 +774,9 @@ class MediaProgressTests(unittest.TestCase):
             def wait(self):
                 return 0
 
-        def run_segment(start_seconds: float, end_seconds: float) -> list[str]:
+        def run_segment(
+            start_seconds: float, end_seconds: float
+        ) -> tuple[list[str], list[str]]:
             with patch(
                 "services.media.subprocess.Popen",
                 side_effect=lambda *a, **k: FakeProcess(),
@@ -711,9 +788,14 @@ class MediaProgressTests(unittest.TestCase):
                     start_seconds=start_seconds,
                     end_seconds=end_seconds,
                 )
-            return popen.call_args.args[0]
+            parts, audio, _ = package_render_commands(popen)
+            return parts[0], audio
 
-        cmd = run_segment(100.0, 160.0)
+        # Video and audio seek identically, or they would drift apart.
+        cmd, audio = run_segment(100.0, 160.0)
+        self.assertEqual(
+            audio[audio.index("-ss") + 1], cmd[cmd.index("-ss") + 1]
+        )
         # The seek must precede the input and keep source timestamps, or the
         # absolute trim bounds and the subtitle lookup would both shift.
         self.assertLess(cmd.index("-ss"), cmd.index("-i"))
@@ -727,12 +809,17 @@ class MediaProgressTests(unittest.TestCase):
             cmd[cmd.index("-t") + 1],
             f"{60.0 + 2 * PACKAGE_SEEK_MARGIN_SECONDS:.3f}",
         )
-        filter_complex = cmd[cmd.index("-filter_complex") + 1]
-        self.assertIn("trim=start=100.000:duration=60.000", filter_complex)
-        self.assertIn("atrim=start=100.000:duration=60.000", filter_complex)
+        self.assertIn(
+            "trim=start=100.000:duration=60.000",
+            cmd[cmd.index("-vf") + 1],
+        )
+        self.assertIn(
+            "atrim=start=100.000:duration=60.000",
+            audio[audio.index("-filter_complex") + 1],
+        )
 
         # A start inside the margin clamps the seek without shortening the read.
-        cmd = run_segment(1.0, 61.0)
+        cmd, _ = run_segment(1.0, 61.0)
         self.assertEqual(cmd[cmd.index("-ss") + 1], "0.000")
         self.assertEqual(
             cmd[cmd.index("-t") + 1],
@@ -777,13 +864,15 @@ class MediaProgressTests(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("-ss") + 1], "20800.000")
         self.assertEqual(cmd[cmd.index("-t") + 1], "60.000")
         self.assertEqual(cmd[cmd.index("-i") + 1], str(noise))
-        filter_complex = cmd[cmd.index("-filter_complex") + 1]
-        self.assertIn(MediaProcessor._NOISE_VIDEO_FILTER, filter_complex)
-        self.assertIn(MediaProcessor._NOISE_AUDIO_FILTER, filter_complex)
-        self.assertNotIn(MediaProcessor._PACKAGE_VIDEO_FILTER, filter_complex)
-        self.assertNotIn(MediaProcessor._PACKAGE_VIDEO_OUTPUT, filter_complex)
-        self.assertNotIn(MediaProcessor._PACKAGE_AUDIO_FILTER, filter_complex)
-        self.assertNotIn("anoisesrc=", filter_complex)
+        video_filter = cmd[cmd.index("-vf") + 1]
+        audio_filter = cmd[cmd.index("-af") + 1]
+        self.assertEqual(MediaProcessor._NOISE_VIDEO_FILTER, video_filter)
+        self.assertEqual(MediaProcessor._NOISE_AUDIO_FILTER, audio_filter)
+        self.assertNotIn("-filter_complex", cmd)
+        self.assertNotIn(MediaProcessor._PACKAGE_VIDEO_FILTER, video_filter)
+        self.assertNotIn(MediaProcessor._PACKAGE_VIDEO_OUTPUT, video_filter)
+        self.assertNotIn(MediaProcessor._PACKAGE_AUDIO_FILTER, audio_filter)
+        self.assertNotIn("anoisesrc=", audio_filter)
         self.assertEqual(cmd[cmd.index("-c:v") + 1], "h264_nvenc")
         self.assertEqual(
             progress.events,

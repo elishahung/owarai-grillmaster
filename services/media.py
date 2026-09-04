@@ -6,6 +6,7 @@ and combining multiple video files.
 """
 
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from math import radians
 from pathlib import Path
 import ffmpeg
@@ -28,9 +29,22 @@ PACKAGE_LEAD_TRIM_SECONDS = 3
 PACKAGE_SEEK_MARGIN_SECONDS = 2.0
 PACKAGE_ROTATE_DEGREES = 0.2
 PACKAGE_ROTATE_RADIANS = radians(PACKAGE_ROTATE_DEGREES)
-PACKAGE_VIDEO_BITRATE = "6000k"  # Bilibili 1080p recommended average
+PACKAGE_OUTPUT_FPS = 29.94
+# One NVENC session tops out well below what the card can do: three encodes
+# running side by side finish in barely more wall time than one. Renders are
+# therefore spread over this many concurrent ffmpeg processes — remix
+# segments across the pool, and a plain burn-in split into this many parts.
+PACKAGE_ENCODE_CONCURRENCY = 3
+# Below this, splitting a burn-in costs more in seeks and muxing than the
+# parallel encode wins back.
+PACKAGE_MIN_PART_SECONDS = 120.0
+# NVENC runs in quality-targeted VBR, so -cq alone decides the bitrate and
+# -maxrate/-bufsize only cap the peaks. A -b:v next to -cq is inert: it read
+# "6000k" here while the encoder shipped ~17 Mbps, so the target is stated as
+# the quality level it actually is.
+PACKAGE_VIDEO_CQ = "21"
 PACKAGE_VIDEO_MAXRATE = "24000k"  # Bilibili 1080p recommended peak
-PACKAGE_VIDEO_BUFSIZE = "12000k"  # 2× average; required for -maxrate
+PACKAGE_VIDEO_BUFSIZE = "12000k"  # required for -maxrate
 
 
 def package_usable_duration(source_duration: float) -> float:
@@ -245,6 +259,12 @@ class MediaProcessor:
     ) -> None:
         """Apply the package look, then burn ASS/SRT so rotate cannot tilt text.
 
+        The render is split into video parts that encode side by side plus
+        one pass over the audio (see ``_render_subtitled_range``). The audio
+        is never split: a seam between two separately rubberband-stretched
+        halves is audible, while a seam between two independently encoded
+        video parts is not.
+
         Implementation note: ffmpeg's ``subtitles`` filter does not handle
         absolute Windows paths reliably (colon parsing collides with filter
         argument syntax). This method runs ffmpeg with ``cwd`` set to the
@@ -272,46 +292,21 @@ class MediaProcessor:
             MediaProcessor.get_media_duration(video_file)
         )
         duration_seconds = package_output_duration(usable_duration)
-        cmd = [
-            "ffmpeg",
-            "-hide_banner",
-            "-nostdin",
-            "-nostats",
-            "-progress",
-            "pipe:1",
-            "-i",
-            video_file.name,
-            "-filter_complex",
-            (
-                f"[0:v]{MediaProcessor._package_video_chain(
-                    subtitle_file.name,
-                    f'trim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration={usable_duration:.3f}',
-                )}[v];"
-                f"[0:a]atrim=start={PACKAGE_LEAD_TRIM_SECONDS}:duration={usable_duration:.3f},"
-                f"asetpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
-                f"{MediaProcessor._noise_bed_mix(duration_seconds)}"
-            ),
-            "-map",
-            "[v]",
-            "-map",
-            "[a]",
-            *MediaProcessor._PACKAGE_ENCODE_ARGS,
-            str(output_file),
-            "-y",
-        ]
+        parts = MediaProcessor.burn_in_parts(usable_duration)
         progress_task = (
             progress.start_stage("Burning subtitles", total=duration_seconds)
             if progress is not None
             else None
         )
         try:
-            MediaProcessor._run_ffmpeg_progress(
-                cmd=cmd,
-                cwd=cwd,
+            logger.info(f"Burn-in rendering {len(parts)} video part(s)")
+            MediaProcessor._render_subtitled_range(
+                video_file=video_file,
+                subtitle_file=subtitle_file,
+                output_file=output_file,
+                parts=parts,
                 progress=progress,
                 progress_task=progress_task,
-                duration_seconds=duration_seconds,
-                progress_description=None,
                 failure_label="burn-in",
             )
             output_duration = MediaProcessor.get_media_duration(output_file)
@@ -329,6 +324,152 @@ class MediaProcessor:
 
         if progress is not None:
             progress.finish(progress_task)
+
+    @staticmethod
+    def burn_in_parts(usable_duration: float) -> list[TimeRange]:
+        """Split the burn-in range into parts that encode in parallel.
+
+        Boundaries land on whole output frames so the parts concatenate to
+        the frame count a single pass would have produced: a source offset
+        maps to output time as ``offset / PACKAGE_TEMPO``, so one output
+        frame is ``PACKAGE_TEMPO / PACKAGE_OUTPUT_FPS`` of source.
+        """
+        start = float(PACKAGE_LEAD_TRIM_SECONDS)
+        end = start + usable_duration
+        part_count = min(
+            PACKAGE_ENCODE_CONCURRENCY,
+            max(1, int(usable_duration // PACKAGE_MIN_PART_SECONDS)),
+        )
+        if part_count == 1:
+            return [TimeRange(start_seconds=start, end_seconds=end)]
+
+        frame_count = int(
+            package_output_duration(usable_duration) * PACKAGE_OUTPUT_FPS
+        )
+        source_per_frame = PACKAGE_TEMPO / PACKAGE_OUTPUT_FPS
+        boundaries = [start]
+        boundaries += [
+            start + round(index * frame_count / part_count) * source_per_frame
+            for index in range(1, part_count)
+        ]
+        boundaries.append(end)
+        return [
+            TimeRange(start_seconds=lower, end_seconds=upper)
+            for lower, upper in zip(boundaries, boundaries[1:])
+        ]
+
+    @staticmethod
+    def _render_subtitled_range(
+        video_file: Path,
+        subtitle_file: Path,
+        output_file: Path,
+        parts: list[TimeRange],
+        progress: NoopProgressReporter | None = None,
+        progress_task=None,
+        progress_description: str | None = None,
+        failure_label: str = "burn-in",
+    ) -> None:
+        """Render `parts` as video and the whole span as audio, then mux.
+
+        Every ffmpeg process here owns exactly one filtergraph. That is not a
+        style choice: a single process feeding both a ``-vf`` graph and an
+        audio ``-filter_complex`` from the same input deadlocks partway
+        through a long range, and putting both in one ``-filter_complex``
+        runs them in series instead (one graph, one thread). Separate
+        processes give the parallelism without either failure mode.
+
+        Only the video parts report progress; together they cover the whole
+        output, so the stage total still adds up.
+        """
+        temp_dir = Path(tempfile.mkdtemp(prefix="grill_render_"))
+        try:
+            part_files = [
+                temp_dir / f"part{index:03d}.mp4"
+                for index in range(len(parts))
+            ]
+            audio_file = temp_dir / "audio.m4a"
+            with ThreadPoolExecutor(max_workers=len(parts) + 1) as pool:
+                futures = [
+                    pool.submit(
+                        MediaProcessor._encode_subtitled_range,
+                        video_file=video_file,
+                        subtitle_file=subtitle_file,
+                        output_file=part_file,
+                        start_seconds=part.start_seconds,
+                        end_seconds=part.end_seconds,
+                        progress=progress,
+                        progress_task=progress_task,
+                        progress_description=progress_description,
+                        failure_label=failure_label,
+                    )
+                    for part, part_file in zip(parts, part_files)
+                ]
+                futures.append(
+                    pool.submit(
+                        MediaProcessor._encode_package_audio,
+                        video_file=video_file,
+                        output_file=audio_file,
+                        start_seconds=parts[0].start_seconds,
+                        end_seconds=parts[-1].end_seconds,
+                    )
+                )
+                for future in futures:
+                    future.result()
+            MediaProcessor._mux_package_output(
+                part_files=part_files,
+                audio_file=audio_file,
+                output_file=output_file,
+                failure_label=failure_label,
+            )
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    @staticmethod
+    def _mux_package_output(
+        part_files: list[Path],
+        audio_file: Path,
+        output_file: Path,
+        failure_label: str = "burn-in",
+    ) -> None:
+        """Concatenate the video parts and mux the one audio track in."""
+        concat_path = MediaProcessor._write_concat_list(part_files)
+        try:
+            cmd = [
+                "ffmpeg",
+                "-hide_banner",
+                "-nostdin",
+                "-nostats",
+                "-progress",
+                "pipe:1",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(concat_path),
+                "-i",
+                str(audio_file),
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-c",
+                "copy",
+                "-movflags",
+                "+faststart",
+                str(output_file),
+                "-y",
+            ]
+            MediaProcessor._run_ffmpeg_progress(
+                cmd=cmd,
+                progress=None,
+                progress_task=None,
+                duration_seconds=0.0,
+                progress_description=None,
+                failure_label=f"{failure_label} mux",
+            )
+        finally:
+            concat_path.unlink(missing_ok=True)
 
     @staticmethod
     def encode_noise_segment(
@@ -358,6 +499,7 @@ class MediaProcessor:
         cmd = [
             "ffmpeg",
             "-hide_banner",
+            "-nostdin",
             "-nostats",
             "-progress",
             "pipe:1",
@@ -367,15 +509,14 @@ class MediaProcessor:
             f"{cut.duration_seconds:.3f}",
             "-i",
             str(cut.source),
-            "-filter_complex",
-            (
-                f"[0:v]{MediaProcessor._NOISE_VIDEO_FILTER}[v];"
-                f"[0:a]{MediaProcessor._NOISE_AUDIO_FILTER}[a]"
-            ),
+            "-vf",
+            MediaProcessor._NOISE_VIDEO_FILTER,
+            "-af",
+            MediaProcessor._NOISE_AUDIO_FILTER,
             "-map",
-            "[v]",
+            "0:v",
             "-map",
-            "[a]",
+            "0:a",
             *MediaProcessor._PACKAGE_ENCODE_ARGS,
             str(output_file),
             "-y",
@@ -400,9 +541,37 @@ class MediaProcessor:
         progress_task=None,
         progress_description: str | None = None,
     ) -> None:
-        """Burn subtitles into a trimmed normalized segment.
+        """Burn subtitles into a trimmed normalized segment, audio included."""
+        MediaProcessor._render_subtitled_range(
+            video_file=video_file,
+            subtitle_file=subtitle_file,
+            output_file=output_file,
+            parts=[
+                TimeRange(
+                    start_seconds=start_seconds, end_seconds=end_seconds
+                )
+            ],
+            progress=progress,
+            progress_task=progress_task,
+            progress_description=progress_description,
+            failure_label="remix segment",
+        )
 
-        The segment is reached with a demuxer seek rather than by decoding the
+    @staticmethod
+    def _encode_subtitled_range(
+        video_file: Path,
+        subtitle_file: Path,
+        output_file: Path,
+        start_seconds: float,
+        end_seconds: float,
+        progress: NoopProgressReporter | None = None,
+        progress_task=None,
+        progress_description: str | None = None,
+        failure_label: str = "burn-in",
+    ) -> None:
+        """Burn subtitles into one trimmed, normalized range, video only.
+
+        The range is reached with a demuxer seek rather than by decoding the
         whole prefix: without it every segment would decode — and rasterize
         subtitles over — the entire video up to its start. ``-copyts`` keeps
         the packets on the source timeline so the ``subtitles`` filter still
@@ -411,6 +580,9 @@ class MediaProcessor:
         time, exactly as the default (non-``copyts``) path would. The seek
         lands on the keyframe at or before the margin, and ``trim`` still cuts
         the exact frame, so the output is unchanged.
+
+        The matching audio comes from ``_encode_package_audio`` in its own
+        process; see ``_render_subtitled_range`` for why.
         """
         if subtitle_file.parent != video_file.parent:
             raise ValueError(
@@ -421,41 +593,26 @@ class MediaProcessor:
         if duration <= 0:
             raise ValueError("segment duration must be positive")
         output_duration = package_output_duration(duration)
-        seek_seconds = max(0.0, start_seconds - PACKAGE_SEEK_MARGIN_SECONDS)
-        read_seconds = (
-            start_seconds - seek_seconds + duration + PACKAGE_SEEK_MARGIN_SECONDS
-        )
 
         output_file.parent.mkdir(parents=True, exist_ok=True)
-        filter_complex = (
-            f"[0:v]{MediaProcessor._package_video_chain(
-                subtitle_file.name,
-                f'trim=start={start_seconds:.3f}:duration={duration:.3f}',
-            )}[v];"
-            f"[0:a]atrim=start={start_seconds:.3f}:duration={duration:.3f},"
-            f"asetpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
-            f"{MediaProcessor._noise_bed_mix(output_duration)}"
-        )
         cmd = [
             "ffmpeg",
             "-hide_banner",
+            "-nostdin",
             "-nostats",
             "-progress",
             "pipe:1",
-            "-copyts",
-            "-start_at_zero",
-            "-ss",
-            f"{seek_seconds:.3f}",
-            "-t",
-            f"{read_seconds:.3f}",
+            *MediaProcessor._package_seek_args(start_seconds, duration),
             "-i",
             video_file.name,
-            "-filter_complex",
-            filter_complex,
+            "-vf",
+            MediaProcessor._package_video_chain(
+                subtitle_file.name,
+                f"trim=start={start_seconds:.3f}:duration={duration:.3f}",
+            ),
             "-map",
-            "[v]",
-            "-map",
-            "[a]",
+            "0:v",
+            "-an",
             *MediaProcessor._PACKAGE_ENCODE_ARGS,
             str(output_file),
             "-y",
@@ -467,7 +624,88 @@ class MediaProcessor:
             progress_task=progress_task,
             duration_seconds=output_duration,
             progress_description=progress_description,
-            failure_label="remix segment",
+            failure_label=failure_label,
+        )
+
+    @staticmethod
+    def _encode_package_audio(
+        video_file: Path,
+        output_file: Path,
+        start_seconds: float,
+        end_seconds: float,
+    ) -> None:
+        """Render the package audio for one range as a standalone track."""
+        duration = max(0.0, end_seconds - start_seconds)
+        if duration <= 0:
+            raise ValueError("audio duration must be positive")
+
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-nostdin",
+            "-nostats",
+            "-progress",
+            "pipe:1",
+            *MediaProcessor._package_seek_args(start_seconds, duration),
+            "-i",
+            str(video_file),
+            "-filter_complex",
+            MediaProcessor._package_audio_graph(start_seconds, duration),
+            "-map",
+            "[a]",
+            "-vn",
+            "-c:a",
+            "aac",
+            "-b:a",
+            "192k",
+            "-ar",
+            "44100",
+            "-ac",
+            "2",
+            str(output_file),
+            "-y",
+        ]
+        MediaProcessor._run_ffmpeg_progress(
+            cmd=cmd,
+            progress=None,
+            progress_task=None,
+            duration_seconds=package_output_duration(duration),
+            progress_description=None,
+            failure_label="package audio",
+        )
+
+    @staticmethod
+    def _package_seek_args(
+        start_seconds: float, duration: float
+    ) -> list[str]:
+        """Demuxer seek landing on the keyframe before ``start_seconds``."""
+        seek_seconds = max(0.0, start_seconds - PACKAGE_SEEK_MARGIN_SECONDS)
+        read_seconds = (
+            start_seconds
+            - seek_seconds
+            + duration
+            + PACKAGE_SEEK_MARGIN_SECONDS
+        )
+        return [
+            "-copyts",
+            "-start_at_zero",
+            "-ss",
+            f"{seek_seconds:.3f}",
+            "-t",
+            f"{read_seconds:.3f}",
+        ]
+
+    @staticmethod
+    def _package_audio_graph(start_seconds: float, duration: float) -> str:
+        """Audio-only graph: trim, package filter, then the noise bed."""
+        noise_bed = MediaProcessor._noise_bed_mix(
+            package_output_duration(duration)
+        )
+        return (
+            f"[0:a]atrim=start={start_seconds:.3f}:duration={duration:.3f},"
+            f"asetpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
+            f"{noise_bed}"
         )
 
     @staticmethod
@@ -948,7 +1186,7 @@ class MediaProcessor:
     _PACKAGE_VIDEO_OUTPUT = (
         f"setpts=PTS/{PACKAGE_TEMPO},"
         "format=yuv420p,"
-        "fps=29.94"
+        f"fps={PACKAGE_OUTPUT_FPS}"
     )
     _PACKAGE_AUDIO_FILTER = (
         "highpass=f=50,"
@@ -957,7 +1195,11 @@ class MediaProcessor:
         "aformat=sample_rates=44100:channel_layouts=stereo,"
         "volume=0.97"
     )
-    _NOISE_VIDEO_FILTER = "scale=1920:1080:flags=bicubic,format=yuv420p,fps=29.94"
+    _NOISE_VIDEO_FILTER = (
+        "scale=1920:1080:flags=bicubic,"
+        "format=yuv420p,"
+        f"fps={PACKAGE_OUTPUT_FPS}"
+    )
     _NOISE_AUDIO_FILTER = (
         "aformat=sample_rates=44100:channel_layouts=stereo"
     )
@@ -965,15 +1207,13 @@ class MediaProcessor:
         "-c:v",
         "h264_nvenc",
         "-preset",
-        "p5",
+        "p4",
         "-tune",
         "hq",
         "-rc",
         "vbr",
         "-cq",
-        "19",
-        "-b:v",
-        PACKAGE_VIDEO_BITRATE,
+        PACKAGE_VIDEO_CQ,
         "-maxrate",
         PACKAGE_VIDEO_MAXRATE,
         "-bufsize",

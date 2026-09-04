@@ -1,12 +1,14 @@
 """Remix package split selection and output assembly."""
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from loguru import logger
 
 from project import FINALIZED_SRT_FILE_NAME
 from services.media import (
+    PACKAGE_ENCODE_CONCURRENCY,
     PACKAGE_LEAD_TRIM_SECONDS,
     MediaProcessor,
     TimeRange,
@@ -50,6 +52,32 @@ def package_remix(
     selection = reserve_noise_cuts(noise_dir, cut_count=noise_needed)
     noise_seconds = sum(cut.duration_seconds for cut in selection.cuts)
 
+    renders: list[dict] = []
+    for index, segment in enumerate(segments):
+        start_seconds = segment.start_seconds
+        if index == 0:
+            start_seconds += PACKAGE_LEAD_TRIM_SECONDS
+        if start_seconds >= segment.end_seconds:
+            raise RemixPackageError(
+                "first remix segment is shorter than the "
+                f"{PACKAGE_LEAD_TRIM_SECONDS}s package lead trim"
+            )
+        logger.info(
+            f"Remix segment {index + 1}/{len(segments)}: "
+            f"{start_seconds:.3f}s-{segment.end_seconds:.3f}s"
+        )
+        renders.append(
+            dict(
+                video_file=video_file,
+                subtitle_file=subtitle_file,
+                output_file=target_dir / f"{index + 1}.mp4",
+                head_noise=selection.cuts[NOISE_CUTS_PER_SEGMENT * index],
+                tail_noise=selection.cuts[NOISE_CUTS_PER_SEGMENT * index + 1],
+                start_seconds=start_seconds,
+                end_seconds=segment.end_seconds,
+            )
+        )
+
     progress_task = (
         progress.start_stage(
             "Remixing subtitles", total=duration_seconds + noise_seconds
@@ -57,33 +85,23 @@ def package_remix(
         if progress is not None
         else None
     )
+    # Segments are independent files, and one encode never saturates the
+    # card, so they render side by side against a shared progress task.
     try:
-        for index, segment in enumerate(segments):
-            start_seconds = segment.start_seconds
-            if index == 0:
-                start_seconds += PACKAGE_LEAD_TRIM_SECONDS
-            if start_seconds >= segment.end_seconds:
-                raise RemixPackageError(
-                    "first remix segment is shorter than the "
-                    f"{PACKAGE_LEAD_TRIM_SECONDS}s package lead trim"
+        with ThreadPoolExecutor(
+            max_workers=PACKAGE_ENCODE_CONCURRENCY
+        ) as pool:
+            futures = [
+                pool.submit(
+                    MediaProcessor.build_remix_output,
+                    progress=progress,
+                    progress_task=progress_task,
+                    **render,
                 )
-            head = selection.cuts[NOISE_CUTS_PER_SEGMENT * index]
-            tail = selection.cuts[NOISE_CUTS_PER_SEGMENT * index + 1]
-            logger.info(
-                f"Remix segment {index + 1}/{len(segments)}: "
-                f"{start_seconds:.3f}s-{segment.end_seconds:.3f}s"
-            )
-            MediaProcessor.build_remix_output(
-                video_file=video_file,
-                subtitle_file=subtitle_file,
-                output_file=target_dir / f"{index + 1}.mp4",
-                head_noise=head,
-                tail_noise=tail,
-                start_seconds=start_seconds,
-                end_seconds=segment.end_seconds,
-                progress=progress,
-                progress_task=progress_task,
-            )
+                for render in renders
+            ]
+            for future in futures:
+                future.result()
     except Exception:
         if progress is not None and progress_task is not None:
             progress.finish(progress_task, "failed")

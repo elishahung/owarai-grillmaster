@@ -1,10 +1,16 @@
-"""Shared JSON-Schema enforcement for prompt-based backends.
+"""Shared output enforcement for the backends behind ``run_inference``.
 
-Backends without native structured-output guarantees (gemini-cli, codex,
-claude) all enforce a Pydantic schema the same way: append the JSON Schema to
-the prompt, then validate-and-repair — on a validation failure, re-prompt with
-the error and the prior (invalid) output until it parses or the retry budget is
-spent. This module owns that loop so every backend shares one implementation.
+Two layers of validation, one loop:
+
+* **schema** — the output must parse as the caller's Pydantic model. Backends
+  without native structured output (gemini-cli, gemini-agy, codex, claude) get
+  the JSON Schema appended to the prompt; gemini-api enforces it natively.
+* **caller invariants the schema cannot express** — an optional ``validate``
+  hook (e.g. "one ``segment_summary`` per chunk boundary": any list length is
+  schema-valid, so only the caller can judge it).
+
+Either failure re-prompts with the error and the prior output until the output
+is accepted or the retry budget is spent.
 """
 
 from __future__ import annotations
@@ -13,18 +19,19 @@ import json
 from typing import Callable
 
 from loguru import logger
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from .base import InferenceError
+from .result import InferenceResult
 
 
 class SchemaValidationError(InferenceError):
-    """Raised when a backend cannot produce schema-valid output in budget."""
+    """Raised when a backend cannot produce valid output in budget."""
 
 
-# Schema validate-and-repair attempt cap, shared by every prompt-based backend
-# (gemini-cli / codex / claude). Hardcoded maintainer constant — each retry is a
-# real model request, so this is deliberately small and not exposed as config.
+# Validate-and-repair attempt cap, shared by every backend. Hardcoded
+# maintainer constant — each retry is a real model request, so this is
+# deliberately small and not exposed as config.
 MAX_SCHEMA_RETRIES = 3
 
 
@@ -62,46 +69,60 @@ def extract_json_object(text: str) -> str:
 
 
 def enforce_schema(
-    invoke_once: Callable[[str], tuple[str, int]],
+    invoke_once: Callable[[str], InferenceResult],
     *,
     schema: type[BaseModel],
     base_prompt: str,
+    validate: Callable[[BaseModel], None] | None = None,
     max_retries: int = MAX_SCHEMA_RETRIES,
-) -> tuple[str, int]:
+) -> InferenceResult:
     """Validate-and-repair loop around a single-shot backend invocation.
 
-    `invoke_once(prompt) -> (raw_text, requests)` runs one backend round.
-    Returns `(validated_json_text, total_requests)` where the text is
-    guaranteed-parseable for `schema`. Raises `SchemaValidationError` if no
-    attempt validates within `max_retries`.
+    `invoke_once(prompt)` runs one backend round. `validate(parsed)` may raise
+    `ValueError` to reject an output that parses but breaks a caller invariant;
+    its message is fed back verbatim as the repair instruction, so make it name
+    exactly what is missing. Returns the accepted result with `cost` and
+    `requests` summed across every attempt. Raises `SchemaValidationError` if
+    nothing is accepted within `max_retries`.
     """
     total_requests = 0
-    last_error: ValidationError | None = None
+    total_cost = 0.0
+    last_error: ValueError | None = None
     repair = ""
     for attempt in range(1, max_retries + 1):
-        response, requests = invoke_once(base_prompt + repair)
-        total_requests += requests
-        cleaned = extract_json_object(response)
+        result = invoke_once(base_prompt + repair)
+        total_requests += result.requests
+        total_cost += result.cost
+        cleaned = extract_json_object(result.text)
         try:
-            schema.model_validate_json(cleaned)
-        except ValidationError as ve:
-            last_error = ve
+            parsed = schema.model_validate_json(cleaned)
+            if validate is not None:
+                validate(parsed)
+        # pydantic's ValidationError is a ValueError, so one clause covers both
+        # the schema failure and the caller invariant.
+        except ValueError as e:
+            last_error = e
             logger.warning(
-                f"[schema] validation failed "
-                f"(attempt {attempt}/{max_retries}): {ve}"
+                f"[schema] output rejected "
+                f"(attempt {attempt}/{max_retries}): {e}"
             )
             repair = (
-                "\n\n【修正要求】你上一次的回應未通過 JSON schema 驗證。"
-                f"驗證錯誤：\n{ve}\n\n"
+                "\n\n【修正要求】你上一次的回應未通過輸出驗證。"
+                f"驗證錯誤：\n{e}\n\n"
                 "你上一次（無效）的輸出為：\n"
-                f"{response[:8000]}\n\n"
+                f"{result.text[:8000]}\n\n"
                 "請只輸出一個符合 schema 的修正後 JSON 物件，"
                 "不要任何說明文字或 markdown code fence。"
             )
             continue
-        return cleaned, total_requests
+        return result.model_copy(
+            update={
+                "text": cleaned,
+                "cost": total_cost,
+                "requests": total_requests,
+            }
+        )
 
     raise SchemaValidationError(
-        f"output failed schema validation after {max_retries} attempts: "
-        f"{last_error}"
+        f"output failed validation after {max_retries} attempts: {last_error}"
     )

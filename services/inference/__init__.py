@@ -11,6 +11,7 @@ from __future__ import annotations
 import tempfile
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
+from typing import Callable
 
 from loguru import logger
 from pydantic import BaseModel
@@ -97,6 +98,24 @@ def _working_dir(cwd: Path | None):
             yield Path(tmp)
 
 
+def _run_with_schema(
+    invoke_once,
+    *,
+    base_prompt: str,
+    schema: type[BaseModel] | None,
+    validate,
+) -> InferenceResult:
+    """One shot when no schema is requested, the repair loop otherwise."""
+    if schema is None:
+        return invoke_once(base_prompt)
+    return enforce_schema(
+        invoke_once,
+        schema=schema,
+        base_prompt=base_prompt,
+        validate=validate,
+    )
+
+
 def run_inference(
     *,
     backend: Backend,
@@ -106,6 +125,7 @@ def run_inference(
     images: list[Path] | None = None,
     audio: list[Path] | None = None,
     schema: type[BaseModel] | None = None,
+    validate: Callable[[BaseModel], None] | None = None,
     model: str | None = None,
     reasoning_effort: str = "high",
     output_last_message_path: Path | None = None,
@@ -119,15 +139,19 @@ def run_inference(
     gemini-cli gets the web tools allow-listed in its policy, and
     claude/gemini-agy already expose them under their permission bypass.
 
-    Two shapes only:
+    Every backend's only job is `prompt → text`; validation lives HERE, so the
+    two branches differ solely in how the schema reaches the model:
 
     * **gemini-api** enforces a schema natively (`response_json_schema`) and is
-      the sole metered backend, so it has its own branch.
+      the sole metered backend.
     * **gemini-cli / gemini-agy / codex / claude** are single-shot text
-      generators. Schema handling is identical for all four and lives HERE (not
-      in the backends): the JSON-Schema instruction is appended once and
-      `enforce_schema` runs the shared validate-and-repair loop. Each backend's
-      only job is `prompt → text`.
+      generators, so the JSON-Schema instruction is appended to the prompt.
+
+    Both then run through the `enforce_schema` validate-and-repair loop.
+    `validate` (which requires `schema`) rejects output that parses but breaks a
+    caller invariant the schema cannot express — a list that must hold one
+    entry per input range, say — and its `ValueError` message is fed back as
+    the repair instruction.
 
     See `services.inference.base` for the full contract. When `schema` is given
     the result `.text` is guaranteed-parseable JSON for that model.
@@ -150,21 +174,31 @@ def run_inference(
             f"backend {backend.value!r} has no built-in web-search tool"
         )
 
-    # gemini-api: native schema + metered cost + raw system_instruction.
+    if validate is not None and schema is None:
+        raise InferenceError("validate= requires a schema to validate against")
+
+    # gemini-api: native schema + metered cost + raw system_instruction, so the
+    # prompt carries no JSON-Schema suffix.
     if backend == Backend.GEMINI_API:
-        result = run_gemini_api(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            images=images,
-            audio=audio,
-            schema=schema,
-            model=model,
-            reasoning_effort=reasoning_effort,
-            timeout=timeout,
+
+        def invoke_api(p: str) -> InferenceResult:
+            return run_gemini_api(
+                prompt=p,
+                system_prompt=system_prompt,
+                images=images,
+                audio=audio,
+                schema=schema,
+                model=model,
+                reasoning_effort=reasoning_effort,
+                timeout=timeout,
+            )
+
+        result = _run_with_schema(
+            invoke_api, base_prompt=prompt, schema=schema, validate=validate
         )
     else:
-        # Prompt-based backends (gemini-cli / codex / claude): one concatenated
-        # prompt, schema (if any) enforced uniformly via enforce_schema below.
+        # Prompt-based backends: system prompt and user prompt are one
+        # concatenated string, with the JSON-Schema instruction appended below.
         full_prompt = (
             f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
         )
@@ -174,7 +208,7 @@ def run_inference(
         work_ctx = _working_dir(cwd) if needs_workdir else nullcontext(None)
         with work_ctx as work:
 
-            def invoke_once(p: str) -> tuple[str, int]:
+            def invoke_once(p: str) -> InferenceResult:
                 if backend == Backend.GEMINI_CLI:
                     cli = run_gemini_cli(
                         p,
@@ -184,7 +218,9 @@ def run_inference(
                         timeout=timeout,
                         web_search=web_search,
                     )
-                    return cli.response, cli.requests
+                    return InferenceResult(
+                        text=cli.response, requests=cli.requests
+                    )
                 if backend == Backend.GEMINI_AGY:
                     # agy cannot ingest audio (capability-gated above); it sees
                     # images only, and the prompt is staged to a file. model +
@@ -197,7 +233,9 @@ def run_inference(
                         cwd=cwd,
                         timeout=timeout,
                     )
-                    return agy.response, agy.requests
+                    return InferenceResult(
+                        text=agy.response, requests=agy.requests
+                    )
                 runner = (
                     run_codex_exec
                     if backend == Backend.CODEX
@@ -213,17 +251,15 @@ def run_inference(
                     timeout=timeout,
                     web_search=web_search,
                 )
-                return text, 1
+                return InferenceResult(text=text)
 
-            if schema is None:
-                text, requests = invoke_once(full_prompt)
-            else:
-                text, requests = enforce_schema(
-                    invoke_once,
-                    schema=schema,
-                    base_prompt=full_prompt + schema_instruction(schema),
-                )
-        result = InferenceResult(text=text, cost=0.0, requests=requests)
+            result = _run_with_schema(
+                invoke_once,
+                base_prompt=full_prompt
+                + (schema_instruction(schema) if schema else ""),
+                schema=schema,
+                validate=validate,
+            )
 
     # ONE final-message log site for every backend. Each backend's only job is
     # `prompt -> text`; logging (with middle-truncation so large SRT/JSON output

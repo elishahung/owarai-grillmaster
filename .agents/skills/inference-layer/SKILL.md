@@ -51,11 +51,19 @@ Design rules baked into this layer — preserve them:
   Every agent-instruction stage (pre-pass, chunk, refine, glossary check,
   date research) passes `web_search=is_agent_backend(backend)` (date research
   hardcodes `True` since its backends are always agentic).
-- **Schema enforcement is shared, not per-backend** (`schema_enforce.py`): for
-  the prompt-based backends, `run_inference` appends the schema instruction once
-  and runs the validate-and-repair loop centrally. Each backend's only job is
-  `prompt → text`. The retry cap is the hardcoded `MAX_SCHEMA_RETRIES` constant
+- **Output enforcement is shared, not per-backend** (`schema_enforce.py`):
+  every backend runs through the same validate-and-repair loop; the branches
+  differ only in how the schema reaches the model (native for gemini-api,
+  prompt-appended for the rest). Each backend's only job is `prompt → text`;
+  `invoke_once` returns an `InferenceResult` and the loop sums cost/requests
+  across attempts. The retry cap is the hardcoded `MAX_SCHEMA_RETRIES` constant
   there (not a setting).
+- **`validate=` enforces invariants the schema cannot express** (requires
+  `schema=`): a callback over the parsed model that raises `ValueError` to
+  reject output; the message is fed back verbatim as the repair instruction.
+  Use it whenever schema-valid-but-wrong is a real failure mode (e.g. a list
+  that must hold one entry per input range). It applies to every backend — do
+  not reintroduce a guard that only prompt-based backends honor.
 - **The per-invocation timeout is one setting for every backend**:
   `base.default_timeout_secs()` reads `AGENT_TIMEOUT_MINUTES` (default 40 min)
   per call — never cache it in a module constant. A `timeout=` argument

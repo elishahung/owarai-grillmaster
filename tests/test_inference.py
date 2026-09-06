@@ -85,13 +85,13 @@ class EnforceSchemaTests(unittest.TestCase):
 
         def invoke_once(prompt):
             calls.append(prompt)
-            return '{"a": 1}', 1
+            return InferenceResult(text='{"a": 1}', requests=1)
 
-        text, requests = enforce_schema(
+        result = enforce_schema(
             invoke_once, schema=_Demo, base_prompt="P", max_retries=3
         )
-        self.assertEqual(text, '{"a": 1}')
-        self.assertEqual(requests, 1)
+        self.assertEqual(result.text, '{"a": 1}')
+        self.assertEqual(result.requests, 1)
         self.assertEqual(calls, ["P"])
 
     def test_repair_then_succeeds(self):
@@ -100,23 +100,73 @@ class EnforceSchemaTests(unittest.TestCase):
 
         def invoke_once(prompt):
             prompts.append(prompt)
-            return next(outputs), 1
+            return InferenceResult(text=next(outputs), cost=0.5, requests=1)
 
-        text, requests = enforce_schema(
+        result = enforce_schema(
             invoke_once, schema=_Demo, base_prompt="P", max_retries=3
         )
-        self.assertEqual(text, '{"a": 7}')
-        self.assertEqual(requests, 2)
+        self.assertEqual(result.text, '{"a": 7}')
+        self.assertEqual(result.requests, 2)
+        # cost and requests accumulate across attempts
+        self.assertEqual(result.cost, 1.0)
         self.assertNotIn("修正要求", prompts[0])
         self.assertIn("修正要求", prompts[1])
 
     def test_exhaustion_raises(self):
         def invoke_once(prompt):
-            return '{"a": "bad"}', 1
+            return InferenceResult(text='{"a": "bad"}', requests=1)
 
         with self.assertRaises(SchemaValidationError):
             enforce_schema(
                 invoke_once, schema=_Demo, base_prompt="P", max_retries=3
+            )
+
+    def test_validate_hook_rejects_schema_valid_output(self):
+        outputs = iter(['{"a": 1}', '{"a": 7}'])
+        prompts = []
+
+        def invoke_once(prompt):
+            prompts.append(prompt)
+            return InferenceResult(text=next(outputs), requests=1)
+
+        def validate(parsed):
+            if parsed.a < 7:
+                raise ValueError("a must be at least 7")
+
+        result = enforce_schema(
+            invoke_once,
+            schema=_Demo,
+            base_prompt="P",
+            validate=validate,
+            max_retries=3,
+        )
+        self.assertEqual(result.text, '{"a": 7}')
+        self.assertEqual(result.requests, 2)
+        # the invariant message is what the model is re-prompted with
+        self.assertIn("a must be at least 7", prompts[1])
+
+    def test_validate_hook_exhaustion_raises(self):
+        def invoke_once(prompt):
+            return InferenceResult(text='{"a": 1}', requests=1)
+
+        def validate(parsed):
+            raise ValueError("never good enough")
+
+        with self.assertRaises(SchemaValidationError):
+            enforce_schema(
+                invoke_once,
+                schema=_Demo,
+                base_prompt="P",
+                validate=validate,
+                max_retries=2,
+            )
+
+    def test_validate_without_schema_is_rejected(self):
+        with self.assertRaises(InferenceError):
+            run_inference(
+                backend=Backend.CODEX,
+                prompt="p",
+                validate=lambda parsed: None,
             )
 
     def test_schema_instruction_mentions_json_schema(self):
@@ -177,7 +227,8 @@ class RunInferenceDispatchTests(unittest.TestCase):
                 schema=_Demo,
                 model="gemini-3.1-pro-preview",
             )
-        self.assertIs(result, sentinel)
+        # the shared repair loop returns a copy carrying summed cost/requests
+        self.assertEqual(result, sentinel)
         self.assertEqual(m.call_args.kwargs["model"], "gemini-3.1-pro-preview")
         self.assertEqual(m.call_args.kwargs["system_prompt"], "SYS")
         self.assertIs(m.call_args.kwargs["schema"], _Demo)

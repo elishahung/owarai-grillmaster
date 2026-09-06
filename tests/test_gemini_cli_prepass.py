@@ -27,6 +27,7 @@ from services.inference.gemini_cli import (
 from services.inference.tools import FRAME_TOOL_SCRIPTS, FrameToolStage
 from services.inference.schema_enforce import extract_json_object
 from services.translate.errors import PrePassError
+from services.fixed_glossary import FixedGlossary
 from services.srt import SrtBlock
 
 _VALID_PREPASS_JSON = json.dumps(
@@ -349,6 +350,58 @@ class RunCliTreeKillTests(unittest.TestCase):
         proc.communicate.assert_called_once_with("hi", timeout=1)
 
 
+class PrePassSegmentCoverageTests(unittest.TestCase):
+    def _result(self, *ranges):
+        return pp.PrePassResult(
+            summary="s",
+            characters=[],
+            proper_nouns={},
+            glossary={},
+            catchphrases=[],
+            tone_notes="t",
+            segment_summaries=[
+                pp.SegmentSummary(from_index=f, to_index=t, summary="x")
+                for f, t in ranges
+            ],
+        )
+
+    def test_full_coverage_accepted(self):
+        validate = pp._segment_coverage_validator([(1, 115), (116, 233)])
+        validate(self._result((1, 115), (116, 233)))
+
+    def test_missing_ranges_rejected_and_named(self):
+        validate = pp._segment_coverage_validator([(1, 115), (116, 233)])
+        with self.assertRaises(ValueError) as ctx:
+            validate(self._result((1, 115)))
+        message = str(ctx.exception)
+        self.assertIn("1/2", message)
+        # only the uncovered range is quoted back for repair
+        self.assertIn('"from_index": 116', message)
+        self.assertNotIn('"from_index": 1,', message)
+
+    def test_shifted_range_does_not_count_as_coverage(self):
+        validate = pp._segment_coverage_validator([(1, 115)])
+        with self.assertRaises(ValueError):
+            validate(self._result((1, 116)))
+
+    def test_boundary_block_follows_the_srt(self):
+        message = pp._build_user_message(
+            None,
+            None,
+            None,
+            None,
+            FixedGlossary(),
+            False,
+            "SRT TEXT",
+            [(1, 115), (116, 233)],
+            [],
+        )
+        self.assertLess(
+            message.index("完整來源 SRT"), message.index("Chunk 邊界")
+        )
+        self.assertIn("必須剛好輸出 2 筆", message)
+
+
 class RunPrePassDispatchTests(unittest.TestCase):
     def _temp_dir(self) -> Path:
         base = Path(__file__).resolve().parents[1] / "tmp_test_artifacts"
@@ -460,6 +513,21 @@ class RunPrePassDispatchTests(unittest.TestCase):
             (tmp / "cache" / "manifest.json").read_text(encoding="utf-8")
         )
         self.assertEqual(manifest["backend"], "gemini-cli")
+
+    def test_validator_rejects_incomplete_segment_coverage(self):
+        tmp = self._temp_dir()
+        self._common_patches(tmp, backend="gemini-cli")
+        with patch.object(
+            pp, "run_inference", return_value=self._io()
+        ) as mock_inf:
+            self._run(tmp)
+
+        # _run supplies one chunk covering index 1..1; the stub response has no
+        # segment_summaries at all, so the validator handed to run_inference
+        # must reject it and drive a repair round.
+        validate = mock_inf.call_args.kwargs["validate"]
+        with self.assertRaises(ValueError):
+            validate(pp.PrePassResult.model_validate_json(_VALID_PREPASS_JSON))
 
     def test_agent_backend_drops_audio(self):
         tmp = self._temp_dir()

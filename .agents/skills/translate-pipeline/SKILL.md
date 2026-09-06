@@ -53,6 +53,15 @@ translations, tone notes, and per-segment summaries with explicit
 alias's own rendering, never the full name; alias identity goes in `role_note`)
 — chunk workers apply them verbatim, so a violating entry propagates globally.
 
+**Segment coverage is enforced, not hoped for.** `segment_summaries` is a plain
+list, so a briefing covering only the opening chunk is schema-valid — and long
+episodes really do come back that way, leaving every other chunk to translate
+with an empty `segment_summary`. `_segment_coverage_validator` is handed to
+`run_inference(validate=...)` so the shared repair loop re-prompts with the
+missing ranges, and the boundary block is the **last** thing in the user message
+(after the full SRT) so the requirement sits next to the output point. A chunk
+whose range is still unmatched logs a warning in `chunk_worker`.
+
 **`pre_pass.json` never self-invalidates**: once it exists it is reused as-is
 (cost 0), regardless of backend/model/prompt changes. To re-run the pre-pass,
 delete `.pre_pass/`.

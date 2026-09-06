@@ -90,6 +90,14 @@ def _build_user_message(
     from_index = chunk[0].index
     to_index = chunk[-1].index
     segment = _find_segment_summary(pre_pass, from_index, to_index)
+    if segment is None:
+        # A reused pre_pass.json predating the coverage check can still be
+        # short; say so instead of silently translating without local context.
+        logger.warning(
+            f"[chunk {chunk_index + 1}/{total_chunks}] Pre-pass has no "
+            f"segment_summary for {from_index}-{to_index}; translating "
+            "without local narrative context"
+        )
     briefing = {
         "summary": pre_pass.summary,
         "characters": [c.model_dump() for c in pre_pass.characters],

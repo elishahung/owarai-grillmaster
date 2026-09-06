@@ -211,7 +211,6 @@ class ChunkUserMessageTests(unittest.TestCase):
 
 class PrePassUserMessageTests(unittest.TestCase):
     def _build(self, official_subtitle_context: str | None) -> str:
-        chunk = [_block(1, "00:00:01,000", "00:00:03,000", "こんにちは")]
         return build_pre_pass_user_message(
             "description",
             None,
@@ -220,7 +219,7 @@ class PrePassUserMessageTests(unittest.TestCase):
             FixedGlossary(),
             False,
             "SRT TEXT",
-            [chunk],
+            [(1, 1)],
             [],
         )
 

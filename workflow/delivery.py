@@ -17,8 +17,12 @@ def deliver_project(
     project_id: str,
     progress: NoopProgressReporter,
     remix_noise_name: str | None,
-) -> None:
-    """Archive and package a completed project."""
+) -> Path:
+    """Archive and package a completed project.
+
+    Returns the project's final directory: the archived location, or the
+    working directory under ``projects/`` when archiving is not configured.
+    """
     logger.success(f"Project processing complete: {project_id}")
 
     archived_location: Path | None = None
@@ -49,3 +53,4 @@ def deliver_project(
         f"Project {project_id} total accumulated API cost: "
         f"${project.total_cost:.4f}"
     )
+    return archived_location or project.project_path

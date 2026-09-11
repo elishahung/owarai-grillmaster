@@ -323,6 +323,9 @@ class GrillMasterApp(App):
         if project_name and project_name != project_id:
             title.append("  ·  ", "grey58")
             title.append(str(project_name))
+        if state.batch is not None:
+            title.append("  ·  serial ", "grey58")
+            title.append(f"{state.batch[0]}/{state.batch[1]}", "bold yellow1")
         stages = [i for i in state.items if i.kind == "stage"]
         done = sum(
             1

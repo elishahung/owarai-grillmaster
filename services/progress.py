@@ -85,6 +85,14 @@ class NoopProgressReporter:
 
     # ---- structured pipeline lifecycle events (all optional to consume) ----
 
+    def batch_item_started(self, index: int, total: int, source: str) -> None:
+        """A serial run is about to submit item ``index`` (1-based) of ``total``.
+
+        Only emitted by ``workflow.serial``; each item then goes through the
+        normal ``pipeline_started`` … ``pipeline_completed`` lifecycle.
+        """
+        return None
+
     def pipeline_started(
         self, project: Any, plan: list[PlannedStage]
     ) -> None:

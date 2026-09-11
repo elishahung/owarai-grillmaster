@@ -82,11 +82,13 @@ class WorkflowBreakpointTests(unittest.TestCase):
                 total_cost=0.11,
             )
 
-            workflow_module.process_project(
+            final_path = workflow_module.process_project(
                 "demo",
                 break_after=workflow_module.ProgressStage.ASR_COMPLETED,
             )
 
+        # A breakpoint leaves the project in its working directory.
+        self.assertEqual(final_path, project.project_path)
         asr.transcribe_to_file.assert_called_once_with(
             project.audio_path, project.asr_path
         )
@@ -248,12 +250,13 @@ class WorkflowBreakpointTests(unittest.TestCase):
             ),
             patch.object(workflow_api, "deliver_project") as deliver_project,
         ):
-            workflow_module.process_project(
+            final_path = workflow_module.process_project(
                 "demo",
                 progress=progress,
                 remix_noise_name="sleep",
             )
 
+        self.assertIs(final_path, deliver_project.return_value)
         deliver_project.assert_called_once_with(
             project=project,
             project_id="demo",

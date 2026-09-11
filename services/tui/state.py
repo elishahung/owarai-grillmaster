@@ -163,6 +163,9 @@ class PipelineState:
         self.failed = False
         self.error: str | None = None
         self.current_stage_key: str | None = None
+        # (index, total) while a serial run drives several projects through
+        # this one dashboard; None for a single-project run.
+        self.batch: tuple[int, int] | None = None
         self._next_task_id = 1
         self._bar_owner: dict[TaskID, str] = {}
 
@@ -309,16 +312,38 @@ class PipelineState:
         will re-arrive as "already-complete" thanks to resumability.
         """
         with self.lock:
-            self.finished = False
-            self.failed = False
-            self.error = None
-            self.finished_at = None
+            self._reset_run_state()
             self.started_at = monotonic()
-            self.chunks = ChunkBoard()
-            self.current_stage_key = None
+
+    def _reset_run_state(self) -> None:
+        self.finished = False
+        self.failed = False
+        self.error = None
+        self.finished_at = None
+        self.chunks = ChunkBoard()
+        self.current_stage_key = None
+
+    def on_batch_item_started(
+        self, index: int, total: int, source: str
+    ) -> None:
+        """Roll the dashboard over to the next project of a serial run.
+
+        The wall clock keeps running across the whole batch; items are
+        rebuilt by the project's own ``pipeline_started``.
+        """
+        with self.lock:
+            self.batch = (index, total)
+            self._reset_run_state()
+            self.pipeline_log.append(
+                ("INFO", f"Serial {index}/{total}: {source}")
+            )
 
     def on_pipeline_completed(self) -> None:
         with self.lock:
+            if self.batch is not None and self.batch[0] < self.batch[1]:
+                # More projects follow: stay RUNNING so `q` keeps meaning
+                # abort and the dashboard never flashes COMPLETED mid-batch.
+                return
             self.finished = True
             self.finished_at = monotonic()
 

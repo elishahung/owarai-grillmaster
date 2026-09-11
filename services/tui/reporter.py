@@ -99,6 +99,9 @@ class TuiProgressReporter(NoopProgressReporter):
 
     # ---------- structured lifecycle ----------
 
+    def batch_item_started(self, index: int, total: int, source: str) -> None:
+        self.state.on_batch_item_started(index, total, source)
+
     def pipeline_started(
         self, project: Any, plan: list[PlannedStage]
     ) -> None:

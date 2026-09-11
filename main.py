@@ -1,5 +1,6 @@
 """Command-line interface for the video captioning pipeline."""
 
+from collections.abc import Callable
 import os
 from pathlib import Path
 import sys
@@ -9,15 +10,15 @@ from loguru import logger
 from typing_extensions import Annotated
 
 from project import ProgressStage
-from services.progress import create_progress_reporter
+from services.progress import NoopProgressReporter, create_progress_reporter
 from services.package import package_project_directory
 from services.package.constants import DEFAULT_NOISE_NAME
 from services.ytdlp import parse_section_time
 from settings import settings
-from workflow import submit_project
+from workflow import SerialRun, submit_project
 
 
-RESERVED_COMMANDS = {"package", "process"}
+RESERVED_COMMANDS = {"package", "process", "serial"}
 
 legacy_app = typer.Typer(
     help=(
@@ -31,6 +32,71 @@ tools_app = typer.Typer(
     add_completion=False,
 )
 app = tools_app
+
+
+# Options shared by `process` and `serial`.
+ParentProjectOption = Annotated[
+    str | None,
+    typer.Option(
+        "--parent-project",
+        help=(
+            "Path to a parent project directory whose pre_pass.json "
+            "should seed this project's pre-pass for cross-episode "
+            "consistency."
+        ),
+        show_default=False,
+    ),
+]
+RefineOption = Annotated[
+    bool,
+    typer.Option(
+        "--refine",
+        help=(
+            "Force-enable subtitle refinement stage for this run. "
+            "Overrides ENABLE_POSTPROCESS_REFINE setting."
+        ),
+    ),
+]
+GlossaryCheckOption = Annotated[
+    bool,
+    typer.Option(
+        "--glossary-check",
+        help=(
+            "Force-enable the fixed-glossary localization check stage "
+            "for this run."
+        ),
+    ),
+]
+CoverOption = Annotated[
+    bool,
+    typer.Option(
+        "--cover",
+        help=(
+            "Force-enable async cover image generation for this run."
+        ),
+    ),
+]
+DateResearchOption = Annotated[
+    bool,
+    typer.Option(
+        "--date-research",
+        help=(
+            "Force-enable the async broadcast-date research agent for "
+            "this run. Overrides ENABLE_BROADCAST_DATE_AGENT_FALLBACK."
+        ),
+    ),
+]
+RemixOption = Annotated[
+    str | None,
+    typer.Option(
+        "--remix",
+        help=(
+            "Use a noise source set for remix packaging. Without a "
+            f"value it uses '{DEFAULT_NOISE_NAME}'."
+        ),
+        show_default=False,
+    ),
+]
 
 
 def _run_process(
@@ -83,25 +149,33 @@ def _run_process(
         section_end=section_end,
     )
 
+    _run_pipeline(
+        lambda progress: submit_project(**submit_kwargs, progress=progress),
+        label=source_str,
+    )
+
+
+def _run_pipeline(
+    pipeline: Callable[[NoopProgressReporter | None], object], label: str
+) -> None:
+    """Run ``pipeline`` under the dashboard on a TTY, else with plain logs."""
     if _is_interactive_terminal():
         # Interactive runs always get the full-screen dashboard; plain
         # logging remains for pipes/CI only.
         from services.tui import run_process_ui
 
-        code = run_process_ui(
-            lambda progress: submit_project(**submit_kwargs, progress=progress)
-        )
+        code = run_process_ui(pipeline)
         if code != 0:
-            logger.error(f"Failed to process video {source_str}")
+            logger.error(f"Failed to process {label}")
             raise typer.Exit(code=code)
-        logger.success(f"Successfully completed processing for {source_str}")
+        logger.success(f"Successfully completed processing for {label}")
         return
 
     try:
-        submit_project(**submit_kwargs)
-        logger.success(f"Successfully completed processing for {source_str}")
+        pipeline(None)
+        logger.success(f"Successfully completed processing for {label}")
     except Exception as e:
-        logger.error(f"Failed to process video {source_str}: {e}")
+        logger.error(f"Failed to process {label}: {e}")
         raise typer.Exit(code=1)
 
 
@@ -145,76 +219,19 @@ def process(
             "--break",
             "-break",
             help=(
-                "Stop after reaching the given workflow stage. "
-                "Example: is_asr_completed."
+                "Stop after reaching the given workflow stage "
+                "(e.g. is_asr_completed). Cover generation and date "
+                "research are skipped entirely when set."
             ),
             show_default=False,
         ),
     ] = None,
-    parent_project: Annotated[
-        str | None,
-        typer.Option(
-            "--parent-project",
-            help=(
-                "Path to a parent project directory whose pre_pass.json "
-                "should seed this project's pre-pass for cross-episode "
-                "consistency."
-            ),
-            show_default=False,
-        ),
-    ] = None,
-    refine: Annotated[
-        bool,
-        typer.Option(
-            "--refine",
-            help=(
-                "Force-enable subtitle refinement stage for this run. "
-                "Overrides ENABLE_POSTPROCESS_REFINE setting."
-            ),
-        ),
-    ] = False,
-    glossary_check: Annotated[
-        bool,
-        typer.Option(
-            "--glossary-check",
-            help=(
-                "Force-enable the fixed-glossary localization check stage "
-                "for this run."
-            ),
-        ),
-    ] = False,
-    cover: Annotated[
-        bool,
-        typer.Option(
-            "--cover",
-            help=(
-                "Force-enable async cover image generation for this run. "
-                "Skipped entirely when --break-after is also set."
-            ),
-        ),
-    ] = False,
-    date_research: Annotated[
-        bool,
-        typer.Option(
-            "--date-research",
-            help=(
-                "Force-enable the async broadcast-date research agent for "
-                "this run. Overrides ENABLE_BROADCAST_DATE_AGENT_FALLBACK. "
-                "Skipped entirely when --break-after is also set."
-            ),
-        ),
-    ] = False,
-    remix: Annotated[
-        str | None,
-        typer.Option(
-            "--remix",
-            help=(
-                "Use a noise source set for remix packaging. Without a "
-                f"value it uses '{DEFAULT_NOISE_NAME}'."
-            ),
-            show_default=False,
-        ),
-    ] = None,
+    parent_project: ParentProjectOption = None,
+    refine: RefineOption = False,
+    glossary_check: GlossaryCheckOption = False,
+    cover: CoverOption = False,
+    date_research: DateResearchOption = False,
+    remix: RemixOption = None,
     start: Annotated[
         str | None,
         typer.Option(
@@ -253,6 +270,55 @@ def process(
         start=start,
         to=to,
     )
+
+
+@tools_app.command("serial")
+def serial_command(
+    sources: Annotated[
+        list[str],
+        typer.Argument(
+            help=(
+                "Two or more video sources (ids or urls), processed in order. "
+                "Each project's final directory (archived when ARCHIVED_PATH "
+                "is set) becomes the next one's --parent-project, so names "
+                "and terms stay consistent across episodes. The chain stops "
+                "at the first failure and logs the command to resume it."
+            ),
+            show_default=False,
+        ),
+    ],
+    parent_project: ParentProjectOption = None,
+    refine: RefineOption = False,
+    glossary_check: GlossaryCheckOption = False,
+    cover: CoverOption = False,
+    date_research: DateResearchOption = False,
+    remix: RemixOption = None,
+) -> None:
+    """Process several videos back to back, seeding each from the previous one."""
+    logger.info(
+        f"CLI invoked with serial sources={sources}, "
+        f"parent_project={parent_project}, refine={refine}, "
+        f"glossary_check={glossary_check}, cover={cover}, "
+        f"date_research={date_research}, remix={remix}"
+    )
+    try:
+        run = SerialRun(
+            sources=sources,
+            parent_project_path=(
+                Path(parent_project) if parent_project else None
+            ),
+            submit_kwargs=dict(
+                enable_refine=refine,
+                enable_glossary_check=glossary_check,
+                enable_cover=cover,
+                enable_date_research=date_research,
+                remix_noise_name=remix,
+            ),
+        )
+    except ValueError as e:
+        logger.error(f"Invalid serial sources: {e}")
+        raise typer.Exit(code=1)
+    _run_pipeline(run.run, label=f"{len(sources)} serial sources")
 
 
 @tools_app.command("package")

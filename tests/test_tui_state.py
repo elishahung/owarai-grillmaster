@@ -151,6 +151,32 @@ class PipelineStateTests(unittest.TestCase):
             self.state.get("metadata").state, ItemState.PENDING
         )
 
+    def test_batch_keeps_running_until_the_last_project_completes(self):
+        started_at = self.state.started_at
+        self.reporter.batch_item_started(1, 2, "BV1")
+        self.reporter.stage_started("chunks", "Translating subtitles")
+        self.reporter.chunk_started(0, 3, 1, 40)
+        self.reporter.pipeline_completed()
+
+        self.assertEqual(self.state.batch, (1, 2))
+        self.assertFalse(self.state.finished)
+
+        self.reporter.batch_item_started(2, 2, "BV2")
+        self.assertEqual(self.state.chunks.total, 0)
+        self.assertIsNone(self.state.current_stage_key)
+        # The wall clock spans the whole batch.
+        self.assertEqual(self.state.started_at, started_at)
+
+        self.reporter.pipeline_completed()
+        self.assertTrue(self.state.finished)
+
+    def test_batch_failure_still_finishes_for_retry(self):
+        self.reporter.batch_item_started(1, 3, "BV1")
+        self.reporter.pipeline_failed("boom")
+
+        self.assertTrue(self.state.finished)
+        self.assertTrue(self.state.failed)
+
     def test_log_sink_routes_by_thread_name(self):
         self.reporter.stage_started("download", "Downloading video")
         self.reporter.install_logging()

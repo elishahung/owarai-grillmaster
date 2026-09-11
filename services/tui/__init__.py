@@ -23,7 +23,7 @@ __all__ = ["run_process_ui", "GrillMasterApp", "TuiProgressReporter", "PipelineS
 
 
 def run_process_ui(
-    pipeline: Callable[[NoopProgressReporter], None],
+    pipeline: Callable[[NoopProgressReporter], object],
 ) -> int:
     """Run ``pipeline(reporter)`` under the dashboard.
 

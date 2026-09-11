@@ -2,6 +2,7 @@
 
 from contextlib import nullcontext
 from dataclasses import dataclass
+from pathlib import Path
 
 from loguru import logger
 
@@ -76,8 +77,11 @@ def submit_project(
     section_start: float | None = None,
     section_end: float | None = None,
     progress: NoopProgressReporter | None = None,
-) -> None:
-    """Submit a new video project for processing."""
+) -> Path:
+    """Submit a new video project for processing.
+
+    Returns the project's final directory (see ``process_project``).
+    """
     logger.info(f"Submitting new project: {source_str}")
     new_project = Project.from_source_str(
         source_str=source_str,
@@ -86,7 +90,7 @@ def submit_project(
     )
     new_project.save()
     logger.info(f"Project saved: {source_str}")
-    process_project(
+    return process_project(
         new_project.id,
         break_after=break_after,
         enable_refine=enable_refine,
@@ -111,8 +115,12 @@ def process_project(
     section_start: float | None = None,
     section_end: float | None = None,
     progress: NoopProgressReporter | None = None,
-) -> None:
-    """Process a video project with an auto-enabled CLI progress reporter."""
+) -> Path:
+    """Process a video project with an auto-enabled CLI progress reporter.
+
+    Returns the project's final directory: the archived location after a
+    full run, otherwise its working directory under ``projects/``.
+    """
     progress_context = (
         create_progress_reporter()
         if progress is None
@@ -120,7 +128,7 @@ def process_project(
     )
     with progress_context as active_progress:
         try:
-            _process_project_impl(
+            final_path = _process_project_impl(
                 project_id,
                 options=WorkflowOptions(
                     break_after=break_after,
@@ -139,6 +147,7 @@ def process_project(
             raise
         else:
             active_progress.pipeline_completed()
+            return final_path
 
 
 def _stage_specs(options: WorkflowOptions) -> dict[str, StageSpec]:
@@ -318,8 +327,12 @@ def _process_project_impl(
     project_id: str,
     options: WorkflowOptions,
     progress: NoopProgressReporter | None = None,
-) -> None:
-    """Process a project through the resumable captioning pipeline."""
+) -> Path:
+    """Process a project through the resumable captioning pipeline.
+
+    Returns the project's final directory; a ``--break-after`` stop leaves it
+    under ``projects/``.
+    """
     logger.info(f"Starting project processing: {project_id}")
     if progress is None:
         progress = NoopProgressReporter()
@@ -342,7 +355,7 @@ def _process_project_impl(
                 specs["metadata"],
                 lambda: metadata.fetch_metadata(project),
             ):
-                return
+                return project.project_path
 
             side_tasks.apply_cached_date_research_if_available()
             side_tasks.start_date_research_if_needed(
@@ -354,7 +367,7 @@ def _process_project_impl(
                 specs["download"],
                 lambda: media.download_project_video(project, progress),
             ):
-                return
+                return project.project_path
 
             side_tasks.start_cover_if_needed(
                 enabled=options.do_cover,
@@ -369,37 +382,37 @@ def _process_project_impl(
                     section_end=options.section_end,
                 ),
             ):
-                return
+                return project.project_path
 
             if runner.run(
                 specs["audio"],
                 lambda: media.extract_audio(project),
             ):
-                return
+                return project.project_path
 
             if runner.run(
                 specs["asr"],
                 lambda: transcription.run_asr(project),
             ):
-                return
+                return project.project_path
 
             if runner.run(
                 specs["srt"],
                 lambda: transcription.convert_asr_to_srt(project),
             ):
-                return
+                return project.project_path
 
             if runner.run(
                 specs["prepass"],
                 lambda: translation.run_pre_pass(project),
             ):
-                return
+                return project.project_path
 
             if runner.run(
                 specs["chunks"],
                 lambda: translation.translate_chunks(project, progress),
             ):
-                return
+                return project.project_path
 
             if runner.run_optional(
                 enabled=options.do_refine,
@@ -407,7 +420,7 @@ def _process_project_impl(
                 spec=specs["refine"],
                 action=lambda: postprocess.refine_project_subtitles(project),
             ):
-                return
+                return project.project_path
 
             if runner.run_optional(
                 enabled=options.do_glossary_check,
@@ -417,13 +430,13 @@ def _process_project_impl(
                     project
                 ),
             ):
-                return
+                return project.project_path
 
             if runner.run(
                 specs["finalize"],
                 lambda: postprocess.finalize_project_subtitles(project),
             ):
-                return
+                return project.project_path
 
     except Exception as e:
         pipeline_error = e
@@ -435,7 +448,7 @@ def _process_project_impl(
     if project is None:
         raise RuntimeError(f"Project could not be loaded: {project_id}")
 
-    deliver_project(
+    return deliver_project(
         project=project,
         project_id=project_id,
         progress=progress,

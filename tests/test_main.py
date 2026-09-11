@@ -49,7 +49,60 @@ class MainCliTests(unittest.TestCase):
 
         run_ui.assert_not_called()
         submit_project.assert_called_once()
-        self.assertNotIn("progress", submit_project.call_args.kwargs)
+        # No reporter is injected: submit_project builds its own plain one.
+        self.assertIsNone(submit_project.call_args.kwargs["progress"])
+
+    def test_serial_drives_serial_run_under_dashboard(self):
+        with (
+            patch.object(
+                main_module, "_is_interactive_terminal", return_value=True
+            ),
+            patch("services.tui.run_process_ui", return_value=0) as run_ui,
+            patch.object(main_module, "SerialRun") as serial_run_cls,
+        ):
+            main_module.main(
+                ["serial", "BV1", "BV2", "--refine", "--remix",
+                 "--parent-project", "archived/ep0"]
+            )
+
+        serial_run_cls.assert_called_once_with(
+            sources=["BV1", "BV2"],
+            parent_project_path=Path("archived/ep0"),
+            submit_kwargs=dict(
+                enable_refine=True,
+                enable_glossary_check=False,
+                enable_cover=False,
+                enable_date_research=False,
+                remix_noise_name=main_module.DEFAULT_NOISE_NAME,
+            ),
+        )
+        run_ui.assert_called_once_with(serial_run_cls.return_value.run)
+
+    def test_serial_runs_plainly_without_terminal(self):
+        with (
+            patch.object(
+                main_module, "_is_interactive_terminal", return_value=False
+            ),
+            patch("services.tui.run_process_ui") as run_ui,
+            patch.object(main_module, "SerialRun") as serial_run_cls,
+        ):
+            main_module.main(["serial", "BV1", "BV2"])
+
+        run_ui.assert_not_called()
+        serial_run_cls.return_value.run.assert_called_once_with(None)
+
+    def test_serial_rejects_invalid_sources_before_running(self):
+        with (
+            patch.object(
+                main_module, "_is_interactive_terminal", return_value=False
+            ),
+            patch.object(main_module, "_run_pipeline") as run_pipeline,
+        ):
+            # main() runs typer with standalone_mode=False, which turns the
+            # typer.Exit(1) into a swallowed return code.
+            main_module.main(["serial", "BV1", "BV1"])
+
+        run_pipeline.assert_not_called()
 
     def test_package_command_uses_configured_package_path(self):
         root = self._make_temp_dir()

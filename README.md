@@ -119,7 +119,17 @@ grill BV1CakEBaEJp "華大千鳥 - 全力100萬 - 間諜 1/7"
 
 # 使用完整 URL
 grill "https://www.bilibili.com/video/BV18KBJBeEmV"
+
+# 序列接龍：依序處理多集，每集算完（含 archive）後的資料夾自動成為下一集的 --parent-project
+grill serial ep100001 ep100002 ep100003
+
+# 從中斷處續跑（失敗時 log 會印出這行）
+grill serial ep100002 ep100003 --parent-project <ep100001 的最終資料夾>
 ```
+
+`grill serial` 接受與 `grill` 相同的 `--refine` / `--glossary-check` / `--cover` /
+`--date-research` / `--remix` 旗標（套用到每一集），不接受翻譯提示與 `--break-after`；
+任一集失敗整條鏈即停止。
 
 ## 環境變數
 

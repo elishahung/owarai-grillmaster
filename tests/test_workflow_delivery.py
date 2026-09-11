@@ -19,13 +19,14 @@ class WorkflowDeliveryTests(unittest.TestCase):
             patch.object(delivery.settings, "package_path", Path("package")),
             patch.object(delivery, "package_project") as package_project,
         ):
-            delivery.deliver_project(
+            final_path = delivery.deliver_project(
                 project=project,
                 project_id="demo",
                 progress=progress,
                 remix_noise_name="sleep",
             )
 
+        self.assertEqual(final_path, Path("archive/demo"))
         project.archive.assert_called_once_with()
         package_project.assert_called_once_with(
             project,
@@ -34,6 +35,25 @@ class WorkflowDeliveryTests(unittest.TestCase):
             progress,
             remix_noise_name="sleep",
         )
+
+    def test_unarchived_project_final_path_is_its_working_dir(self):
+        project = MagicMock()
+        project.project_path = Path("projects/demo")
+        project.total_cost = 0.0
+
+        with (
+            patch.object(delivery.settings, "archived_path", None),
+            patch.object(delivery.settings, "package_path", None),
+        ):
+            final_path = delivery.deliver_project(
+                project=project,
+                project_id="demo",
+                progress=NoopProgressReporter(),
+                remix_noise_name=None,
+            )
+
+        self.assertEqual(final_path, Path("projects/demo"))
+        project.archive.assert_not_called()
 
 
 if __name__ == "__main__":

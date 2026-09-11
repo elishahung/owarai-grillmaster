@@ -45,7 +45,7 @@ forcing a re-run means deleting the dot-dir.
 ## The pipeline (`workflow/`)
 
 `workflow/__init__.py` is the public facade (`submit_project`, `process_project`,
-`ProgressStage`). `workflow/api.py` creates/loads the `Project`, then
+`SerialRun`, `ProgressStage`). `workflow/api.py` creates/loads the `Project`, then
 `_process_project_impl` runs the stages below in order through
 `WorkflowRunner`. Each maps 1:1 to a `ProgressStage` enum value and a
 `Project.is_*` boolean (see "Stage ↔ field sync" invariant). Stage bodies live
@@ -123,6 +123,15 @@ Key control-flow details that are easy to break:
   measured from async dispatch to join.
 - **Finalize input precedence**: glossary-checked SRT → refined SRT → translated
   SRT (first that exists wins).
+- **Serial chains** (`grill serial SRC...`, `workflow/serial.py`): `SerialRun`
+  submits sources in order; `submit_project`/`process_project` return the
+  project's final directory (archived location, else `projects/<id>`), which
+  becomes the next project's `parent_project_path`. The chain stops at the
+  first failure and logs `resume_command()`; `SerialRun` keeps `position`
+  so the dashboard's `r` retry (which re-calls the same callable) resumes at
+  the failed project. It emits `batch_item_started(index, total, source)` on
+  the reporter — the TUI shows `serial i/n` and stays RUNNING between
+  projects (`PipelineState.batch`).
 - **Future architecture direction**: the package still keeps the pipeline as an
   explicit ordered sequence in `workflow/api.py`. If stage count or branching
   grows, the next step is a declarative stage registry built on `StageSpec` and

@@ -7,6 +7,7 @@ from yt_dlp.utils import DownloadError
 
 from services.progress import NoopProgressReporter
 from services.ytdlp.download import (
+    FRAGMENT_RETRIES,
     _JpegThumbnailFixupPP,
     _ReporterProgressHook,
     download_video,
@@ -148,6 +149,16 @@ class DownloadProgressModeTests(unittest.TestCase):
     def test_no_reporter_keeps_native_renderer(self):
         opts = _captured_download_opts(None)
         self.assertNotIn("progress_hooks", opts)
+
+
+class FragmentPolicyTests(unittest.TestCase):
+    def test_missing_fragment_aborts_after_backoff_retries(self):
+        opts = _captured_download_opts(None)
+
+        self.assertFalse(opts["skip_unavailable_fragments"])
+        self.assertEqual(opts["fragment_retries"], FRAGMENT_RETRIES)
+        sleep = opts["retry_sleep_functions"]["fragment"]
+        self.assertEqual([sleep(n) for n in range(7)], [1, 2, 4, 8, 16, 30, 30])
 
 
 class DownloadFailureTests(unittest.TestCase):

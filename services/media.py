@@ -22,6 +22,9 @@ from services.progress import NoopProgressReporter
 
 
 BURN_IN_DURATION_TOLERANCE_SECONDS = 2.0
+# Audio packets are tens of milliseconds apart; a larger jump means missing
+# media (e.g. a skipped download fragment) that decoders silently collapse.
+AUDIO_GAP_TOLERANCE_SECONDS = 1.0
 PACKAGE_TEMPO = 1.03
 PACKAGE_PITCH = 1.01
 PACKAGE_NOISE_AMPLITUDE = 0.002  # ≈ -54 dBFS
@@ -918,6 +921,43 @@ class MediaProcessor:
         if duration is None:
             raise ValueError(f"Media duration missing: {input_file}")
         return float(duration)
+
+    @staticmethod
+    def find_audio_gaps(input_file: Path) -> list[TimeRange]:
+        """Return spans where the first audio stream's timestamps jump.
+
+        The container keeps the gap on its timeline, but decoding joins the
+        audio across it, so anything timed from the decoded audio (ASR)
+        drifts from the video by the gap length after that point. A file
+        without audio yields no gaps.
+        """
+        result = subprocess.run(
+            [
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "packet=pts_time",
+                "-of",
+                "csv=p=0",
+                str(input_file),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        pts_values = [
+            float(field)
+            for line in result.stdout.splitlines()
+            if (field := line.strip().rstrip(",")) and field != "N/A"
+        ]
+        return [
+            TimeRange(start_seconds=previous, end_seconds=current)
+            for previous, current in zip(pts_values, pts_values[1:])
+            if current - previous > AUDIO_GAP_TOLERANCE_SECONDS
+        ]
 
     @staticmethod
     def extract_audio_segment(

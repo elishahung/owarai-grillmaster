@@ -200,6 +200,12 @@ Key control-flow details that are easy to break:
   `abematv-license://` key handler on the YoutubeDL that mints a fresh token.
   `reset_abema_auth_cache` (client.py) clears that cache before each download;
   keep it if you add another yt-dlp pass ahead of the download.
+  Fragments are the exception: `skip_unavailable_fragments=False` with
+  backoff retries, because a skipped fragment leaves an audio timestamp gap
+  that decoding collapses (ASR/subtitles drift from the video after it).
+  The download stage then runs `MediaProcessor.find_audio_gaps` on every
+  part and fails on any gap; the gapped file must be deleted by hand before a
+  re-run re-downloads it.
 - `services/paths.py` — platform path-length mechanics (`measure`,
   `fit_dir_name`, `MAX_PATH_UNITS`/`MAX_COMPONENT_UNITS`). Owns *how* to fit a
   name; `project.py` owns the per-destination reserves

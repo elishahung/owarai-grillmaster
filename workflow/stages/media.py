@@ -18,7 +18,28 @@ def download_project_video(
     project: Project, progress: NoopProgressReporter | None = None
 ) -> None:
     download_video(project.source_url, project.project_path, progress=progress)
+    verify_downloaded_audio(project)
     record_source_program(project)
+
+
+def verify_downloaded_audio(project: Project) -> None:
+    """Fail the download before ASR spends money on a gapped file.
+
+    A gap left by missing media makes subtitles drift from the video after
+    it. yt-dlp treats a finished file as already downloaded, so the file has
+    to be removed by hand before a re-run fetches it again.
+    """
+    for video_file in project.downloaded_video_paths:
+        gaps = MediaProcessor.find_audio_gaps(video_file)
+        if not gaps:
+            continue
+        spans = ", ".join(
+            f"{gap.start_seconds:.2f}s→{gap.end_seconds:.2f}s" for gap in gaps
+        )
+        raise ValueError(
+            f"Downloaded {video_file.name} is missing audio at {spans}; "
+            f"delete {video_file} and re-run to download it again"
+        )
 
 
 def record_source_program(project: Project) -> None:

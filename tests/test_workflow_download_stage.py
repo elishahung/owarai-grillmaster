@@ -8,6 +8,7 @@ from unittest.mock import patch
 import project as project_module
 import workflow.stages.media as media_stage
 from project import Project
+from services.media import TimeRange
 from services.package import rc as package_rc
 
 
@@ -65,6 +66,38 @@ class RecordSourceProgramTests(unittest.TestCase):
         media_stage.record_source_program(project)
 
         self.assertFalse(self.rc_path.exists())
+
+
+class VerifyDownloadedAudioTests(unittest.TestCase):
+    def setUp(self) -> None:
+        root = Path(tempfile.mkdtemp(prefix="download-verify-test-"))
+        self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
+        patcher = patch.object(
+            project_module, "PROJECT_ROOT_NAME", str(root / "projects")
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.project = Project(id="epverify1", name="demo")
+        self.project.save()
+        (self.project.project_path / "0.mp4").write_bytes(b"")
+
+    def test_gapped_download_fails_and_names_the_file(self):
+        gap = TimeRange(start_seconds=141.781, end_seconds=150.14)
+        with patch.object(
+            media_stage.MediaProcessor, "find_audio_gaps", return_value=[gap]
+        ):
+            with self.assertRaisesRegex(
+                ValueError, r"0\.mp4 is missing audio at 141\.78s→150\.14s"
+            ):
+                media_stage.verify_downloaded_audio(self.project)
+
+    def test_contiguous_download_passes(self):
+        with patch.object(
+            media_stage.MediaProcessor, "find_audio_gaps", return_value=[]
+        ) as find:
+            media_stage.verify_downloaded_audio(self.project)
+
+        find.assert_called_once_with(self.project.project_path / "0.mp4")
 
 
 if __name__ == "__main__":

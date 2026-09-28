@@ -25,6 +25,16 @@ from .client import (
 )
 
 
+# Exponential backoff capped at FRAGMENT_RETRY_MAX_SLEEP rides out a network
+# switch of a few minutes (1+2+4+8+16+30*5 ≈ 3 min over ten retries).
+FRAGMENT_RETRIES = 10
+FRAGMENT_RETRY_MAX_SLEEP = 30.0
+
+
+def _fragment_retry_sleep(n: int) -> float:
+    return min(2.0**n, FRAGMENT_RETRY_MAX_SLEEP)
+
+
 class _ReporterProgressHook:
     """Feed yt-dlp progress into the reporter as one bar per output file.
 
@@ -210,6 +220,12 @@ def _run_download(
             },
         ],
         "concurrent_fragment_downloads": 8 if partial_download else 1,
+        # A skipped fragment leaves a timestamp gap that decoders collapse in
+        # the audio, so ASR timing drifts from the video after that point.
+        # Abort instead; a re-run resumes from the fragment that failed.
+        "skip_unavailable_fragments": False,
+        "fragment_retries": FRAGMENT_RETRIES,
+        "retry_sleep_functions": {"fragment": _fragment_retry_sleep},
     }
 
     if progress is not None and progress.owns_screen:

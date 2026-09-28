@@ -13,6 +13,34 @@ from services.media import (
 )
 
 
+class FindAudioGapsTests(unittest.TestCase):
+    def _gaps(self, stdout: str):
+        completed = MagicMock(stdout=stdout)
+        with patch(
+            "services.media.subprocess.run", return_value=completed
+        ) as run:
+            gaps = MediaProcessor.find_audio_gaps(Path("in.mp4"))
+        self.assertIn("a:0", run.call_args.args[0])
+        return gaps
+
+    def test_contiguous_audio_has_no_gaps(self):
+        self.assertEqual(self._gaps("0.000000\n0.023220\n0.046440\n"), [])
+
+    def test_reports_each_jump_past_the_tolerance(self):
+        gaps = self._gaps(
+            "141.758000\n141.781000\n150.140000\n150.163000\n"
+            "N/A\n200.000000\n"
+        )
+
+        self.assertEqual(
+            [(g.start_seconds, g.end_seconds) for g in gaps],
+            [(141.781, 150.14), (150.163, 200.0)],
+        )
+
+    def test_file_without_audio_has_no_gaps(self):
+        self.assertEqual(self._gaps(""), [])
+
+
 class CutVideoTests(unittest.TestCase):
     def _run_cut(self, **kwargs) -> tuple[dict, dict]:
         with patch("services.media.ffmpeg") as ffmpeg_mock:

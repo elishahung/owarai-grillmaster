@@ -150,8 +150,8 @@ AGENT_GEMINI_GCP_PROJECT=your-project-id       # 可選；gemini-cli 訂閱/Code
 
 AGENT_PREPASS_MODEL=gemini-cli/gemini-3.1-pro-preview/high  # backend: gemini-api / gemini-cli / gemini-agy / claude / codex
 AGENT_CHUNK_MODEL=gemini-cli/gemini-3.1-pro-preview/high    # "backend/model" 或 "backend/model/effort"
-AGENT_POSTPROCESS_MODEL=codex/gpt-5.6-sol/extra             # 後處理（refine/glossary）：codex / claude / gemini-cli / gemini-agy
-AGENT_COMMON_MODEL=codex/gpt-5.5/medium                     # 輕量工具 agent（chunk 結構修正、播出日調查、封裝標題建議）；封面固定用 codex 並沿用此 effort
+AGENT_POSTPROCESS_MODEL=codex/gpt-6.1-sol/high              # 後處理（refine/glossary）：codex / claude / gemini-cli / gemini-agy
+AGENT_COMMON_MODEL=codex/gpt-6.1-sol/medium                 # 輕量工具 agent（chunk 結構修正、播出日調查、封裝標題建議）；封面固定用 codex 並沿用此 effort
 AGENT_TIMEOUT_MINUTES=40                                    # 單次模型呼叫逾時（分鐘），所有 backend 共用；高 effort 階段跑太久可調高
 
 # 可選：pre-pass 圖片抽樣與固定譯名表

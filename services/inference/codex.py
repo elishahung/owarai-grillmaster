@@ -28,6 +28,8 @@ _CODEX_REASONING_EFFORT_BY_EFFORT = {
     "medium": "medium",
     "high": "high",
     "extra": "xhigh",
+    "max": "max",
+    "ultra": "ultra",
 }
 
 

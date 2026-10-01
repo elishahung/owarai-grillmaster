@@ -69,9 +69,11 @@ Design rules baked into this layer — preserve them:
   per call — never cache it in a module constant. A `timeout=` argument
   overrides it.
 - **Reasoning effort is repo-normalized**: callers pass
-  `reasoning_effort` as low/medium/high/extra. Backend wrappers map that to
-  their real values: Codex and Claude use `xhigh` for repo-level `extra`;
-  Gemini API and gemini-agy have no extra-high value and clamp `extra` to
+  `reasoning_effort` as low/medium/high/extra/max/ultra. Backend wrappers map
+  that to their real values: Codex and Claude use `xhigh` for repo-level
+  `extra` and `max` for `max`; Codex passes `ultra` through (only some models
+  accept it) while Claude clamps `ultra` to `max`; Gemini API and gemini-agy
+  have no extra-high value and clamp `extra`/`max`/`ultra` to
   `HIGH` / `High`; gemini-cli exposes no separate effort flag, so only the
   model id is passed to that CLI.
 

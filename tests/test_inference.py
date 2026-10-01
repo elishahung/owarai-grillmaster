@@ -319,6 +319,12 @@ class GeminiApiReasoningTests(unittest.TestCase):
 
         self.assertEqual(resolve_gemini_thinking_level("extra").name, "HIGH")
 
+    def test_max_and_ultra_clamp_to_high_thinking_level(self):
+        from services.inference.gemini_api import resolve_gemini_thinking_level
+
+        self.assertEqual(resolve_gemini_thinking_level("max").name, "HIGH")
+        self.assertEqual(resolve_gemini_thinking_level("ultra").name, "HIGH")
+
 
 class TimeoutSettingTests(unittest.TestCase):
     """The shared per-invocation timeout comes from AGENT_TIMEOUT_MINUTES."""
@@ -396,6 +402,12 @@ class CodexCommandTests(unittest.TestCase):
                 reasoning_effort="extra",
             )
         self.assertIn("model_reasoning_effort=xhigh", captured["cmd"])
+
+    def test_codex_max_and_ultra_pass_through(self):
+        from services.inference.codex import resolve_codex_reasoning_effort
+
+        self.assertEqual(resolve_codex_reasoning_effort("max"), "max")
+        self.assertEqual(resolve_codex_reasoning_effort("ultra"), "ultra")
 
     def test_codex_falls_back_to_default_model(self):
         from types import SimpleNamespace
@@ -476,6 +488,12 @@ class ClaudeCommandTests(unittest.TestCase):
         self.assertEqual(result, "")
         self.assertEqual(captured["prompt"], "hi")
         self.assertEqual(captured["effort"], "xhigh")
+
+    def test_claude_max_maps_to_max_and_ultra_clamps_to_max(self):
+        from services.inference.claude_sdk import resolve_claude_reasoning_effort
+
+        self.assertEqual(resolve_claude_reasoning_effort("max"), "max")
+        self.assertEqual(resolve_claude_reasoning_effort("ultra"), "max")
 
     def test_claude_surfaces_authentication_error_result(self):
         import claude_agent_sdk

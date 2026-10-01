@@ -119,6 +119,8 @@ _THINKING_LEVEL_BY_EFFORT = {
     "medium": "MEDIUM",
     "high": "HIGH",
     "extra": "HIGH",
+    "max": "HIGH",
+    "ultra": "HIGH",
 }
 
 
@@ -127,8 +129,9 @@ def resolve_gemini_thinking_level(
 ) -> "genai.types.ThinkingLevel":
     """Map the repo effort enum to Gemini's SDK enum.
 
-    The SDK currently exposes LOW/MEDIUM/HIGH/MINIMAL; the repo's "extra" has
-    no Gemini API equivalent, so it intentionally clamps to HIGH.
+    The SDK currently exposes LOW/MEDIUM/HIGH/MINIMAL; the repo's
+    extra/max/ultra have no Gemini API equivalent, so they intentionally clamp
+    to HIGH.
     """
     effort = reasoning_effort.strip().lower()
     level_name = _THINKING_LEVEL_BY_EFFORT.get(effort)

@@ -4,14 +4,14 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, BeforeValidator, Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
-ReasoningEffort = Literal["low", "medium", "high", "extra"]
+ReasoningEffort = Literal["low", "medium", "high", "extra", "max", "ultra"]
 
 
 class ModelSpec(BaseModel):
     """An inference backend, its model, and the reasoning effort.
 
     Written in env/config as ``"backend/model"`` or ``"backend/model/effort"``
-    (effort is one of low/medium/high/extra, default high) — e.g.
+    (effort is one of low/medium/high/extra/max/ultra, default high) — e.g.
     ``"gemini-api/gemini-3-flash-preview"`` or ``"codex/gpt-5.5/medium"``. The
     split happens here so call sites just read ``.backend``, ``.model``, and
     ``.reasoning_effort``.
@@ -25,7 +25,7 @@ class ModelSpec(BaseModel):
     @classmethod
     def _normalize_reasoning_effort(cls, value: object) -> str:
         effort = str(value).strip().lower()
-        allowed = ("low", "medium", "high", "extra")
+        allowed = ("low", "medium", "high", "extra", "max", "ultra")
         if effort not in allowed:
             raise ValueError(
                 "reasoning_effort must be one of: " + ", ".join(allowed)
@@ -97,13 +97,13 @@ class Settings(BaseSettings):
     # Assist subscription auth. Agent backends cannot ingest audio, so those
     # stages run on frames + SRT only. Each stage sets one AGENT_*_MODEL spec
     # written as "backend/model" or "backend/model/effort" (effort
-    # low/medium/high/extra, default high) and parsed into a ModelSpec; the
-    # model and effort are passed to the selected backend (set them to values
-    # that backend understands). Effort is mapped per client (gemini
-    # thinking_level, codex model_reasoning_effort, claude effort); backends
-    # without an extra-high setting clamp "extra" to their highest supported
-    # value. AGENT_TIMEOUT_MINUTES bounds every single invocation. The schema
-    # validate-and-repair cap is NOT configurable — it is the hardcoded
+    # low/medium/high/extra/max/ultra, default high) and parsed into a
+    # ModelSpec; the model and effort are passed to the selected backend (set
+    # them to values that backend understands). Effort is mapped per client
+    # (gemini thinking_level, codex model_reasoning_effort, claude effort);
+    # backends without a matching setting clamp extra/max/ultra to their
+    # highest supported value. AGENT_TIMEOUT_MINUTES bounds every single
+    # invocation. The schema validate-and-repair cap is NOT configurable — it is the hardcoded
     # MAX_SCHEMA_RETRIES constant in services/inference/schema_enforce.py.
     agent_gemini_api_key: str | None = Field(
         default=None,

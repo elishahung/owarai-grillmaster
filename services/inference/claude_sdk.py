@@ -63,6 +63,9 @@ _CLAUDE_REASONING_EFFORT_BY_EFFORT = {
     "medium": "medium",
     "high": "high",
     "extra": "xhigh",
+    "max": "max",
+    # Claude has no "ultra" effort; clamp to its highest level.
+    "ultra": "max",
 }
 
 

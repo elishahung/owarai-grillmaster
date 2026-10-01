@@ -144,7 +144,7 @@ ELEVENLABS_STT_LANGUAGE_CODE=jpn
 # Agent / 模型 backends（每個階段一條 spec；gemini-cli/gemini-agy/claude/codex
 #   走訂閱制省 API 費用；claude/codex/gemini-agy 無法吃音訊，只用影格+字幕；gemini-agy 為
 #   Antigravity CLI）。AGENT_GEMINI_API_KEY 只在某階段用 gemini-api 時才需要。*_MODEL 寫成
-#   "backend/model" 或 "backend/model/effort"（effort 為 low/medium/high/extra，省略則預設 high）。
+#   "backend/model" 或 "backend/model/effort"（effort 為 low/medium/high/extra/max/ultra，省略則預設 high；extra→xhigh，max/ultra 對應 Claude/Codex 同名等級，不支援的 backend 會降到其最高等級）。
 AGENT_GEMINI_API_KEY=xxx
 AGENT_GEMINI_GCP_PROJECT=your-project-id       # 可選；gemini-cli 訂閱/Code Assist auth 時，臨時注入為 GOOGLE_CLOUD_PROJECT
 

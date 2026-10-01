@@ -247,11 +247,11 @@ Pydantic-settings, loaded from `.env`. Notable patterns:
   `agent_postprocess_model` / `agent_common_model`, i.e. `AGENT_*_MODEL` in
   `.env`).
 - **`ModelSpec`**: `*_MODEL` is written as `"backend/model"` or
-  `"backend/model/effort"` (effort is one of low/medium/high/extra, default
-  high) and parsed into `.backend` + `.model` + `.reasoning_effort`. `effort`
+  `"backend/model/effort"` (effort is one of low/medium/high/extra/max/ultra,
+  default high) and parsed into `.backend` + `.model` + `.reasoning_effort`. `effort`
   is mapped per client (gemini thinking_level,
-  codex model_reasoning_effort, claude effort); backends without an extra-high
-  value clamp repo-level `extra` to their highest supported value. The
+  codex model_reasoning_effort, claude effort); backends without a matching
+  value clamp `extra`/`max`/`ultra` to their highest supported value. The
   `ModelSpecField` annotation uses `NoDecode` so pydantic-settings doesn't
   JSON-decode the shorthand string — any new spec-shaped field needs the same
   annotation.

@@ -35,6 +35,14 @@ class ModelSpecParseTests(unittest.TestCase):
         self.assertEqual(s.agent_chunk_model.model, "gpt-5.5")
         self.assertEqual(s.agent_chunk_model.reasoning_effort, "extra")
 
+    def test_max_and_ultra_efforts_are_supported(self):
+        s = Settings(
+            agent_chunk_model="claude/claude-opus-4-8/Max",
+            agent_postprocess_model="codex/gpt-5.6-sol/ULTRA",
+        )
+        self.assertEqual(s.agent_chunk_model.reasoning_effort, "max")
+        self.assertEqual(s.agent_postprocess_model.reasoning_effort, "ultra")
+
     def test_unknown_effort_raises(self):
         with self.assertRaises(ValueError):
             Settings(agent_chunk_model="codex/gpt-5.5/xhigh")

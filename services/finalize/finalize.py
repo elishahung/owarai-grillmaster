@@ -33,6 +33,9 @@ from services.srt import SrtBlock, parse_srt, serialize_srt
 ASS_PLAY_RES_X = 1920
 ASS_PLAY_RES_Y = 1080
 ASS_FONT_NAME = "源泉圓體月 M"
+# Default style margins (left/right and bottom).
+ASS_MARGIN_H = 10
+ASS_MARGIN_V = 40
 
 ASS_HEADER = f"""[Script Info]
 ScriptType: v4.00+
@@ -44,7 +47,7 @@ PlayResY: {ASS_PLAY_RES_Y}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{ASS_FONT_NAME},64,&H00FDFDFD,&H000000FF,&H00000000,&H7D000000,0,0,0,0,100,100,0,0,1,6,2,2,10,10,40,1
+Style: Default,{ASS_FONT_NAME},64,&H00FDFDFD,&H000000FF,&H00000000,&H7D000000,0,0,0,0,100,100,0,0,1,6,2,2,{ASS_MARGIN_H},{ASS_MARGIN_H},{ASS_MARGIN_V},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

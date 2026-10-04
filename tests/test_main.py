@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import main as main_module
+from services.live_chat import ChatLayout
 
 
 class MainCliTests(unittest.TestCase):
@@ -74,6 +75,7 @@ class MainCliTests(unittest.TestCase):
                 enable_cover=False,
                 enable_date_research=False,
                 enable_live_chat=False,
+                chat_layout=ChatLayout.SIDE,
                 remix_noise_name=main_module.DEFAULT_NOISE_NAME,
             ),
         )
@@ -133,7 +135,7 @@ class MainCliTests(unittest.TestCase):
             package_root=package_root,
             remix_noise_name="sleep",
             progress=progress,
-            skip_chat=True,
+            chat_layout=ChatLayout.NONE,
         )
 
     def test_legacy_source_invocation_accepts_remix(self):
@@ -147,6 +149,25 @@ class MainCliTests(unittest.TestCase):
         self.assertEqual(
             submit_project.call_args.kwargs["remix_noise_name"], "sleep"
         )
+
+    def test_chat_layout_option_reaches_submit(self):
+        with patch.object(main_module, "submit_project") as submit_project:
+            main_module.main(["BV123", "--chat", "--chat-layout", "Overlay"])
+
+        kwargs = submit_project.call_args.kwargs
+        self.assertTrue(kwargs["enable_live_chat"])
+        self.assertEqual(kwargs["chat_layout"], ChatLayout.OVERLAY)
+
+    def test_package_rejects_skip_chat_with_another_layout(self):
+        with (
+            patch.object(main_module.settings, "package_path", Path("package")),
+            patch.object(main_module, "package_project_directory") as package,
+        ):
+            # standalone_mode=False swallows the typer.Exit(1).
+            main_module.main(
+                ["package", "proj", "--skip-chat", "--chat-layout", "overlay"]
+            )
+        package.assert_not_called()
 
     def test_valueless_remix_uses_the_default_noise_set(self):
         with patch.object(main_module, "submit_project") as submit_project:

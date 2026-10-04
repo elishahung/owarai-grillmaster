@@ -20,7 +20,7 @@ from project import (
     VIDEO_FILE_NAME,
     Project,
 )
-from services.live_chat import render_chat_panel
+from services.live_chat import DEFAULT_CHAT_LAYOUT, ChatLayout, chat_burn_plan
 from services.media import MediaProcessor
 from services.package.cover import copy_cover
 from services.package.rc import resolve_remix_noise_name
@@ -35,12 +35,12 @@ def package_project(
     package_root: Path,
     progress: NoopProgressReporter | None = None,
     remix_noise_name: str | None = None,
-    skip_chat: bool = False,
+    chat_layout: ChatLayout = DEFAULT_CHAT_LAYOUT,
 ) -> None:
     """Create the deliverable folder.
 
-    A translated live chat is burned in as a side panel unless
-    ``skip_chat``. Best-effort. Logs warnings on failure and never raises
+    A translated live chat is burned in with ``chat_layout`` (``NONE``
+    leaves it out). Best-effort. Logs warnings on failure and never raises
     into the caller.
     """
     target_dir = _prepare_target_dir(project, package_root)
@@ -67,10 +67,7 @@ def package_project(
     copy_cover(source_root, target_dir)
     copy_auxiliary_artifacts(source_root, target_dir)
 
-    # Layers burn bottom first: the chat panel sits under the dialogue.
-    subtitle_files = (
-        [] if skip_chat else render_chat_panel(source_root, video_in)
-    ) + [ass_in]
+    burn = chat_burn_plan(source_root, video_in, ass_in, chat_layout)
 
     noise_name = resolve_remix_noise_name(
         requested=remix_noise_name,
@@ -82,7 +79,7 @@ def package_project(
         if noise_name is None:
             MediaProcessor.burn_in_subtitles(
                 video_file=video_in,
-                subtitle_files=subtitle_files,
+                burn=burn,
                 output_file=target_dir / "video.mp4",
                 progress=progress,
             )
@@ -92,7 +89,7 @@ def package_project(
                 package_root=package_root,
                 target_dir=target_dir,
                 video_file=video_in,
-                subtitle_files=subtitle_files,
+                burn=burn,
                 noise_name=noise_name,
                 progress=progress,
             )
@@ -109,7 +106,8 @@ def package_project_directory(
     package_root: Path,
     remix_noise_name: str | None = None,
     progress: NoopProgressReporter | None = None,
-    skip_chat: bool = False,
+    *,
+    chat_layout: ChatLayout,
 ) -> None:
     """Package an already-finalized project directory."""
     project_json = project_dir / PROJECT_FILE_NAME
@@ -124,7 +122,7 @@ def package_project_directory(
         package_root=package_root,
         progress=progress,
         remix_noise_name=remix_noise_name,
-        skip_chat=skip_chat,
+        chat_layout=chat_layout,
     )
 
 

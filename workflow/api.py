@@ -8,6 +8,7 @@ from loguru import logger
 
 from project import Project, ProgressStage
 from services.inference import Backend, fan_out_concurrency
+from services.live_chat import DEFAULT_CHAT_LAYOUT, ChatLayout
 from settings import settings
 from services.progress import (
     NoopProgressReporter,
@@ -39,6 +40,8 @@ class WorkflowOptions:
     enable_date_research: bool = False
     # Per-run only: no .env toggle, since most sources have no replay.
     enable_live_chat: bool = False
+    # Package-time only: how a translated chat is laid out in the frame.
+    chat_layout: ChatLayout = DEFAULT_CHAT_LAYOUT
     remix_noise_name: str | None = None
     section_start: float | None = None
     section_end: float | None = None
@@ -84,6 +87,7 @@ def submit_project(
     enable_cover: bool = False,
     enable_date_research: bool = False,
     enable_live_chat: bool = False,
+    chat_layout: ChatLayout = DEFAULT_CHAT_LAYOUT,
     remix_noise_name: str | None = None,
     section_start: float | None = None,
     section_end: float | None = None,
@@ -109,6 +113,7 @@ def submit_project(
         enable_cover=enable_cover,
         enable_date_research=enable_date_research,
         enable_live_chat=enable_live_chat,
+        chat_layout=chat_layout,
         remix_noise_name=remix_noise_name,
         section_start=section_start,
         section_end=section_end,
@@ -124,6 +129,7 @@ def process_project(
     enable_cover: bool = False,
     enable_date_research: bool = False,
     enable_live_chat: bool = False,
+    chat_layout: ChatLayout = DEFAULT_CHAT_LAYOUT,
     remix_noise_name: str | None = None,
     section_start: float | None = None,
     section_end: float | None = None,
@@ -150,6 +156,7 @@ def process_project(
                     enable_cover=enable_cover,
                     enable_date_research=enable_date_research,
                     enable_live_chat=enable_live_chat,
+                    chat_layout=chat_layout,
                     remix_noise_name=remix_noise_name,
                     section_start=section_start,
                     section_end=section_end,
@@ -504,4 +511,5 @@ def _process_project_impl(
         project_id=project_id,
         progress=progress,
         remix_noise_name=options.remix_noise_name,
+        chat_layout=options.chat_layout,
     )

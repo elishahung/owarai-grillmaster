@@ -40,7 +40,8 @@ Entry point: `main.py` (Typer CLI) → `workflow.submit_project`. Run with
 - **Python 3.13+**, managed with **`uv`** + a local **`.venv`**. Install deps
   with `uv sync` (or `pip install -e .`).
 - **FFmpeg** must be installed and on `PATH` (media combine/extract/burn-in).
-- Config via a `.env` file (see `README.md` for the full key list). Model
+- Config via a `.env` file (`settings.py` holds every key with its
+  description; `README.md` lists only the common ones). Model
   backends are selectable per stage (`gemini-api` / `gemini-cli` / `gemini-agy`
   / `claude` / `codex`); only `gemini-api` is metered.
 

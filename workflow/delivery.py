@@ -6,6 +6,7 @@ from time import perf_counter
 from loguru import logger
 
 from project import Project
+from services.live_chat import ChatLayout
 from services.package import package_project
 from services.progress import NoopProgressReporter
 from settings import settings
@@ -17,6 +18,7 @@ def deliver_project(
     project_id: str,
     progress: NoopProgressReporter,
     remix_noise_name: str | None,
+    chat_layout: ChatLayout,
 ) -> Path:
     """Archive and package a completed project.
 
@@ -46,6 +48,7 @@ def deliver_project(
             settings.package_path,
             progress,
             remix_noise_name=remix_noise_name,
+            chat_layout=chat_layout,
         )
         progress.stage_completed("package", perf_counter() - started_at)
 

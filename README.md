@@ -10,7 +10,7 @@
 ## 說明
 
 - 目標是 one shot 即可直接觀看，不想校準 (避免被暴雷)
-- 1 小時左右的影片成本大概 $20 台幣 (ASR $6 + 翻譯 $14)，處理時間約 15 分鐘，如果使用訂閱方是那就只有 ASR 成本
+- 1 小時左右的影片成本大概 $20 台幣 (ASR $6 + 翻譯 $14)，處理時間約 15 分鐘，如果使用訂閱方式那就只有 ASR 成本
 - 設定偏好都是個人主觀，如需修改請自行 fork
 - 更詳細請[查看心得](/article.md)
 
@@ -18,209 +18,84 @@
 
 經過各種嘗試，API、自架等組合後，覺得以下方式最合適
 
-### ASR
+- **ASR**：`ElevenLabs Scribe v2`，一堆人大聲喧嘩、裝傻吐槽沒有間隔也能辨識
+- **翻譯**：`Gemini 3` 系列最能抓住日本綜藝的韻味，也很會看圖聽音檔；輸出結構出錯時交給 Codex / Claude 修正
 
-`ElevenLabs Scribe v2` 日文辨識效果穩定，尤其在一堆人大聲喧嘩，或者裝傻吐槽之間無間隔狀況都能分析出來
+翻譯分兩階段：先看完整部片做一份簡報（人物、專有名詞、梗的譯法、語氣），再把字幕切塊平行翻譯。翻譯時會參考音檔和影片截圖，幫助辨識人物、場景與畫面上的文字
 
-### 翻譯
-
-測試多種模型還是 `Gemini 3` 系列的潤飾最能抓住日本綜藝的韻味，加上圖片音檔的理解真的很好，但 `Gemini 3` 的輸出常常會漏 Index 或弄錯時間軸，所以如果驗證錯誤，會交給其他 agent (Codex/Claude) 驗證修正結構
-
-目前翻譯也預設使用 `Gemini CLI` 的 Agent 搭配工具去主動取得影片截圖和網路搜尋確認資訊。
-
-進行**兩階段翻譯**：
-
-1. **Pre-pass**：完整 SRT + 節目資訊 + 完整音檔 + 少量全片代表圖片，輸出：人物對照、專有名詞/ASR 修正 dict、梗的固定譯法、整體語氣、每段局部摘要
-2. **併發翻譯**：SRT 按字元數平均切塊，每塊配上 pre-pass 簡報 + 局部摘要 + 該段音檔切片 + 該段的代表圖片，平行送出翻譯
-3. **組裝**：每塊輸出驗證 index/timecode 連續性，block 數相同時本地快速重對齊，否則交給 agent (Codex/Claude) 自我驗證修正，再拼接寫檔
-
-不只聽音訊，也會參考影片抽出的圖片，幫助辨識人物、場景、道具與畫面上的提示文字
 ![](doc/image4.jpg)
 
-另外，翻譯過程的 chunk / pre-pass 資源與回應會保留在專案資料夾中，方便失敗後直接 resume，不用每次都重切音訊、重抽圖、重跑整個翻譯
-
-> 目前只有 `Gemini CLI` 可以輸入音訊
+中途失敗可以直接重跑同一個 ID，會從中斷的地方繼續
 
 ## 流程
 
 ```
-Video ID
-    ↓
-下載影片 (yt-dlp)
-    ↓
-合併影片 (FFmpeg)
-    ↓
-下載聊天重播 (yt-dlp live_chat, --chat 才跑)
-    ↓
-提取音檔 (FFmpeg, mono 16kHz opus 編碼，輸出 .ogg)
-    ↓
-語音辨識 (ElevenLabs Scribe v2)
-    ↓
-產生 SRT 字幕
-    ↓
-Pre-pass 分析 (全片簡報，定調人物/專名/語氣/分段摘要)
-    ↓
-併發 chunk 翻譯 (分塊平行翻譯 → 組裝驗證修正)
-    ↓
-潤飾字幕 (agent, 可選)
-    ↓
-固定詞彙校對 (agent, 可選)
-    ↓
-Finalize：格式清理，輸出 ASS (套樣式) + SRT
-    ↓
-翻譯聊天重播 (分批翻譯 + 全場統整，以定稿字幕與 pre_pass 為準, --chat 才跑)
-    ↓
-歸檔 (可選)
-    ↓
-封裝交付 (可選：字幕燒錄進影片)
+下載影片 → 語音辨識 → 全片簡報 → 分塊翻譯 → 潤飾 / 名詞校對（可選）→ 輸出 ASS + SRT → 歸檔 / 燒錄字幕（可選）
 ```
 
 ## 安裝
 
-### 前置需求
-
-- Python 3.13+
-- FFmpeg (自行安裝並加入 PATH)
-- uv (推薦) 或 pip
-
-### 安裝步驟
+需要 Python 3.13+、FFmpeg（加入 PATH）、uv
 
 ```bash
-# 使用 uv
 uv sync
-
-# 或使用 pip
-pip install -e .
 ```
 
 ## 使用方式
 
-### 方式一：加入 PATH
-
-將 `scripts/` 資料夾加到系統 PATH，然後執行：
+將 `scripts/` 加到 PATH 後：
 
 ```bash
-grill <SOURCE> [TRANSLATION_HINT]
+grill <影片 ID 或 URL> [翻譯提示]
 ```
 
-### 方式二：直接執行
+翻譯提示可省略，預設用影片標題；bilibili 標題太隱晦時才需要
 
 ```bash
-python main.py <SOURCE> [TRANSLATION_HINT]
-```
-
-- `SOURCE`: 影片 ID 或完整 URL
-- `TRANSLATION_HINT`: 可選，提供給翻譯用的提示，通常是 bilibili 只有隱晦標題的需要
-
-### 範例
-
-```bash
-# 使用影片標題作為翻譯提示
 grill BV18KBJBeEmV
-
-# 自訂翻譯提示
 grill BV1CakEBaEJp "華大千鳥 - 全力100萬 - 間諜 1/7"
 
-# 使用完整 URL
-grill "https://www.bilibili.com/video/BV18KBJBeEmV"
-
-# 序列接龍：依序處理多集，每集算完（含 archive）後的資料夾自動成為下一集的 --parent-project
+# 依序處理多集，前一集的譯名會帶到下一集
 grill serial ep100001 ep100002 ep100003
 
-# 從中斷處續跑（失敗時 log 會印出這行）
-grill serial ep100002 ep100003 --parent-project <ep100001 的最終資料夾>
-
-# YouTube 直播存檔：一併翻譯聊天重播，封裝時在畫面右側燒入滾動聊天室
-grill "https://www.youtube.com/watch?v=D7HZmabypng" --chat
-
-# 重新封裝但不燒聊天室
-grill package <專案資料夾> --skip-chat
+# 重新燒錄已完成的專案
+grill package <專案資料夾>
 ```
-
-`--chat` 是每次執行時指定的旗標（沒有 .env 開關），續跑時要再帶一次才會繼續聊天相關的
-stage。影片沒有聊天重播時會在 ASR 之前就失敗。聊天面板的版面在封裝時才產生
-（`video.chat.ass`），所以調整樣式後只需要重新 `grill package`。
-
-`grill serial` 接受與 `grill` 相同的 `--refine` / `--glossary-check` / `--cover` /
-`--date-research` / `--chat` / `--remix` 旗標（套用到每一集），不接受翻譯提示與 `--break-after`；
-任一集失敗整條鏈即停止。
 
 ## 環境變數
 
-建立 `.env` 檔案：
+建立 `.env`：
 
 ```env
-# ElevenLabs Speech to Text
 ELEVENLABS_API_KEY=xxx
-ELEVENLABS_STT_MODEL=scribe_v2
-ELEVENLABS_STT_LANGUAGE_CODE=jpn
 
-# Agent / 模型 backends（每個階段一條 spec；gemini-cli/gemini-agy/claude/codex
-#   走訂閱制省 API 費用；claude/codex/gemini-agy 無法吃音訊，只用影格+字幕；gemini-agy 為
-#   Antigravity CLI）。AGENT_GEMINI_API_KEY 只在某階段用 gemini-api 時才需要。*_MODEL 寫成
-#   "backend/model" 或 "backend/model/effort"（effort 為 low/medium/high/extra/max/ultra，省略則預設 high；extra→xhigh，max/ultra 對應 Claude/Codex 同名等級，不支援的 backend 會降到其最高等級）。
-AGENT_GEMINI_API_KEY=xxx
-AGENT_GEMINI_GCP_PROJECT=your-project-id       # 可選；gemini-cli 訂閱/Code Assist auth 時，臨時注入為 GOOGLE_CLOUD_PROJECT
+# 各階段模型，格式為 backend/model[/effort]
+# backend：gemini-api（計費）、gemini-cli、gemini-agy、claude、codex（訂閱制）
+AGENT_GEMINI_API_KEY=xxx                   # 只有用 gemini-api 時需要
+AGENT_PREPASS_MODEL=gemini-cli/gemini-3.1-pro-preview/high
+AGENT_CHUNK_MODEL=gemini-cli/gemini-3.1-pro-preview/high
+AGENT_POSTPROCESS_MODEL=codex/gpt-6.1-sol/high
+AGENT_COMMON_MODEL=codex/gpt-6.1-sol/medium
 
-AGENT_PREPASS_MODEL=gemini-cli/gemini-3.1-pro-preview/high  # backend: gemini-api / gemini-cli / gemini-agy / claude / codex
-AGENT_CHUNK_MODEL=gemini-cli/gemini-3.1-pro-preview/high    # "backend/model" 或 "backend/model/effort"
-AGENT_POSTPROCESS_MODEL=codex/gpt-6.1-sol/high              # 後處理（refine/glossary）：codex / claude / gemini-cli / gemini-agy
-AGENT_COMMON_MODEL=codex/gpt-6.1-sol/medium                 # 輕量工具 agent（chunk 結構修正、播出日調查、封裝標題建議）；封面固定用 codex 並沿用此 effort
-AGENT_CHAT_MODEL=                                           # 可選；聊天重播翻譯與統整（--chat），任何 backend 皆可；留空沿用 AGENT_COMMON_MODEL
-AGENT_TIMEOUT_MINUTES=40                                    # 單次模型呼叫逾時（分鐘），所有 backend 共用；高 effort 階段跑太久可調高
+# 可選功能
+ENABLE_POSTPROCESS_REFINE=true             # 潤飾字幕
+ENABLE_POSTPROCESS_GLOSSARY_CHECK=true     # 名詞校對
+ENABLE_COVER_GENERATION=true               # 產生風格化封面
+ENABLE_BROADCAST_DATE_AGENT_FALLBACK=true  # 查不到播出日時上網找
+ENABLE_PACKAGE_TITLE_SUGGESTION=true       # 燒錄時產生候選標題
 
-# 可選：pre-pass 圖片抽樣與固定譯名表
-PREPASS_FRAME_INTERVAL_SECONDS=120     # pre-pass 全片圖片抽樣頻率（每幾秒一張，另外固定包含影片首尾幀）
-ENABLE_PREPASS_FULL_FIXED_GLOSSARY=false  # 固定譯名表整份帶入 pre-pass（false=只帶比對到的）
-VIDEO_FRAME_MAX_SIDE=768               # 影片抽幀最長邊尺寸（pre-pass、chunk 與 agent 隨選抽幀工具共用）
-
-# 可選：chunk 切塊與圖片抽樣
-CHUNK_CHAR_LIMIT=6000                  # 每塊目標字元數 (約 5 分鐘字幕)
-CHUNK_API_CONCURRENCY=10               # chunk 併發上限（gemini-api 網路請求，可開高）
-CHUNK_AGENT_CONCURRENCY=5              # chunk 併發上限（agent：gemini-cli/gemini-agy/claude/codex 本機子行程，故較低）
-CHUNK_MAX_RETRIES=3                    # chunk 失敗重試次數
-CHUNK_FRAME_INTERVAL_SECONDS=30        # chunk 圖片抽樣頻率（每幾秒一張，另外固定包含每段首尾幀）
-CHUNK_MISSING_BLOCK_TOLERANCE=2        # 每塊允許未對齊/缺漏字幕區塊數上限
-
-# 可選：後處理開關
-ENABLE_POSTPROCESS_REFINE=true            # 翻譯後再用 agent 潤飾繁中字幕
-ENABLE_POSTPROCESS_GLOSSARY_CHECK=true    # 潤飾後再用 agent 校對殘留的英文/假名專名
-ENABLE_COVER_GENERATION=true              # 下載後並行 Codex 風格化封面圖
-ENABLE_BROADCAST_DATE_AGENT_FALLBACK=true # metadata 解析不到放送日時，並行派 agent 上網研究放送日（結果存 .artifacts/date_research.json）
-ENABLE_PACKAGE_TITLE_SUGGESTION=true      # 封裝時若沒有 .titles/titles.json，用 pre_pass.json 產三個候選標題（已有則直接沿用）
-
-# 可選：下載/歸檔/封裝
-ENABLE_OFFICIAL_SUBTITLES=true     # 下載時順抓平台官方 CC 字幕（TVer/Abema 等），作為翻譯的 ground truth 參照
-COOKIES_TXT_PATH=cookies.txt       # 影片來源網站 cookies (供 yt-dlp 使用)
-ARCHIVED_PATH=NAS:\video\ai\     # 歸檔路徑 - 處理完移至 <archived_path>/YY/MM/YYMMDD_<id>_<name>/（YYMMDD 為放送/發布日期，無日期時移至 <archived_path>/etc/<id>_<name>/）
-PACKAGE_PATH=NAS:\video\package\ # 封裝路徑 - 先複製封面、info.json（候選標題 + pre_pass）與報告，再將 ASS 字幕燒錄進影片，輸出到 <package_path>/YYMMDD_<id>_<name>/（平面，不分子目錄；無日期時省略前綴）
+# 路徑
+COOKIES_TXT_PATH=cookies.txt
+ARCHIVED_PATH=NAS:\video\ai\               # 完成後歸檔位置
+PACKAGE_PATH=NAS:\video\package\           # 燒錄字幕後的成品位置
 ```
 
-## 專案結構
+其他可調參數（切塊大小、併發數、抽圖頻率等）請見 `settings.py`
 
-```
-projects/{video_id}/
-├── project.json              # 專案狀態
-├── video.mp4                 # 合併後的影片
-├── video.ja.srt              # 日文原文字幕
-├── .asr/                     # ASR 音檔與 ElevenLabs 原始結果
-│   ├── audio.ogg
-│   └── asr.json
-├── .pre_pass/                # pre-pass 簡報與圖片快取
-│   ├── pre_pass.json
-│   └── pre_pass.raw.json     # glossary-check 更正 pre_pass 前的原始備份（可選）
-├── .chunks/                  # chunk 音檔 / 圖片 / 翻譯回應快取（供 resume）
-├── .refine/                  # Agent 潤飾報告（可選）
-├── .glossary_check/          # Agent 名詞校對報告與額外取幀（可選）
-├── .titles/                  # 封裝時產生的候選標題 titles.json（可選）
-├── .live_chat/               # 聊天重播原始檔、正規化訊息、分批翻譯與統整快取（--chat）
-├── poster.jpg                # yt-dlp 取得的原始封面
-├── poster.cover.png          # Agent 風格化封面（可選）
-├── video.cht.srt             # 繁體中文翻譯字幕
-├── video.cht.refined.srt     # Agent 潤飾後字幕（可選）
-├── video.cht.glossary_checked.srt  # Agent 固定詞彙校對後字幕（可選）
-├── video.cht.finalized.srt   # 最終 SRT（標點清理，給不支援 ASS 的裝置）
-├── video.cht.ass             # 最終 ASS（套樣式 + 標點清理）
-├── chat.cht.json             # 翻譯後的聊天重播（--chat）
-└── video.chat.ass            # 封裝時產生的滾動聊天面板 ASS（--chat）
-```
+## 輸出
+
+每個專案在 `projects/<影片 ID>/`，主要成品：
+
+- `video.cht.ass`：套好樣式的繁中字幕
+- `video.cht.finalized.srt`：給不支援 ASS 的播放器
+- `video.ja.srt`：日文原文字幕

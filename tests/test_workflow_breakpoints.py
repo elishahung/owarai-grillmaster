@@ -16,6 +16,7 @@ from project import Project
 from services.elevenlabs.asr import ElevenLabsTranscriptionResult
 from services.progress import NoopProgressReporter
 from services.ytdlp.info import AbemaTalent, TVerTalent, YtDlpVideoInfo
+from services.live_chat import ChatLayout
 
 
 class WorkflowBreakpointTests(unittest.TestCase):
@@ -262,6 +263,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
             project_id="demo",
             progress=progress,
             remix_noise_name="sleep",
+            chat_layout=ChatLayout.SIDE,
         )
 
     def test_optional_refine_runs_when_forced(self):

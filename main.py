@@ -11,6 +11,7 @@ from typing_extensions import Annotated
 
 from project import ProgressStage
 from services.progress import NoopProgressReporter, create_progress_reporter
+from services.live_chat import DEFAULT_CHAT_LAYOUT, ChatLayout
 from services.package import package_project_directory
 from services.package.constants import DEFAULT_NOISE_NAME
 from services.ytdlp import parse_section_time
@@ -93,8 +94,22 @@ ChatOption = Annotated[
         help=(
             "Also fetch the YouTube live-chat replay, translate it after "
             "the subtitles are finalized, and burn it in as a scrolling "
-            "side panel when packaging."
+            "chat panel when packaging (see --chat-layout)."
         ),
+    ),
+]
+ChatLayoutOption = Annotated[
+    ChatLayout,
+    typer.Option(
+        "--chat-layout",
+        help=(
+            "How a translated live chat is laid out when packaging: 'side' "
+            "letterboxes the 16:9 picture on the left with the chat in a "
+            "right column and the dialogue in the bottom bar; 'overlay' "
+            "keeps the full frame with a translucent panel on the right; "
+            "'none' leaves the chat out."
+        ),
+        case_sensitive=False,
     ),
 ]
 RemixOption = Annotated[
@@ -120,6 +135,7 @@ def _run_process(
     cover: bool,
     date_research: bool,
     chat: bool,
+    chat_layout: ChatLayout,
     remix: str | None,
     start: str | None = None,
     to: str | None = None,
@@ -129,8 +145,8 @@ def _run_process(
         f"translation_hint={translation_hint}, break_after={break_after}, "
         f"parent_project={parent_project}, refine={refine}, "
         f"glossary_check={glossary_check}, cover={cover}, "
-        f"date_research={date_research}, chat={chat}, remix={remix}, "
-        f"start={start}, to={to}"
+        f"date_research={date_research}, chat={chat}, "
+        f"chat_layout={chat_layout}, remix={remix}, start={start}, to={to}"
     )
 
     try:
@@ -157,6 +173,7 @@ def _run_process(
         enable_cover=cover,
         enable_date_research=date_research,
         enable_live_chat=chat,
+        chat_layout=chat_layout,
         remix_noise_name=remix,
         section_start=section_start,
         section_end=section_end,
@@ -245,6 +262,7 @@ def process(
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
     chat: ChatOption = False,
+    chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
     remix: RemixOption = None,
     start: Annotated[
         str | None,
@@ -281,6 +299,7 @@ def process(
         cover=cover,
         date_research=date_research,
         chat=chat,
+        chat_layout=chat_layout,
         remix=remix,
         start=start,
         to=to,
@@ -308,6 +327,7 @@ def serial_command(
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
     chat: ChatOption = False,
+    chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
     remix: RemixOption = None,
 ) -> None:
     """Process several videos back to back, seeding each from the previous one."""
@@ -315,7 +335,8 @@ def serial_command(
         f"CLI invoked with serial sources={sources}, "
         f"parent_project={parent_project}, refine={refine}, "
         f"glossary_check={glossary_check}, cover={cover}, "
-        f"date_research={date_research}, chat={chat}, remix={remix}"
+        f"date_research={date_research}, chat={chat}, "
+        f"chat_layout={chat_layout}, remix={remix}"
     )
     try:
         run = SerialRun(
@@ -329,6 +350,7 @@ def serial_command(
                 enable_cover=cover,
                 enable_date_research=date_research,
                 enable_live_chat=chat,
+                chat_layout=chat_layout,
                 remix_noise_name=remix,
             ),
         )
@@ -363,13 +385,17 @@ def package_command(
         typer.Option(
             "--skip-chat",
             help=(
-                "Leave the live-chat side panel out even when the project "
-                "has a translated chat (chat.cht.json)."
+                "Leave the chat panel out even when the project has a "
+                "translated chat; same as --chat-layout none."
             ),
         ),
     ] = False,
+    chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
 ) -> None:
     """Run only the package step for an existing project directory."""
+    if skip_chat and chat_layout not in (DEFAULT_CHAT_LAYOUT, ChatLayout.NONE):
+        logger.error("--skip-chat conflicts with --chat-layout; use one")
+        raise typer.Exit(code=1)
     if settings.package_path is None:
         logger.error("PACKAGE_PATH is not set; cannot package project")
         raise typer.Exit(code=1)
@@ -380,7 +406,7 @@ def package_command(
                 package_root=settings.package_path,
                 remix_noise_name=remix,
                 progress=progress,
-                skip_chat=skip_chat,
+                chat_layout=ChatLayout.NONE if skip_chat else chat_layout,
             )
     except Exception as e:
         logger.error(f"Failed to package project {project_dir}: {e}")

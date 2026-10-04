@@ -18,6 +18,9 @@ from services.translate.errors import (
 from services.translate.facade import Translate, TranslationRequest
 from services.translate.pre_pass.pre_pass import PrePassResult
 from services.media import (
+    Box,
+    BurnPlan,
+    SubtitleLayer,
     PACKAGE_ENCODE_CONCURRENCY,
     PACKAGE_LEAD_TRIM_SECONDS,
     PACKAGE_NOISE_AMPLITUDE,
@@ -404,6 +407,35 @@ def package_render_commands(popen):
 
 
 class MediaProgressTests(unittest.TestCase):
+    def test_canvas_runs_after_the_look_and_before_the_subtitle_layers(self):
+        burn = BurnPlan(
+            picture=Box(x=0, y=10, width=160, height=90),
+            layers=(
+                SubtitleLayer(path=Path("under.ass")),
+                SubtitleLayer(path=Path("over.ass"), force_style="X=1"),
+            ),
+        )
+        chain = MediaProcessor._package_video_chain(burn, "trim=start=3")
+
+        order = [
+            MediaProcessor._PACKAGE_VIDEO_FILTER,
+            "scale=160:90,pad=1920:1080:0:10:black,",
+            "subtitles=under.ass,",
+            "subtitles=over.ass:force_style='X=1',",
+            "trim=start=3",
+            MediaProcessor._PACKAGE_VIDEO_OUTPUT,
+        ]
+        positions = [chain.index(part) for part in order]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_picture_box_must_fit_the_package_frame(self):
+        for box in (
+            Box(x=100, y=0, width=1920, height=1080),  # leaves the frame
+            Box(x=0, y=127, width=1472, height=828),  # odd offset for 4:2:0
+        ):
+            with self.subTest(box=box), self.assertRaises(ValueError):
+                BurnPlan(picture=box, layers=(SubtitleLayer(path=Path("a.ass")),))
+
     def test_burn_in_subtitles_reports_ffmpeg_progress(self):
         root = Path(tempfile.mkdtemp(prefix="burn-progress-test-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
@@ -440,7 +472,7 @@ class MediaProgressTests(unittest.TestCase):
             patch("services.media.subprocess.Popen", return_value=FakeProcess()) as popen,
         ):
             MediaProcessor.burn_in_subtitles(
-                video, [subtitle], output, progress=progress
+                video, BurnPlan.dialogue(subtitle), output, progress=progress
             )
 
         # Video and audio are separate processes so they render in parallel.
@@ -529,7 +561,7 @@ class MediaProgressTests(unittest.TestCase):
                 side_effect=lambda *a, **k: FakeProcess(),
             ) as popen,
         ):
-            MediaProcessor.burn_in_subtitles(video, [subtitle], root / "out.mp4")
+            MediaProcessor.burn_in_subtitles(video, BurnPlan.dialogue(subtitle), root / "out.mp4")
 
         commands = [call.args[0] for call in popen.call_args_list]
         parts = [cmd for cmd in commands if "-an" in cmd]
@@ -577,7 +609,7 @@ class MediaProgressTests(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError) as raised:
                 MediaProcessor.burn_in_subtitles(
                     video,
-                    [subtitle],
+                    BurnPlan.dialogue(subtitle),
                     output,
                     progress=progress,
                 )
@@ -599,7 +631,7 @@ class MediaProgressTests(unittest.TestCase):
             patch("services.media.subprocess.Popen") as popen,
         ):
             with self.assertRaisesRegex(ValueError, "lead trim"):
-                MediaProcessor.burn_in_subtitles(video, [subtitle], output)
+                MediaProcessor.burn_in_subtitles(video, BurnPlan.dialogue(subtitle), output)
 
         popen.assert_not_called()
 
@@ -631,7 +663,7 @@ class MediaProgressTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "differs from expected"):
                 MediaProcessor.burn_in_subtitles(
                     video,
-                    [subtitle],
+                    BurnPlan.dialogue(subtitle),
                     output,
                     progress=progress,
                 )
@@ -663,7 +695,7 @@ class MediaProgressTests(unittest.TestCase):
             patch("services.media.subprocess.Popen", return_value=FakeProcess()),
         ):
             with self.assertRaisesRegex(ValueError, "differs from expected"):
-                MediaProcessor.burn_in_subtitles(video, [subtitle], output)
+                MediaProcessor.burn_in_subtitles(video, BurnPlan.dialogue(subtitle), output)
 
     def test_remix_segment_reports_progress_to_existing_task(self):
         root = Path(tempfile.mkdtemp(prefix="remix-progress-test-"))
@@ -691,7 +723,7 @@ class MediaProgressTests(unittest.TestCase):
         with patch("services.media.subprocess.Popen", return_value=FakeProcess()):
             MediaProcessor.encode_subtitled_segment(
                 video,
-                [subtitle],
+                BurnPlan.dialogue(subtitle),
                 output,
                 start_seconds=0.0,
                 end_seconds=1.0,
@@ -737,7 +769,7 @@ class MediaProgressTests(unittest.TestCase):
         with patch("services.media.subprocess.Popen", return_value=FakeProcess()) as popen:
             MediaProcessor.encode_subtitled_segment(
                 video,
-                [subtitle],
+                BurnPlan.dialogue(subtitle),
                 output,
                 start_seconds=0.0,
                 end_seconds=1.0,
@@ -787,7 +819,7 @@ class MediaProgressTests(unittest.TestCase):
             ) as popen:
                 MediaProcessor.encode_subtitled_segment(
                     video,
-                    [subtitle],
+                    BurnPlan.dialogue(subtitle),
                     root / "segment.mp4",
                     start_seconds=start_seconds,
                     end_seconds=end_seconds,
@@ -977,7 +1009,7 @@ class MediaProgressTests(unittest.TestCase):
         ):
             MediaProcessor.build_remix_output(
                 video_file=video,
-                subtitle_files=[subtitle],
+                burn=BurnPlan.dialogue(subtitle),
                 output_file=output,
                 head_noise=head,
                 tail_noise=tail,

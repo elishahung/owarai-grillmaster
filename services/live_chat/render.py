@@ -1,4 +1,4 @@
-"""Render translated chat as a scrolling side panel in ASS.
+"""Render translated chat as a scrolling panel in ASS.
 
 The panel is plain ASS so packaging burns it with the same `subtitles`
 filter as the main subtitles: no extra input, and the package tempo/trim
@@ -15,6 +15,9 @@ as the look allows.
 
 import hashlib
 import math
+from dataclasses import dataclass
+from enum import StrEnum
+from functools import cached_property
 from pathlib import Path
 from typing import TextIO
 
@@ -23,22 +26,39 @@ from loguru import logger
 from project import CHAT_ASS_FILE_NAME, CHAT_TRANSLATED_FILE_NAME
 from services.finalize.finalize import (
     ASS_FONT_NAME,
+    ASS_MARGIN_H,
     ASS_PLAY_RES_X,
     ASS_PLAY_RES_Y,
 )
-from services.media import MediaProcessor
+from services.media import BurnPlan, Box, MediaProcessor, SubtitleLayer
 
 from .schema import TranslatedChatLog, TranslatedChatMessage
 
-# The panel ends above the bottom-centered dialogue lines.
-PANEL_LEFT = 1490
-PANEL_TOP = 60
-PANEL_BOTTOM = 870
-PANEL_WIDTH = 400
+
+class ChatLayout(StrEnum):
+    """How a translated chat is placed in the packaged frame."""
+
+    # 16:9 picture letterboxed on the left, chat in its own right column,
+    # dialogue in the bottom letterbox bar.
+    SIDE = "side"
+    # Full-frame picture with a translucent panel over its right side.
+    OVERLAY = "overlay"
+    # No chat: dialogue alone on the full frame.
+    NONE = "none"
+
+
+DEFAULT_CHAT_LAYOUT = ChatLayout.SIDE
+
 PANEL_PADDING = 12
 PANEL_RADIUS = 18
-PANEL_COLOR = "101010"
-PANEL_ALPHA = "60"
+
+# Side layout: the picture keeps 16:9 in what the chat column leaves.
+SIDE_VIDEO_WIDTH = 1472
+SIDE_VIDEO_HEIGHT = SIDE_VIDEO_WIDTH * 9 // 16
+SIDE_COLUMN_WIDTH = ASS_PLAY_RES_X - SIDE_VIDEO_WIDTH
+SIDE_COLUMN_MARGIN = 12
+# Dialogue sits in the bottom bar, centred over the picture.
+SIDE_DIALOGUE_MARGIN_V = 24
 
 ITEM_PADDING_X = 14
 ITEM_GAP = 12
@@ -72,18 +92,86 @@ AVATAR_COLORS = (
     "AB47BC", "00ACC1", "FF7043", "8D6E63",
 )
 
-_INNER_BOTTOM = PANEL_BOTTOM - PANEL_PADDING
-_ITEM_LEFT = PANEL_LEFT + ITEM_PADDING_X
-_TEXT_LEFT = _ITEM_LEFT + AVATAR_SIZE + AVATAR_TEXT_GAP
-_TEXT_WIDTH = PANEL_LEFT + PANEL_WIDTH - ITEM_PADDING_X - _TEXT_LEFT
-# Messages scroll out at the panel's own edge, not at the padded content
-# box: the padding only sets where the newest message rests. Only rows that
-# reach above the edge carry it.
-_CLIP = (
-    f"\\clip({PANEL_LEFT},{PANEL_TOP},"
-    f"{PANEL_LEFT + PANEL_WIDTH},{PANEL_BOTTOM})"
-)
 _SCROLL_CS = math.ceil(SCROLL_MS / 10)
+
+
+@dataclass(frozen=True)
+class _Panel:
+    """Panel box on the 1920×1080 canvas and the positions derived from it."""
+
+    left: int
+    top: int
+    bottom: int
+    width: int
+    # Rounded background (RRGGBB, ASS alpha); None draws none — messages sit
+    # straight on the canvas.
+    color: str | None = None
+    alpha: str = "00"
+
+    @property
+    def inner_bottom(self) -> int:
+        return self.bottom - PANEL_PADDING
+
+    @property
+    def item_left(self) -> int:
+        return self.left + ITEM_PADDING_X
+
+    @property
+    def text_left(self) -> int:
+        return self.item_left + AVATAR_SIZE + AVATAR_TEXT_GAP
+
+    @property
+    def text_width(self) -> int:
+        return self.left + self.width - ITEM_PADDING_X - self.text_left
+
+    @cached_property
+    def clip(self) -> str:
+        # Messages scroll out at the panel's own edge, not at the padded
+        # content box: the padding only sets where the newest message
+        # rests. Only rows that reach above the edge carry it.
+        return (
+            f"\\clip({self.left},{self.top},"
+            f"{self.left + self.width},{self.bottom})"
+        )
+
+
+@dataclass(frozen=True)
+class _LayoutSpec:
+    """Everything one layout decides: the panel, the picture, the dialogue."""
+
+    panel: _Panel
+    picture: Box | None = None
+    dialogue_style: str | None = None
+
+
+_LAYOUTS = {
+    ChatLayout.SIDE: _LayoutSpec(
+        panel=_Panel(
+            left=SIDE_VIDEO_WIDTH + SIDE_COLUMN_MARGIN,
+            top=2 * SIDE_COLUMN_MARGIN,
+            bottom=ASS_PLAY_RES_Y - 2 * SIDE_COLUMN_MARGIN,
+            width=SIDE_COLUMN_WIDTH - 2 * SIDE_COLUMN_MARGIN,
+        ),
+        picture=Box(
+            x=0,
+            y=(ASS_PLAY_RES_Y - SIDE_VIDEO_HEIGHT) // 2,
+            width=SIDE_VIDEO_WIDTH,
+            height=SIDE_VIDEO_HEIGHT,
+        ),
+        # Same size in the bottom bar, centred over the picture rather than
+        # the whole canvas; video.cht.ass itself is never rewritten.
+        dialogue_style=(
+            f"MarginR={SIDE_COLUMN_WIDTH + ASS_MARGIN_H},"
+            f"MarginV={SIDE_DIALOGUE_MARGIN_V}"
+        ),
+    ),
+    # Ends above the bottom-centred dialogue lines.
+    ChatLayout.OVERLAY: _LayoutSpec(
+        panel=_Panel(
+            left=1490, top=60, bottom=870, width=400, color="101010", alpha="60"
+        ),
+    ),
+}
 
 
 def _num(value: float) -> str:
@@ -130,7 +218,7 @@ class _Item:
     override block and carry its content.
     """
 
-    def __init__(self, message: TranslatedChatMessage) -> None:
+    def __init__(self, message: TranslatedChatMessage, panel: _Panel) -> None:
         self.seconds = message.seconds
         self.paid = message.kind == "paid"
         amount = message.amount or ""
@@ -145,10 +233,10 @@ class _Item:
         name = _truncate(
             _single_line(message.author),
             NAME_FONT_SIZE,
-            _TEXT_WIDTH - amount_width,
+            panel.text_width - amount_width,
         )
         body_lines = _wrap(
-            _single_line(message.translation), BODY_FONT_SIZE, _TEXT_WIDTH
+            _single_line(message.translation), BODY_FONT_SIZE, panel.text_width
         )
         self.height = NAME_LINE_HEIGHT + BODY_LINE_HEIGHT * len(body_lines)
 
@@ -175,7 +263,7 @@ class _Item:
             + _rounded_rect(
                 0,
                 0,
-                PANEL_WIDTH - 2 * PAID_INSET_X,
+                panel.width - 2 * PAID_INSET_X,
                 self.height + PAID_INSET_TOP + PAID_INSET_BOTTOM,
                 PAID_RADIUS,
             )
@@ -184,46 +272,64 @@ class _Item:
         )
 
 
-def render_chat_panel(project_dir: Path, video_file: Path) -> list[Path]:
-    """Render the chat panel layer for ``project_dir``, if it has one.
+def chat_burn_plan(
+    project_dir: Path,
+    video_file: Path,
+    dialogue: Path,
+    layout: ChatLayout,
+) -> BurnPlan:
+    """Burn plan for packaging ``project_dir``: chat panel plus dialogue.
 
-    Returns ``[video.chat.ass]`` (to burn below the dialogue) or ``[]`` when
-    the project has no translated chat. Rendering happens at package time
-    rather than in a stage so layout changes only need a re-package.
-    Best-effort: a chat that fails to render is left out with a warning.
+    This is the one place that decides the plan. With a translated chat
+    and a layout other than ``NONE`` it renders ``video.chat.ass`` and
+    places picture, panel, and dialogue per the layout; otherwise (or if
+    rendering fails, with a warning) the dialogue burns alone on the full
+    frame. Rendering happens at package time rather than in a stage so
+    layout changes only need a re-package.
     """
     chat_in = project_dir / CHAT_TRANSLATED_FILE_NAME
-    if not chat_in.exists():
-        return []
+    if layout is ChatLayout.NONE or not chat_in.exists():
+        return BurnPlan.dialogue(dialogue)
+    spec = _LAYOUTS[layout]
     chat_ass = project_dir / CHAT_ASS_FILE_NAME
     try:
         write_chat_ass(
             TranslatedChatLog.read(chat_in),
             MediaProcessor.get_media_duration(video_file),
             chat_ass,
+            layout,
         )
     except Exception as error:
         logger.warning(f"Chat panel skipped ({chat_in}): {error}")
-        return []
-    logger.info(f"Rendered chat panel: {chat_ass}")
-    return [chat_ass]
+        return BurnPlan.dialogue(dialogue)
+    logger.info(f"Rendered {layout} chat panel: {chat_ass}")
+    return BurnPlan(
+        picture=spec.picture,
+        layers=(
+            SubtitleLayer(path=chat_ass),
+            SubtitleLayer(path=dialogue, force_style=spec.dialogue_style),
+        ),
+    )
 
 
 def write_chat_ass(
-    log: TranslatedChatLog, duration_seconds: float, output_path: Path
+    log: TranslatedChatLog,
+    duration_seconds: float,
+    output_path: Path,
+    layout: ChatLayout,
 ) -> None:
     # utf-8-sig like the main ASS: libass and players sniff the BOM.
     with output_path.open("w", encoding="utf-8-sig") as out:
-        _write_document(log, duration_seconds, out)
+        _write_document(log, duration_seconds, out, _LAYOUTS[layout].panel)
 
 
 def _write_document(
-    log: TranslatedChatLog, duration_seconds: float, out: TextIO
+    log: TranslatedChatLog, duration_seconds: float, out: TextIO, panel: _Panel
 ) -> None:
-    items = [_Item(m) for m in log.messages]
+    items = [_Item(m, panel) for m in log.messages]
     duration = _centiseconds(duration_seconds)
     out.write(_HEADER)
-    out.write(_panel_event(duration))
+    out.write(_panel_event(duration, panel))
     # Index of the newest message in the last state actually written.
     shown = -1
     for index, newest in enumerate(items):
@@ -241,23 +347,24 @@ def _write_document(
             items[position].height + ITEM_GAP
             for position in range(shown + 1, index + 1)
         )
-        bottom = _INNER_BOTTOM + ITEM_GAP
+        bottom = panel.inner_bottom + ITEM_GAP
         for position in range(index, -1, -1):
             item = items[position]
             top = bottom - item.height - ITEM_GAP
             # Keep a message until it has fully slid past the top edge.
-            if top + shift + item.height < PANEL_TOP:
+            if top + shift + item.height < panel.top:
                 break
             # A row that ends its slide above the edge lives only for the
             # slide, not the whole state.
             row_end = (
                 min(end, start + _SCROLL_CS)
-                if top + item.height <= PANEL_TOP
+                if top + item.height <= panel.top
                 else end
             )
             _write_item(
                 out,
                 item,
+                panel,
                 top=top,
                 shift=shift,
                 entering=position > shown,
@@ -270,13 +377,14 @@ def _write_document(
 def _write_item(
     out: TextIO,
     item: _Item,
+    panel: _Panel,
     *,
     top: int,
     shift: int,
     entering: bool,
     timing: str,
 ) -> None:
-    clip = _CLIP if top - PAID_INSET_TOP < PANEL_TOP else ""
+    clip = panel.clip if top - PAID_INSET_TOP < panel.top else ""
 
     def event(
         layer: int, style: str, x: int, y: int, content: str, align: int = 7
@@ -294,26 +402,29 @@ def _write_item(
         event(
             1,
             "ChatShape",
-            PANEL_LEFT + PAID_INSET_X,
+            panel.left + PAID_INSET_X,
             top - PAID_INSET_TOP,
             item.highlight,
         )
-    event(2, "ChatShape", _ITEM_LEFT, top, item.avatar)
+    event(2, "ChatShape", panel.item_left, top, item.avatar)
     half = AVATAR_SIZE // 2
-    event(3, "ChatInitial", _ITEM_LEFT + half, top + half, item.initial, 5)
-    event(3, "ChatName", _TEXT_LEFT, top, item.text)
+    event(3, "ChatInitial", panel.item_left + half, top + half, item.initial, 5)
+    event(3, "ChatName", panel.text_left, top, item.text)
 
 
-def _panel_event(duration: int) -> str:
+def _panel_event(duration: int, panel: _Panel) -> str:
+    """The panel's rounded background for the whole video, if it has one."""
+    if panel.color is None:
+        return ""
     return (
         f"Dialogue: 0,0:00:00.00,{_timestamp(duration)},ChatShape,,0,0,0,,"
         f"{{\\an7\\pos(0,0)\\p1"
-        f"\\c&H{_bgr(PANEL_COLOR)}&\\1a&H{PANEL_ALPHA}&}}"
+        f"\\c&H{_bgr(panel.color)}&\\1a&H{panel.alpha}&}}"
         + _rounded_rect(
-            PANEL_LEFT,
-            PANEL_TOP,
-            PANEL_LEFT + PANEL_WIDTH,
-            PANEL_BOTTOM,
+            panel.left,
+            panel.top,
+            panel.left + panel.width,
+            panel.bottom,
             PANEL_RADIUS,
         )
         + "\n"

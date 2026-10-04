@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from collections.abc import Sequence
 from pathlib import Path
 
 from loguru import logger
@@ -11,6 +10,7 @@ from project import FINALIZED_SRT_FILE_NAME
 from services.media import (
     PACKAGE_ENCODE_CONCURRENCY,
     PACKAGE_LEAD_TRIM_SECONDS,
+    BurnPlan,
     MediaProcessor,
     TimeRange,
 )
@@ -30,7 +30,7 @@ def package_remix(
     package_root: Path,
     target_dir: Path,
     video_file: Path,
-    subtitle_files: Sequence[Path],
+    burn: BurnPlan,
     noise_name: str,
     progress: NoopProgressReporter | None = None,
 ) -> None:
@@ -70,7 +70,7 @@ def package_remix(
         renders.append(
             dict(
                 video_file=video_file,
-                subtitle_files=subtitle_files,
+                burn=burn,
                 output_file=target_dir / f"{index + 1}.mp4",
                 head_noise=selection.cuts[NOISE_CUTS_PER_SEGMENT * index],
                 tail_noise=selection.cuts[NOISE_CUTS_PER_SEGMENT * index + 1],

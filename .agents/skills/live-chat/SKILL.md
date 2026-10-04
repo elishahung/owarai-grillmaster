@@ -4,7 +4,7 @@ description: >-
   Opt-in YouTube live-chat replay (`--chat`) under `services/live_chat/`:
   normalize (`parse.py`, download in `services/ytdlp/live_chat.py`), batch
   translation + whole-stream polish (`translate.py`, `prompts/`), and the
-  scrolling side-panel ASS renderer (`render.py`) burned in at package time. Read this before changing chat
+  scrolling chat-panel ASS renderer (`render.py`, side/overlay layouts) burned in at package time. Read this before changing chat
   stages, chat caches, the chat prompts, the panel layout, or how packaging
   layers subtitles.
 ---
@@ -61,13 +61,26 @@ toggle), like `--refine`: a resume must pass it again.
 
 ## Rendering and packaging
 
-- `render_chat_panel` renders `video.chat.ass` from `chat.cht.json` at
-  package time (not a stage — layout changes only need `grill package`);
-  packaging burns `render_chat_panel(...) + [video.cht.ass]`, bottom first.
-  `grill package --skip-chat` burns dialogue only. A chat that fails to
-  render is skipped with a warning.
-- Burn-in takes `subtitle_files` and chains one `subtitles=` filter per file
-  on the source timeline, so tempo/trim/parts apply unchanged.
+- `chat_burn_plan` is the one place that picks the package `BurnPlan`. It
+  renders `video.chat.ass` from `chat.cht.json` at package time (not a stage —
+  layout changes only need `grill package`). No chat, a failed render
+  (warned), or layout `none` → dialogue only on the full frame.
+- `--chat-layout` (`grill`/`serial`/`package`, package-time only; default
+  `DEFAULT_CHAT_LAYOUT`; `grill package --skip-chat` = `none`). Each layout
+  is one `_LAYOUTS` entry (panel, picture box, dialogue `force_style`):
+  - `side` (default): the graded 16:9 picture is letterboxed into the left
+    `SIDE_VIDEO_WIDTH` box; chat sits straight on the black right column (no
+    panel background — per-frame shape blending was a measurable cost); the
+    dialogue keeps its size in the bottom bar via `force_style` margins
+    derived from finalize's `ASS_MARGIN_H` (`video.cht.ass` is never
+    rewritten).
+  - `overlay`: full frame, translucent rounded panel over the right side.
+- `BurnPlan` (media layer) owns the ffmpeg syntax: a typed `picture` box
+  becomes `scale` + `pad` to the package frame (validated to stay inside it,
+  so content still concats with full-frame noise), after the CPU look filters
+  and before the `subtitles=` layers, in the same single `-vf` graph — no
+  extra process, graph, or encoder change. Layers stay on the source
+  timeline, so tempo/trim/parts apply unchanged.
 - ASS cannot move one event through several positions, so the scroll is per
   *state*: between two arrivals every visible message gets its own events
   (`\move` slide-up, newcomer `\fad`), clipped to the panel's outer edge.
@@ -75,9 +88,10 @@ toggle), like `--refine`: a resume must pass it again.
   ~225k events / 33 MB). Measured cost is drawing the visible rows (~2 ms per
   frame), not scanning events. Per-message strings are built once in
   `_Item`; fixed looks live in the `Chat*` styles, not per-event tags.
-- Layout constants live at the top of `render.py`; canvas and font come from
-  `services/finalize` (`ASS_PLAY_RES_*`, `ASS_FONT_NAME`), and the panel ends
-  above the bottom-centered dialogue. Line pitches there are measured libass
+- Layout constants live at the top of `render.py`; canvas, font, and
+  dialogue margins come from `services/finalize` (`ASS_PLAY_RES_*`,
+  `ASS_FONT_NAME`, `ASS_MARGIN_*`), and the overlay panel ends above the
+  bottom-centered dialogue. Line pitches there are measured libass
   values for that font; stacking uses them, so re-measure if the font or
   sizes change. The Super Chat amount differs by colour/weight only — a
   larger size would stretch the name line.

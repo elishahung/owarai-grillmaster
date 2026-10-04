@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import workflow.delivery as delivery
+from services.live_chat import ChatLayout
 from services.progress import NoopProgressReporter
 
 
@@ -24,6 +25,7 @@ class WorkflowDeliveryTests(unittest.TestCase):
                 project_id="demo",
                 progress=progress,
                 remix_noise_name="sleep",
+                chat_layout=ChatLayout.SIDE,
             )
 
         self.assertEqual(final_path, Path("archive/demo"))
@@ -34,6 +36,7 @@ class WorkflowDeliveryTests(unittest.TestCase):
             Path("package"),
             progress,
             remix_noise_name="sleep",
+            chat_layout=ChatLayout.SIDE,
         )
 
     def test_unarchived_project_final_path_is_its_working_dir(self):
@@ -50,6 +53,7 @@ class WorkflowDeliveryTests(unittest.TestCase):
                 project_id="demo",
                 progress=NoopProgressReporter(),
                 remix_noise_name=None,
+                chat_layout=ChatLayout.SIDE,
             )
 
         self.assertEqual(final_path, Path("projects/demo"))

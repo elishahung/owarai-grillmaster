@@ -6,7 +6,6 @@ and combining multiple video files.
 """
 
 from collections import deque
-from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from math import radians
 from pathlib import Path
@@ -17,7 +16,7 @@ import os
 import threading
 import shutil
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 
 from services.progress import NoopProgressReporter
 
@@ -34,6 +33,8 @@ PACKAGE_SEEK_MARGIN_SECONDS = 2.0
 PACKAGE_ROTATE_DEGREES = 0.2
 PACKAGE_ROTATE_RADIANS = radians(PACKAGE_ROTATE_DEGREES)
 PACKAGE_OUTPUT_FPS = 29.94
+PACKAGE_FRAME_WIDTH = 1920
+PACKAGE_FRAME_HEIGHT = 1080
 # One NVENC session tops out well below what the card can do: three encodes
 # running side by side finish in barely more wall time than one. Renders are
 # therefore spread over this many concurrent ffmpeg processes — remix
@@ -82,6 +83,77 @@ class NoiseCut(BaseModel):
     source: Path
     start_seconds: float
     duration_seconds: float
+
+
+class SubtitleLayer(BaseModel):
+    """One ASS file to burn, optionally with libass style overrides."""
+
+    path: Path
+    # `force_style` of ffmpeg's subtitles filter, e.g. "MarginR=458,MarginV=24".
+    force_style: str | None = None
+
+    @property
+    def filter(self) -> str:
+        # Referenced by bare name: burn-in runs with cwd at the video's dir.
+        if self.force_style is None:
+            return f"subtitles={self.path.name}"
+        return f"subtitles={self.path.name}:force_style='{self.force_style}'"
+
+
+class Box(BaseModel):
+    """A rectangle on the package frame, in output pixels."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+class BurnPlan(BaseModel):
+    """What a package render draws on top of the look.
+
+    By default the graded frame fills the package frame. With ``picture``
+    it is shrunk into that box on a black canvas of the package frame size,
+    so the output still concats with full-frame segments. ``layers`` then
+    burn in order — later layers draw on top.
+    """
+
+    layers: tuple[SubtitleLayer, ...] = Field(min_length=1)
+    picture: Box | None = None
+
+    @model_validator(mode="after")
+    def _picture_fits_the_frame(self) -> "BurnPlan":
+        box = self.picture
+        if box is None:
+            return self
+        if not (
+            0 <= box.x
+            and 0 <= box.y
+            and box.x + box.width <= PACKAGE_FRAME_WIDTH
+            and box.y + box.height <= PACKAGE_FRAME_HEIGHT
+        ):
+            raise ValueError(f"picture box leaves the package frame: {box}")
+        # 4:2:0 chroma covers 2x2 pixels: odd sizes or offsets get rounded.
+        if any(value % 2 for value in (box.x, box.y, box.width, box.height)):
+            raise ValueError(f"picture box must use even values: {box}")
+        return self
+
+    @classmethod
+    def dialogue(cls, path: Path) -> "BurnPlan":
+        """Only the dialogue subtitles, on the full frame."""
+        return cls(layers=(SubtitleLayer(path=path),))
+
+    @property
+    def canvas_filter(self) -> str | None:
+        """Filters between the look and the subtitles, if any."""
+        box = self.picture
+        if box is None:
+            return None
+        return (
+            f"scale={box.width}:{box.height},"
+            f"pad={PACKAGE_FRAME_WIDTH}:{PACKAGE_FRAME_HEIGHT}:"
+            f"{box.x}:{box.y}:black"
+        )
 
 
 class MediaProcessor:
@@ -257,7 +329,7 @@ class MediaProcessor:
     @staticmethod
     def burn_in_subtitles(
         video_file: Path,
-        subtitle_files: Sequence[Path],
+        burn: BurnPlan,
         output_file: Path,
         progress: NoopProgressReporter | None = None,
     ) -> None:
@@ -276,19 +348,20 @@ class MediaProcessor:
         filename, which sidesteps the escaping problem entirely. The video
         and subtitles must therefore live in the same directory.
 
-        ``subtitle_files`` are burned in order, so later files draw on top
-        (the main dialogue goes last, above an optional chat panel).
+        ``burn`` decides what is drawn: its layers burn in order, so later
+        layers draw on top (the dialogue goes last, above an optional chat
+        panel).
 
         Raises:
             ValueError: If video and subtitles are not in the same directory.
             subprocess.CalledProcessError: If ffmpeg exits non-zero.
         """
-        MediaProcessor._check_subtitles_beside(video_file, subtitle_files)
+        MediaProcessor._check_subtitles_beside(video_file, burn)
 
         output_file.parent.mkdir(parents=True, exist_ok=True)
         logger.info(
             f"Burning subtitles "
-            f"{', '.join(f.name for f in subtitle_files)} into "
+            f"{', '.join(layer.path.name for layer in burn.layers)} into "
             f"{video_file.name} -> {output_file}"
         )
         usable_duration = package_usable_duration(
@@ -305,7 +378,7 @@ class MediaProcessor:
             logger.info(f"Burn-in rendering {len(parts)} video part(s)")
             MediaProcessor._render_subtitled_range(
                 video_file=video_file,
-                subtitle_files=subtitle_files,
+                burn=burn,
                 output_file=output_file,
                 parts=parts,
                 progress=progress,
@@ -364,7 +437,7 @@ class MediaProcessor:
     @staticmethod
     def _render_subtitled_range(
         video_file: Path,
-        subtitle_files: Sequence[Path],
+        burn: BurnPlan,
         output_file: Path,
         parts: list[TimeRange],
         progress: NoopProgressReporter | None = None,
@@ -396,7 +469,7 @@ class MediaProcessor:
                     pool.submit(
                         MediaProcessor._encode_subtitled_range,
                         video_file=video_file,
-                        subtitle_files=subtitle_files,
+                        burn=burn,
                         output_file=part_file,
                         start_seconds=part.start_seconds,
                         end_seconds=part.end_seconds,
@@ -536,7 +609,7 @@ class MediaProcessor:
     @staticmethod
     def encode_subtitled_segment(
         video_file: Path,
-        subtitle_files: Sequence[Path],
+        burn: BurnPlan,
         output_file: Path,
         start_seconds: float,
         end_seconds: float,
@@ -547,7 +620,7 @@ class MediaProcessor:
         """Burn subtitles into a trimmed normalized segment, audio included."""
         MediaProcessor._render_subtitled_range(
             video_file=video_file,
-            subtitle_files=subtitle_files,
+            burn=burn,
             output_file=output_file,
             parts=[
                 TimeRange(
@@ -563,7 +636,7 @@ class MediaProcessor:
     @staticmethod
     def _encode_subtitled_range(
         video_file: Path,
-        subtitle_files: Sequence[Path],
+        burn: BurnPlan,
         output_file: Path,
         start_seconds: float,
         end_seconds: float,
@@ -591,7 +664,7 @@ class MediaProcessor:
         cover-art mjpeg stream would otherwise get it re-encoded to h264 as a
         second video stream, which mp4 cannot tag as attached art.
         """
-        MediaProcessor._check_subtitles_beside(video_file, subtitle_files)
+        MediaProcessor._check_subtitles_beside(video_file, burn)
         duration = max(0.0, end_seconds - start_seconds)
         if duration <= 0:
             raise ValueError("segment duration must be positive")
@@ -610,7 +683,7 @@ class MediaProcessor:
             video_file.name,
             "-vf",
             MediaProcessor._package_video_chain(
-                [subtitle.name for subtitle in subtitle_files],
+                burn,
                 f"trim=start={start_seconds:.3f}:duration={duration:.3f}",
             ),
             "-map",
@@ -852,7 +925,7 @@ class MediaProcessor:
     @staticmethod
     def build_remix_output(
         video_file: Path,
-        subtitle_files: Sequence[Path],
+        burn: BurnPlan,
         output_file: Path,
         head_noise: NoiseCut,
         tail_noise: NoiseCut,
@@ -876,7 +949,7 @@ class MediaProcessor:
             )
             MediaProcessor.encode_subtitled_segment(
                 video_file=video_file,
-                subtitle_files=subtitle_files,
+                burn=burn,
                 output_file=target_segment,
                 start_seconds=start_seconds,
                 end_seconds=end_seconds,
@@ -1159,31 +1232,28 @@ class MediaProcessor:
         )
 
     @staticmethod
-    def _check_subtitles_beside(
-        video_file: Path, subtitle_files: Sequence[Path]
-    ) -> None:
-        if not subtitle_files:
-            raise ValueError("burn-in needs at least one subtitle file")
-        for subtitle in subtitle_files:
-            if subtitle.parent != video_file.parent:
+    def _check_subtitles_beside(video_file: Path, burn: BurnPlan) -> None:
+        for layer in burn.layers:
+            if layer.path.parent != video_file.parent:
                 raise ValueError(
                     f"video and subtitle must share a directory for "
-                    f"burn-in: {video_file.parent} vs {subtitle.parent}"
+                    f"burn-in: {video_file.parent} vs {layer.path.parent}"
                 )
 
     @staticmethod
-    def _package_video_chain(
-        subtitle_names: Sequence[str], trim_filter: str
-    ) -> str:
-        """Look, then ASS, then trim/tempo — one encode, upright text.
+    def _package_video_chain(burn: BurnPlan, trim_filter: str) -> str:
+        """Look, canvas, then ASS, then trim/tempo — one encode, upright text.
 
-        ``subtitles`` stays on the source timeline. ``trim`` and
-        ``setpts=PTS/tempo`` come after burn-in so lip-sync still tracks
+        The canvas filter sits after the look so letterbox padding gets no
+        grade or grain. ``subtitles`` stays on the source timeline. ``trim``
+        and ``setpts=PTS/tempo`` come after burn-in so lip-sync still tracks
         the sped-up output. A second encode is not needed.
         """
+        canvas = burn.canvas_filter
         return (
             f"{MediaProcessor._PACKAGE_VIDEO_FILTER},"
-            + "".join(f"subtitles={name}," for name in subtitle_names)
+            + (f"{canvas}," if canvas else "")
+            + "".join(f"{layer.filter}," for layer in burn.layers)
             + f"{trim_filter},"
             f"setpts=PTS-STARTPTS,"
             f"{MediaProcessor._PACKAGE_VIDEO_OUTPUT}"
@@ -1233,7 +1303,7 @@ class MediaProcessor:
         f"rotate=a={PACKAGE_ROTATE_RADIANS}:"
         f"ow=rotw({PACKAGE_ROTATE_RADIANS}):"
         f"oh=roth({PACKAGE_ROTATE_RADIANS}):c=black:bilinear=0,"
-        "crop=1920:1080,"
+        f"crop={PACKAGE_FRAME_WIDTH}:{PACKAGE_FRAME_HEIGHT},"
         "eq=brightness=0.02:contrast=1.03:saturation=1.05,"
         "hue=h=4,"
         "noise=c0s=4:c0f=t+u"
@@ -1251,7 +1321,7 @@ class MediaProcessor:
         "volume=0.97"
     )
     _NOISE_VIDEO_FILTER = (
-        "scale=1920:1080:flags=bicubic,"
+        f"scale={PACKAGE_FRAME_WIDTH}:{PACKAGE_FRAME_HEIGHT}:flags=bicubic,"
         "format=yuv420p,"
         f"fps={PACKAGE_OUTPUT_FPS}"
     )

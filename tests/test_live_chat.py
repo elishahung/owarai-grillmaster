@@ -11,11 +11,13 @@ from services.inference import InferenceResult
 from services.live_chat import (
     ChatTranslationInputs,
     parse_live_chat,
-    render_chat_panel,
+    ChatLayout,
+    chat_burn_plan,
     translate_live_chat,
 )
 from services.live_chat import render as chat_render
 from services.live_chat import translate as chat_translate
+from services.media import Box, BurnPlan
 from services.progress import NoopProgressReporter
 from services.live_chat.schema import (
     ChatLog,
@@ -238,7 +240,9 @@ class RenderChatAssTests(unittest.TestCase):
 
     def test_states_scroll_older_messages_and_escape_user_text(self):
         out = io.StringIO()
-        chat_render._write_document(self._log(), 5.0, out)
+        chat_render._write_document(
+            self._log(), 5.0, out, chat_render._LAYOUTS[ChatLayout.OVERLAY].panel
+        )
         ass = out.getvalue()
         dialogues = [line for line in ass.splitlines() if line.startswith("Dialogue:")]
 
@@ -262,12 +266,8 @@ class RenderChatAssTests(unittest.TestCase):
         self.assertTrue(lines[-1].endswith("…"))
 
 
-class RenderChatPanelTests(unittest.TestCase):
-    def test_panel_is_rendered_only_when_chat_was_translated(self):
-        root = _temp_dir(self)
-        video = root / "video.mp4"
-        self.assertEqual(render_chat_panel(root, video), [])
-
+class ChatBurnPlanTests(unittest.TestCase):
+    def _write_chat(self, root: Path) -> None:
         (root / "chat.cht.json").write_text(
             TranslatedChatLog(
                 messages=[
@@ -278,18 +278,61 @@ class RenderChatPanelTests(unittest.TestCase):
             ).model_dump_json(),
             encoding="utf-8",
         )
+
+    def _plan(self, root: Path, layout: ChatLayout) -> BurnPlan:
         with patch.object(
             chat_render.MediaProcessor, "get_media_duration", return_value=4.0
         ):
-            files = render_chat_panel(root, video)
+            return chat_burn_plan(
+                root, root / "video.mp4", root / "video.cht.ass", layout
+            )
 
-        self.assertEqual(files, [root / "video.chat.ass"])
-        self.assertIn("Style: Chat,", (root / "video.chat.ass").read_text(encoding="utf-8-sig"))
+    def test_dialogue_alone_without_chat_or_with_layout_none(self):
+        root = _temp_dir(self)
+        dialogue_only = BurnPlan.dialogue(root / "video.cht.ass")
+        self.assertEqual(self._plan(root, ChatLayout.SIDE), dialogue_only)
+        self._write_chat(root)
+        self.assertEqual(self._plan(root, ChatLayout.NONE), dialogue_only)
+        self.assertFalse((root / "video.chat.ass").exists())
 
-    def test_unreadable_chat_is_skipped(self):
+    def test_side_layout_letterboxes_picture_beside_the_chat(self):
+        root = _temp_dir(self)
+        self._write_chat(root)
+        plan = self._plan(root, ChatLayout.SIDE)
+
+        self.assertEqual(plan.picture, Box(x=0, y=126, width=1472, height=828))
+        # Chat under the dialogue; dialogue sits in the bottom bar, centred
+        # over the picture.
+        self.assertEqual(
+            [layer.filter for layer in plan.layers],
+            [
+                "subtitles=video.chat.ass",
+                "subtitles=video.cht.ass:force_style='MarginR=458,MarginV=24'",
+            ],
+        )
+        ass = (root / "video.chat.ass").read_text(encoding="utf-8-sig")
+        # Messages sit straight on the black column: no panel background.
+        self.assertNotIn("Dialogue: 0,", ass)
+        self.assertIn(r"\pos(1498,", ass)
+
+    def test_overlay_layout_keeps_the_full_frame(self):
+        root = _temp_dir(self)
+        self._write_chat(root)
+        plan = self._plan(root, ChatLayout.OVERLAY)
+
+        self.assertIsNone(plan.canvas_filter)
+        self.assertEqual(
+            [layer.filter for layer in plan.layers],
+            ["subtitles=video.chat.ass", "subtitles=video.cht.ass"],
+        )
+
+    def test_unreadable_chat_falls_back_to_dialogue_only(self):
         root = _temp_dir(self)
         (root / "chat.cht.json").write_text("not json", encoding="utf-8")
-        self.assertEqual(render_chat_panel(root, root / "video.mp4"), [])
+        self.assertEqual(
+            self._plan(root, ChatLayout.SIDE),
+            BurnPlan.dialogue(root / "video.cht.ass"),
+        )
 
 
 class LiveChatWorkflowTests(unittest.TestCase):
@@ -411,6 +454,8 @@ class LiveChatWorkflowTests(unittest.TestCase):
                 project, section_start=1800.0, section_end=2100.0
             )
         project.update_section.assert_called_once_with(1800.0, 2100.0)
+
+
 
 
 if __name__ == "__main__":

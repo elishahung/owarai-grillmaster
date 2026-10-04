@@ -13,6 +13,8 @@ from services.package import rc as package_rc
 from services.package import noise as package_noise
 from services.package import remix as package_remix
 from services.package import titles as package_titles
+from services.live_chat import ChatLayout
+from services.media import BurnPlan
 from services.progress import NoopProgressReporter
 
 
@@ -608,7 +610,7 @@ class PackageTests(unittest.TestCase):
                 package_root=package_root,
                 target_dir=target,
                 video_file=source / "video.mp4",
-                subtitle_files=[source / "video.cht.ass"],
+                burn=BurnPlan.dialogue(source / "video.cht.ass"),
                 noise_name="sleep",
                 progress=progress,
             )
@@ -726,7 +728,9 @@ class PackageTests(unittest.TestCase):
         )
 
         with patch.object(package_core, "package_project") as package_project:
-            package_core.package_project_directory(project_dir, package_root)
+            package_core.package_project_directory(
+                project_dir, package_root, chat_layout=ChatLayout.SIDE
+            )
 
         self.assertEqual(package_project.call_args.kwargs["source_root"], project_dir)
         self.assertEqual(

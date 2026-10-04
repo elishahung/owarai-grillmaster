@@ -49,7 +49,9 @@ toggle), like `--refine`: a resume must pass it again.
   one non-empty translation per input id.
 - Then one whole-stream polish call returns **only changed lines** (cross-batch
   consistency of names/memes, clear mistranslations). There is no
-  refine/glossary pass for chat.
+  refine/glossary pass for chat; instead both prompts append
+  `prompts/name_form.md`, the glossary check's span/honorific/subject parity
+  rules restated for chat — keep it in step with `glossary_check.md`.
 - Model: `settings.chat_model` = `AGENT_CHAT_MODEL`, else `AGENT_COMMON_MODEL`.
   Concurrency comes from `fan_out_concurrency` (inference layer; shared with
   chunk translation). Costs are recorded on the calling thread via `on_cost`.

@@ -156,6 +156,9 @@ class TranslateLiveChatTests(unittest.TestCase):
         # The briefing is compacted once and shared by batch and polish.
         self.assertIn('{"summary":"demo"}', prompts[0])
         self.assertIn('{"summary":"demo"}', prompts[1])
+        # Both passes carry the glossary check's name-form rules.
+        self.assertIn("## Name form", prompts[0])
+        self.assertIn("## Name form", prompts[1])
         # The batch saw the finalized subtitle paired with its Japanese line,
         # and only the messages that contain Japanese script.
         self.assertIn("池田です → 我是池田", prompts[0])

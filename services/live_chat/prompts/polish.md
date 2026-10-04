@@ -6,7 +6,7 @@ Read the whole chat under "## Translated chat" (`id [mm:ss] Japanese → Traditi
 
 Fix, in priority order:
 
-1. **Consistency with the ground truth.** Every person, group, show, and term must match the "## Program briefing" (pre_pass.json), which is the reviewed final translation of the show. A surname, nickname, or kana spelling in chat maps to the same Traditional Chinese form.
+1. **Consistency with the ground truth.** Every person, group, show, and term must use the Traditional Chinese form of the "## Program briefing" (pre_pass.json), which is the reviewed final translation of the show, under the "Name form" rules. A surname, nickname, or kana spelling in chat keeps its span: fix lines that expanded it to a full name, or dropped or added an honorific.
 2. **Consistency across the stream.** A recurring meme, catchphrase, nickname, or running joke must be translated the same way every time it appears. Pick the best rendering and align the others to it.
 3. **Clear mistranslations**, such as a misread word or a reversed meaning, when the Japanese plainly says something else.
 4. **Unnatural phrasing** that a Taiwanese viewer would not type in a chat room.

@@ -33,11 +33,18 @@ from settings import settings
 
 from .schema import ChatLog, ChatMessage, TranslatedChatLog, TranslatedChatMessage
 
-_PROMPT = (Path(__file__).parent / "prompts" / "translate.md").read_text(
-    encoding="utf-8"
+_PROMPTS_DIR = Path(__file__).parent / "prompts"
+# Both passes share the glossary check's name-form rules.
+_NAME_FORM = (_PROMPTS_DIR / "name_form.md").read_text(encoding="utf-8")
+_PROMPT = (
+    (_PROMPTS_DIR / "translate.md").read_text(encoding="utf-8")
+    + "\n"
+    + _NAME_FORM
 )
-_POLISH_PROMPT = (Path(__file__).parent / "prompts" / "polish.md").read_text(
-    encoding="utf-8"
+_POLISH_PROMPT = (
+    (_PROMPTS_DIR / "polish.md").read_text(encoding="utf-8")
+    + "\n"
+    + _NAME_FORM
 )
 
 # Upper bound on messages per model call; `plan_batches` balances below it.

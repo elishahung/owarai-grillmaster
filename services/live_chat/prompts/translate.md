@@ -8,7 +8,7 @@ Translate every message under "## Messages to translate". Each line is `id [mm:s
 
 The "## Program briefing" (pre_pass.json) and the "## Finalized subtitles" are the reviewed, final translation of the show itself. Treat them as authoritative:
 
-- Write every person, group, show, and term exactly as the briefing and the finalized subtitles write it. Chat refers to performers by surname, nickname, or kana spelling; map those to the same Traditional Chinese form.
+- Write every person, group, show, and term in the Traditional Chinese form the briefing and the finalized subtitles use, covering only the span the message writes (see "Name form"). Chat refers to performers by surname, nickname, or kana spelling; keep that span instead of expanding it to a full name.
 - Viewers are reacting to what was just said on screen (chat lags the stream by several seconds). Use the subtitles around a message's timestamp to understand what it refers to.
 
 ## Style

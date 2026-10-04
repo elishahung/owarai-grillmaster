@@ -25,6 +25,7 @@ Sibling skills own the deep detail — read the one whose files you're touching:
 - **inference-layer** — `services/inference/` (backends, schema repair, frame tools)
 - **translate-pipeline** — `services/translate/` (pre-pass, chunking, chunk workers, caches)
 - **postprocess-and-packaging** — `services/postprocess/`, `services/finalize/`, `services/package/`
+- **live-chat** — `services/live_chat/` (`--chat` replay stages and chat-panel ASS)
 
 ## Mental model
 
@@ -58,6 +59,7 @@ under `workflow/stages/` by subsystem; post-finalize archive/package is in
 | 1 | `METADATA_FETCHED`               | `get_video_info`; for TVer/Abema also fetch cast/talents; `resolve_broadcast_date` persists `Project.broadcast_date` (best-effort). **Kicks off async broadcast-date research after this stage** if enabled and the date is still None | `services/ytdlp`, `services/postprocess/date_research` |
 | 2 | `DOWNLOADED`                     | `download_video` (yt-dlp); also best-effort fetches platform CC subs (`ENABLE_OFFICIAL_SUBTITLES`), and records `series`/`channel` from `metadata.info.json` into `source_metadata` + `.packagerc`. **Kicks off async cover gen here** if enabled | `services/ytdlp`, `services/package/rc`, `services/postprocess/cover` |
 | 3 | `VIDEO_PROCESSED`                | `MediaProcessor.combine_videos` (ffmpeg concat) → `video.mp4`; normalizes downloaded CC → `video.official.ja.srt` (section runs rebase/filter timestamps) | `services/media`, `services/ytdlp/subtitles` |
+| 3b| `CHAT_FETCHED` (optional)        | `--chat` only: yt-dlp `live_chat` track → `.live_chat/messages.json`, rebased to the section | `services/live_chat` |
 | 4 | `AUDIO_PROCESSED`                | `MediaProcessor.extract_audio` → `.asr/audio.ogg` (mono 16 kHz libopus)      | `services/media` |
 | 5 | `ASR_COMPLETED`                  | ElevenLabs Scribe → `.asr/asr.json`; adds cost                               | `services/elevenlabs` |
 | 6 | `SRT_COMPLETED`                  | `convert_file` ASR JSON → `video.ja.srt`                                     | `services/elevenlabs/srt_builder` |
@@ -66,6 +68,7 @@ under `workflow/stages/` by subsystem; post-finalize archive/package is in
 | 9 | `SRT_REFINED` (optional)         | Agent polishes TC subtitles → `video.cht.refined.srt`                        | `services/postprocess/refine` |
 | 10| `GLOSSARY_CHECKED` (optional)    | Agent checks full-text terminology/facts, may correct `pre_pass.json` → `video.cht.glossary_checked.srt`| `services/postprocess/glossary_check` |
 | 11| `FINALIZED`                      | Punctuation cleanup → styled `video.cht.ass` + `video.cht.finalized.srt`     | `services/finalize` |
+| 12| `CHAT_TRANSLATED` (optional)     | `--chat` only: chat batches + polish against the finalized SRT → `chat.cht.json` | `services/live_chat` |
 
 After `FINALIZED` (and only if no `--break-after`): join the async cover and
 date-research futures,
@@ -92,7 +95,9 @@ Key control-flow details that are easy to break:
   video is still downloaded (yt-dlp's `--download-sections` is ffmpeg-backed
   and slow); the video-processing stage combines to `video.full.mp4`, then
   stream-copy cuts `video.mp4` (keyframe-aligned). Ignored with a warning if
-  the video is already processed.
+  the video is already processed. The bounds are persisted as
+  `Project.section_start/section_end` so later stages can rebase
+  source-timed data (live chat) without the flags on resume.
 - **Cover generation runs in a background `ThreadPoolExecutor`** started right
   after download and joined in the `finally` block — even on pipeline failure,
   because the Codex subscription cost is already incurred. Don't move the join.
@@ -113,7 +118,7 @@ Key control-flow details that are easy to break:
   for); only the agent dispatch is gated on the flag.
 - **Optional stages are gated twice**: by a `settings.enable_*` toggle OR a
   per-run `--refine/--glossary-check/--cover/--date-research` flag (the flag
-  force-enables).
+  force-enables). `--chat` is the exception: per-run flag only.
 - **Cost accounting**: metered stages call `project.add_cost(service, amount)`,
   which accumulates into `project.json`. `TranslationError` carries a partial
   cost summary so a mid-run failure still records what was spent.
@@ -245,7 +250,8 @@ Pydantic-settings, loaded from `.env`. Notable patterns:
   package title suggestion) each
   pick one spec (`agent_prepass_model` / `agent_chunk_model` /
   `agent_postprocess_model` / `agent_common_model`, i.e. `AGENT_*_MODEL` in
-  `.env`).
+  `.env`). `agent_chat_model` is optional (`OptionalModelSpecField`); read it
+  through `settings.chat_model`, which falls back to the common spec.
 - **`ModelSpec`**: `*_MODEL` is written as `"backend/model"` or
   `"backend/model/effort"` (effort is one of low/medium/high/extra/max/ultra,
   default high) and parsed into `.backend` + `.model` + `.reasoning_effort`. `effort`

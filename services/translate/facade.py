@@ -11,7 +11,7 @@ from services.progress import NoopProgressReporter
 from services.inference import (
     Backend,
     backend_supports_audio,
-    is_agent_backend,
+    fan_out_concurrency,
 )
 from .assets import prepare_chunk_media_assets
 from .chunk.chunk_worker import translate_chunk
@@ -221,14 +221,7 @@ class Translate:
         request.chunks_cache_dir.mkdir(parents=True, exist_ok=True)
         chunk_backend = Backend(settings.agent_chunk_model.backend)
         has_audio = backend_supports_audio(chunk_backend)
-        # Agent backends (gemini-cli / codex / claude) spawn a heavy local
-        # process per chunk, so bound them more tightly than the network
-        # gemini-api backend.
-        concurrency = (
-            settings.chunk_agent_concurrency
-            if is_agent_backend(chunk_backend)
-            else settings.chunk_api_concurrency
-        )
+        concurrency = fan_out_concurrency(chunk_backend)
         semaphore = asyncio.Semaphore(concurrency)
 
         async def bounded(i: int, chunk: list[SrtBlock]):

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Sequence
 from pathlib import Path
 
 from loguru import logger
@@ -29,7 +30,7 @@ def package_remix(
     package_root: Path,
     target_dir: Path,
     video_file: Path,
-    subtitle_file: Path,
+    subtitle_files: Sequence[Path],
     noise_name: str,
     progress: NoopProgressReporter | None = None,
 ) -> None:
@@ -69,7 +70,7 @@ def package_remix(
         renders.append(
             dict(
                 video_file=video_file,
-                subtitle_file=subtitle_file,
+                subtitle_files=subtitle_files,
                 output_file=target_dir / f"{index + 1}.mp4",
                 head_noise=selection.cuts[NOISE_CUTS_PER_SEGMENT * index],
                 tail_noise=selection.cuts[NOISE_CUTS_PER_SEGMENT * index + 1],

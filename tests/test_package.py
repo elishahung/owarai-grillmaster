@@ -608,7 +608,7 @@ class PackageTests(unittest.TestCase):
                 package_root=package_root,
                 target_dir=target,
                 video_file=source / "video.mp4",
-                subtitle_file=source / "video.cht.ass",
+                subtitle_files=[source / "video.cht.ass"],
                 noise_name="sleep",
                 progress=progress,
             )

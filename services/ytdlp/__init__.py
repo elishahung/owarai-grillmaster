@@ -6,6 +6,7 @@ sources using yt-dlp, with integrated logging and metadata extraction.
 
 from .broadcast_date import parse_broadcast_label_year, resolve_broadcast_date
 from .download import download_video, parse_section_time
+from .live_chat import download_live_chat
 from .info import (
     get_abema_episode_talents,
     get_tver_broadcast_date_label,
@@ -17,6 +18,7 @@ from .subtitles import normalize_official_subtitle
 
 __all__ = [
     "download_video",
+    "download_live_chat",
     "parse_section_time",
     "normalize_official_subtitle",
     "get_abema_episode_talents",

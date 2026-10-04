@@ -11,6 +11,7 @@ touching:
 | `services/inference/` (backends, schema repair, frame tools)              | **inference-layer** |
 | `services/translate/` (pre-pass, chunking, chunk workers, caches, prompts) | **translate-pipeline** |
 | `services/postprocess/`, `services/finalize/`, `services/package/`        | **postprocess-and-packaging** |
+| `services/live_chat/` (`--chat` replay fetch, translation, chat-panel ASS) | **live-chat** |
 
 For a change that spans modules (new stage, new setting, new platform), start
 with **project-architecture** — it holds the orchestration contract and the
@@ -26,9 +27,9 @@ linear, idempotent, **resumable** stage machine — re-running an ID resumes whe
 it left off.
 
 Pipeline at a glance:
-`download → combine → extract audio → ASR (ElevenLabs) → pre-pass analysis →
-concurrent chunk translation → (refine) → (glossary check) → finalize (ASS+SRT)
-→ (archive) → (package)`. Stages in parentheses are optional.
+`download → combine → (live-chat fetch) → extract audio → ASR (ElevenLabs) →
+pre-pass analysis → concurrent chunk translation → (refine) → (glossary check)
+→ finalize (ASS+SRT) → (live-chat translation) → (archive) → (package)`. Stages in parentheses are optional.
 
 Entry point: `main.py` (Typer CLI) → `workflow.submit_project`. Run with
 `grill <SOURCE> [HINT]` (via `scripts/grill.bat` on PATH) or

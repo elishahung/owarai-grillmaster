@@ -50,6 +50,8 @@ Video ID
     ↓
 合併影片 (FFmpeg)
     ↓
+下載聊天重播 (yt-dlp live_chat, --chat 才跑)
+    ↓
 提取音檔 (FFmpeg, mono 16kHz opus 編碼，輸出 .ogg)
     ↓
 語音辨識 (ElevenLabs Scribe v2)
@@ -65,6 +67,8 @@ Pre-pass 分析 (全片簡報，定調人物/專名/語氣/分段摘要)
 固定詞彙校對 (agent, 可選)
     ↓
 Finalize：格式清理，輸出 ASS (套樣式) + SRT
+    ↓
+翻譯聊天重播 (分批翻譯 + 全場統整，以定稿字幕與 pre_pass 為準, --chat 才跑)
     ↓
 歸檔 (可選)
     ↓
@@ -125,10 +129,20 @@ grill serial ep100001 ep100002 ep100003
 
 # 從中斷處續跑（失敗時 log 會印出這行）
 grill serial ep100002 ep100003 --parent-project <ep100001 的最終資料夾>
+
+# YouTube 直播存檔：一併翻譯聊天重播，封裝時在畫面右側燒入滾動聊天室
+grill "https://www.youtube.com/watch?v=D7HZmabypng" --chat
+
+# 重新封裝但不燒聊天室
+grill package <專案資料夾> --skip-chat
 ```
 
+`--chat` 是每次執行時指定的旗標（沒有 .env 開關），續跑時要再帶一次才會繼續聊天相關的
+stage。影片沒有聊天重播時會在 ASR 之前就失敗。聊天面板的版面在封裝時才產生
+（`video.chat.ass`），所以調整樣式後只需要重新 `grill package`。
+
 `grill serial` 接受與 `grill` 相同的 `--refine` / `--glossary-check` / `--cover` /
-`--date-research` / `--remix` 旗標（套用到每一集），不接受翻譯提示與 `--break-after`；
+`--date-research` / `--chat` / `--remix` 旗標（套用到每一集），不接受翻譯提示與 `--break-after`；
 任一集失敗整條鏈即停止。
 
 ## 環境變數
@@ -152,6 +166,7 @@ AGENT_PREPASS_MODEL=gemini-cli/gemini-3.1-pro-preview/high  # backend: gemini-ap
 AGENT_CHUNK_MODEL=gemini-cli/gemini-3.1-pro-preview/high    # "backend/model" 或 "backend/model/effort"
 AGENT_POSTPROCESS_MODEL=codex/gpt-6.1-sol/high              # 後處理（refine/glossary）：codex / claude / gemini-cli / gemini-agy
 AGENT_COMMON_MODEL=codex/gpt-6.1-sol/medium                 # 輕量工具 agent（chunk 結構修正、播出日調查、封裝標題建議）；封面固定用 codex 並沿用此 effort
+AGENT_CHAT_MODEL=                                           # 可選；聊天重播翻譯與統整（--chat），任何 backend 皆可；留空沿用 AGENT_COMMON_MODEL
 AGENT_TIMEOUT_MINUTES=40                                    # 單次模型呼叫逾時（分鐘），所有 backend 共用；高 effort 階段跑太久可調高
 
 # 可選：pre-pass 圖片抽樣與固定譯名表
@@ -198,11 +213,14 @@ projects/{video_id}/
 ├── .refine/                  # Agent 潤飾報告（可選）
 ├── .glossary_check/          # Agent 名詞校對報告與額外取幀（可選）
 ├── .titles/                  # 封裝時產生的候選標題 titles.json（可選）
+├── .live_chat/               # 聊天重播原始檔、正規化訊息、分批翻譯與統整快取（--chat）
 ├── poster.jpg                # yt-dlp 取得的原始封面
 ├── poster.cover.png          # Agent 風格化封面（可選）
 ├── video.cht.srt             # 繁體中文翻譯字幕
 ├── video.cht.refined.srt     # Agent 潤飾後字幕（可選）
 ├── video.cht.glossary_checked.srt  # Agent 固定詞彙校對後字幕（可選）
 ├── video.cht.finalized.srt   # 最終 SRT（標點清理，給不支援 ASS 的裝置）
-└── video.cht.ass             # 最終 ASS（套樣式 + 標點清理）
+├── video.cht.ass             # 最終 ASS（套樣式 + 標點清理）
+├── chat.cht.json             # 翻譯後的聊天重播（--chat）
+└── video.chat.ass            # 封裝時產生的滾動聊天面板 ASS（--chat）
 ```

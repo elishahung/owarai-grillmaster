@@ -86,7 +86,9 @@ packaging path (`noise.py`, `remix.py`). The copies run **before** the render so
 the folder is inspectable while ffmpeg works; a render failure still deletes the
 whole folder. Analysis output is one `info.json` — title suggestions first, then
 the pre-pass fields — with optional `refine.md`/`glossary_check.md` alongside
-(silently skipped when absent). Burn-in itself lives
+(silently skipped when absent). Burn-in takes a `subtitle_files` list, burned
+in order (later draws on top); with a translated live chat it is
+`[video.chat.ass, video.cht.ass]` unless `--skip-chat` (see **live-chat**). Burn-in itself lives
 in `services/media.py` (duration-validated; see **project-architecture**).
 
 `titles.py` is the only agent call inside packaging: three TC title candidates

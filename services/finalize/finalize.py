@@ -28,17 +28,23 @@ from loguru import logger
 from services.fixed_glossary import load_fixed_glossary
 from services.srt import SrtBlock, parse_srt, serialize_srt
 
-ASS_HEADER = """[Script Info]
+# Canvas and typeface shared with the live-chat panel (services/live_chat),
+# so both burn-in layers render at the same scale and in the same font.
+ASS_PLAY_RES_X = 1920
+ASS_PLAY_RES_Y = 1080
+ASS_FONT_NAME = "源泉圓體月 M"
+
+ASS_HEADER = f"""[Script Info]
 ScriptType: v4.00+
 WrapStyle: 0
 ScaledBorderAndShadow: yes
 YCbCr Matrix: TV.709
-PlayResX: 1920
-PlayResY: 1080
+PlayResX: {ASS_PLAY_RES_X}
+PlayResY: {ASS_PLAY_RES_Y}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,源泉圓體月 M,64,&H00FDFDFD,&H000000FF,&H00000000,&H7D000000,0,0,0,0,100,100,0,0,1,6,2,2,10,10,40,1
+Style: Default,{ASS_FONT_NAME},64,&H00FDFDFD,&H000000FF,&H00000000,&H7D000000,0,0,0,0,100,100,0,0,1,6,2,2,10,10,40,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

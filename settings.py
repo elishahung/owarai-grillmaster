@@ -60,6 +60,18 @@ ModelSpecField = Annotated[
 ]
 
 
+def _parse_optional_model_spec(value: object) -> object:
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    return _parse_model_spec(value)
+
+
+# Same shorthand, but unset/empty means "fall back to another spec".
+OptionalModelSpecField = Annotated[
+    ModelSpec | None, NoDecode, BeforeValidator(_parse_optional_model_spec)
+]
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -140,6 +152,11 @@ class Settings(BaseSettings):
         description="Spec for lightweight utility agents (chunk structural fix + broadcast-date research) as 'backend/model[/effort]'. Backend: 'codex', 'claude', 'gemini-cli', or 'gemini-agy'. Cover generation is always Codex (image generation) but reuses this effort.",
     )
 
+    agent_chat_model: OptionalModelSpecField = Field(
+        default=None,
+        description="Live-chat replay translation spec as 'backend/model[/effort]' (any backend). Unset falls back to agent_common_model; see the chat_model property.",
+    )
+
     video_frame_max_side: int = Field(
         default=768,
         description="Maximum pixel length of the longest side for sampled video frames (pre-pass, chunk, and the on-demand agent frame tool).",
@@ -160,10 +177,12 @@ class Settings(BaseSettings):
     )
     chunk_api_concurrency: int = Field(
         default=10,
+        ge=1,
         description="Maximum concurrent chunk requests for the gemini-api backend (cheap network HTTP calls, can fan out widely).",
     )
     chunk_agent_concurrency: int = Field(
         default=5,
+        ge=1,
         description="Maximum concurrent chunk processes for the agent backends (gemini-cli / codex / claude); lower than chunk_api_concurrency since each spawns a heavy local process.",
     )
     chunk_max_retries: int = Field(
@@ -213,6 +232,11 @@ class Settings(BaseSettings):
         default=False,
         description="At package time, derive three Traditional Chinese title candidates from pre_pass.json with agent_common_model when the source project has no .titles/titles.json yet. The file is always copied into the deliverable when it exists; this toggle only controls generating a missing one.",
     )
+
+    @property
+    def chat_model(self) -> ModelSpec:
+        """Spec for live-chat translation: AGENT_CHAT_MODEL, else the common one."""
+        return self.agent_chat_model or self.agent_common_model
 
 
 settings = Settings()

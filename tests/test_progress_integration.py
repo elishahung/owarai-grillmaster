@@ -216,6 +216,7 @@ class WorkflowProgressTests(unittest.TestCase):
                         "metadata",
                         "download",
                         "combine",
+                        "chat_fetch",
                         "audio",
                         "asr",
                         "srt",
@@ -224,6 +225,7 @@ class WorkflowProgressTests(unittest.TestCase):
                         "refine",
                         "glossary",
                         "finalize",
+                        "chat",
                         "date",
                         "cover",
                     ],
@@ -233,6 +235,7 @@ class WorkflowProgressTests(unittest.TestCase):
                 ("stage_skipped", "download", "already-complete"),
                 ("side_task_skipped", "cover", "disabled"),
                 ("stage_skipped", "combine", "already-complete"),
+                ("stage_skipped", "chat_fetch", "disabled"),
                 ("stage_skipped", "audio", "already-complete"),
                 ("stage_skipped", "asr", "already-complete"),
                 ("stage_skipped", "srt", "already-complete"),
@@ -242,6 +245,7 @@ class WorkflowProgressTests(unittest.TestCase):
                 ("stage_skipped", "refine", "disabled"),
                 ("stage_skipped", "glossary", "disabled"),
                 ("stage_skipped", "finalize", "already-complete"),
+                ("stage_skipped", "chat", "disabled"),
                 ("pipeline_completed",),
             ],
         )
@@ -436,7 +440,7 @@ class MediaProgressTests(unittest.TestCase):
             patch("services.media.subprocess.Popen", return_value=FakeProcess()) as popen,
         ):
             MediaProcessor.burn_in_subtitles(
-                video, subtitle, output, progress=progress
+                video, [subtitle], output, progress=progress
             )
 
         # Video and audio are separate processes so they render in parallel.
@@ -525,7 +529,7 @@ class MediaProgressTests(unittest.TestCase):
                 side_effect=lambda *a, **k: FakeProcess(),
             ) as popen,
         ):
-            MediaProcessor.burn_in_subtitles(video, subtitle, root / "out.mp4")
+            MediaProcessor.burn_in_subtitles(video, [subtitle], root / "out.mp4")
 
         commands = [call.args[0] for call in popen.call_args_list]
         parts = [cmd for cmd in commands if "-an" in cmd]
@@ -573,7 +577,7 @@ class MediaProgressTests(unittest.TestCase):
             with self.assertRaises(subprocess.CalledProcessError) as raised:
                 MediaProcessor.burn_in_subtitles(
                     video,
-                    subtitle,
+                    [subtitle],
                     output,
                     progress=progress,
                 )
@@ -595,7 +599,7 @@ class MediaProgressTests(unittest.TestCase):
             patch("services.media.subprocess.Popen") as popen,
         ):
             with self.assertRaisesRegex(ValueError, "lead trim"):
-                MediaProcessor.burn_in_subtitles(video, subtitle, output)
+                MediaProcessor.burn_in_subtitles(video, [subtitle], output)
 
         popen.assert_not_called()
 
@@ -627,7 +631,7 @@ class MediaProgressTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "differs from expected"):
                 MediaProcessor.burn_in_subtitles(
                     video,
-                    subtitle,
+                    [subtitle],
                     output,
                     progress=progress,
                 )
@@ -659,7 +663,7 @@ class MediaProgressTests(unittest.TestCase):
             patch("services.media.subprocess.Popen", return_value=FakeProcess()),
         ):
             with self.assertRaisesRegex(ValueError, "differs from expected"):
-                MediaProcessor.burn_in_subtitles(video, subtitle, output)
+                MediaProcessor.burn_in_subtitles(video, [subtitle], output)
 
     def test_remix_segment_reports_progress_to_existing_task(self):
         root = Path(tempfile.mkdtemp(prefix="remix-progress-test-"))
@@ -687,7 +691,7 @@ class MediaProgressTests(unittest.TestCase):
         with patch("services.media.subprocess.Popen", return_value=FakeProcess()):
             MediaProcessor.encode_subtitled_segment(
                 video,
-                subtitle,
+                [subtitle],
                 output,
                 start_seconds=0.0,
                 end_seconds=1.0,
@@ -733,7 +737,7 @@ class MediaProgressTests(unittest.TestCase):
         with patch("services.media.subprocess.Popen", return_value=FakeProcess()) as popen:
             MediaProcessor.encode_subtitled_segment(
                 video,
-                subtitle,
+                [subtitle],
                 output,
                 start_seconds=0.0,
                 end_seconds=1.0,
@@ -783,7 +787,7 @@ class MediaProgressTests(unittest.TestCase):
             ) as popen:
                 MediaProcessor.encode_subtitled_segment(
                     video,
-                    subtitle,
+                    [subtitle],
                     root / "segment.mp4",
                     start_seconds=start_seconds,
                     end_seconds=end_seconds,
@@ -973,7 +977,7 @@ class MediaProgressTests(unittest.TestCase):
         ):
             MediaProcessor.build_remix_output(
                 video_file=video,
-                subtitle_file=subtitle,
+                subtitle_files=[subtitle],
                 output_file=output,
                 head_noise=head,
                 tail_noise=tail,

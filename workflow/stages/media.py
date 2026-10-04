@@ -66,6 +66,7 @@ def process_video(
     section_end: float | None,
 ) -> None:
     has_section = section_start is not None or section_end is not None
+    project.update_section(section_start, section_end)
     if has_section:
         # Keep the uncut combine as video.full.mp4, then cut the requested
         # section locally. Skip the combine on resume if the full video exists.

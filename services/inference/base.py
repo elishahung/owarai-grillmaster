@@ -75,6 +75,17 @@ def is_agent_backend(backend: Backend) -> bool:
     return backend in _AGENT
 
 
+def fan_out_concurrency(backend: Backend) -> int:
+    """How many parallel calls a fan-out stage may run on ``backend``.
+
+    Agents spawn a heavy local process per call, so they are bounded more
+    tightly than the network gemini-api backend.
+    """
+    if is_agent_backend(backend):
+        return settings.chunk_agent_concurrency
+    return settings.chunk_api_concurrency
+
+
 def backend_supports_audio(backend: Backend) -> bool:
     """True when the backend can ingest audio attachments (Gemini only)."""
     return backend in _AUDIO_CAPABLE

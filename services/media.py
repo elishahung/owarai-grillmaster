@@ -6,6 +6,7 @@ and combining multiple video files.
 """
 
 from collections import deque
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from math import radians
 from pathlib import Path
@@ -256,7 +257,7 @@ class MediaProcessor:
     @staticmethod
     def burn_in_subtitles(
         video_file: Path,
-        subtitle_file: Path,
+        subtitle_files: Sequence[Path],
         output_file: Path,
         progress: NoopProgressReporter | None = None,
     ) -> None:
@@ -273,22 +274,21 @@ class MediaProcessor:
         argument syntax). This method runs ffmpeg with ``cwd`` set to the
         video's parent directory and references the subtitle by relative
         filename, which sidesteps the escaping problem entirely. The video
-        and subtitle must therefore live in the same directory.
+        and subtitles must therefore live in the same directory.
+
+        ``subtitle_files`` are burned in order, so later files draw on top
+        (the main dialogue goes last, above an optional chat panel).
 
         Raises:
-            ValueError: If video and subtitle are not in the same directory.
+            ValueError: If video and subtitles are not in the same directory.
             subprocess.CalledProcessError: If ffmpeg exits non-zero.
         """
-        cwd = video_file.parent
-        if subtitle_file.parent != cwd:
-            raise ValueError(
-                f"video and subtitle must share a directory for burn-in: "
-                f"{cwd} vs {subtitle_file.parent}"
-            )
+        MediaProcessor._check_subtitles_beside(video_file, subtitle_files)
 
         output_file.parent.mkdir(parents=True, exist_ok=True)
         logger.info(
-            f"Burning subtitles {subtitle_file.name} into "
+            f"Burning subtitles "
+            f"{', '.join(f.name for f in subtitle_files)} into "
             f"{video_file.name} -> {output_file}"
         )
         usable_duration = package_usable_duration(
@@ -305,7 +305,7 @@ class MediaProcessor:
             logger.info(f"Burn-in rendering {len(parts)} video part(s)")
             MediaProcessor._render_subtitled_range(
                 video_file=video_file,
-                subtitle_file=subtitle_file,
+                subtitle_files=subtitle_files,
                 output_file=output_file,
                 parts=parts,
                 progress=progress,
@@ -364,7 +364,7 @@ class MediaProcessor:
     @staticmethod
     def _render_subtitled_range(
         video_file: Path,
-        subtitle_file: Path,
+        subtitle_files: Sequence[Path],
         output_file: Path,
         parts: list[TimeRange],
         progress: NoopProgressReporter | None = None,
@@ -396,7 +396,7 @@ class MediaProcessor:
                     pool.submit(
                         MediaProcessor._encode_subtitled_range,
                         video_file=video_file,
-                        subtitle_file=subtitle_file,
+                        subtitle_files=subtitle_files,
                         output_file=part_file,
                         start_seconds=part.start_seconds,
                         end_seconds=part.end_seconds,
@@ -536,7 +536,7 @@ class MediaProcessor:
     @staticmethod
     def encode_subtitled_segment(
         video_file: Path,
-        subtitle_file: Path,
+        subtitle_files: Sequence[Path],
         output_file: Path,
         start_seconds: float,
         end_seconds: float,
@@ -547,7 +547,7 @@ class MediaProcessor:
         """Burn subtitles into a trimmed normalized segment, audio included."""
         MediaProcessor._render_subtitled_range(
             video_file=video_file,
-            subtitle_file=subtitle_file,
+            subtitle_files=subtitle_files,
             output_file=output_file,
             parts=[
                 TimeRange(
@@ -563,7 +563,7 @@ class MediaProcessor:
     @staticmethod
     def _encode_subtitled_range(
         video_file: Path,
-        subtitle_file: Path,
+        subtitle_files: Sequence[Path],
         output_file: Path,
         start_seconds: float,
         end_seconds: float,
@@ -591,11 +591,7 @@ class MediaProcessor:
         cover-art mjpeg stream would otherwise get it re-encoded to h264 as a
         second video stream, which mp4 cannot tag as attached art.
         """
-        if subtitle_file.parent != video_file.parent:
-            raise ValueError(
-                f"video and subtitle must share a directory for segment "
-                f"burn-in: {video_file.parent} vs {subtitle_file.parent}"
-            )
+        MediaProcessor._check_subtitles_beside(video_file, subtitle_files)
         duration = max(0.0, end_seconds - start_seconds)
         if duration <= 0:
             raise ValueError("segment duration must be positive")
@@ -614,7 +610,7 @@ class MediaProcessor:
             video_file.name,
             "-vf",
             MediaProcessor._package_video_chain(
-                subtitle_file.name,
+                [subtitle.name for subtitle in subtitle_files],
                 f"trim=start={start_seconds:.3f}:duration={duration:.3f}",
             ),
             "-map",
@@ -856,7 +852,7 @@ class MediaProcessor:
     @staticmethod
     def build_remix_output(
         video_file: Path,
-        subtitle_file: Path,
+        subtitle_files: Sequence[Path],
         output_file: Path,
         head_noise: NoiseCut,
         tail_noise: NoiseCut,
@@ -880,7 +876,7 @@ class MediaProcessor:
             )
             MediaProcessor.encode_subtitled_segment(
                 video_file=video_file,
-                subtitle_file=subtitle_file,
+                subtitle_files=subtitle_files,
                 output_file=target_segment,
                 start_seconds=start_seconds,
                 end_seconds=end_seconds,
@@ -1163,7 +1159,22 @@ class MediaProcessor:
         )
 
     @staticmethod
-    def _package_video_chain(subtitle_name: str, trim_filter: str) -> str:
+    def _check_subtitles_beside(
+        video_file: Path, subtitle_files: Sequence[Path]
+    ) -> None:
+        if not subtitle_files:
+            raise ValueError("burn-in needs at least one subtitle file")
+        for subtitle in subtitle_files:
+            if subtitle.parent != video_file.parent:
+                raise ValueError(
+                    f"video and subtitle must share a directory for "
+                    f"burn-in: {video_file.parent} vs {subtitle.parent}"
+                )
+
+    @staticmethod
+    def _package_video_chain(
+        subtitle_names: Sequence[str], trim_filter: str
+    ) -> str:
         """Look, then ASS, then trim/tempo — one encode, upright text.
 
         ``subtitles`` stays on the source timeline. ``trim`` and
@@ -1172,8 +1183,8 @@ class MediaProcessor:
         """
         return (
             f"{MediaProcessor._PACKAGE_VIDEO_FILTER},"
-            f"subtitles={subtitle_name},"
-            f"{trim_filter},"
+            + "".join(f"subtitles={name}," for name in subtitle_names)
+            + f"{trim_filter},"
             f"setpts=PTS-STARTPTS,"
             f"{MediaProcessor._PACKAGE_VIDEO_OUTPUT}"
         )

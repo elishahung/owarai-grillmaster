@@ -86,6 +86,17 @@ DateResearchOption = Annotated[
         ),
     ),
 ]
+ChatOption = Annotated[
+    bool,
+    typer.Option(
+        "--chat",
+        help=(
+            "Also fetch the YouTube live-chat replay, translate it after "
+            "the subtitles are finalized, and burn it in as a scrolling "
+            "side panel when packaging."
+        ),
+    ),
+]
 RemixOption = Annotated[
     str | None,
     typer.Option(
@@ -108,6 +119,7 @@ def _run_process(
     glossary_check: bool,
     cover: bool,
     date_research: bool,
+    chat: bool,
     remix: str | None,
     start: str | None = None,
     to: str | None = None,
@@ -117,7 +129,7 @@ def _run_process(
         f"translation_hint={translation_hint}, break_after={break_after}, "
         f"parent_project={parent_project}, refine={refine}, "
         f"glossary_check={glossary_check}, cover={cover}, "
-        f"date_research={date_research}, remix={remix}, "
+        f"date_research={date_research}, chat={chat}, remix={remix}, "
         f"start={start}, to={to}"
     )
 
@@ -144,6 +156,7 @@ def _run_process(
         enable_glossary_check=glossary_check,
         enable_cover=cover,
         enable_date_research=date_research,
+        enable_live_chat=chat,
         remix_noise_name=remix,
         section_start=section_start,
         section_end=section_end,
@@ -231,6 +244,7 @@ def process(
     glossary_check: GlossaryCheckOption = False,
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
+    chat: ChatOption = False,
     remix: RemixOption = None,
     start: Annotated[
         str | None,
@@ -266,6 +280,7 @@ def process(
         glossary_check=glossary_check,
         cover=cover,
         date_research=date_research,
+        chat=chat,
         remix=remix,
         start=start,
         to=to,
@@ -292,6 +307,7 @@ def serial_command(
     glossary_check: GlossaryCheckOption = False,
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
+    chat: ChatOption = False,
     remix: RemixOption = None,
 ) -> None:
     """Process several videos back to back, seeding each from the previous one."""
@@ -299,7 +315,7 @@ def serial_command(
         f"CLI invoked with serial sources={sources}, "
         f"parent_project={parent_project}, refine={refine}, "
         f"glossary_check={glossary_check}, cover={cover}, "
-        f"date_research={date_research}, remix={remix}"
+        f"date_research={date_research}, chat={chat}, remix={remix}"
     )
     try:
         run = SerialRun(
@@ -312,6 +328,7 @@ def serial_command(
                 enable_glossary_check=glossary_check,
                 enable_cover=cover,
                 enable_date_research=date_research,
+                enable_live_chat=chat,
                 remix_noise_name=remix,
             ),
         )
@@ -341,6 +358,16 @@ def package_command(
             show_default=False,
         ),
     ] = None,
+    skip_chat: Annotated[
+        bool,
+        typer.Option(
+            "--skip-chat",
+            help=(
+                "Leave the live-chat side panel out even when the project "
+                "has a translated chat (chat.cht.json)."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Run only the package step for an existing project directory."""
     if settings.package_path is None:
@@ -353,6 +380,7 @@ def package_command(
                 package_root=settings.package_path,
                 remix_noise_name=remix,
                 progress=progress,
+                skip_chat=skip_chat,
             )
     except Exception as e:
         logger.error(f"Failed to package project {project_dir}: {e}")

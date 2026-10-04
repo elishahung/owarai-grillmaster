@@ -75,6 +75,8 @@ class ArtifactCache:
                 return self._cover_preview(project.poster_cover_path)
             if key == "chunks":
                 return self._path_list_preview([project.translated_path])
+            if key == "chat":
+                return self._path_list_preview([project.chat_translated_path])
             if key == "finalize":
                 return self._path_list_preview(
                     [project.ass_path, project.finalized_srt_path]

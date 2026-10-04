@@ -53,6 +53,13 @@ PRE_PASS_CACHE_DIR_NAME = ".pre_pass"
 REFINE_CACHE_DIR_NAME = ".refine"
 GLOSSARY_CHECK_CACHE_DIR_NAME = ".glossary_check"
 TITLES_DIR_NAME = ".titles"
+LIVE_CHAT_CACHE_DIR_NAME = ".live_chat"
+LIVE_CHAT_RAW_FILE_NAME = "live_chat.json"
+LIVE_CHAT_MESSAGES_FILE_NAME = "messages.json"
+LIVE_CHAT_BATCHES_DIR_NAME = "batches"
+LIVE_CHAT_POLISH_FILE_NAME = "polish.json"
+CHAT_TRANSLATED_FILE_NAME = "chat.cht.json"
+CHAT_ASS_FILE_NAME = "video.chat.ass"
 
 # Path units to keep free inside a project directory for its own contents,
 # counting the leading separator. The deepest artifact is the structural-fix
@@ -93,6 +100,7 @@ class ProgressStage(str, Enum):
     METADATA_FETCHED = "is_metadata_fetched"
     DOWNLOADED = "is_downloaded"
     VIDEO_PROCESSED = "is_video_processed"
+    CHAT_FETCHED = "is_chat_fetched"
     AUDIO_PROCESSED = "is_audio_processed"
     ASR_COMPLETED = "is_asr_completed"
     SRT_COMPLETED = "is_srt_completed"
@@ -101,6 +109,7 @@ class ProgressStage(str, Enum):
     SRT_REFINED = "is_srt_refined"
     GLOSSARY_CHECKED = "is_glossary_checked"
     FINALIZED = "is_finalized"
+    CHAT_TRANSLATED = "is_chat_translated"
 
 
 class VideoSource(str, Enum):
@@ -143,6 +152,7 @@ class Project(BaseModel):
         is_metadata_fetched: Whether video metadata has been retrieved.
         is_downloaded: Whether video has been downloaded.
         is_video_processed: Whether video segments have been combined.
+        is_chat_fetched: Whether the optional live-chat replay has been downloaded and normalized.
         is_audio_processed: Whether audio has been extracted.
         is_asr_completed: Whether speech recognition has been completed.
         is_srt_completed: Whether SRT subtitle file has been generated.
@@ -151,6 +161,7 @@ class Project(BaseModel):
         is_srt_refined: Whether the optional Codex-driven SRT refinement has been completed.
         is_glossary_checked: Whether the optional Codex-driven fixed-glossary localization check has been completed.
         is_finalized: Whether the final ASS + SRT outputs have been generated.
+        is_chat_translated: Whether the optional live-chat replay has been translated.
         is_cover_generated: Whether the optional Codex-driven cover image has been generated.
         is_broadcast_date_researched: Whether the optional agent-driven broadcast-date research has completed (found or not).
     """
@@ -164,11 +175,17 @@ class Project(BaseModel):
     source_metadata: SourceMetadata = Field(default_factory=SourceMetadata)
     total_cost: float = 0.0
     service_costs: dict[str, float] = Field(default_factory=dict)
+    # Source-timeline bounds `video.mp4` was cut to (--start/--to), recorded
+    # when the video is processed so later stages can rebase source-timed
+    # data (live chat) without the flags being repeated on resume.
+    section_start: float | None = None
+    section_end: float | None = None
 
     # Progress
     is_metadata_fetched: bool = False
     is_downloaded: bool = False
     is_video_processed: bool = False
+    is_chat_fetched: bool = False
     is_audio_processed: bool = False
     is_asr_completed: bool = False
     is_srt_completed: bool = False
@@ -177,6 +194,7 @@ class Project(BaseModel):
     is_srt_refined: bool = False
     is_glossary_checked: bool = False
     is_finalized: bool = False
+    is_chat_translated: bool = False
     is_cover_generated: bool = False
     is_broadcast_date_researched: bool = False
 
@@ -335,6 +353,14 @@ class Project(BaseModel):
                 self.translation_hint = (
                     f"{video_info.title} - {video_info.description}"
                 )
+        self.save()
+
+    def update_section(
+        self, section_start: float | None, section_end: float | None
+    ) -> None:
+        """Persist the source-timeline bounds `video.mp4` is cut to."""
+        self.section_start = section_start
+        self.section_end = section_end
         self.save()
 
     def update_broadcast_date(self, broadcast_date: date) -> None:
@@ -855,6 +881,36 @@ class Project(BaseModel):
     def artifacts_dir(self) -> Path:
         """Get the general-purpose directory for auxiliary analysis artifacts."""
         return self.project_path / ARTIFACTS_DIR_NAME
+
+    @property
+    def live_chat_cache_dir(self) -> Path:
+        """Get the directory for live-chat replay downloads and batch caches."""
+        return self.project_path / LIVE_CHAT_CACHE_DIR_NAME
+
+    @property
+    def live_chat_raw_path(self) -> Path:
+        """Get the path to the raw yt-dlp live-chat replay (JSON lines)."""
+        return self.live_chat_cache_dir / LIVE_CHAT_RAW_FILE_NAME
+
+    @property
+    def live_chat_messages_path(self) -> Path:
+        """Get the path to the normalized, section-rebased chat messages."""
+        return self.live_chat_cache_dir / LIVE_CHAT_MESSAGES_FILE_NAME
+
+    @property
+    def live_chat_batches_dir(self) -> Path:
+        """Get the directory for per-batch chat translation caches."""
+        return self.live_chat_cache_dir / LIVE_CHAT_BATCHES_DIR_NAME
+
+    @property
+    def live_chat_polish_path(self) -> Path:
+        """Get the path to the cached whole-stream chat polish corrections."""
+        return self.live_chat_cache_dir / LIVE_CHAT_POLISH_FILE_NAME
+
+    @property
+    def chat_translated_path(self) -> Path:
+        """Get the path to the translated live chat consumed by packaging."""
+        return self.project_path / CHAT_TRANSLATED_FILE_NAME
 
     @property
     def date_research_path(self) -> Path:

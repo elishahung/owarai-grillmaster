@@ -27,6 +27,7 @@ STAGE_WEIGHTS = {
     "metadata": 1,
     "download": 4,
     "combine": 2,
+    "chat_fetch": 1,
     "audio": 1,
     "asr": 3,
     "srt": 1,
@@ -35,6 +36,7 @@ STAGE_WEIGHTS = {
     "refine": 3,
     "glossary": 2,
     "finalize": 1,
+    "chat": 3,
     "archive": 1,
     "package": 4,
 }

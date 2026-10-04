@@ -7,6 +7,7 @@ from pathlib import Path
 from loguru import logger
 
 from project import Project, ProgressStage
+from services.inference import Backend, fan_out_concurrency
 from settings import settings
 from services.progress import (
     NoopProgressReporter,
@@ -17,7 +18,14 @@ from services.progress import (
 from .delivery import deliver_project
 from .runner import StageSpec, WorkflowRunner
 from .side_tasks import SideTaskManager
-from .stages import media, metadata, postprocess, transcription, translation
+from .stages import (
+    live_chat,
+    media,
+    metadata,
+    postprocess,
+    transcription,
+    translation,
+)
 
 
 @dataclass(frozen=True)
@@ -29,6 +37,8 @@ class WorkflowOptions:
     enable_glossary_check: bool = False
     enable_cover: bool = False
     enable_date_research: bool = False
+    # Per-run only: no .env toggle, since most sources have no replay.
+    enable_live_chat: bool = False
     remix_noise_name: str | None = None
     section_start: float | None = None
     section_end: float | None = None
@@ -73,6 +83,7 @@ def submit_project(
     enable_glossary_check: bool = False,
     enable_cover: bool = False,
     enable_date_research: bool = False,
+    enable_live_chat: bool = False,
     remix_noise_name: str | None = None,
     section_start: float | None = None,
     section_end: float | None = None,
@@ -97,6 +108,7 @@ def submit_project(
         enable_glossary_check=enable_glossary_check,
         enable_cover=enable_cover,
         enable_date_research=enable_date_research,
+        enable_live_chat=enable_live_chat,
         remix_noise_name=remix_noise_name,
         section_start=section_start,
         section_end=section_end,
@@ -111,6 +123,7 @@ def process_project(
     enable_glossary_check: bool = False,
     enable_cover: bool = False,
     enable_date_research: bool = False,
+    enable_live_chat: bool = False,
     remix_noise_name: str | None = None,
     section_start: float | None = None,
     section_end: float | None = None,
@@ -136,6 +149,7 @@ def process_project(
                     enable_glossary_check=enable_glossary_check,
                     enable_cover=enable_cover,
                     enable_date_research=enable_date_research,
+                    enable_live_chat=enable_live_chat,
                     remix_noise_name=remix_noise_name,
                     section_start=section_start,
                     section_end=section_end,
@@ -152,11 +166,8 @@ def process_project(
 
 def _stage_specs(options: WorkflowOptions) -> dict[str, StageSpec]:
     """Build the ordered stage specs with their display-parameter snapshots."""
-    # Mirrors the api-vs-agent concurrency split in services/translate/facade.
-    chunk_concurrency = (
-        settings.chunk_api_concurrency
-        if settings.agent_chunk_model.backend == "gemini-api"
-        else settings.chunk_agent_concurrency
+    chunk_concurrency = fan_out_concurrency(
+        Backend(settings.agent_chunk_model.backend)
     )
     combine_params: dict[str, str] = {"tool": "ffmpeg"}
     if options.has_section:
@@ -195,6 +206,14 @@ def _stage_specs(options: WorkflowOptions) -> dict[str, StageSpec]:
                 media.warn_section_ignored if options.has_section else None
             ),
             params=combine_params,
+        ),
+        "chat_fetch": StageSpec(
+            stage=ProgressStage.CHAT_FETCHED,
+            key="chat_fetch",
+            start_message="Fetching live chat replay",
+            complete_message="Live chat fetched",
+            skipped_message="Live chat already fetched",
+            params={"tool": "yt-dlp"},
         ),
         "audio": StageSpec(
             stage=ProgressStage.AUDIO_PROCESSED,
@@ -271,6 +290,14 @@ def _stage_specs(options: WorkflowOptions) -> dict[str, StageSpec]:
             complete_message="Finalized (ASS + SRT)",
             skipped_message="Already finalized",
         ),
+        "chat": StageSpec(
+            stage=ProgressStage.CHAT_TRANSLATED,
+            key="chat",
+            start_message="Translating live chat",
+            complete_message="Live chat translated",
+            skipped_message="Live chat already translated",
+            params={"model": str(settings.chat_model)},
+        ),
     }
 
 
@@ -281,6 +308,8 @@ def _build_plan(
     optional_enabled = {
         "refine": options.do_refine,
         "glossary": options.do_glossary_check,
+        "chat_fetch": options.enable_live_chat,
+        "chat": options.enable_live_chat,
     }
     plan = [
         PlannedStage(
@@ -384,6 +413,14 @@ def _process_project_impl(
             ):
                 return project.project_path
 
+            if runner.run_optional(
+                enabled=options.enable_live_chat,
+                disabled_message="Live chat disabled",
+                spec=specs["chat_fetch"],
+                action=lambda: live_chat.fetch_project_live_chat(project),
+            ):
+                return project.project_path
+
             if runner.run(
                 specs["audio"],
                 lambda: media.extract_audio(project),
@@ -435,6 +472,20 @@ def _process_project_impl(
             if runner.run(
                 specs["finalize"],
                 lambda: postprocess.finalize_project_subtitles(project),
+            ):
+                return project.project_path
+
+            # After finalize on purpose: the finished subtitles and the
+            # glossary-checked pre-pass are the ground truth chat is
+            # translated against, and a chat failure leaves them finalized
+            # (only archive/package wait for the resume).
+            if runner.run_optional(
+                enabled=options.enable_live_chat,
+                disabled_message="Live chat disabled",
+                spec=specs["chat"],
+                action=lambda: live_chat.translate_project_live_chat(
+                    project, progress
+                ),
             ):
                 return project.project_path
 

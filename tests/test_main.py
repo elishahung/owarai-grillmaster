@@ -73,6 +73,7 @@ class MainCliTests(unittest.TestCase):
                 enable_glossary_check=False,
                 enable_cover=False,
                 enable_date_research=False,
+                enable_live_chat=False,
                 remix_noise_name=main_module.DEFAULT_NOISE_NAME,
             ),
         )
@@ -124,7 +125,7 @@ class MainCliTests(unittest.TestCase):
                 progress
             )
             main_module.main(
-                ["package", str(project_dir), "--remix", "sleep"]
+                ["package", str(project_dir), "--remix", "sleep", "--skip-chat"]
             )
 
         package_project_directory.assert_called_once_with(
@@ -132,6 +133,7 @@ class MainCliTests(unittest.TestCase):
             package_root=package_root,
             remix_noise_name="sleep",
             progress=progress,
+            skip_chat=True,
         )
 
     def test_legacy_source_invocation_accepts_remix(self):

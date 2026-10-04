@@ -52,11 +52,11 @@ DEFAULT_CHAT_LAYOUT = ChatLayout.SIDE
 PANEL_PADDING = 12
 PANEL_RADIUS = 18
 
-# Side layout: the picture keeps 16:9 in what the chat column leaves.
-SIDE_VIDEO_WIDTH = 1472
+# Side layout: the picture keeps 16:9 in what the chat column leaves; a
+# multiple of 32 keeps its height exact and even.
+SIDE_VIDEO_WIDTH = 1536
 SIDE_VIDEO_HEIGHT = SIDE_VIDEO_WIDTH * 9 // 16
 SIDE_COLUMN_WIDTH = ASS_PLAY_RES_X - SIDE_VIDEO_WIDTH
-SIDE_COLUMN_MARGIN = 12
 # Dialogue sits in the bottom bar, centred over the picture.
 SIDE_DIALOGUE_MARGIN_V = 24
 
@@ -71,6 +71,10 @@ NAME_COLOR = "B8B8B8"
 NAME_LINE_HEIGHT = 26
 BODY_FONT_SIZE = 27
 BODY_LINE_HEIGHT = 30
+# Glyph advance per font-size unit libass lays out with ASS_FONT_NAME: CJK
+# measures ~0.89; Latin is proportional (0.49–0.57), so take its wide end.
+FULL_WIDTH_ADVANCE = 0.9
+HALF_WIDTH_ADVANCE = 0.57
 MAX_BODY_LINES = 4
 PAID_COLOR = "E8A317"
 PAID_ALPHA = "40"
@@ -146,11 +150,13 @@ class _LayoutSpec:
 
 _LAYOUTS = {
     ChatLayout.SIDE: _LayoutSpec(
+        # With no background the panel is the whole column: messages scroll
+        # out at the frame's top edge and only the item insets pad them.
         panel=_Panel(
-            left=SIDE_VIDEO_WIDTH + SIDE_COLUMN_MARGIN,
-            top=2 * SIDE_COLUMN_MARGIN,
-            bottom=ASS_PLAY_RES_Y - 2 * SIDE_COLUMN_MARGIN,
-            width=SIDE_COLUMN_WIDTH - 2 * SIDE_COLUMN_MARGIN,
+            left=SIDE_VIDEO_WIDTH,
+            top=0,
+            bottom=ASS_PLAY_RES_Y,
+            width=SIDE_COLUMN_WIDTH,
         ),
         picture=Box(
             x=0,
@@ -168,7 +174,7 @@ _LAYOUTS = {
     # Ends above the bottom-centred dialogue lines.
     ChatLayout.OVERLAY: _LayoutSpec(
         panel=_Panel(
-            left=1490, top=60, bottom=870, width=400, color="101010", alpha="60"
+            left=1530, top=60, bottom=870, width=360, color="101010", alpha="60"
         ),
     ),
 }
@@ -222,11 +228,9 @@ class _Item:
         self.seconds = message.seconds
         self.paid = message.kind == "paid"
         amount = message.amount or ""
+        # The amount follows the name after two spaces.
         amount_width = (
-            # The two half-width spaces before it count as one em.
-            _text_width(amount, NAME_FONT_SIZE) + NAME_FONT_SIZE
-            if amount
-            else 0
+            _text_width(f"  {amount}", NAME_FONT_SIZE) if amount else 0
         )
         # Model output may carry line breaks; a raw newline would split the
         # Dialogue line, so every user/model string is laid out as one line.
@@ -432,10 +436,10 @@ def _panel_event(duration: int, panel: _Panel) -> str:
 
 
 def _char_width(char: str, font_size: int) -> float:
-    """Approximate advance: full-width glyphs are 1 em, the rest half."""
+    """Approximate advance in ``font_size`` units, measured with libass."""
     code = ord(char)
     half = code < 0x2E80 or 0xFF61 <= code <= 0xFFDC
-    return font_size * (0.5 if half else 1.0)
+    return font_size * (HALF_WIDTH_ADVANCE if half else FULL_WIDTH_ADVANCE)
 
 
 def _text_width(text: str, font_size: int) -> float:

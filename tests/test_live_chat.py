@@ -300,20 +300,20 @@ class ChatBurnPlanTests(unittest.TestCase):
         self._write_chat(root)
         plan = self._plan(root, ChatLayout.SIDE)
 
-        self.assertEqual(plan.picture, Box(x=0, y=126, width=1472, height=828))
+        self.assertEqual(plan.picture, Box(x=0, y=108, width=1536, height=864))
         # Chat under the dialogue; dialogue sits in the bottom bar, centred
         # over the picture.
         self.assertEqual(
             [layer.filter for layer in plan.layers],
             [
                 "subtitles=video.chat.ass",
-                "subtitles=video.cht.ass:force_style='MarginR=458,MarginV=24'",
+                "subtitles=video.cht.ass:force_style='MarginR=394,MarginV=24'",
             ],
         )
         ass = (root / "video.chat.ass").read_text(encoding="utf-8-sig")
         # Messages sit straight on the black column: no panel background.
         self.assertNotIn("Dialogue: 0,", ass)
-        self.assertIn(r"\pos(1498,", ass)
+        self.assertIn(r"\pos(1550,", ass)
 
     def test_overlay_layout_keeps_the_full_frame(self):
         root = _temp_dir(self)

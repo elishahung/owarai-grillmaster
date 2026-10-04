@@ -69,8 +69,9 @@ toggle), like `--refine`: a resume must pass it again.
   `DEFAULT_CHAT_LAYOUT`; `grill package --skip-chat` = `none`). Each layout
   is one `_LAYOUTS` entry (panel, picture box, dialogue `force_style`):
   - `side` (default): the graded 16:9 picture is letterboxed into the left
-    `SIDE_VIDEO_WIDTH` box; chat sits straight on the black right column (no
-    panel background — per-frame shape blending was a measurable cost); the
+    `SIDE_VIDEO_WIDTH` box; chat fills the black right column edge to edge
+    (no panel background — per-frame shape blending was a measurable cost;
+    messages scroll out at the frame's top edge); the
     dialogue keeps its size in the bottom bar via `force_style` margins
     derived from finalize's `ASS_MARGIN_H` (`video.cht.ass` is never
     rewritten).
@@ -91,7 +92,8 @@ toggle), like `--refine`: a resume must pass it again.
 - Layout constants live at the top of `render.py`; canvas, font, and
   dialogue margins come from `services/finalize` (`ASS_PLAY_RES_*`,
   `ASS_FONT_NAME`, `ASS_MARGIN_*`), and the overlay panel ends above the
-  bottom-centered dialogue. Line pitches there are measured libass
-  values for that font; stacking uses them, so re-measure if the font or
+  bottom-centered dialogue. Line pitches and glyph advances
+  (`*_LINE_HEIGHT`, `*_WIDTH_ADVANCE`) there are measured libass values for
+  that font; stacking and wrapping use them, so re-measure if the font or
   sizes change. The Super Chat amount differs by colour/weight only — a
   larger size would stretch the name line.

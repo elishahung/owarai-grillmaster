@@ -89,7 +89,7 @@ class SubtitleLayer(BaseModel):
     """One ASS file to burn, optionally with libass style overrides."""
 
     path: Path
-    # `force_style` of ffmpeg's subtitles filter, e.g. "MarginR=458,MarginV=24".
+    # `force_style` of ffmpeg's subtitles filter, e.g. "MarginR=394,MarginV=24".
     force_style: str | None = None
 
     @property

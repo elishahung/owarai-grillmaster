@@ -986,9 +986,6 @@ class MediaProgressTests(unittest.TestCase):
         head = NoiseCut(
             source=noise, start_seconds=0.0, duration_seconds=60.0
         )
-        tail = NoiseCut(
-            source=noise, start_seconds=60.0, duration_seconds=60.0
-        )
         progress = FakeProgressReporter()
 
         def fake_encode(**kwargs):
@@ -1012,7 +1009,6 @@ class MediaProgressTests(unittest.TestCase):
                 burn=BurnPlan.dialogue(subtitle),
                 output_file=output,
                 head_noise=head,
-                tail_noise=tail,
                 start_seconds=0.0,
                 end_seconds=1.0,
                 progress=progress,
@@ -1023,11 +1019,11 @@ class MediaProgressTests(unittest.TestCase):
         concat_inputs = concat.call_args.args[0]
         self.assertEqual(
             [path.name for path in concat_inputs],
-            ["head.mp4", "target.mp4", "tail.mp4"],
+            ["head.mp4", "target.mp4"],
         )
         self.assertEqual(
             [call.kwargs["cut"] for call in encode_noise_segment.call_args_list],
-            [head, tail],
+            [head],
         )
 
 

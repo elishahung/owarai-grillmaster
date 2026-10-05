@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field, ValidationError
 from services.media import MediaProcessor, NoiseCut
 from services.package.constants import (
     NOISE_CUT_DURATION_SECONDS,
-    NOISE_CUTS_PER_SEGMENT,
     NOISE_STATE_FILE_NAME,
 )
 from services.package.errors import RemixPackageError
@@ -32,7 +31,7 @@ class NoiseSelection:
 
 def reserve_noise_cuts(
     noise_dir: Path,
-    cut_count: int = NOISE_CUTS_PER_SEGMENT,
+    cut_count: int,
     cut_duration: int = NOISE_CUT_DURATION_SECONDS,
 ) -> NoiseSelection:
     """Walk the noise sources in seconds and reserve `cut_count` slices.

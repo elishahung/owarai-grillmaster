@@ -1,6 +1,7 @@
 """Remix package split selection and output assembly."""
 from __future__ import annotations
 
+import math
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -13,11 +14,12 @@ from services.media import (
     BurnPlan,
     MediaProcessor,
     TimeRange,
+    package_usable_duration,
 )
 from services.package.constants import (
-    NOISE_CUTS_PER_SEGMENT,
+    REMIX_MIN_SEGMENT_COUNT,
     REMIX_MIN_SEGMENT_SECONDS,
-    REMIX_SEGMENT_SECONDS,
+    REMIX_TARGET_SEGMENT_SECONDS,
 )
 from services.package.errors import RemixPackageError
 from services.package.noise import reserve_noise_cuts
@@ -40,7 +42,12 @@ def package_remix(
         raise RemixPackageError(f"finalized SRT not found: {finalized_srt}")
 
     duration_seconds = MediaProcessor.get_media_duration(video_file)
-    segments = select_remix_segments(finalized_srt, duration_seconds)
+    content_seconds = package_usable_duration(duration_seconds)
+    segments = select_remix_segments(
+        finalized_srt,
+        duration_seconds,
+        start_seconds=PACKAGE_LEAD_TRIM_SECONDS,
+    )
     logger.info(
         f"Remix {video_file}: {len(segments)} segment(s) "
         f"over {duration_seconds:.3f}s"
@@ -49,39 +56,29 @@ def package_remix(
     copy_placeholder(package_root, target_dir)
 
     noise_dir = package_root / "noise" / noise_name
-    noise_needed = NOISE_CUTS_PER_SEGMENT * len(segments)
-    selection = reserve_noise_cuts(noise_dir, cut_count=noise_needed)
+    selection = reserve_noise_cuts(noise_dir, cut_count=len(segments))
     noise_seconds = sum(cut.duration_seconds for cut in selection.cuts)
 
     renders: list[dict] = []
     for index, segment in enumerate(segments):
-        start_seconds = segment.start_seconds
-        if index == 0:
-            start_seconds += PACKAGE_LEAD_TRIM_SECONDS
-        if start_seconds >= segment.end_seconds:
-            raise RemixPackageError(
-                "first remix segment is shorter than the "
-                f"{PACKAGE_LEAD_TRIM_SECONDS}s package lead trim"
-            )
         logger.info(
             f"Remix segment {index + 1}/{len(segments)}: "
-            f"{start_seconds:.3f}s-{segment.end_seconds:.3f}s"
+            f"{segment.start_seconds:.3f}s-{segment.end_seconds:.3f}s"
         )
         renders.append(
             dict(
                 video_file=video_file,
                 burn=burn,
                 output_file=target_dir / f"{index + 1}.mp4",
-                head_noise=selection.cuts[NOISE_CUTS_PER_SEGMENT * index],
-                tail_noise=selection.cuts[NOISE_CUTS_PER_SEGMENT * index + 1],
-                start_seconds=start_seconds,
+                head_noise=selection.cuts[index],
+                start_seconds=segment.start_seconds,
                 end_seconds=segment.end_seconds,
             )
         )
 
     progress_task = (
         progress.start_stage(
-            "Remixing subtitles", total=duration_seconds + noise_seconds
+            "Remixing subtitles", total=content_seconds + noise_seconds
         )
         if progress is not None
         else None
@@ -112,32 +109,48 @@ def package_remix(
 
 
 def select_remix_segments(
-    srt_file: Path, duration_seconds: float
+    srt_file: Path, duration_seconds: float, start_seconds: float = 0.0
 ) -> list[TimeRange]:
-    """Split the video near every 8 minutes without cutting subtitle text."""
+    """Split `start_seconds`..end into equal parts without cutting subtitles.
+
+    The part count follows the whole video length. Each cut targets an equal
+    share of what is left after the previous snapped cut, so one snap's drift
+    is spread over the remaining parts.
+    """
     ranges = _parse_srt_ranges(srt_file)
     if not ranges:
         raise RemixPackageError(f"no subtitle time ranges found: {srt_file}")
-    if duration_seconds <= 0:
-        raise RemixPackageError("video duration must be positive")
+    if duration_seconds <= start_seconds:
+        raise RemixPackageError(
+            f"video duration must exceed the {start_seconds}s start"
+        )
 
+    segment_count = remix_segment_count(duration_seconds)
     splits: list[float] = []
-    target = float(REMIX_SEGMENT_SECONDS)
-    while target < duration_seconds - REMIX_MIN_SEGMENT_SECONDS:
-        previous = splits[-1] if splits else 0.0
+    hi = duration_seconds - REMIX_MIN_SEGMENT_SECONDS
+    for remaining_parts in range(segment_count, 1, -1):
+        previous = splits[-1] if splits else start_seconds
+        target = previous + (duration_seconds - previous) / remaining_parts
         lo = previous + REMIX_MIN_SEGMENT_SECONDS
-        hi = duration_seconds - REMIX_MIN_SEGMENT_SECONDS
         snapped = _snap_to_subtitle_break(ranges, duration_seconds, target, lo, hi)
         if snapped is not None:
             splits.append(snapped)
-        target += REMIX_SEGMENT_SECONDS
 
-    boundaries = [0.0, *splits, duration_seconds]
+    boundaries = [start_seconds, *splits, duration_seconds]
     return [
         TimeRange(start_seconds=start, end_seconds=end)
         for start, end in zip(boundaries, boundaries[1:])
         if end > start
     ]
+
+
+def remix_segment_count(duration_seconds: float) -> int:
+    """Round the duration to whole target-length parts, at least the minimum.
+
+    Rounds half up (not Python's half-to-even), so 37.5 minutes is 3 parts.
+    """
+    rounded = math.floor(duration_seconds / REMIX_TARGET_SEGMENT_SECONDS + 0.5)
+    return max(REMIX_MIN_SEGMENT_COUNT, rounded)
 
 
 def _snap_to_subtitle_break(

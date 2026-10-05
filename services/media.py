@@ -928,18 +928,16 @@ class MediaProcessor:
         burn: BurnPlan,
         output_file: Path,
         head_noise: NoiseCut,
-        tail_noise: NoiseCut,
         start_seconds: float,
         end_seconds: float,
         progress: NoopProgressReporter | None = None,
         progress_task=None,
     ) -> None:
-        """Create one noise + subtitled segment + noise remix output."""
+        """Create one noise + subtitled segment remix output."""
         temp_dir = Path(tempfile.mkdtemp(prefix="grill_remix_"))
         try:
             head_segment = temp_dir / "head.mp4"
             target_segment = temp_dir / "target.mp4"
-            tail_segment = temp_dir / "tail.mp4"
             MediaProcessor.encode_noise_segment(
                 cut=head_noise,
                 output_file=head_segment,
@@ -957,15 +955,8 @@ class MediaProcessor:
                 progress_task=progress_task,
                 progress_description=f"Remixing {output_file.name}",
             )
-            MediaProcessor.encode_noise_segment(
-                cut=tail_noise,
-                output_file=tail_segment,
-                progress=progress,
-                progress_task=progress_task,
-                progress_description=f"Noise for {output_file.name}",
-            )
             MediaProcessor.concat_remix_segments(
-                [head_segment, target_segment, tail_segment],
+                [head_segment, target_segment],
                 output_file,
                 progress=progress,
             )

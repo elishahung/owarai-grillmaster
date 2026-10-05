@@ -140,8 +140,8 @@ map is stream-indexed (`0:v:0`, `0:a:0`): sources carry a cover-art mjpeg
 stream that a bare `0:v` re-encodes into a second h264 stream, which mp4
 cannot tag.
 Default package drops the first `PACKAGE_LEAD_TRIM_SECONDS` (3 s) after
-ASS burn and before tempo; remix does the same only on the first content
-segment, then wraps noise around that already-trimmed clip. Expected
+ASS burn and before tempo; remix splits only the range after that trim,
+then prepends noise to each part. Expected
 duration is `usable / PACKAGE_TEMPO` — a same-length output on a long show
 is a failed speed-up, not a success. There is no noise prep step:
 `noise/<name>/` holds raw source videos named `000.*`, `001.*` … (contiguous
@@ -155,11 +155,13 @@ at remix time with a format-only fit (`_NOISE_VIDEO_FILTER` /
 concat can still stream-copy video. `reserve_noise_cuts` persists the
 advanced cursor **before** rendering, so concurrent packaging runs never draw
 the same noise — a run that then fails skips its reserved noise rather than
-reusing it. Remix splits near every 8 minutes (`REMIX_SEGMENT_SECONDS`)
-on a subtitle gap/boundary, then wraps each segment as noise + content +
-noise (`1.mp4`, `2.mp4`, …). Remix also copies one rotating clip from the
-optional `<PACKAGE_PATH>/placeholder/` folder (`001.*`, `002.*` … contiguous)
-into the deliverable as `judge.<ext>` (`placeholder.py`); its
+reusing it. Remix splits into `round_half_up(duration / 15 min)` equal parts
+(`REMIX_TARGET_SEGMENT_SECONDS`, at least `REMIX_MIN_SEGMENT_COUNT` = 2;
+parts under 60 s are not cut); each cut targets an equal share of what is
+left after the previous snapped cut and snaps to a subtitle gap/boundary,
+then renders each part as noise + content (`1.mp4`, `2.mp4`, …). Remix
+also copies one rotating clip from the optional `<PACKAGE_PATH>/placeholder/`
+folder (`001.*`, `002.*` … contiguous) into the deliverable as `judge.<ext>` (`placeholder.py`); its
 `state.json` cursor `{next_index}` is 1-based, advanced before the copy like
 the noise reservation, and wraps to 1 past the last clip. A missing folder
 just skips the clip.

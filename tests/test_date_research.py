@@ -148,8 +148,10 @@ class DateResearchTests(unittest.TestCase):
             project = Project(
                 id="ep123",
                 name="260202_variety_show",
-                translation_hint="番組タイトル - 企画の説明",
+                translation_hint="第2回の続き",
             )
+            project.source_metadata.title = "番組タイトル"
+            project.source_metadata.description = "企画の説明"
             project.save()
             with patch(
                 "services.postprocess.date_research.run_inference",
@@ -160,7 +162,9 @@ class DateResearchTests(unittest.TestCase):
             prompt = mock_inference.call_args.kwargs["prompt"]
             self.assertIn("https://tver.jp/episodes/ep123", prompt)
             self.assertIn("260202_variety_show", prompt)
-            self.assertIn("番組タイトル - 企画の説明", prompt)
+            self.assertIn("- Title: 番組タイトル", prompt)
+            self.assertIn("- Description: 企画の説明", prompt)
+            self.assertIn("- User hint: 第2回の続き", prompt)
             self.assertNotIn("Platform-stated original broadcast year", prompt)
 
     def test_prompt_context_includes_archive_broadcast_year(self):

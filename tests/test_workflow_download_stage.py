@@ -9,7 +9,7 @@ import project as project_module
 import workflow.stages.media as media_stage
 from project import Project
 from services.media import TimeRange
-from services.package import rc as package_rc
+from services.program_config import config as program_config
 
 
 class RecordSourceProgramTests(unittest.TestCase):
@@ -17,17 +17,17 @@ class RecordSourceProgramTests(unittest.TestCase):
         root = Path(tempfile.mkdtemp(prefix="download-stage-test-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         self.projects_root = root / "projects"
-        self.rc_path = root / ".packagerc"
+        self.config_file = root / "config.json"
         patcher = patch.object(
             project_module, "PROJECT_ROOT_NAME", str(self.projects_root)
         )
         patcher.start()
         self.addCleanup(patcher.stop)
-        rc_patcher = patch.object(
-            package_rc, "package_rc_path", return_value=self.rc_path
+        config_patcher = patch.object(
+            program_config, "config_path", return_value=self.config_file
         )
-        rc_patcher.start()
-        self.addCleanup(rc_patcher.stop)
+        config_patcher.start()
+        self.addCleanup(config_patcher.stop)
 
     def _make_project(self, info_json: dict | None) -> Project:
         project = Project(id="epstage1", name="demo")
@@ -48,8 +48,12 @@ class RecordSourceProgramTests(unittest.TestCase):
         self.assertEqual(project.source_metadata.series, "ドキュメンタル")
         self.assertEqual(project.source_metadata.channel, "Prime Video")
         self.assertEqual(
-            json.loads(self.rc_path.read_text(encoding="utf-8")),
-            {"series": {"ドキュメンタル": {}}, "channel": {"Prime Video": {}}},
+            json.loads(self.config_file.read_text(encoding="utf-8")),
+            {
+                "$schema": "./config.schema.json",
+                "series": {"ドキュメンタル": {}},
+                "channel": {"Prime Video": {}},
+            },
         )
 
     def test_info_json_without_program_fields_registers_nothing(self):
@@ -58,14 +62,14 @@ class RecordSourceProgramTests(unittest.TestCase):
         media_stage.record_source_program(project)
 
         self.assertIsNone(project.source_metadata.series)
-        self.assertFalse(self.rc_path.exists())
+        self.assertFalse(self.config_file.exists())
 
     def test_missing_info_json_registers_nothing(self):
         project = self._make_project(None)
 
         media_stage.record_source_program(project)
 
-        self.assertFalse(self.rc_path.exists())
+        self.assertFalse(self.config_file.exists())
 
 
 class VerifyDownloadedAudioTests(unittest.TestCase):

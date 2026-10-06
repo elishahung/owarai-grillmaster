@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "ProgramEntry": {
+      "additionalProperties": false,
+      "description": "Rules for one series or channel name.",
+      "properties": {
+        "remix": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Force remix packaging with the default noise set when --remix is not passed.",
+          "title": "Remix"
+        },
+        "instruction": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "description": "Extra model instructions for this program.",
+              "properties": {
+                "common": {
+                  "description": "Added to every step below, ahead of that step's own text.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "pre_pass": {
+                  "description": "Whole-film analysis: cast, proper nouns, glossary, catchphrases, segment summaries.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "translate": {
+                  "description": "Concurrent chunk translation into Traditional Chinese.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "refine": {
+                  "description": "Agent polish of the translated subtitles.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "glossary_check": {
+                  "description": "Agent terminology/fact check against the fixed glossary.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instruction"
+        }
+      },
+      "title": "ProgramEntry",
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "description": "Owarai GrillMaster per-program rules, keyed by series and channel name.",
+  "properties": {
+    "$schema": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Path to this schema, for the IDE.",
+      "title": "$Schema"
+    },
+    "series": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ProgramEntry"
+      },
+      "description": "Rules keyed by the source program (series) name.",
+      "title": "Series",
+      "type": "object"
+    },
+    "channel": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ProgramEntry"
+      },
+      "description": "Rules keyed by the broadcast station or uploader channel.",
+      "title": "Channel",
+      "type": "object"
+    }
+  },
+  "title": "Owarai GrillMaster config.json",
+  "type": "object"
+}

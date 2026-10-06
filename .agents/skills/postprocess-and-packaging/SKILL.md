@@ -22,7 +22,9 @@ Agent-written SRTs may carry a UTF-8 BOM (Codex does this); every reader of
 `video.cht.refined.srt` / `video.cht.glossary_checked.srt` — including
 finalize — must read with `utf-8-sig`.
 
-- `refine.py` — polish TC subtitles (`AGENT_POSTPROCESS_MODEL`).
+- `refine.py` — polish TC subtitles (`AGENT_POSTPROCESS_MODEL`). Refine and
+  glossary check both append `project.program_rules().render_instruction(<step>)`
+  (the `config.json` per-program section) to their prompt when configured.
 - **Resume rule for both SRT passes**: the progress flag in `project.json` is
   the only completion marker, so entering the stage means the last attempt
   died (timeout/crash/failed validation). An already-present output SRT is
@@ -166,10 +168,9 @@ folder (`001.*`, `002.*` … contiguous) into the deliverable as `judge.<ext>` (
 the noise reservation, and wraps to 1 past the last clip. A missing folder
 just skips the clip.
 
-`rc.py` reads `.packagerc` (git-ignored, at the working-directory root):
-`{series|channel: {<name>: {remix?}}}`. The download stage appends empty
-entries for names it sees; a hand-set `"remix": true` on the project's series
-or channel forces remix packaging with `DEFAULT_NOISE_NAME` ("default") when
+`core._resolve_remix_noise_name` reads `project.program_rules().remix`
+(`config.json`, see **project-architecture**): a hand-set
+`"remix": true` on the project's series or channel forces remix packaging with `DEFAULT_NOISE_NAME` ("default") when
 `--remix` was not passed — a missing `noise/default` folder then fails the
 package instead of degrading to a burn-in. `--remix` without a value means the
 same default (expanded from argv in `main.py`; Typer has no optional-value

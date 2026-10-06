@@ -16,6 +16,7 @@ from settings import settings
 import re
 from urllib.parse import urlparse, parse_qs
 from services.paths import fit_dir_name
+from services.program_config import ProgramRules, load_program_rules
 from services.ytdlp.broadcast_date import parse_broadcast_label_year
 from services.ytdlp.info import (
     SourceProgramInfo,
@@ -134,6 +135,8 @@ class SourceMetadata(BaseModel):
     """Optional metadata collected from the source platform."""
 
     talents: list[SourceTalent] = Field(default_factory=list)
+    title: str | None = None
+    description: str | None = None
     series: str | None = None
     channel: str | None = None
     broadcast_date_label: str | None = None
@@ -148,7 +151,8 @@ class Project(BaseModel):
     Attributes:
         id: Unique identifier for the project (often a video source).
         name: Human-readable name for the project (defaults to "video").
-        translation_hint: Optional translation hint for the project.
+        translation_hint: Optional per-run hint from the user (CLI `HINT`),
+            kept apart from the source title/description in `source_metadata`.
         is_metadata_fetched: Whether video metadata has been retrieved.
         is_downloaded: Whether video has been downloaded.
         is_video_processed: Whether video segments have been combined.
@@ -317,11 +321,19 @@ class Project(BaseModel):
                 project_data = json.load(f)
             project = cls.model_validate(project_data)
             logger.info(f"Loaded existing project: {id} (name: {project.name})")
+            project._split_legacy_hint()
 
             if translation_hint is not None:
-                logger.warning(
-                    f"Translation hint is not supported for existing projects"
-                )
+                if project.is_prepass_completed:
+                    logger.warning(
+                        "Translation hint ignored: the pre-pass already ran "
+                        "(delete .pre_pass/ and reset is_prepass_completed "
+                        "to apply one)"
+                    )
+                else:
+                    project.translation_hint = translation_hint
+                    project.save()
+                    logger.info("Translation hint updated for existing project")
             if resolved_parent_path is not None:
                 logger.warning(
                     f"Parent project is not supported for existing projects"
@@ -335,24 +347,59 @@ class Project(BaseModel):
     def update_from_video_info(self, video_info: YtDlpVideoInfo) -> None:
         """Update project from video information.
 
-        Updates the project name and translation hint from the video information.
+        Records the file name and the source title/description. The user's
+        translation hint is a separate field and is never derived from these.
 
         Args:
             video_info: The video information from yt-dlp.
         """
         self.name = video_info.filename
-        # If translation hint is not set:
-        # - bilibili: use the video title
-        # - other sources: use the video title + description
-        if self.translation_hint is None:
-            self.translation_hint = video_info.title
-            if (
-                self.source != VideoSource.BILIBILI
-                and video_info.description is not None
-            ):
-                self.translation_hint = (
-                    f"{video_info.title} - {video_info.description}"
-                )
+        self._record_source_text(video_info.title, video_info.description)
+        self.save()
+
+    def _record_source_text(
+        self, title: str | None, description: str | None
+    ) -> None:
+        self.source_metadata.title = title or None
+        # Bilibili descriptions are uploader notes rather than program
+        # information, so only the title is kept for that platform.
+        self.source_metadata.description = (
+            None if self.source == VideoSource.BILIBILI else description or None
+        )
+
+    def _split_legacy_hint(self) -> None:
+        """Separate the auto-filled hint of a project made before the split.
+
+        Such projects stored the source title (plus description) in
+        `translation_hint` and never recorded them on their own. Recover both
+        from yt-dlp's info JSON, and drop the hint when it is exactly that
+        auto-filled text; a hint the user typed is kept.
+        """
+        if (
+            self.source_metadata.title is not None
+            or self.translation_hint is None
+            or not self.metadata_info_path.exists()
+        ):
+            return
+        try:
+            info = json.loads(
+                self.metadata_info_path.read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):
+            return
+        title = info.get("title") if isinstance(info, dict) else None
+        if not isinstance(title, str) or not title:
+            return
+        description = info.get("description")
+        if not isinstance(description, str):
+            description = None
+        self._record_source_text(title, description)
+        if self.translation_hint in {title, f"{title} - {description}"}:
+            self.translation_hint = None
+        logger.info(
+            f"Split the legacy translation hint of {self.id} into the "
+            f"source title/description"
+        )
         self.save()
 
     def update_section(
@@ -412,6 +459,13 @@ class Project(BaseModel):
             for talent in talents
         ]
         self.save()
+
+    def program_rules(self) -> ProgramRules:
+        """This program's `config.json` rules, read fresh on every call."""
+        return load_program_rules(
+            series=self.source_metadata.series,
+            channel=self.source_metadata.channel,
+        )
 
     def source_metadata_context(self) -> str | None:
         """Return source metadata formatted for Gemini prompt context."""

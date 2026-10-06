@@ -22,8 +22,8 @@ from project import (
 )
 from services.live_chat import DEFAULT_CHAT_LAYOUT, ChatLayout, chat_burn_plan
 from services.media import MediaProcessor
+from services.package.constants import DEFAULT_NOISE_NAME
 from services.package.cover import copy_cover
-from services.package.rc import resolve_remix_noise_name
 from services.package.remix import package_remix
 from services.package.titles import ensure_titles, titles_path
 from services.progress import NoopProgressReporter
@@ -69,11 +69,7 @@ def package_project(
 
     burn = chat_burn_plan(source_root, video_in, ass_in, chat_layout)
 
-    noise_name = resolve_remix_noise_name(
-        requested=remix_noise_name,
-        series=project.source_metadata.series,
-        channel=project.source_metadata.channel,
-    )
+    noise_name = _resolve_remix_noise_name(remix_noise_name, project)
 
     try:
         if noise_name is None:
@@ -192,6 +188,29 @@ def _read_json_object(path: Path) -> dict[str, object] | None:
         logger.warning(f"Package: ignoring non-object JSON ({path})")
         return None
     return data
+
+
+def _resolve_remix_noise_name(
+    requested: str | None, project: Project
+) -> str | None:
+    """Pick the noise set for this deliverable, honouring `config.json`.
+
+    An explicit request always wins. Otherwise a series or channel marked
+    `remix` forces remix packaging with the default noise set — a missing
+    `<PACKAGE_PATH>/noise/default` folder then fails the package instead of
+    quietly falling back to a plain burn-in.
+    """
+    if requested is not None:
+        return requested
+    if not project.program_rules().remix:
+        return None
+    logger.info(
+        f"Program config forces remix for "
+        f"series={project.source_metadata.series!r} "
+        f"channel={project.source_metadata.channel!r}; "
+        f"using noise '{DEFAULT_NOISE_NAME}'"
+    )
+    return DEFAULT_NOISE_NAME
 
 
 def _prepare_target_dir(project: Project, package_root: Path) -> Path:

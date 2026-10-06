@@ -1,3 +1,4 @@
+import json
 import shutil
 import unittest
 from pathlib import Path
@@ -7,6 +8,7 @@ import project as project_module
 import services.postprocess.glossary_check as gc
 from project import Project
 from services.fixed_glossary.fixed_glossary import FixedGlossary
+from services.program_config import config as program_config
 
 _FAKE_GLOSSARY = FixedGlossary(
     talents=(),
@@ -68,6 +70,12 @@ class GlossaryCheckTests(unittest.TestCase):
         )
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Tests that write program rules must never reach the real file.
+        config_patcher = patch.object(
+            program_config, "config_path", return_value=root / "config.json"
+        )
+        config_patcher.start()
+        self.addCleanup(config_patcher.stop)
         project = Project(id="demo")
         project.project_path.mkdir(parents=True, exist_ok=True)
         project.pre_pass_path.parent.mkdir(parents=True, exist_ok=True)
@@ -145,6 +153,39 @@ class GlossaryCheckTests(unittest.TestCase):
             prompt.index("Official CC reference"),
             prompt.index("Priority suspect blocks"),
         )
+
+    def test_prompt_includes_program_instruction_for_the_series(self):
+        project = self._make_project()
+        project.source_metadata.series = "show"
+        self._write_refined(project, _HAN_ONLY_SRT)
+        program_config.config_path().write_text(
+            json.dumps(
+                {
+                    "series": {
+                        "show": {
+                            "instruction": {
+                                "common": "COMMON RULE",
+                                "glossary_check": "GLOSSARY RULE",
+                                "refine": "REFINE RULE",
+                            }
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with patch.object(
+            gc, "run_inference", side_effect=self._valid_codex(project)
+        ) as run_codex:
+            gc.glossary_check_subtitles(project)
+
+        prompt = run_codex.call_args.kwargs["prompt"]
+        self.assertIn("PROGRAM-SPECIFIC INSTRUCTIONS", prompt)
+        self.assertLess(
+            prompt.index("COMMON RULE"), prompt.index("GLOSSARY RULE")
+        )
+        self.assertNotIn("REFINE RULE", prompt)
 
     def test_exact_glossary_zh_token_is_skipped(self):
         project = self._make_project()

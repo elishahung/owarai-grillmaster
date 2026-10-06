@@ -10,7 +10,11 @@ from unittest.mock import patch
 import project as project_module
 import services.paths as paths_module
 from project import Project, VideoSource
-from services.ytdlp.info import SourceProgramInfo, SourceTalentInfo
+from services.ytdlp.info import (
+    SourceProgramInfo,
+    SourceTalentInfo,
+    YtDlpVideoInfo,
+)
 
 
 class ProjectTests(unittest.TestCase):
@@ -38,6 +42,75 @@ class ProjectTests(unittest.TestCase):
 
         self.assertEqual(loaded.total_cost, 0.0)
         self.assertEqual(loaded.service_costs, {})
+
+    def _write_legacy_project(
+        self, root: Path, project_id: str, hint: str, info: dict
+    ) -> None:
+        project_dir = root / project_id
+        project_dir.mkdir(parents=True, exist_ok=True)
+        (project_dir / "project.json").write_text(
+            json.dumps(
+                {
+                    "id": project_id,
+                    "name": "legacy",
+                    "translation_hint": hint,
+                    "is_metadata_fetched": True,
+                    "is_downloaded": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+        (project_dir / "metadata.info.json").write_text(
+            json.dumps(info, ensure_ascii=False), encoding="utf-8"
+        )
+
+    def test_legacy_auto_filled_hint_is_split_into_source_text(self):
+        root = self._make_temp_dir()
+        self._write_legacy_project(
+            root,
+            "eplegacy1",
+            "番組 - 説明\n",
+            {"title": "番組", "description": "説明\n"},
+        )
+
+        with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
+            loaded = Project.from_source_str("eplegacy1")
+            persisted = json.loads(
+                loaded.json_path.read_text(encoding="utf-8")
+            )
+
+        self.assertIsNone(loaded.translation_hint)
+        self.assertEqual(loaded.source_metadata.title, "番組")
+        self.assertEqual(loaded.source_metadata.description, "説明\n")
+        self.assertIsNone(persisted["translation_hint"])
+
+    def test_legacy_user_hint_is_kept_while_title_is_recovered(self):
+        root = self._make_temp_dir()
+        self._write_legacy_project(
+            root, "eplegacy2", "使用者提示", {"title": "番組"}
+        )
+
+        with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
+            loaded = Project.from_source_str("eplegacy2")
+
+        self.assertEqual(loaded.translation_hint, "使用者提示")
+        self.assertEqual(loaded.source_metadata.title, "番組")
+
+    def test_hint_applies_to_existing_project_until_the_pre_pass_runs(self):
+        root = self._make_temp_dir()
+        with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
+            Project(id="ephint1").save()
+            done = Project(id="ephint2", translation_hint="old")
+            done.is_prepass_completed = True
+            done.save()
+
+            pending = Project.from_source_str("ephint1", "新提示")
+            reloaded = Project.from_source_str("ephint1")
+            finished = Project.from_source_str("ephint2", "新提示")
+
+        self.assertEqual(pending.translation_hint, "新提示")
+        self.assertEqual(reloaded.translation_hint, "新提示")
+        self.assertEqual(finished.translation_hint, "old")
 
     def test_add_cost_updates_project_json_totals(self):
         root = self._make_temp_dir()
@@ -77,6 +150,26 @@ class ProjectTests(unittest.TestCase):
                 project.pre_pass_path,
                 root / "layout-project" / ".pre_pass" / "pre_pass.json",
             )
+
+    def test_video_info_fills_title_and_description_but_not_the_hint(self):
+        root = self._make_temp_dir()
+        info = YtDlpVideoInfo(
+            id="ep1", title="番組タイトル", description="企画の説明"
+        )
+        with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
+            project = Project(id="epinfo1", translation_hint="使用者提示")
+            project.update_from_video_info(info)
+            empty_hint = Project(id="epinfo2")
+            empty_hint.update_from_video_info(info)
+            bilibili = Project(id="BV1ZArvBaEqL")
+            bilibili.update_from_video_info(info)
+
+        self.assertEqual(project.source_metadata.title, "番組タイトル")
+        self.assertEqual(project.source_metadata.description, "企画の説明")
+        self.assertEqual(project.translation_hint, "使用者提示")
+        self.assertIsNone(empty_hint.translation_hint)
+        self.assertEqual(bilibili.source_metadata.title, "番組タイトル")
+        self.assertIsNone(bilibili.source_metadata.description)
 
     def test_tver_talents_persist_in_project_metadata_context(self):
         root = self._make_temp_dir()

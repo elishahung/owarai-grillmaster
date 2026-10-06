@@ -190,6 +190,7 @@ async def translate_chunk(
     total_chunks: int,
     pre_pass: PrePassResult,
     official_subtitle_blocks: list[SrtBlock] | None = None,
+    program_instruction: str | None = None,
 ) -> ChunkTranslationResult:
     """Translate one chunk with persistent media cache and response caching.
 
@@ -214,6 +215,8 @@ async def translate_chunk(
     backend = Backend(spec.backend)
     has_audio = backend_supports_audio(backend)
     system_instruction = build_chunk_instruction(has_audio=has_audio)
+    if program_instruction:
+        system_instruction += "\n\n" + program_instruction
     if is_agent_backend(backend):
         system_instruction += "\n\n" + build_chunk_frame_tool_instruction(
             media_assets.video_path.parent,

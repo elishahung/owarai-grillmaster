@@ -42,7 +42,8 @@ services/translate/
 
 ## Pre-pass (stage 7)
 
-One call over the **whole** film (full SRT + program info + full audio for
+One call over the **whole** film (full SRT + program title, description, and
+user `translation_hint` as separate sections + full audio for
 gemini backends + 20-40 SRT-start-aligned representative frames + optional
 fixed-glossary + optional parent context). Produces a `PrePassResult` briefing:
 character roster, proper nouns / ASR-correction dict, catchphrase fixed
@@ -61,6 +62,12 @@ with an empty `segment_summary`. `_segment_coverage_validator` is handed to
 missing ranges, and the boundary block is the **last** thing in the user message
 (after the full SRT) so the requirement sits next to the output point. A chunk
 whose range is still unmatched logs a warning in `chunk_worker`.
+
+**Program instructions** from `config.json` (see **project-architecture**)
+arrive pre-rendered for the running stage as
+`TranslationRequest.program_instruction` and are appended to the pre-pass or
+chunk system instruction; like every other input they do not touch cache
+reuse.
 
 **`pre_pass.json` never self-invalidates**: once it exists it is reused as-is
 (cost 0), regardless of backend/model/prompt changes. To re-run the pre-pass,

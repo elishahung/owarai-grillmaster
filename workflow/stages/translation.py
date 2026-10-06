@@ -3,14 +3,20 @@
 from loguru import logger
 
 from project import Project
+from services.program_config import InstructionStep
 from services.progress import NoopProgressReporter
 from services.translate import Translate, TranslationError, TranslationRequest
 
 
-def make_translation_request(project: Project) -> TranslationRequest:
-    """Build the request shared by the pre-pass and chunk stages."""
+def make_translation_request(
+    project: Project, step: InstructionStep
+) -> TranslationRequest:
+    """Build the request for the pre-pass or chunk stage (`step`)."""
     return TranslationRequest(
-        video_description=project.translation_hint,
+        video_title=project.source_metadata.title,
+        video_description=project.source_metadata.description,
+        translation_hint=project.translation_hint,
+        program_instruction=project.program_rules().render_instruction(step),
         srt_path=project.srt_path,
         video_path=project.video_path,
         audio_path=project.audio_path,
@@ -32,7 +38,7 @@ def run_pre_pass(project: Project) -> None:
     translator = Translate()
     try:
         prepass_result = translator.run_pre_pass(
-            make_translation_request(project)
+            make_translation_request(project, "pre_pass")
         )
     except TranslationError as e:
         if e.summary.total_cost > 0:
@@ -53,7 +59,7 @@ def translate_chunks(
     translator = Translate()
     try:
         translation_result = translator.translate_chunks(
-            make_translation_request(project),
+            make_translation_request(project, "translate"),
             progress=progress,
         )
     except TranslationError as e:

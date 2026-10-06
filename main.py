@@ -236,8 +236,10 @@ def process(
         str | None,
         typer.Argument(
             help=(
-                "Translation hint for the video. If not provided, uses "
-                "video title."
+                "Translation hint for the video, given to the pre-pass "
+                "alongside (not instead of) the source title and "
+                "description. On an existing project it is applied only "
+                "while the pre-pass has not run yet."
             ),
             show_default=False,
         ),

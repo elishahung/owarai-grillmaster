@@ -6,7 +6,7 @@ description: >-
   `project.py`, settings/`.env`/ModelSpec in `settings.py`, the Typer CLI in
   `main.py`, and the supporting services (`services/srt/`, `services/media.py`,
   `services/ytdlp/`, `services/elevenlabs/`, `services/fixed_glossary/`,
-  `services/progress.py`, `services/paths.py`, `services/tui/`). Read this before adding/reordering a pipeline stage,
+  `services/program_config/`, `services/progress.py`, `services/paths.py`, `services/tui/`). Read this before adding/reordering a pipeline stage,
   changing resumability or cost accounting, adding a setting, adding a source
   platform, or any task that spans more than one service module. Deep dives
   live in the sibling skills inference-layer, translate-pipeline, and
@@ -56,8 +56,8 @@ under `workflow/stages/` by subsystem; post-finalize archive/package is in
 
 | # | Stage (`ProgressStage`)         | What happens                                                                 | Module |
 |---|----------------------------------|------------------------------------------------------------------------------|--------|
-| 1 | `METADATA_FETCHED`               | `get_video_info`; for TVer/Abema also fetch cast/talents; `resolve_broadcast_date` persists `Project.broadcast_date` (best-effort). **Kicks off async broadcast-date research after this stage** if enabled and the date is still None | `services/ytdlp`, `services/postprocess/date_research` |
-| 2 | `DOWNLOADED`                     | `download_video` (yt-dlp); also best-effort fetches platform CC subs (`ENABLE_OFFICIAL_SUBTITLES`), and records `series`/`channel` from `metadata.info.json` into `source_metadata` + `.packagerc`. **Kicks off async cover gen here** if enabled | `services/ytdlp`, `services/package/rc`, `services/postprocess/cover` |
+| 1 | `METADATA_FETCHED`               | `get_video_info` → `source_metadata.title`/`description` (never written into the user's `translation_hint`; Bilibili keeps title only); for TVer/Abema also fetch cast/talents; `resolve_broadcast_date` persists `Project.broadcast_date` (best-effort). **Kicks off async broadcast-date research after this stage** if enabled and the date is still None | `services/ytdlp`, `services/postprocess/date_research` |
+| 2 | `DOWNLOADED`                     | `download_video` (yt-dlp); also best-effort fetches platform CC subs (`ENABLE_OFFICIAL_SUBTITLES`), and records `series`/`channel` from `metadata.info.json` into `source_metadata` + `config.json`. **Kicks off async cover gen here** if enabled | `services/ytdlp`, `services/program_config`, `services/postprocess/cover` |
 | 3 | `VIDEO_PROCESSED`                | `MediaProcessor.combine_videos` (ffmpeg concat) → `video.mp4`; normalizes downloaded CC → `video.official.ja.srt` (section runs rebase/filter timestamps) | `services/media`, `services/ytdlp/subtitles` |
 | 3b| `CHAT_FETCHED` (optional)        | `--chat` only: yt-dlp `live_chat` track → `.live_chat/messages.json`, rebased to the section | `services/live_chat` |
 | 4 | `AUDIO_PROCESSED`                | `MediaProcessor.extract_audio` → `.asr/audio.ogg` (mono 16 kHz libopus)      | `services/media` |
@@ -219,6 +219,21 @@ Key control-flow details that are easy to break:
 - `services/elevenlabs/` — ASR client + ASR-JSON → SRT builder. Source SRT
   formatting constants are hard-coded at the top of the builder (maintainer-tuned,
   intentionally not settings).
+- `services/program_config/` — owns the `series`/`channel` sections of
+  `config.json` (git-ignored, cwd root; `config.example.json` is the tracked
+  shape; other top-level keys are left for other readers). Entries hold
+  `remix` (packaging) and `instruction` (`common`/`pre_pass`/`translate`/
+  `refine`/`glossary_check`). Download only appends empty entries, editing the
+  raw JSON so hand-written content survives. `Project.program_rules()` is the
+  one lookup: channel then series entries merged into `ProgramRules`, whose
+  `render_instruction(step)` gives a `prompts/program_instruction.md` section
+  (each entry's `common` before its step text) or None. Read live per stage,
+  so edits apply to stages not yet run (cached `pre_pass.json`/chunks are not
+  redone). Entries validate individually (unknown keys rejected); a bad entry
+  is warned and skipped. `config.schema.json` (repo root, referenced by
+  `$schema`) is generated from `ProgramEntry` by `schema.py`; regenerate it
+  (`python -m services.program_config.schema`) after changing the entry
+  shape or `INSTRUCTION_KEY_DOCS`.
 - `services/fixed_glossary/` — loads `fixed_glossary.json` / `.md` (canonical
   term translations) consumed by pre-pass, glossary-check, **and finalize** (it
   is a runtime input for name spacing, not just prompt content).

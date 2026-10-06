@@ -49,7 +49,7 @@ uv sync
 grill <影片 ID 或 URL> [翻譯提示]
 ```
 
-翻譯提示可省略，預設用影片標題；bilibili 標題太隱晦時才需要
+翻譯提示可省略；影片標題與說明會自動帶入，翻譯提示是額外補充（例如 bilibili 標題太隱晦時）。已存在的專案在 pre-pass 跑完前仍可補上提示
 
 ```bash
 grill BV18KBJBeEmV
@@ -91,6 +91,15 @@ PACKAGE_PATH=NAS:\video\package\           # 燒錄字幕後的成品位置
 ```
 
 其他可調參數（切塊大小、併發數、抽圖頻率等）請見 `settings.py`
+
+## 節目設定
+
+`config.json`（不進 git，格式見 `config.example.json`）依節目系列（`series`）或頻道（`channel`）設定規則。下載時會自動為新出現的名稱加上空白項目，之後手動編輯：
+
+- `remix`：`true` 時打包一律用 remix（同 `--remix`）
+- `instruction`：給各步驟模型的額外指示，鍵為 `pre_pass`、`translate`、`refine`、`glossary_check`；`common` 會加到上述每個步驟。頻道與系列都有設定時兩者都會帶入
+
+檔案開頭的 `"$schema": "./config.schema.json"` 讓 IDE 檢查格式並補全鍵名（自動建立的 `config.json` 會帶上）。修改設定格式後，用 `uv run python -m services.program_config.schema` 重新產生 schema。
 
 ## 輸出
 

@@ -1,0 +1,21 @@
+{
+  "$schema": "./config.schema.json",
+  "series": {
+    "水曜日のダウンタウン": {
+      "remix": true,
+      "instruction": {
+        "common": "Each segment opens with a 説 (hypothesis) title card; keep 説 as 「說」 and render the title cards consistently.",
+        "pre_pass": "List every 説 title card in proper_nouns with its exact on-screen wording.",
+        "translate": "The studio panel's commentary is overlaid on VTR footage; keep the panel's quips short.",
+        "refine": "Keep the narrator's deadpan tone; do not add exclamation marks to narration.",
+        "glossary_check": "Panelist names follow fixed_glossary even when the on-screen caption abbreviates them."
+      }
+    },
+    "有吉の壁": {}
+  },
+  "channel": {
+    "日テレ": {
+      "remix": true
+    }
+  }
+}

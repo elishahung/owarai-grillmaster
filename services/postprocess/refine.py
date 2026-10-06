@@ -56,6 +56,9 @@ def refine_subtitles(project: Project) -> None:
     # stage-specific wrapper writes into `.refine/extra_frames`; window = the
     # whole video.
     prompt = _PROMPT
+    program_instruction = project.program_rules().render_instruction("refine")
+    if program_instruction:
+        prompt += "\n\n" + program_instruction
     if is_agent_backend(backend):
         try:
             video_end = MediaProcessor.get_media_duration(project.video_path)

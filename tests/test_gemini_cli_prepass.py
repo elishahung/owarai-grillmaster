@@ -386,20 +386,40 @@ class PrePassSegmentCoverageTests(unittest.TestCase):
 
     def test_boundary_block_follows_the_srt(self):
         message = pp._build_user_message(
-            None,
-            None,
-            None,
-            None,
-            FixedGlossary(),
-            False,
-            "SRT TEXT",
-            [(1, 115), (116, 233)],
-            [],
+            video_title=None,
+            video_description=None,
+            translation_hint=None,
+            source_metadata_context=None,
+            parent_pre_pass_context=None,
+            official_subtitle_context=None,
+            fixed_glossary=FixedGlossary(),
+            fixed_glossary_full=False,
+            srt_text="SRT TEXT",
+            boundaries=[(1, 115), (116, 233)],
+            frame_timestamps=[],
         )
         self.assertLess(
             message.index("完整來源 SRT"), message.index("Chunk 邊界")
         )
         self.assertIn("必須剛好輸出 2 筆", message)
+
+    def test_title_description_and_hint_are_separate_sections(self):
+        message = pp._build_user_message(
+            video_title="番組タイトル",
+            video_description="企画の説明",
+            translation_hint="第2回の続き",
+            source_metadata_context=None,
+            parent_pre_pass_context=None,
+            official_subtitle_context=None,
+            fixed_glossary=FixedGlossary(),
+            fixed_glossary_full=False,
+            srt_text="SRT TEXT",
+            boundaries=[(1, 115)],
+            frame_timestamps=[],
+        )
+        self.assertIn("【節目標題】\n番組タイトル", message)
+        self.assertIn("【節目說明】\n企画の説明", message)
+        self.assertIn("【使用者翻譯提示】\n第2回の続き", message)
 
 
 class RunPrePassDispatchTests(unittest.TestCase):
@@ -447,7 +467,6 @@ class RunPrePassDispatchTests(unittest.TestCase):
             )
         ]
         return pp.run_pre_pass(
-            video_description=None,
             srt_text="1\n00:00:00,000 --> 00:00:02,000\nhello\n",
             video_path=tmp / "v.mp4",
             audio_path=tmp / "a.ogg",

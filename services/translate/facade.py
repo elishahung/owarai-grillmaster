@@ -96,18 +96,21 @@ class Translate:
 
         try:
             _result, pre_pass_cost = execute_pre_pass(
-                request.video_description,
                 srt_text,
                 request.video_path,
                 request.audio_path,
                 chunks,
                 request.pre_pass_path,
                 request.pre_pass_cache_dir,
-                request.source_metadata_context,
-                request.parent_pre_pass_context,
+                video_title=request.video_title,
+                video_description=request.video_description,
+                translation_hint=request.translation_hint,
+                source_metadata_context=request.source_metadata_context,
+                parent_pre_pass_context=request.parent_pre_pass_context,
                 official_subtitle_context=self._read_official_subtitle_text(
                     request
                 ),
+                program_instruction=request.program_instruction,
             )
         except PrePassError as e:
             summary = TranslationResult(
@@ -251,6 +254,7 @@ class Translate:
                         len(chunks),
                         pre_pass_result,
                         official_subtitle_blocks=official_subtitle_blocks,
+                        program_instruction=request.program_instruction,
                     )
                 except Exception as e:
                     if progress is not None:

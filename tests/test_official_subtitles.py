@@ -212,15 +212,17 @@ class ChunkUserMessageTests(unittest.TestCase):
 class PrePassUserMessageTests(unittest.TestCase):
     def _build(self, official_subtitle_context: str | None) -> str:
         return build_pre_pass_user_message(
-            "description",
-            None,
-            None,
-            official_subtitle_context,
-            FixedGlossary(),
-            False,
-            "SRT TEXT",
-            [(1, 1)],
-            [],
+            video_title=None,
+            video_description="description",
+            translation_hint=None,
+            source_metadata_context=None,
+            parent_pre_pass_context=None,
+            official_subtitle_context=official_subtitle_context,
+            fixed_glossary=FixedGlossary(),
+            fixed_glossary_full=False,
+            srt_text="SRT TEXT",
+            boundaries=[(1, 1)],
+            frame_timestamps=[],
         )
 
     def test_without_context_no_section(self):

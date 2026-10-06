@@ -95,7 +95,10 @@ def _segment_coverage_validator(
 
 
 def _build_user_message(
+    *,
+    video_title: str | None,
     video_description: str | None,
+    translation_hint: str | None,
     source_metadata_context: str | None,
     parent_pre_pass_context: str | None,
     official_subtitle_context: str | None,
@@ -107,8 +110,12 @@ def _build_user_message(
 ) -> str:
     """Compose the pre-pass user message with hint, full SRT, and chunk ranges."""
     parts = ["請分析以下日本綜藝節目字幕，輸出符合 schema 的 JSON 簡報。"]
+    if video_title:
+        parts.append(f"\n【節目標題】\n{video_title}")
     if video_description:
-        parts.append(f"\n【節目標題/資訊】\n{video_description}")
+        parts.append(f"\n【節目說明】\n{video_description}")
+    if translation_hint:
+        parts.append(f"\n【使用者翻譯提示】\n{translation_hint}")
     if source_metadata_context:
         parts.append(f"\n【官方來源 Metadata】\n{source_metadata_context}")
     if parent_pre_pass_context:
@@ -144,16 +151,20 @@ def _build_user_message(
 
 
 def run_pre_pass(
-    video_description: str | None,
     srt_text: str,
     video_path: Path,
     audio_path: Path,
     chunks: list[list[SrtBlock]],
     pre_pass_path: Path,
     pre_pass_cache_dir: Path,
+    *,
+    video_title: str | None = None,
+    video_description: str | None = None,
+    translation_hint: str | None = None,
     source_metadata_context: str | None = None,
     parent_pre_pass_context: str | None = None,
     official_subtitle_context: str | None = None,
+    program_instruction: str | None = None,
 ) -> tuple[PrePassResult, float]:
     """Run the single pre-pass call. Returns (parsed result, cost in USD).
 
@@ -193,7 +204,9 @@ def run_pre_pass(
     else:
         fixed_glossary = filter_fixed_glossary(
             load_fixed_glossary(),
+            video_title,
             video_description,
+            translation_hint,
             srt_text,
             source_metadata_context,
             parent_pre_pass_context,
@@ -211,15 +224,17 @@ def run_pre_pass(
             )
     boundaries = _chunk_boundaries(chunks)
     user_message = _build_user_message(
-        video_description,
-        source_metadata_context,
-        parent_pre_pass_context,
-        official_subtitle_context,
-        fixed_glossary,
-        fixed_glossary_full,
-        srt_text,
-        boundaries,
-        frame_timestamps,
+        video_title=video_title,
+        video_description=video_description,
+        translation_hint=translation_hint,
+        source_metadata_context=source_metadata_context,
+        parent_pre_pass_context=parent_pre_pass_context,
+        official_subtitle_context=official_subtitle_context,
+        fixed_glossary=fixed_glossary,
+        fixed_glossary_full=fixed_glossary_full,
+        srt_text=srt_text,
+        boundaries=boundaries,
+        frame_timestamps=frame_timestamps,
     )
     system_instruction = build_pre_pass_instruction(has_audio=has_audio)
     if source_metadata_context:
@@ -234,6 +249,8 @@ def run_pre_pass(
         )
     if parent_pre_pass_context:
         system_instruction += f"\n\n{PARENT_PRE_PASS_INSTRUCTION}"
+    if program_instruction:
+        system_instruction += f"\n\n{program_instruction}"
 
     active_backend = spec.backend
 

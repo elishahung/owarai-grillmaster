@@ -76,8 +76,12 @@ def _build_project_context(project: Project) -> str:
         f"- Video ID: {project.id}",
         f"- File name: {project.name}",
     ]
+    if project.source_metadata.title:
+        lines.append(f"- Title: {project.source_metadata.title}")
+    if project.source_metadata.description:
+        lines.append(f"- Description: {project.source_metadata.description}")
     if project.translation_hint:
-        lines.append(f"- Title / description: {project.translation_hint}")
+        lines.append(f"- User hint: {project.translation_hint}")
     if project.source_broadcast_year is not None:
         lines.append(
             f"- Platform-stated original broadcast year: "

@@ -1,3 +1,4 @@
+import json
 import shutil
 import unittest
 from pathlib import Path
@@ -6,6 +7,7 @@ from unittest.mock import patch
 import project as project_module
 import services.postprocess.refine as refine_module
 from project import Project
+from services.program_config import config as program_config
 from services.postprocess.refine import (
     RefinementValidationError,
     refine_subtitles,
@@ -38,6 +40,12 @@ class RefineResumeTests(unittest.TestCase):
         patcher = patch.object(project_module, "PROJECT_ROOT_NAME", str(root))
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Tests that write program rules must never reach the real file.
+        config_patcher = patch.object(
+            program_config, "config_path", return_value=root / "config.json"
+        )
+        config_patcher.start()
+        self.addCleanup(config_patcher.stop)
         project = Project(id="demo")
         project.project_path.mkdir(parents=True, exist_ok=True)
         project.translated_path.write_text(_TRANSLATED_SRT, encoding="utf-8")
@@ -77,6 +85,36 @@ class RefineResumeTests(unittest.TestCase):
             project.refined_srt_path.read_text(encoding="utf-8"),
             _TRANSLATED_SRT,
         )
+
+    def test_prompt_includes_program_instruction_for_the_channel(self):
+        project = self._make_project()
+        project.source_metadata.channel = "station"
+        program_config.config_path().write_text(
+            json.dumps(
+                {
+                    "channel": {
+                        "station": {
+                            "instruction": {
+                                "refine": "REFINE RULE",
+                                "translate": "TRANSLATE RULE",
+                            }
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with patch.object(
+            refine_module,
+            "run_inference",
+            side_effect=self._valid_agent(project),
+        ) as run_agent:
+            refine_subtitles(project)
+
+        prompt = run_agent.call_args.kwargs["prompt"]
+        self.assertIn("REFINE RULE", prompt)
+        self.assertNotIn("TRANSLATE RULE", prompt)
 
     def test_agent_that_writes_nothing_raises(self):
         project = self._make_project()

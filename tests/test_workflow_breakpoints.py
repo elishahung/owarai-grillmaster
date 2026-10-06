@@ -12,7 +12,8 @@ import workflow.stages.postprocess as postprocess_stage
 import workflow.stages.transcription as transcription_stage
 import workflow.stages.translation as translation_stage
 import project as project_module
-from project import Project
+from project import Project, SourceMetadata
+from services.program_config import ProgramRules
 from services.elevenlabs.asr import ElevenLabsTranscriptionResult
 from services.progress import NoopProgressReporter
 from services.ytdlp.info import AbemaTalent, TVerTalent, YtDlpVideoInfo
@@ -218,6 +219,8 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.official_subtitle_path = Path(
             "projects/demo/video.official.ja.srt"
         )
+        project.source_metadata = SourceMetadata()
+        project.program_rules.return_value = ProgramRules()
         project.source_metadata_context.return_value = None
         project.parent_pre_pass_context.return_value = None
 

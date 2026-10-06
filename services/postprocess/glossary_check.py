@@ -218,6 +218,11 @@ def glossary_check_subtitles(project: Project) -> None:
         prompt = _PROMPT_TEMPLATE
         if project.official_subtitle_path.exists():
             prompt += "\n\n" + _OFFICIAL_SUBTITLE_TEMPLATE
+        program_instruction = project.program_rules().render_instruction(
+            "glossary_check"
+        )
+        if program_instruction:
+            prompt += "\n\n" + program_instruction
         prompt += (
             "\n\nPriority suspect blocks (review these first; this is not "
             "the full edit scope):\n"

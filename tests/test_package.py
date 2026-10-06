@@ -9,7 +9,7 @@ from unittest.mock import patch
 from project import Project
 from services import package as package_module
 from services.package import core as package_core
-from services.package import rc as package_rc
+from services.program_config import config as program_config
 from services.package import noise as package_noise
 from services.package import remix as package_remix
 from services.package import titles as package_titles
@@ -666,7 +666,7 @@ class PackageTests(unittest.TestCase):
         self.assertIn(("advance", 1, 498.5, "2.mp4"), progress.events)
         self.assertEqual(progress.events[-1], ("finish", 1, "done"))
 
-    def test_packagerc_series_rule_forces_a_remix_package(self):
+    def test_program_config_series_rule_forces_a_remix_package(self):
         root = self._make_temp_dir()
         source = root / "source"
         package_root = root / "package"
@@ -683,8 +683,8 @@ class PackageTests(unittest.TestCase):
             source / "video.cht.finalized.srt",
             [("00:00:00,000", "00:01:40,000")],
         )
-        rc_path = root / ".packagerc"
-        rc_path.write_text(
+        config_file = root / "config.json"
+        config_file.write_text(
             json.dumps({"series": {"ドキュメンタル": {"remix": True}}}),
             encoding="utf-8",
         )
@@ -696,7 +696,7 @@ class PackageTests(unittest.TestCase):
 
         with (
             patch.object(
-                package_rc, "package_rc_path", return_value=rc_path
+                program_config, "config_path", return_value=config_file
             ),
             patch.object(
                 package_remix.MediaProcessor,
@@ -722,7 +722,7 @@ class PackageTests(unittest.TestCase):
             "remix",
         )
 
-    def test_packagerc_remix_without_default_noise_fails_the_package(self):
+    def test_program_config_remix_without_default_noise_fails_the_package(self):
         root = self._make_temp_dir()
         source = root / "source"
         package_root = root / "package"
@@ -733,8 +733,8 @@ class PackageTests(unittest.TestCase):
             source / "video.cht.finalized.srt",
             [("00:00:00,000", "00:01:40,000")],
         )
-        rc_path = root / ".packagerc"
-        rc_path.write_text(
+        config_file = root / "config.json"
+        config_file.write_text(
             json.dumps({"channel": {"テレビ東京": {"remix": True}}}),
             encoding="utf-8",
         )
@@ -743,7 +743,7 @@ class PackageTests(unittest.TestCase):
 
         with (
             patch.object(
-                package_rc, "package_rc_path", return_value=rc_path
+                program_config, "config_path", return_value=config_file
             ),
             patch.object(
                 package_remix.MediaProcessor,

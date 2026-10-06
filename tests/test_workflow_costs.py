@@ -6,6 +6,8 @@ import workflow as workflow_module
 import workflow.api as workflow_api
 import workflow.stages.transcription as transcription_stage
 import workflow.stages.translation as translation_stage
+from project import SourceMetadata
+from services.program_config import ProgramRules
 from services.elevenlabs.asr import ElevenLabsTranscriptionResult
 from services.translate.errors import TranslationCostSummary, TranslationError
 
@@ -40,6 +42,8 @@ class WorkflowGeminiCostTests(unittest.TestCase):
         project.pre_pass_cache_dir = base / ".pre_pass"
         project.chunks_cache_dir = base / ".chunks"
         project.official_subtitle_path = base / "video.official.ja.srt"
+        project.source_metadata = SourceMetadata(title="title")
+        project.program_rules.return_value = ProgramRules()
         project.source_metadata_context.return_value = None
         project.parent_pre_pass_context.return_value = None
         return project
@@ -70,7 +74,8 @@ class WorkflowGeminiCostTests(unittest.TestCase):
 
         project.add_cost.assert_called_once_with("gemini", 3.5)
         request = gemini_cls.return_value.translate_chunks.call_args.args[0]
-        self.assertEqual(request.video_description, "hint")
+        self.assertEqual(request.video_title, "title")
+        self.assertEqual(request.translation_hint, "hint")
         self.assertEqual(request.srt_path, project.srt_path)
         project.mark_progress.assert_called_once_with(
             workflow_module.ProgressStage.CHUNK_TRANSLATED

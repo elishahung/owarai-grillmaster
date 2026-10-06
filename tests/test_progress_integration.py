@@ -9,6 +9,8 @@ from unittest.mock import MagicMock, patch
 import workflow as workflow_module
 import workflow.api as workflow_api
 import workflow.stages.translation as translation_stage
+from project import SourceMetadata
+from services.program_config import ProgramRules
 from services.translate.chunk.chunk_worker import ChunkTranslationResult
 from services.translate.errors import (
     ChunkTranslationError,
@@ -153,6 +155,8 @@ class WorkflowProgressTests(unittest.TestCase):
         project.pre_pass_cache_dir = base / ".pre_pass"
         project.chunks_cache_dir = base / ".chunks"
         project.official_subtitle_path = base / "video.official.ja.srt"
+        project.source_metadata = SourceMetadata()
+        project.program_rules.return_value = ProgramRules()
         project.source_metadata_context.return_value = None
         project.parent_pre_pass_context.return_value = None
         return project
@@ -278,7 +282,6 @@ class GeminiProgressTests(unittest.TestCase):
             pre_pass.model_dump_json(), encoding="utf-8"
         )
         request = TranslationRequest(
-            video_description=None,
             srt_path=srt_path,
             video_path=root / "video.mp4",
             audio_path=root / "audio.ogg",
@@ -302,6 +305,7 @@ class GeminiProgressTests(unittest.TestCase):
             total_chunks,
             pre_pass,
             official_subtitle_blocks=None,
+            program_instruction=None,
         ):
             if chunk_index == 0:
                 await asyncio.sleep(0.01)

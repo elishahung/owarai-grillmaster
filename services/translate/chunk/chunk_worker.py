@@ -10,8 +10,8 @@ from settings import settings
 from services.srt import SrtBlock
 from services.inference import (
     Backend,
-    backend_supports_audio,
-    is_agent_backend,
+    InferenceNotInstalledError,
+    InferenceQuotaError,
     run_inference,
 )
 from services.inference.tools import build_chunk_frame_tool_instruction
@@ -24,12 +24,14 @@ from .structural_fix import fix_chunk_structure
 from ..pre_pass.schema import PrePassResult, SegmentSummary
 
 
+# Fixed pause between chunk attempts so a momentary agent/network failure
+# is not retried straight back into the same outage. Maintainer constant.
+_RETRY_DELAY_SECONDS = 2.0
+
+
 class ChunkTranslationResult(BaseModel):
     blocks: list[SrtBlock]
-    cost: float
     retries: int
-    from_index: int
-    to_index: int
 
 
 def _raw_cache_path(response_dir, from_index: int, to_index: int):
@@ -194,10 +196,11 @@ async def translate_chunk(
 ) -> ChunkTranslationResult:
     """Translate one chunk with persistent media cache and response caching.
 
-    The backend is chosen per `settings.agent_chunk_model`; backends without
-    audio support drop audio and translate on frames + SRT only. Output is free-form SRT (no JSON
-    schema) — structural validation happens downstream, identical for every
-    backend.
+    The backend is chosen per `settings.agent_chunk_model`; the facade only
+    extracts chunk audio for an audio-capable backend, so the instruction and
+    the audio attachment follow `media_assets.audio`. Output is free-form SRT
+    (no JSON schema) — structural validation happens downstream, identical
+    for every backend.
     """
     user_message = _build_user_message(
         chunk,
@@ -213,21 +216,20 @@ async def translate_chunk(
     to_index = chunk[-1].index
     spec = settings.agent_chunk_model
     backend = Backend(spec.backend)
-    has_audio = backend_supports_audio(backend)
-    system_instruction = build_chunk_instruction(has_audio=has_audio)
+    instruction = build_chunk_instruction(
+        has_audio=media_assets.audio is not None
+    )
     if program_instruction:
-        system_instruction += "\n\n" + program_instruction
-    if is_agent_backend(backend):
-        system_instruction += "\n\n" + build_chunk_frame_tool_instruction(
-            media_assets.video_path.parent,
-            media_assets.time_range.start_seconds,
-            media_assets.time_range.end_seconds,
-        )
+        instruction += "\n\n" + program_instruction
+    instruction += "\n\n" + build_chunk_frame_tool_instruction(
+        media_assets.video_path.parent,
+        media_assets.time_range.start_seconds,
+        media_assets.time_range.end_seconds,
+    )
     raw_path = _raw_cache_path(media_assets.response_dir, from_index, to_index)
     source_srt = "\n\n".join(block.raw for block in chunk)
 
     raw_text: str | None = None
-    api_cost = 0.0
     retries = 0
 
     if raw_path.exists():
@@ -243,13 +245,7 @@ async def translate_chunk(
         max_retries = settings.chunk_max_retries
         last_error: Exception | None = None
         images = [frame.path for frame in media_assets.frames]
-        # Gate audio on the backend's capability, not just the cached asset, so
-        # an agent backend never receives a lingering audio segment.
-        audio = (
-            [media_assets.audio.path]
-            if (has_audio and media_assets.audio)
-            else None
-        )
+        audio = [media_assets.audio] if media_assets.audio else None
 
         for attempt in range(1, max_retries + 1):
             try:
@@ -258,35 +254,32 @@ async def translate_chunk(
                     f"{from_index}–{to_index} ({len(chunk)} blocks, "
                     f"attempt {attempt}/{max_retries})"
                 )
-                io_result = await asyncio.to_thread(
+                raw_text = await asyncio.to_thread(
                     run_inference,
                     backend=backend,
-                    system_prompt=system_instruction,
-                    prompt=user_message,
+                    prompt=f"{instruction}\n\n{user_message}",
                     images=images,
                     audio=audio,
-                    schema=None,
                     cwd=media_assets.video_path.parent,
                     model=spec.model,
                     reasoning_effort=spec.reasoning_effort,
-                    web_search=is_agent_backend(backend),
                 )
-                raw_text = io_result.text
-                api_cost += io_result.cost
                 retries = attempt - 1
                 break
+            except (InferenceQuotaError, InferenceNotInstalledError):
+                # Another attempt cannot recover these; fail the chunk now.
+                raise
             except Exception as e:
                 last_error = e
                 logger.warning(f"{prefix} Attempt {attempt} failed: {e}")
                 if attempt < max_retries:
-                    await asyncio.sleep(2 ** (attempt - 1))
+                    await asyncio.sleep(_RETRY_DELAY_SECONDS)
 
         if raw_text is None:
             logger.error(f"{prefix} All {max_retries} attempts failed")
             raise ChunkTranslationError(
                 f"Chunk {chunk_index + 1}/{total_chunks} failed after "
                 f"{max_retries} attempts",
-                accumulated_cost=api_cost,
                 retries=max_retries - 1,
                 chunk_index=chunk_index,
                 total_chunks=total_chunks,
@@ -313,13 +306,7 @@ async def translate_chunk(
                 f"{prefix} Fixed cache hit: {len(blocks)} blocks from "
                 f"{fixed_path.name}"
             )
-            return ChunkTranslationResult(
-                blocks=blocks,
-                cost=api_cost,
-                retries=retries,
-                from_index=from_index,
-                to_index=to_index,
-            )
+            return ChunkTranslationResult(blocks=blocks, retries=retries)
         except (OSError, ValueError) as e:
             logger.warning(
                 f"{prefix} Fixed cache unusable ({e}); re-running fix"
@@ -331,16 +318,9 @@ async def translate_chunk(
         error_str = str(validation_error)
     else:
         logger.success(
-            f"{prefix} Completed {len(blocks)} blocks "
-            f"(${api_cost:.4f}, retries={retries})"
+            f"{prefix} Completed {len(blocks)} blocks (retries={retries})"
         )
-        return ChunkTranslationResult(
-            blocks=blocks,
-            cost=api_cost,
-            retries=retries,
-            from_index=from_index,
-            to_index=to_index,
-        )
+        return ChunkTranslationResult(blocks=blocks, retries=retries)
 
     logger.warning(
         f"{prefix} Raw output failed validation: {error_str}. "
@@ -360,7 +340,6 @@ async def translate_chunk(
     except Exception as fix_error:
         raise ChunkTranslationError(
             f"Fix layer failed ({fix_error}); original: {error_str}",
-            accumulated_cost=api_cost,
             retries=retries,
             chunk_index=chunk_index,
             total_chunks=total_chunks,
@@ -379,13 +358,6 @@ async def translate_chunk(
         )
 
     logger.success(
-        f"{prefix} Fix succeeded; {len(blocks)} blocks "
-        f"(${api_cost:.4f}, retries={retries})"
+        f"{prefix} Fix succeeded; {len(blocks)} blocks (retries={retries})"
     )
-    return ChunkTranslationResult(
-        blocks=blocks,
-        cost=api_cost,
-        retries=retries,
-        from_index=from_index,
-        to_index=to_index,
-    )
+    return ChunkTranslationResult(blocks=blocks, retries=retries)

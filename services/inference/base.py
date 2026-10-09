@@ -1,8 +1,8 @@
 """Shared contract for the unified model-inference layer.
 
-One entry point — `run_inference` — drives every backend (Gemini API,
-Antigravity CLI, Codex CLI, Claude Agent SDK). A call is parameterized, not split into
-modes:
+One entry point — `run_inference` — drives every backend (Antigravity CLI,
+Codex CLI, Claude Agent SDK). All three are local subscription agents. A
+call is parameterized, not split into modes:
 
   * `schema=None`  -> return the model's raw final message (the historical
     "agentic" behaviour; file-writing callers pass a `cwd` and inspect the
@@ -10,8 +10,8 @@ modes:
   * `schema=<Model>` -> the JSON Schema is appended to the prompt and the
     output is validated-and-repaired until it parses, then returned as text.
 
-Gemini backends additionally accept `audio`; the other agent backends (Codex,
-Claude) cannot ingest audio and raise `UnsupportedMediaError` if given any.
+agy additionally accepts `audio`; Codex and Claude cannot ingest audio and
+raise `UnsupportedMediaError` if given any.
 """
 
 from __future__ import annotations
@@ -27,10 +27,8 @@ from settings import settings
 def default_timeout_secs() -> int:
     """Per-invocation timeout shared by every backend, from AGENT_TIMEOUT_MINUTES.
 
-    The agent backends (agy / codex / claude) pass it
-    straight to their subprocess/query timeout; gemini-api converts it to the
-    genai SDK's milliseconds. Resolved per call rather than captured in a
-    module constant, so the configured value is honoured wherever a backend
+    Every backend passes it straight to its subprocess/query timeout.
+    Resolved per call rather than captured in a module constant, so the configured value is honoured wherever a backend
     falls back to the default.
     """
     return settings.agent_timeout_minutes * 60
@@ -39,49 +37,17 @@ def default_timeout_secs() -> int:
 class Backend(StrEnum):
     """Selectable inference backend."""
 
-    GEMINI_API = "gemini-api"
     AGY = "agy"
     CODEX = "codex"
     CLAUDE = "claude"
 
 
-_GEMINI = frozenset({Backend.GEMINI_API, Backend.AGY})
-# Every Gemini backend hears audio (agy through its view_file tool); the other
-# agents (codex / claude) cannot.
-_AUDIO_CAPABLE = _GEMINI
-# Agent backends: subscription/OAuth, local, free. Everything EXCEPT the network
-# gemini-api backend — agy is an agent too (a local CLI subprocess).
-_AGENT = frozenset({Backend.AGY, Backend.CODEX, Backend.CLAUDE})
-
-
-def is_gemini_backend(backend: Backend) -> bool:
-    """True for the Gemini backends (genai SDK or Antigravity CLI)."""
-    return backend in _GEMINI
-
-
-def is_agent_backend(backend: Backend) -> bool:
-    """True for the agent backends (agy, codex, claude).
-
-    The api-vs-agent split is the core taxonomy: only gemini-api is an API
-    (network HTTP, metered, fans out widely); the others are agents
-    (local subscription processes, free, low concurrency).
-    """
-    return backend in _AGENT
-
-
-def fan_out_concurrency(backend: Backend) -> int:
-    """How many parallel calls a fan-out stage may run on ``backend``.
-
-    Agents spawn a heavy local process per call, so they are bounded more
-    tightly than the network gemini-api backend.
-    """
-    if is_agent_backend(backend):
-        return settings.chunk_agent_concurrency
-    return settings.chunk_api_concurrency
+# Gemini (agy, through its view_file tool) hears audio; codex / claude cannot.
+_AUDIO_CAPABLE = frozenset({Backend.AGY})
 
 
 def backend_supports_audio(backend: Backend) -> bool:
-    """True when the backend can ingest audio attachments (Gemini only)."""
+    """True when the backend can ingest audio attachments (agy only)."""
     return backend in _AUDIO_CAPABLE
 
 

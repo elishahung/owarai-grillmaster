@@ -7,7 +7,6 @@ from unittest.mock import patch
 
 from project import Project
 from services import package as package_module
-from services.inference import InferenceResult
 from services.package import core as package_core
 from services.package import titles as package_titles
 
@@ -51,10 +50,8 @@ class PackageTitlesTests(unittest.TestCase):
         return patch.object(
             package_titles,
             "run_inference",
-            return_value=InferenceResult(
-                text=json.dumps(_AGENT_TITLES, ensure_ascii=False),
-                cost=0.0,
-                requests=1,
+            return_value=package_titles.TitleSuggestions.model_validate(
+                _AGENT_TITLES
             ),
         )
 

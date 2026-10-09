@@ -7,7 +7,6 @@ from pathlib import Path
 from contextlib import ExitStack
 from unittest.mock import MagicMock, patch
 
-from services.inference import InferenceResult
 from services.live_chat import (
     ChatTranslationInputs,
     parse_live_chat,
@@ -143,18 +142,16 @@ class TranslateLiveChatTests(unittest.TestCase):
                         {"id": 2, "text": "對不起池田"},
                     ]
                 }
-            result = InferenceResult(text=json.dumps(payload, ensure_ascii=False), cost=0.25)
-            kwargs["validate"](kwargs["schema"].model_validate_json(result.text))
+            result = kwargs["schema"].model_validate(payload)
+            kwargs["validate"](result)
             return result
 
-        costs: list[float] = []
         with patch.object(chat_translate, "run_inference", side_effect=fake_inference):
-            log = translate_live_chat(inputs, on_cost=costs.append)
+            log = translate_live_chat(inputs)
 
         self.assertEqual(
             [m.translation for m in log.messages], ["謝謝池田", "www", "抱歉啦池田"]
         )
-        self.assertEqual(costs, [0.25, 0.25])
         # The briefing is compacted once and shared by batch and polish.
         self.assertIn('{"summary":"demo"}', prompts[0])
         self.assertIn('{"summary":"demo"}', prompts[1])
@@ -173,7 +170,7 @@ class TranslateLiveChatTests(unittest.TestCase):
 
         # Batch and polish caches make a re-run free.
         with patch.object(chat_translate, "run_inference") as run_inference:
-            again = translate_live_chat(inputs, on_cost=costs.append)
+            again = translate_live_chat(inputs)
         run_inference.assert_not_called()
         self.assertEqual(again, log)
 
@@ -210,7 +207,7 @@ class TranslateLiveChatTests(unittest.TestCase):
 
         with patch.object(chat_translate, "run_inference", side_effect=fake_inference):
             with self.assertRaises(RuntimeError):
-                translate_live_chat(inputs, on_cost=lambda cost: None)
+                translate_live_chat(inputs)
 
         partial = chat_translate.ChatBatchTranslation(
             translations=[chat_translate.ChatLineTranslation(id=0, text="笑死")]
@@ -346,7 +343,7 @@ class LiveChatWorkflowTests(unittest.TestCase):
         project.mark_progress.side_effect = lambda stage: setattr(
             project, stage.value, True
         )
-        project.total_cost = 0.0
+        project.asr_cost = 0.0
         calls: list[str] = []
 
         def record(name):

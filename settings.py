@@ -12,7 +12,7 @@ class ModelSpec(BaseModel):
 
     Written in env/config as ``"backend/model"`` or ``"backend/model/effort"``
     (effort is one of low/medium/high/extra/max/ultra, default high) — e.g.
-    ``"gemini-api/gemini-3-flash-preview"`` or ``"codex/gpt-5.5/medium"``. The
+    ``"agy/gemini-3.1-pro"`` or ``"codex/gpt-5.5/medium"``. The
     split happens here so call sites just read ``.backend``, ``.model``, and
     ``.reasoning_effort``.
     """
@@ -101,39 +101,33 @@ class Settings(BaseSettings):
     # the maintainer, not exposed as configuration.
 
     # --- Agent / model backends (shared) ------------------------------------
-    # Every model-driven stage picks one backend: 'gemini-api', 'agy',
-    # 'claude', or 'codex'. agy / claude / codex use subscription/OAuth
-    # auth; gemini-api uses AGENT_GEMINI_API_KEY (only then is the key
-    # required). Only the Gemini backends ingest audio; claude / codex stages
-    # run on frames + SRT only. Each stage sets one AGENT_*_MODEL spec
+    # Every model-driven stage picks one agent backend: 'agy', 'claude', or
+    # 'codex', all on subscription/OAuth auth (no metered model cost). Only
+    # agy ingests audio; claude / codex stages run on frames + SRT only.
+    # Each stage sets one AGENT_*_MODEL spec
     # written as "backend/model" or "backend/model/effort" (effort
     # low/medium/high/extra/max/ultra, default high) and parsed into a
     # ModelSpec; the model and effort are passed to the selected backend (set
     # them to values that backend understands). Effort is mapped per client
-    # (gemini thinking_level, codex model_reasoning_effort, claude effort);
+    # (agy model variant, codex model_reasoning_effort, claude effort);
     # backends without a matching setting clamp extra/max/ultra to their
     # highest supported value. AGENT_TIMEOUT_MINUTES bounds every single
     # invocation. The schema validate-and-repair cap is NOT configurable — it is the hardcoded
     # MAX_SCHEMA_RETRIES constant in services/inference/schema_enforce.py.
-    agent_gemini_api_key: str | None = Field(
-        default=None,
-        description="API key for Google Gemini. Required only when a stage uses the 'gemini-api' backend.",
-    )
-
     agent_timeout_minutes: int = Field(
         default=40,
         ge=1,
-        description="Per-invocation timeout in minutes, shared by every inference backend (agent subprocess/query timeout; converted to milliseconds for gemini-api). Raise it when a high-effort stage legitimately runs longer.",
+        description="Per-invocation timeout in minutes, shared by every inference backend (agent subprocess/query timeout). Raise it when a high-effort stage legitimately runs longer.",
     )
 
     agent_prepass_model: ModelSpecField = Field(
         default="agy/gemini-3.1-pro",
-        description="Pre-pass spec as 'backend/model[/effort]'. Backend: 'gemini-api', 'agy', 'claude', or 'codex'.",
+        description="Pre-pass spec as 'backend/model[/effort]'. Backend: 'agy', 'claude', or 'codex'.",
     )
 
     agent_chunk_model: ModelSpecField = Field(
         default="agy/gemini-3.1-pro",
-        description="Chunk translation spec as 'backend/model[/effort]'. Backend: 'gemini-api', 'agy', 'claude', or 'codex'.",
+        description="Chunk translation spec as 'backend/model[/effort]'. Backend: 'agy', 'claude', or 'codex'.",
     )
 
     agent_postprocess_model: ModelSpecField = Field(
@@ -169,15 +163,10 @@ class Settings(BaseSettings):
         default=6000,
         description="Target character count per chunk when splitting SRT for concurrent translation (~5 min of variety show subtitles)",
     )
-    chunk_api_concurrency: int = Field(
-        default=10,
-        ge=1,
-        description="Maximum concurrent chunk requests for the gemini-api backend (cheap network HTTP calls, can fan out widely).",
-    )
-    chunk_agent_concurrency: int = Field(
+    agent_concurrency: int = Field(
         default=5,
         ge=1,
-        description="Maximum concurrent chunk processes for the agent backends (agy / codex / claude); lower than chunk_api_concurrency since each spawns a heavy local process.",
+        description="Maximum concurrent agent processes in a fan-out stage (chunk translation, live-chat batches); each call spawns a heavy local agent process.",
     )
     chunk_max_retries: int = Field(
         default=3,

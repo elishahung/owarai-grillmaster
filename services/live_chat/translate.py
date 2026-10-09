@@ -25,7 +25,7 @@ from pathlib import Path
 from loguru import logger
 from pydantic import BaseModel
 
-from services.inference import Backend, fan_out_concurrency, run_inference
+from services.inference import Backend, run_inference
 from services.media import MediaProcessor
 from services.progress import NoopProgressReporter
 from services.srt import parse_srt
@@ -135,14 +135,12 @@ def plan_batches(log: ChatLog) -> list[list[ChatMessage]]:
 def translate_live_chat(
     inputs: ChatTranslationInputs,
     *,
-    on_cost: Callable[[float], None],
     progress: NoopProgressReporter | None = None,
 ) -> TranslatedChatLog:
     """Translate every batch, polish the whole, and write the translated log.
 
-    ``on_cost`` runs on the calling thread once per model result, so it may
-    persist project state. A failed batch fails the stage after the others
-    finish; their caches make the resume re-run only what failed.
+    A failed batch fails the stage after the others finish; their caches
+    make the resume re-run only what failed.
     """
     progress = progress or NoopProgressReporter()
     log = ChatLog.read(inputs.messages_path)
@@ -161,8 +159,7 @@ def translate_live_chat(
         if batches
         else None
     )
-    workers = fan_out_concurrency(Backend(settings.chat_model.backend))
-    with ThreadPoolExecutor(max_workers=workers) as pool:
+    with ThreadPoolExecutor(max_workers=settings.agent_concurrency) as pool:
         futures = {
             pool.submit(
                 _translate_batch, index, batch, log, context, inputs
@@ -172,7 +169,7 @@ def translate_live_chat(
         for future in as_completed(futures):
             index = futures[future]
             try:
-                result, cost = future.result()
+                result = future.result()
             except Exception as error:
                 logger.error(f"Chat batch {index} failed: {error}")
                 failures.append(f"batch {index}: {error}")
@@ -180,7 +177,6 @@ def translate_live_chat(
                 translations.update(
                     (line.id, line.text) for line in result.translations
                 )
-                on_cost(cost)
             progress.advance(task)
     progress.finish(task, "failed" if failures else "done")
     if failures:
@@ -190,8 +186,7 @@ def translate_live_chat(
         )
 
     if translations:
-        polish, cost = _polish(log, translations, context, inputs)
-        on_cost(cost)
+        polish = _polish(log, translations, context, inputs)
         translations.update(
             (line.id, line.text) for line in polish.corrections
         )
@@ -271,7 +266,7 @@ def _translate_batch(
     log: ChatLog,
     context: _SharedContext,
     inputs: ChatTranslationInputs,
-) -> tuple[ChatBatchTranslation, float]:
+) -> ChatBatchTranslation:
     expected = {message.id for message in batch}
     return _infer_cached(
         ChatBatchTranslation,
@@ -289,7 +284,7 @@ def _polish(
     translations: dict[int, str],
     context: _SharedContext,
     inputs: ChatTranslationInputs,
-) -> tuple[ChatPolish, float]:
+) -> ChatPolish:
     lines = [
         f"{m.id} [{_clock(m.seconds)}] {m.text} → {translations[m.id]}"
         for m in log.messages
@@ -317,7 +312,7 @@ def _infer_cached[T: BaseModel](
     validate: Callable[[T], None],
     cache_path: Path,
     label: str,
-) -> tuple[T, float]:
+) -> T:
     """Return the cached result for ``cache_path``, or infer and cache it.
 
     A fixed-filename cache: a parseable file skips the model, an unreadable
@@ -332,12 +327,12 @@ def _infer_cached[T: BaseModel](
             logger.warning(f"Ignoring unreadable cache ({cache_path}): {error}")
         else:
             logger.debug(f"Cache hit for {label}: {cache_path}")
-            return cached, 0.0
+            return cached
 
     spec = settings.chat_model
     # cwd is None (throwaway temp dir): every input is in the prompt and
     # Python writes the cache.
-    inference = run_inference(
+    result = run_inference(
         backend=Backend(spec.backend),
         prompt=prompt,
         schema=schema,
@@ -345,11 +340,10 @@ def _infer_cached[T: BaseModel](
         model=spec.model,
         reasoning_effort=spec.reasoning_effort,
     )
-    result = schema.model_validate_json(inference.text)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text(result.model_dump_json(indent=2), encoding="utf-8")
     logger.info(f"Finished {label}")
-    return result, inference.cost
+    return result
 
 
 def _check_lines(

@@ -1,5 +1,5 @@
 """Pre-pass result schema — pydantic-only so a standalone validator subprocess
-can import it without dragging in settings, genai, or media dependencies."""
+can import it without dragging in settings or media dependencies."""
 
 from __future__ import annotations
 

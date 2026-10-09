@@ -50,17 +50,14 @@ def run_codex_exec(
     prompt: str,
     cwd: Path,
     images: list[Path] | None = None,
-    output_last_message_path: Path | None = None,
-    timeout: int | None = None,
     model: str | None = None,
     reasoning_effort: str | None = None,
-    web_search: bool = False,
 ) -> str:
     """Invoke `codex exec` non-interactively and return the final assistant message.
 
-    ``web_search`` enables Codex's built-in web-search tool for this call
-    (off by default in ``codex exec``; ``--yolo`` only lifts the sandbox, it
-    does not add the tool).
+    Codex's built-in web-search tool is always enabled (it is off by default
+    in ``codex exec``, and ``--yolo`` only lifts the sandbox), matching agy
+    and claude, whose web tools are always available.
     """
     executable = shutil.which("codex")
     if executable is None:
@@ -69,23 +66,17 @@ def run_codex_exec(
         )
 
     abs_cwd = cwd.resolve()
-    effective_timeout = timeout or default_timeout_secs()
+    effective_timeout = default_timeout_secs()
     effective_model = model or _DEFAULT_MODEL
     effective_effort = resolve_codex_reasoning_effort(
         reasoning_effort or _DEFAULT_REASONING_EFFORT
     )
 
-    if output_last_message_path is not None:
-        capture_path = output_last_message_path.resolve()
-        capture_path.parent.mkdir(parents=True, exist_ok=True)
-        cleanup_capture = False
-    else:
-        handle = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False, encoding="utf-8"
-        )
-        handle.close()
-        capture_path = Path(handle.name)
-        cleanup_capture = True
+    handle = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".txt", delete=False, encoding="utf-8"
+    )
+    handle.close()
+    capture_path = Path(handle.name)
 
     cmd: list[str] = [
         executable,
@@ -100,9 +91,9 @@ def run_codex_exec(
         "--yolo",
         "--output-last-message",
         str(capture_path),
+        "-c",
+        "tools.web_search=true",
     ]
-    if web_search:
-        cmd += ["-c", "tools.web_search=true"]
     for img in images or []:
         cmd += ["--image", str(img.resolve())]
     cmd.append("--")
@@ -143,8 +134,7 @@ def run_codex_exec(
         # every backend, with middle-truncation), not here.
         return final_message
     finally:
-        if cleanup_capture:
-            try:
-                capture_path.unlink(missing_ok=True)
-            except OSError:
-                pass
+        try:
+            capture_path.unlink(missing_ok=True)
+        except OSError:
+            pass

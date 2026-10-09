@@ -7,7 +7,6 @@ from pathlib import Path
 from loguru import logger
 
 from project import Project, ProgressStage
-from services.inference import Backend, fan_out_concurrency
 from services.live_chat import DEFAULT_CHAT_LAYOUT, ChatLayout
 from settings import settings
 from services.progress import (
@@ -173,9 +172,6 @@ def process_project(
 
 def _stage_specs(options: WorkflowOptions) -> dict[str, StageSpec]:
     """Build the ordered stage specs with their display-parameter snapshots."""
-    chunk_concurrency = fan_out_concurrency(
-        Backend(settings.agent_chunk_model.backend)
-    )
     combine_params: dict[str, str] = {"tool": "ffmpeg"}
     if options.has_section:
         combine_params["section"] = (
@@ -269,7 +265,7 @@ def _stage_specs(options: WorkflowOptions) -> dict[str, StageSpec]:
             skipped_message="Chunk translation already completed",
             params={
                 "model": str(settings.agent_chunk_model),
-                "concurrency": str(chunk_concurrency),
+                "concurrency": str(settings.agent_concurrency),
                 "char_limit": str(settings.chunk_char_limit),
                 "max_retries": str(settings.chunk_max_retries),
             },

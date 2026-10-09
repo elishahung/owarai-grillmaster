@@ -139,15 +139,13 @@ def research_broadcast_date(project: Project) -> DateResearchResult:
     # cwd is deliberately None (throwaway temp dir): this task must not touch
     # project files, and it runs concurrently with the cover agent which
     # already works inside the project dir.
-    inference = run_inference(
+    result = run_inference(
         backend=backend,
         prompt=prompt,
         schema=DateResearchResult,
         model=spec.model,
         reasoning_effort=spec.reasoning_effort,
-        web_search=True,
     )
-    result = DateResearchResult.model_validate_json(inference.text)
 
     project.artifacts_dir.mkdir(parents=True, exist_ok=True)
     project.date_research_path.write_text(

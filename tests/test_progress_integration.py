@@ -12,12 +12,8 @@ import workflow.stages.translation as translation_stage
 from project import SourceMetadata
 from services.program_config import ProgramRules
 from services.translate.chunk.chunk_worker import ChunkTranslationResult
-from services.translate.errors import (
-    ChunkTranslationError,
-    TranslationCostSummary,
-    TranslationError,
-)
-from services.translate.facade import Translate, TranslationRequest
+from services.translate.errors import ChunkTranslationError, TranslationError
+from services.translate.facade import TranslationRequest, _translate_chunks_async
 from services.translate.pre_pass.pre_pass import PrePassResult
 from services.media import (
     Box,
@@ -86,13 +82,11 @@ class FakeProgressReporter(NoopProgressReporter):
             ("chunk_started", index, total, from_index, to_index)
         )
 
-    def chunk_finished(self, index: int, retries: int, cost: float):
-        self.events.append(("chunk_finished", index, retries, cost))
+    def chunk_finished(self, index: int, retries: int):
+        self.events.append(("chunk_finished", index, retries))
 
-    def chunk_failed(
-        self, index: int, message: str, retries: int = 0, cost: float = 0.0
-    ):
-        self.events.append(("chunk_failed", index, message, retries, cost))
+    def chunk_failed(self, index: int, message: str, retries: int = 0):
+        self.events.append(("chunk_failed", index, message, retries))
 
     def pipeline_started(self, project, plan):
         self.events.append(
@@ -132,7 +126,7 @@ class WorkflowProgressTests(unittest.TestCase):
         project = MagicMock()
         project.id = "demo"
         project.translation_hint = "hint"
-        project.total_cost = 0.0
+        project.asr_cost = 0.0
         for stage in workflow_module.ProgressStage:
             setattr(project, stage.value, False)
         project.is_metadata_fetched = True
@@ -164,22 +158,12 @@ class WorkflowProgressTests(unittest.TestCase):
     def test_workflow_passes_progress_to_chunk_translation(self):
         project = self._build_project_mock()
         progress = FakeProgressReporter()
-        summary = TranslationCostSummary(
-            total_cost=0.5,
-            pre_pass_cost=0.0,
-            chunk_costs=[0.5],
-            num_chunks=1,
-            retries=0,
-            elapsed_seconds=1.0,
-            completed_chunks=1,
-            failed_chunks=[],
-        )
 
         with (
             patch.object(
                 workflow_api.Project, "from_source_str", return_value=project
             ),
-            patch.object(translation_stage, "Translate") as gemini_cls,
+            patch.object(translation_stage, "translate") as translate_mod,
             patch.object(workflow_api.settings, "archived_path", None),
             patch.object(workflow_api.settings, "package_path", None),
             # Pin the optional-stage toggles so the expected event list does
@@ -201,14 +185,11 @@ class WorkflowProgressTests(unittest.TestCase):
                 False,
             ),
         ):
-            gemini_cls.return_value.translate_chunks.return_value = summary
             workflow_module.process_project("demo", progress=progress)
 
-        gemini_cls.return_value.translate_chunks.assert_called_once()
+        translate_mod.translate_chunks.assert_called_once()
         self.assertIs(
-            gemini_cls.return_value.translate_chunks.call_args.kwargs[
-                "progress"
-            ],
+            translate_mod.translate_chunks.call_args.kwargs["progress"],
             progress,
         )
         # All stages except chunk translation are cached/disabled on this
@@ -258,9 +239,9 @@ class WorkflowProgressTests(unittest.TestCase):
         )
 
 
-class GeminiProgressTests(unittest.TestCase):
+class ChunkProgressTests(unittest.TestCase):
     def _make_request(self):
-        root = Path(tempfile.mkdtemp(prefix="gemini-progress-test-"))
+        root = Path(tempfile.mkdtemp(prefix="chunk-progress-test-"))
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         srt_path = root / "source.srt"
         srt_path.write_text(
@@ -292,11 +273,9 @@ class GeminiProgressTests(unittest.TestCase):
         )
         return request, parse_srt(srt_path.read_text(encoding="utf-8"))
 
-    def test_gemini_reports_chunk_completion_and_preserves_order(self):
+    def test_reports_chunk_completion_and_preserves_order(self):
         request, blocks = self._make_request()
         progress = FakeProgressReporter()
-        gemini = Translate.__new__(Translate)
-        gemini._client = object()
 
         async def fake_translate(
             media_assets,
@@ -311,7 +290,6 @@ class GeminiProgressTests(unittest.TestCase):
                 await asyncio.sleep(0.01)
             return ChunkTranslationResult(
                 blocks=chunk,
-                cost=chunk_index + 0.5,
                 retries=chunk_index,
                 from_index=chunk[0].index,
                 to_index=chunk[-1].index,
@@ -331,11 +309,8 @@ class GeminiProgressTests(unittest.TestCase):
                 side_effect=fake_translate,
             ),
         ):
-            result = asyncio.run(
-                gemini._translate_chunks_async(request, progress)
-            )
+            asyncio.run(_translate_chunks_async(request, progress))
 
-        self.assertEqual(result.completed_chunks, 2)
         self.assertEqual(
             request.output_path.read_text(encoding="utf-8"),
             "1\n00:00:00,000 --> 00:00:01,000\nOne\n\n"
@@ -346,11 +321,9 @@ class GeminiProgressTests(unittest.TestCase):
             2,
         )
 
-    def test_gemini_reports_chunk_failure(self):
+    def test_reports_chunk_failure(self):
         request, blocks = self._make_request()
         progress = FakeProgressReporter()
-        gemini = Translate.__new__(Translate)
-        gemini._client = object()
 
         async def fake_translate(
             media_assets,
@@ -359,11 +332,11 @@ class GeminiProgressTests(unittest.TestCase):
             total_chunks,
             pre_pass,
             official_subtitle_blocks=None,
+            program_instruction=None,
         ):
             if chunk_index == 1:
                 raise ChunkTranslationError(
                     "failed",
-                    accumulated_cost=1.25,
                     retries=2,
                     chunk_index=chunk_index,
                     total_chunks=total_chunks,
@@ -372,7 +345,6 @@ class GeminiProgressTests(unittest.TestCase):
                 )
             return ChunkTranslationResult(
                 blocks=chunk,
-                cost=0.5,
                 retries=0,
                 from_index=chunk[0].index,
                 to_index=chunk[-1].index,
@@ -392,13 +364,35 @@ class GeminiProgressTests(unittest.TestCase):
                 side_effect=fake_translate,
             ),
         ):
-            with self.assertRaises(TranslationError):
-                asyncio.run(gemini._translate_chunks_async(request, progress))
+            with self.assertRaises(TranslationError) as ctx:
+                asyncio.run(_translate_chunks_async(request, progress))
 
-        self.assertTrue(
-            any(event[0] == "chunk_failed" for event in progress.events)
+        self.assertIn("1/2 chunks failed", str(ctx.exception))
+        self.assertIn(
+            ("chunk_failed", 1, "failed", 2), progress.events
         )
 
+
+    def test_reports_media_preparation_failure(self):
+        request, blocks = self._make_request()
+        progress = FakeProgressReporter()
+
+        with (
+            patch(
+                "services.translate.facade.split_into_chunks",
+                return_value=[[blocks[0]], [blocks[1]]],
+            ),
+            patch(
+                "services.translate.facade.prepare_chunk_media_assets",
+                side_effect=RuntimeError("ffmpeg failed"),
+            ),
+        ):
+            with self.assertRaises(TranslationError):
+                asyncio.run(_translate_chunks_async(request, progress))
+
+        failed = [e for e in progress.events if e[0] == "chunk_failed"]
+        self.assertEqual(len(failed), 2)
+        self.assertEqual(failed[0][2], "ffmpeg failed")
 
 def package_render_commands(popen):
     """Split a package render's ffmpeg calls into (video parts, audio, mux)."""
@@ -1039,7 +1033,7 @@ class RichProgressReporterTests(unittest.TestCase):
             )
             with reporter:
                 reporter.chunk_started(0, 1, 1, 10)
-                reporter.chunk_finished(0, retries=0, cost=0.1)
+                reporter.chunk_finished(0, retries=0)
                 self.assertEqual(list(reporter.progress.tasks), [])
 
                 task_id = reporter.start_stage(

@@ -4,9 +4,7 @@
 frames at specific timestamps on demand; ``build_frame_tool_instruction``
 renders the system-prompt block that teaches an agent backend when and how to
 call it. Stage helpers may also render non-CLI agent capability guidance such as
-web search. These instructions are appended only for agent backends
-(agy / codex / claude); gemini-api cannot run local tools,
-so it never sees them.
+web search. Every backend is an agent, so stages always append them.
 """
 
 from __future__ import annotations
@@ -57,7 +55,7 @@ def frame_tool_command_prefix(stage: FrameToolStage) -> str:
 def build_frame_tool_instruction(
     project_dir: Path,
     start_seconds: float,
-    end_seconds: float,
+    end_seconds: float | None,
     *,
     scope_label: str,
     stage: FrameToolStage,
@@ -66,13 +64,19 @@ def build_frame_tool_instruction(
 
     Embeds the exact stage-specific wrapper command and valid time window, so
     the agent can run it verbatim from its throwaway working directory.
+    ``end_seconds=None`` opens the window to the end of the video: the tool
+    clamps timestamps to the video duration itself, so no probe is needed.
 
     The generated command is fully pre-filled except for the ``--times`` value.
     Output paths are inferred from ``project_dir`` and ``stage`` by Python code.
     """
     project = project_dir.resolve()
     start = max(0.0, start_seconds)
-    end = max(start, end_seconds)
+    window = (
+        f"{start:.3f}s to the end of the video"
+        if end_seconds is None
+        else f"{start:.3f}s to {max(start, end_seconds):.3f}s"
+    )
     command = (
         f'{frame_tool_command_prefix(stage)} --project-dir "{project}" '
         f'--times "62.5,70,77"'
@@ -90,7 +94,7 @@ def build_frame_tool_instruction(
         "stage-local `extra_frames` directory and prints image paths which you "
         "then open with your file/image-reading tool:\n\n"
         f"```\n{command}\n```\n\n"
-        f"- Valid timestamps for {scope_label}: {start:.3f}s to {end:.3f}s. "
+        f"- Valid timestamps for {scope_label}: {window}. "
         "Stay strictly within this window.\n"
         f"- At most {_MAX_FRAMES_PER_CALL} timestamps per call.\n"
         "- Use this when visual evidence would clarify names, captions, "
@@ -178,16 +182,12 @@ def build_chunk_frame_tool_instruction(
     )
 
 
-def build_refine_frame_tool_instruction(
-    project_dir: Path,
-    start_seconds: float,
-    end_seconds: float,
-) -> str:
+def build_refine_frame_tool_instruction(project_dir: Path) -> str:
     return (
         build_frame_tool_instruction(
             project_dir,
-            start_seconds,
-            end_seconds,
+            0.0,
+            None,
             scope_label="the entire video",
             stage=FrameToolStage.REFINE,
         )
@@ -201,16 +201,12 @@ def build_refine_frame_tool_instruction(
     )
 
 
-def build_glossary_check_frame_tool_instruction(
-    project_dir: Path,
-    start_seconds: float,
-    end_seconds: float,
-) -> str:
+def build_glossary_check_frame_tool_instruction(project_dir: Path) -> str:
     return (
         build_frame_tool_instruction(
             project_dir,
-            start_seconds,
-            end_seconds,
+            0.0,
+            None,
             scope_label="the entire video",
             stage=FrameToolStage.GLOSSARY_CHECK,
         )

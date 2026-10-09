@@ -86,21 +86,15 @@ def run_claude_sdk_exec(
     prompt: str,
     cwd: Path,
     images: list[Path] | None = None,
-    output_last_message_path: Path | None = None,
-    timeout: int | None = None,
     model: str | None = None,
     reasoning_effort: str | None = None,
-    web_search: bool = False,
 ) -> str:
     """Invoke the Claude Agent SDK once and return the final assistant message.
 
     Synchronous facade over an async query so existing call sites stay sync.
     Safe because refine/glossary run on the main thread with no live event
-    loop; `asyncio.run` would raise if one were already running.
-
-    ``web_search`` is accepted for signature parity with the codex runner:
-    the SDK's built-in WebSearch tool is already available under
-    ``bypassPermissions``, so no option change is needed here.
+    loop; `asyncio.run` would raise if one were already running. The SDK's
+    built-in WebSearch tool is always available under ``bypassPermissions``.
     """
     try:
         from claude_agent_sdk import (  # noqa: PLC0415 — optional dependency
@@ -118,7 +112,7 @@ def run_claude_sdk_exec(
         ) from exc
 
     abs_cwd = cwd.resolve()
-    effective_timeout = timeout or default_timeout_secs()
+    effective_timeout = default_timeout_secs()
     effective_model = model or _DEFAULT_MODEL
     effective_effort = resolve_claude_reasoning_effort(
         reasoning_effort or _DEFAULT_REASONING_EFFORT
@@ -223,11 +217,6 @@ def run_claude_sdk_exec(
         )
     if result_error:
         raise ClaudeSDKExecError(_result_error_text(result_error))
-
-    if output_last_message_path is not None:
-        capture_path = output_last_message_path.resolve()
-        capture_path.parent.mkdir(parents=True, exist_ok=True)
-        capture_path.write_text(final_message, encoding="utf-8")
 
     # The final message is logged centrally by `run_inference` (one site for
     # every backend, with middle-truncation), not here.

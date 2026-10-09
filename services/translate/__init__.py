@@ -2,25 +2,18 @@
 
 A pre-pass stage scans the full SRT once to produce a shared briefing
 (characters, proper nouns, glossary, tone); chunk workers then translate SRT
-slices concurrently against that briefing. Each stage picks a backend through
-`services.inference` (gemini-api / agy / claude / codex).
+slices concurrently against that briefing. Each stage picks an agent backend
+through `services.inference` (agy / claude / codex).
 """
 
-from .errors import (
-    ChunkTranslationError,
-    PrePassError,
-    TranslationCostSummary,
-    TranslationError,
-)
-from .facade import Translate, TranslationResult
+from .errors import ChunkTranslationError, TranslationError
+from .facade import run_pre_pass, translate_chunks
 from .request import TranslationRequest
 
 __all__ = [
-    "Translate",
+    "run_pre_pass",
+    "translate_chunks",
     "TranslationRequest",
-    "TranslationResult",
     "TranslationError",
-    "TranslationCostSummary",
-    "PrePassError",
     "ChunkTranslationError",
 ]

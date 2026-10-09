@@ -8,8 +8,7 @@ from loguru import logger
 
 from project import Project
 from settings import settings
-from services.media import MediaProcessor
-from services.inference import Backend, is_agent_backend, run_inference
+from services.inference import Backend, run_inference
 from services.inference.tools import build_refine_frame_tool_instruction
 from ._srt_guard import (
     parse_srt_file as _parse_srt,
@@ -52,30 +51,19 @@ def refine_subtitles(project: Project) -> None:
     logger.info(
         f"Invoking {backend.value} for subtitle refinement: {project.id}"
     )
-    # Offer the on-demand frame tool only to a backend that can run it. The
-    # stage-specific wrapper writes into `.refine/extra_frames`; window = the
-    # whole video.
+    # The on-demand frame tool's stage-specific wrapper writes into
+    # `.refine/extra_frames`; window = the whole video.
     prompt = _PROMPT
     program_instruction = project.program_rules().render_instruction("refine")
     if program_instruction:
         prompt += "\n\n" + program_instruction
-    if is_agent_backend(backend):
-        try:
-            video_end = MediaProcessor.get_media_duration(project.video_path)
-        except Exception:
-            video_end = 0.0
-        prompt += "\n\n" + build_refine_frame_tool_instruction(
-            project.project_path,
-            0.0,
-            video_end,
-        )
+    prompt += "\n\n" + build_refine_frame_tool_instruction(project.project_path)
     run_inference(
         backend=backend,
         prompt=prompt,
         cwd=project.project_path,
         model=spec.model,
         reasoning_effort=spec.reasoning_effort,
-        web_search=is_agent_backend(backend),
     )
 
     if not project.refined_srt_path.exists():

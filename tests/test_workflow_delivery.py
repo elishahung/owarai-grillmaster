@@ -12,7 +12,7 @@ class WorkflowDeliveryTests(unittest.TestCase):
         project = MagicMock()
         project.project_path = Path("projects/demo")
         project.archive.return_value = Path("archive/demo")
-        project.total_cost = 1.25
+        project.asr_cost = 1.25
         progress = NoopProgressReporter()
 
         with (
@@ -42,7 +42,7 @@ class WorkflowDeliveryTests(unittest.TestCase):
     def test_unarchived_project_final_path_is_its_working_dir(self):
         project = MagicMock()
         project.project_path = Path("projects/demo")
-        project.total_cost = 0.0
+        project.asr_cost = 0.0
 
         with (
             patch.object(delivery.settings, "archived_path", None),

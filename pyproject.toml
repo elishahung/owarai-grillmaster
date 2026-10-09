@@ -7,7 +7,6 @@ dependencies = [
     "claude-agent-sdk>=0.2.135",
     "elevenlabs>=2.24.0",
     "ffmpeg-python>=0.2.0",
-    "google-genai>=1.60.0",
     "loguru>=0.7.3",
     "pycryptodomex>=3.23.0",
     "pydantic>=2.12.5",

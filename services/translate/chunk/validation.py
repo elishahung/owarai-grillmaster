@@ -1,7 +1,7 @@
 """Strict structural validation for chunk SRT outputs.
 
 Kept deliberately dependency-light — it imports only `services.srt`, never
-`settings` or `genai` — so the standalone validator CLI
+`settings` — so the standalone validator CLI
 (`validate_chunk.py`) can load it in a subprocess without pulling the whole app
 or reading `.env`.
 

@@ -1,4 +1,4 @@
-"""Gemini-specific chunk splitting for SRT translation."""
+"""Char-balanced chunk splitting for SRT translation."""
 
 import math
 

@@ -53,8 +53,8 @@ toggle), like `--refine`: a resume must pass it again.
   `prompts/name_form.md`, the glossary check's span/honorific/subject parity
   rules restated for chat — keep it in step with `glossary_check.md`.
 - Model: `settings.chat_model` = `AGENT_CHAT_MODEL`, else `AGENT_COMMON_MODEL`.
-  Concurrency comes from `fan_out_concurrency` (inference layer; shared with
-  chunk translation). Costs are recorded on the calling thread via `on_cost`.
+  Concurrency comes from `settings.agent_concurrency` (shared with chunk
+  translation).
 - Caches are fixed-filename, never self-invalidate; delete a batch file or
   `polish.json` to re-run that step. A failed batch fails the stage after the
   others finish.

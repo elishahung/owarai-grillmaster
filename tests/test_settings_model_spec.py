@@ -13,9 +13,9 @@ class ModelSpecParseTests(unittest.TestCase):
         self.assertEqual(s.agent_chunk_model.reasoning_effort, "low")
 
     def test_missing_effort_defaults_to_high(self):
-        s = Settings(agent_chunk_model="gemini-api/gemini-3-flash-preview")
-        self.assertEqual(s.agent_chunk_model.backend, "gemini-api")
-        self.assertEqual(s.agent_chunk_model.model, "gemini-3-flash-preview")
+        s = Settings(agent_chunk_model="agy/gemini-3.1-pro")
+        self.assertEqual(s.agent_chunk_model.backend, "agy")
+        self.assertEqual(s.agent_chunk_model.model, "gemini-3.1-pro")
         self.assertEqual(s.agent_chunk_model.reasoning_effort, "high")
 
     def test_trailing_slash_defaults_to_high(self):

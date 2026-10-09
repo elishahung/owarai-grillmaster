@@ -50,6 +50,5 @@ def translate_project_live_chat(
             polish_path=project.live_chat_polish_path,
             output_path=project.chat_translated_path,
         ),
-        on_cost=lambda cost: project.add_cost("gemini", cost),
         progress=progress,
     )

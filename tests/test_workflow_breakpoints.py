@@ -35,7 +35,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
     def _build_project_mock(self):
         project = MagicMock()
         project.id = "demo"
-        project.total_cost = 0.0
+        project.asr_cost = 0.0
         for stage in workflow_module.ProgressStage:
             setattr(project, stage.value, False)
         project.is_metadata_fetched = True
@@ -76,7 +76,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
                 transcription_stage, "ElevenLabsASR"
             ) as elevenlabs_cls,
             patch.object(transcription_stage, "convert_file") as convert_file,
-            patch.object(translation_stage, "Translate") as gemini_cls,
+            patch.object(translation_stage, "translate") as translate_mod,
         ):
             asr = elevenlabs_cls.return_value
             asr.transcribe_to_file.return_value = ElevenLabsTranscriptionResult(
@@ -98,7 +98,8 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.mark_progress.assert_called_once_with(
             workflow_module.ProgressStage.ASR_COMPLETED
         )
-        gemini_cls.assert_not_called()
+        translate_mod.run_pre_pass.assert_not_called()
+        translate_mod.translate_chunks.assert_not_called()
 
     def test_break_after_completed_stage_stops_on_resumed_project(self):
         project = self._build_project_mock()
@@ -112,7 +113,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
                 transcription_stage, "ElevenLabsASR"
             ) as elevenlabs_cls,
             patch.object(transcription_stage, "convert_file") as convert_file,
-            patch.object(translation_stage, "Translate") as gemini_cls,
+            patch.object(translation_stage, "translate") as translate_mod,
         ):
             workflow_module.process_project(
                 "demo",
@@ -122,7 +123,8 @@ class WorkflowBreakpointTests(unittest.TestCase):
         elevenlabs_cls.assert_not_called()
         convert_file.assert_not_called()
         project.mark_progress.assert_not_called()
-        gemini_cls.assert_not_called()
+        translate_mod.run_pre_pass.assert_not_called()
+        translate_mod.translate_chunks.assert_not_called()
 
     def test_section_run_combines_to_full_video_then_cuts(self):
         root = self._make_temp_dir()
@@ -228,18 +230,16 @@ class WorkflowBreakpointTests(unittest.TestCase):
             patch.object(
                 workflow_api.Project, "from_source_str", return_value=project
             ),
-            patch.object(translation_stage, "Translate") as gemini_cls,
+            patch.object(translation_stage, "translate") as translate_mod,
         ):
-            gemini = gemini_cls.return_value
-            gemini.run_pre_pass.return_value = MagicMock(total_cost=0.0)
 
             workflow_module.process_project(
                 "demo",
                 break_after=workflow_module.ProgressStage.PREPASS_COMPLETED,
             )
 
-        gemini.run_pre_pass.assert_called_once()
-        gemini.translate_chunks.assert_not_called()
+        translate_mod.run_pre_pass.assert_called_once()
+        translate_mod.translate_chunks.assert_not_called()
         project.mark_progress.assert_called_once_with(
             workflow_module.ProgressStage.PREPASS_COMPLETED
         )

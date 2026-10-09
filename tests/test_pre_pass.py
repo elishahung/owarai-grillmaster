@@ -1,18 +1,15 @@
 import json
-import os
 import shutil
 import unittest
 import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-os.environ.setdefault("AGENT_GEMINI_API_KEY", "test-key")
 
 from settings import ModelSpec
 from services.translate.pre_pass import pre_pass as pp
-from services.translate.assets import LocalMediaRef, PrePassMediaAssets
+from services.translate.assets import PrePassMediaAssets
 from services.inference.agy import AgyQuotaError
-from services.translate.errors import PrePassError
 from services.fixed_glossary import FixedGlossary
 from services.srt import SrtBlock
 
@@ -111,13 +108,10 @@ class RunPrePassDispatchTests(unittest.TestCase):
         return path
 
     def _common_patches(self, tmp: Path, *, backend: str, audio: bool = True):
-        audio_ref = (
-            LocalMediaRef(path=tmp / "a.ogg", mime_type="audio/ogg")
-            if audio
-            else None
-        )
         assets = PrePassMediaAssets(
-            audio=audio_ref, frames=[], manifest_path=tmp / "assets.json"
+            audio=tmp / "a.ogg" if audio else None,
+            frames=[],
+            manifest_path=tmp / "assets.json",
         )
         for p in [
             patch.object(
@@ -154,71 +148,48 @@ class RunPrePassDispatchTests(unittest.TestCase):
             pre_pass_cache_dir=tmp / "cache",
         )
 
-    def _io(self, *, cost=0.0):
-        from services.inference import InferenceResult
-
-        return InferenceResult(
-            text=_VALID_PREPASS_JSON, cost=cost, requests=1
-        )
-
-    def test_gemini_api_dispatch_writes_manifest(self):
-        tmp = self._temp_dir()
-        self._common_patches(tmp, backend="gemini-api")
-        with patch.object(
-            pp, "run_inference", return_value=self._io(cost=0.12)
-        ) as mock_inf:
-            result, cost = self._run(tmp)
-
-        self.assertEqual(cost, 0.12)
-        self.assertEqual(result.summary, "s")
-        mock_inf.assert_called_once()
-        self.assertIs(mock_inf.call_args.kwargs["schema"], pp.PrePassResult)
-        self.assertEqual(
-            mock_inf.call_args.kwargs["backend"], "gemini-api"
-        )
-        self.assertNotIn(
-            "Use built-in web search only",
-            mock_inf.call_args.kwargs["system_prompt"],
-        )
-        # gemini-api supports audio, so the audio file is passed through.
-        self.assertEqual(len(mock_inf.call_args.kwargs["audio"]), 1)
-        manifest = json.loads(
-            (tmp / "cache" / "manifest.json").read_text(encoding="utf-8")
-        )
-        self.assertEqual(manifest["backend"], "gemini-api")
-        self.assertTrue((tmp / "pre_pass.json").exists())
+    def _result(self):
+        return pp.PrePassResult.model_validate_json(_VALID_PREPASS_JSON)
 
     def test_agy_dispatch_writes_manifest(self):
         tmp = self._temp_dir()
         self._common_patches(tmp, backend="agy")
         with patch.object(
-            pp, "run_inference", return_value=self._io()
+            pp, "run_inference", return_value=self._result()
         ) as mock_inf:
-            result, cost = self._run(tmp)
+            result = self._run(tmp)
 
-        self.assertEqual(cost, 0.0)
         self.assertEqual(result.summary, "s")
-        self.assertIs(mock_inf.call_args.kwargs["schema"], pp.PrePassResult)
-        self.assertIn(
-            "Use built-in web search only",
-            mock_inf.call_args.kwargs["system_prompt"],
-        )
-        self.assertIn(
-            "The SRT is not ground truth",
-            mock_inf.call_args.kwargs["system_prompt"],
-        )
+        kwargs = mock_inf.call_args.kwargs
+        self.assertIs(kwargs["schema"], pp.PrePassResult)
+        self.assertIn("Use built-in web search only", kwargs["prompt"])
+        self.assertIn("The SRT is not ground truth", kwargs["prompt"])
+        # Every backend is an agent: the frame tool is always offered.
+        self.assertIn("get_frames_for_pre_pass.py", kwargs["prompt"])
         manifest = json.loads(
             (tmp / "cache" / "manifest.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(manifest["backend"], "agy")
+        self.assertEqual(manifest["model"], "agy/test-model/high")
         # agy hears audio, so the track is passed through.
-        self.assertEqual(len(mock_inf.call_args.kwargs["audio"]), 1)
+        self.assertEqual(kwargs["audio"], [tmp / "a.ogg"])
+        self.assertTrue((tmp / "pre_pass.json").exists())
+
+    def test_existing_pre_pass_is_reused_before_any_media_work(self):
+        tmp = self._temp_dir()
+        self._common_patches(tmp, backend="agy")
+        (tmp / "pre_pass.json").write_text(_VALID_PREPASS_JSON, encoding="utf-8")
+        with patch.object(pp, "run_inference") as mock_inf:
+            result = self._run(tmp)
+
+        self.assertEqual(result.summary, "s")
+        mock_inf.assert_not_called()
+        pp.prepare_pre_pass_media_assets.assert_not_called()
 
     def test_validator_rejects_incomplete_segment_coverage(self):
         tmp = self._temp_dir()
         self._common_patches(tmp, backend="agy")
         with patch.object(
-            pp, "run_inference", return_value=self._io()
+            pp, "run_inference", return_value=self._result()
         ) as mock_inf:
             self._run(tmp)
 
@@ -227,66 +198,34 @@ class RunPrePassDispatchTests(unittest.TestCase):
         # must reject it and drive a repair round.
         validate = mock_inf.call_args.kwargs["validate"]
         with self.assertRaises(ValueError):
-            validate(pp.PrePassResult.model_validate_json(_VALID_PREPASS_JSON))
+            validate(self._result())
 
-    def test_agent_backend_drops_audio(self):
+    def test_audio_incapable_backend_drops_audio(self):
         tmp = self._temp_dir()
-        # Agent backend: prepare_pre_pass_media_assets returns no audio.
+        # claude: prepare_pre_pass_media_assets returns no audio.
         self._common_patches(tmp, backend="claude", audio=False)
         with patch.object(
-            pp, "run_inference", return_value=self._io()
+            pp, "run_inference", return_value=self._result()
         ) as mock_inf:
             self._run(tmp)
 
         self.assertIsNone(mock_inf.call_args.kwargs["audio"])
-        # The system instruction is rendered without audio claims.
+        # The instruction is rendered without audio claims.
         self.assertNotIn(
-            "Full Source Audio", mock_inf.call_args.kwargs["system_prompt"]
+            "Full Source Audio", mock_inf.call_args.kwargs["prompt"]
         )
 
-    def test_quota_error_becomes_prepass_error(self):
+    def test_failure_propagates_without_writing_pre_pass(self):
         tmp = self._temp_dir()
         self._common_patches(tmp, backend="agy")
         with patch.object(
             pp,
             "run_inference",
             side_effect=AgyQuotaError("quota will reset after 8h"),
-        ) as mock_inf:
-            with self.assertRaises(PrePassError) as ctx:
-                self._run(tmp)
-
-        self.assertEqual(mock_inf.call_count, 1)
-        self.assertIn("quota", str(ctx.exception).lower())
-        self.assertEqual(ctx.exception.accumulated_cost, 0.0)
-
-    def test_claude_rate_limit_is_a_quota_error(self):
-        # Every backend's quota error shares InferenceQuotaError, so the stage
-        # maps a Claude 429 exactly like an agy quota hit.
-        from services.inference import InferenceQuotaError
-        from services.inference.claude_sdk import ClaudeSDKRateLimitError
-
-        self.assertTrue(issubclass(ClaudeSDKRateLimitError, InferenceQuotaError))
-        self.assertTrue(issubclass(AgyQuotaError, InferenceQuotaError))
-        tmp = self._temp_dir()
-        self._common_patches(tmp, backend="claude", audio=False)
-        with patch.object(
-            pp,
-            "run_inference",
-            side_effect=ClaudeSDKRateLimitError("resets at 5pm"),
         ):
-            with self.assertRaises(PrePassError) as ctx:
+            with self.assertRaises(AgyQuotaError):
                 self._run(tmp)
-        self.assertIn("claude quota exhausted", str(ctx.exception))
-
-    def test_failure_raises_prepass_error(self):
-        tmp = self._temp_dir()
-        self._common_patches(tmp, backend="gemini-api")
-        with patch.object(
-            pp, "run_inference", side_effect=RuntimeError("genai boom")
-        ) as mock_inf:
-            with self.assertRaises(PrePassError):
-                self._run(tmp)
-        self.assertEqual(mock_inf.call_count, 1)
+        self.assertFalse((tmp / "pre_pass.json").exists())
 
 
 if __name__ == "__main__":

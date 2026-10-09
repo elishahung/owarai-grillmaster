@@ -40,8 +40,7 @@ class ProjectTests(unittest.TestCase):
         with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
             loaded = Project.from_source_str(project_id)
 
-        self.assertEqual(loaded.total_cost, 0.0)
-        self.assertEqual(loaded.service_costs, {})
+        self.assertEqual(loaded.asr_cost, 0.0)
 
     def _write_legacy_project(
         self, root: Path, project_id: str, hint: str, info: dict
@@ -112,26 +111,23 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(reloaded.translation_hint, "新提示")
         self.assertEqual(finished.translation_hint, "old")
 
-    def test_add_cost_updates_project_json_totals(self):
+    def test_add_asr_cost_accumulates_and_persists(self):
         root = self._make_temp_dir()
         with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
             project = Project(id="cost-project", name="demo")
             project.save()
 
-            project.add_cost("gemini", 1.25)
-            project.add_cost("gemini", 0.75)
-            project.add_cost("elevenlabs", 2.0)
+            project.add_asr_cost(1.25)
+            project.add_asr_cost(0.0)
+            project.add_asr_cost(0.75)
 
             persisted = json.loads(
                 project.json_path.read_text(encoding="utf-8")
             )
 
-        self.assertEqual(project.total_cost, 4.0)
-        self.assertEqual(project.service_costs["gemini"], 2.0)
-        self.assertEqual(project.service_costs["elevenlabs"], 2.0)
-        self.assertEqual(persisted["total_cost"], 4.0)
-        self.assertEqual(persisted["service_costs"]["gemini"], 2.0)
-        self.assertEqual(persisted["service_costs"]["elevenlabs"], 2.0)
+        self.assertEqual(project.asr_cost, 2.0)
+        self.assertEqual(persisted["asr_cost"], 2.0)
+        self.assertNotIn("service_costs", persisted)
 
     def test_intermediate_paths_use_hidden_cache_dirs(self):
         root = self._make_temp_dir()

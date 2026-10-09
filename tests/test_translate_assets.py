@@ -6,15 +6,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 from services.translate.assets import (
-    LocalMediaRef,
-    media_ref_to_part,
     prepare_chunk_media_assets,
     prepare_pre_pass_media_assets,
 )
 from services.srt import SrtBlock, format_timecode
 
 
-class GeminiAssetsTests(unittest.TestCase):
+class TranslateAssetsTests(unittest.TestCase):
     def _make_temp_dir(self) -> Path:
         base = Path(__file__).resolve().parents[1] / "tmp_test_artifacts"
         base.mkdir(parents=True, exist_ok=True)
@@ -55,7 +53,6 @@ class GeminiAssetsTests(unittest.TestCase):
                 srt_blocks=blocks,
                 interval_seconds=60,
                 max_side=768,
-                intro_skip_seconds=3.0,
             )
 
         self.assertEqual(
@@ -66,18 +63,15 @@ class GeminiAssetsTests(unittest.TestCase):
             ],
         )
         self.assertEqual(extract_frame.call_count, 40)
-        self.assertEqual(assets.audio.path, audio_path)
-        self.assertEqual(assets.audio.mime_type, "audio/ogg")
+        self.assertEqual(assets.audio, audio_path)
         self.assertTrue(assets.manifest_path.exists())
         manifest = json.loads(
             assets.manifest_path.read_text(encoding="utf-8")
         )
         self.assertEqual(manifest["interval_seconds"], 60)
-        self.assertIsNone(manifest["intro_skip_seconds"])
         self.assertEqual(manifest["min_frames"], 20)
         self.assertEqual(manifest["max_frames"], 40)
-        self.assertEqual(manifest["frames"][0]["mime_type"], "image/jpeg")
-        self.assertEqual(manifest["audio"]["path"], str(audio_path))
+        self.assertEqual(manifest["audio"], str(audio_path))
 
     def test_prepare_pre_pass_media_assets_uses_minimum_frame_count(self):
         root = self._make_temp_dir()
@@ -238,7 +232,6 @@ class GeminiAssetsTests(unittest.TestCase):
                 total_chunks=2,
                 interval_seconds=30,
                 max_side=768,
-                intro_skip_seconds=3.0,
             )
 
         self.assertEqual(
@@ -260,10 +253,8 @@ class GeminiAssetsTests(unittest.TestCase):
             assets.manifest_path.read_text(encoding="utf-8")
         )
         self.assertEqual(manifest["interval_seconds"], 30)
-        self.assertIsNone(manifest["intro_skip_seconds"])
         self.assertEqual(manifest["max_side"], 768)
-        self.assertEqual(manifest["audio"]["path"], str(assets.audio.path))
-        self.assertEqual(manifest["frames"][0]["mime_type"], "image/jpeg")
+        self.assertEqual(manifest["audio"], str(assets.audio))
 
     def test_prepare_chunk_media_assets_caps_frames_at_block_count(self):
         chunk = [
@@ -304,7 +295,6 @@ class GeminiAssetsTests(unittest.TestCase):
                 total_chunks=2,
                 interval_seconds=30,
                 max_side=768,
-                intro_skip_seconds=3.0,
             )
 
         self.assertEqual(
@@ -316,7 +306,7 @@ class GeminiAssetsTests(unittest.TestCase):
         )
         self.assertEqual(manifest["interval_seconds"], 30)
 
-    def test_first_chunk_uses_srt_start_instead_of_intro_skip_for_frames(self):
+    def test_first_chunk_frame_follows_srt_start(self):
         chunk = [
             SrtBlock(
                 index=1,
@@ -350,14 +340,13 @@ class GeminiAssetsTests(unittest.TestCase):
                 total_chunks=3,
                 interval_seconds=60,
                 max_side=768,
-                intro_skip_seconds=3.0,
             )
 
         self.assertEqual(
             [frame.timestamp_seconds for frame in assets.frames],
             [0.7],
         )
-        # Audio segment must NOT be shifted by intro_skip.
+        # The audio segment starts at the chunk's first SRT start.
         self.assertEqual(
             extract_audio.call_args.kwargs["start_seconds"], 0.5
         )
@@ -391,7 +380,6 @@ class GeminiAssetsTests(unittest.TestCase):
                 total_chunks=3,
                 interval_seconds=30,
                 max_side=768,
-                intro_skip_seconds=3.0,
             )
 
         self.assertEqual(
@@ -419,29 +407,6 @@ class GeminiAssetsTests(unittest.TestCase):
                 total_chunks=1,
                 interval_seconds=0,
                 max_side=768,
-            )
-
-    def test_media_ref_to_part_reads_bytes_and_mime_type(self):
-        root = self._make_temp_dir()
-        media_path = root / "frame.jpg"
-        media_path.write_bytes(b"image-bytes")
-
-        part = media_ref_to_part(
-            LocalMediaRef(path=media_path, mime_type="image/jpeg")
-        )
-
-        self.assertEqual(part.inline_data.data, b"image-bytes")
-        self.assertEqual(part.inline_data.mime_type, "image/jpeg")
-
-    def test_media_ref_to_part_raises_for_missing_file(self):
-        root = self._make_temp_dir()
-
-        with self.assertRaises(FileNotFoundError):
-            media_ref_to_part(
-                LocalMediaRef(
-                    path=root / "missing.ogg",
-                    mime_type="audio/ogg",
-                )
             )
 
 

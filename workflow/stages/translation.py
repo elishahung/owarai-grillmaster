@@ -1,11 +1,10 @@
 """Pre-pass and chunk translation workflow stages."""
 
-from loguru import logger
-
 from project import Project
 from services.program_config import InstructionStep
 from services.progress import NoopProgressReporter
-from services.translate import Translate, TranslationError, TranslationRequest
+from services import translate
+from services.translate import TranslationRequest
 
 
 def make_translation_request(
@@ -35,43 +34,12 @@ def make_translation_request(
 
 
 def run_pre_pass(project: Project) -> None:
-    translator = Translate()
-    try:
-        prepass_result = translator.run_pre_pass(
-            make_translation_request(project, "pre_pass")
-        )
-    except TranslationError as e:
-        if e.summary.total_cost > 0:
-            project.add_cost("gemini", e.summary.total_cost)
-        logger.error(
-            f"Stage failed: Pre-pass partial cost "
-            f"${e.summary.total_cost:.4f}"
-        )
-        raise
-
-    if prepass_result.total_cost > 0:
-        project.add_cost("gemini", prepass_result.total_cost)
+    translate.run_pre_pass(make_translation_request(project, "pre_pass"))
 
 
 def translate_chunks(
     project: Project, progress: NoopProgressReporter
 ) -> None:
-    translator = Translate()
-    try:
-        translation_result = translator.translate_chunks(
-            make_translation_request(project, "translate"),
-            progress=progress,
-        )
-    except TranslationError as e:
-        if e.summary.total_cost > 0:
-            project.add_cost("gemini", e.summary.total_cost)
-        logger.error(
-            f"Stage failed: Translation partial cost "
-            f"${e.summary.total_cost:.4f} "
-            f"(completed {e.summary.completed_chunks}/{e.summary.num_chunks}, "
-            f"retries={e.summary.retries})"
-        )
-        raise
-
-    if translation_result.total_cost > 0:
-        project.add_cost("gemini", translation_result.total_cost)
+    translate.translate_chunks(
+        make_translation_request(project, "translate"), progress=progress
+    )

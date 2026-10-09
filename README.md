@@ -70,8 +70,7 @@ grill package <專案資料夾>
 ELEVENLABS_API_KEY=xxx
 
 # 各階段模型，格式為 backend/model[/effort]
-# backend：gemini-api（計費）、agy、claude、codex（訂閱制）
-AGENT_GEMINI_API_KEY=xxx                   # 只有用 gemini-api 時需要
+# backend：agy、claude、codex（皆為訂閱制；只有 agy 能聽音檔）
 AGENT_PREPASS_MODEL=agy/gemini-3.1-pro/high
 AGENT_CHUNK_MODEL=agy/gemini-3.1-pro/high
 AGENT_POSTPROCESS_MODEL=codex/gpt-6.1-sol/high

@@ -40,7 +40,6 @@ import threading
 from pathlib import Path
 
 from loguru import logger
-from pydantic import BaseModel
 
 from .base import (
     InferenceError,
@@ -85,9 +84,9 @@ _END_MARKER = "<<<AGY_END>>>"
 
 # agy bakes the reasoning effort into the model name (it has no separate effort
 # flag), and its --model value is the exact display string `agy models` prints.
-# To keep this backend's config consistent with gemini-api (which takes ID-form
-# models like "gemini-3.1-pro" plus a low/medium/high/extra/max/ultra effort),
-# we map (model id, effort) -> agy display name here. Only the Gemini models
+# Config uses ID-form models like "gemini-3.1-pro" plus a repo-level
+# low/medium/high/extra/max/ultra effort; we map (model id, effort) -> agy
+# display name here. Only the Gemini models
 # `agy models` lists are wired; each maps to the efforts agy offers for it.
 _AGY_MODEL_BASES = {
     "gemini-3.8-flash": "Gemini 3.8 Flash",
@@ -126,18 +125,6 @@ class AgyNotInstalledError(AgyError, InferenceNotInstalledError):
 
 class AgyQuotaError(AgyError, InferenceQuotaError):
     """Raised when agy reports a 429 / quota-exhausted error."""
-
-
-class AgyResult(BaseModel):
-    """Outcome of one ``run_agy`` call.
-
-    agy has no machine-readable result envelope (no ``--output-format json``),
-    so there are no per-call request/cost stats to recover: ``requests`` is
-    always 1 and cost is handled as 0 by the caller (subscription backend).
-    """
-
-    response: str
-    requests: int = 1
 
 
 def _scrubbed_env() -> dict[str, str]:
@@ -392,11 +379,10 @@ def run_agy(
     images: list[Path] | None = None,
     audio: list[Path] | None = None,
     cwd: Path | None = None,
-    timeout: int | None = None,
-) -> AgyResult:
-    """Invoke the Antigravity CLI once and return the parsed result.
+) -> str:
+    """Invoke the Antigravity CLI once and return its final answer text.
 
-    ``model`` + ``reasoning_effort`` use the same id form as gemini-api
+    ``model`` + ``reasoning_effort`` use the repo's id form
     (e.g. ``"gemini-3.1-pro"`` + ``"high"``) and are mapped here to agy's
     ``--model`` display string via :func:`resolve_agy_model` (agy has no
     separate effort flag — the effort lives in the model name).
@@ -441,7 +427,7 @@ def run_agy(
         if not track.exists():
             raise AgyError(f"agy audio file not found: {track}")
 
-    effective_timeout = timeout or default_timeout_secs()
+    effective_timeout = default_timeout_secs()
 
     workspace = Path(tempfile.mkdtemp(prefix="agy_"))
     try:
@@ -533,14 +519,13 @@ def run_agy(
 
     response = slice_marked_answer(cleaned)
     logger.debug(f"agy ok: response_chars={len(response)}")
-    return AgyResult(response=response, requests=1)
+    return response
 
 
 __all__ = [
     "AgyError",
     "AgyNotInstalledError",
     "AgyQuotaError",
-    "AgyResult",
     "clean_terminal_output",
     "resolve_agy_model",
     "run_agy",

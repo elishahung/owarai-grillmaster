@@ -132,22 +132,16 @@ class FrameToolInstructionTests(unittest.TestCase):
         self.assertIn("extra_frames", text)
 
     def test_refine_helper_encourages_bounded_visual_checks(self):
-        text = build_refine_frame_tool_instruction(
-            Path("projects/x"),
-            0.0,
-            10.0,
-        )
+        text = build_refine_frame_tool_instruction(Path("projects/x"))
         self.assertIn(str(FRAME_TOOL_SCRIPTS[FrameToolStage.REFINE]), text)
         self.assertIn("medium polishing pass", text)
         self.assertIn("Use frames proactively", text)
         self.assertIn("routine fluency edits", text)
 
     def test_glossary_check_helper_sets_stage_local_extra_frames(self):
-        text = build_glossary_check_frame_tool_instruction(
-            Path("projects/x"),
-            0.0,
-            10.0,
-        )
+        text = build_glossary_check_frame_tool_instruction(Path("projects/x"))
+        # No duration probe: the window runs to the end of the video.
+        self.assertIn("0.000s to the end of the video", text)
         self.assertIn(
             str(FRAME_TOOL_SCRIPTS[FrameToolStage.GLOSSARY_CHECK]), text
         )

@@ -53,7 +53,6 @@ def deliver_project(
         progress.stage_completed("package", perf_counter() - started_at)
 
     logger.info(
-        f"Project {project_id} total accumulated API cost: "
-        f"${project.total_cost:.4f}"
+        f"Project {project_id} total ASR cost: ${project.asr_cost:.4f}"
     )
     return archived_location or project.project_path

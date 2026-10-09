@@ -20,13 +20,12 @@ from loguru import logger
 
 from project import Project
 from settings import settings
-from services.inference import Backend, is_agent_backend, run_inference
+from services.inference import Backend, run_inference
 from services.inference.tools import build_glossary_check_frame_tool_instruction
 from services.fixed_glossary.fixed_glossary import (
     FIXED_GLOSSARY_PATH,
     load_fixed_glossary,
 )
-from services.media import MediaProcessor
 from services.srt import SrtBlock
 from services.translate.pre_pass.schema import PrePassResult
 from ._srt_guard import parse_srt_file, validate_srt_against_source
@@ -231,18 +230,9 @@ def glossary_check_subtitles(project: Project) -> None:
         )
         spec = settings.agent_postprocess_model
         backend = Backend(spec.backend)
-        if is_agent_backend(backend):
-            try:
-                video_end = MediaProcessor.get_media_duration(
-                    project.video_path
-                )
-            except Exception:
-                video_end = 0.0
-            prompt += "\n\n" + build_glossary_check_frame_tool_instruction(
-                project.project_path,
-                0.0,
-                video_end,
-            )
+        prompt += "\n\n" + build_glossary_check_frame_tool_instruction(
+            project.project_path
+        )
         logger.info(
             f"Invoking {backend.value} for glossary check "
             f"({len(suspects)} priority suspect blocks): {project.id}"
@@ -253,7 +243,6 @@ def glossary_check_subtitles(project: Project) -> None:
             cwd=project.project_path,
             model=spec.model,
             reasoning_effort=spec.reasoning_effort,
-            web_search=is_agent_backend(backend),
         )
 
         if not project.glossary_checked_srt_path.exists():

@@ -9,11 +9,8 @@ import services.inference as inf
 from services.inference import (
     Backend,
     InferenceError,
-    InferenceResult,
     UnsupportedMediaError,
     backend_supports_audio,
-    is_agent_backend,
-    is_gemini_backend,
     run_inference,
 )
 from services.inference import base as base_mod
@@ -32,28 +29,15 @@ class _Demo(BaseModel):
 
 class CapabilityTests(unittest.TestCase):
     def test_audio_capability(self):
-        self.assertTrue(backend_supports_audio(Backend.GEMINI_API))
         # agy (Antigravity CLI) hears audio through view_file.
         self.assertTrue(backend_supports_audio(Backend.AGY))
         self.assertFalse(backend_supports_audio(Backend.CODEX))
         self.assertFalse(backend_supports_audio(Backend.CLAUDE))
 
-    def test_family_helpers(self):
-        self.assertTrue(is_gemini_backend(Backend.GEMINI_API))
-        # agy is a Gemini backend (so it requires an explicit model).
-        self.assertTrue(is_gemini_backend(Backend.AGY))
-        self.assertFalse(is_gemini_backend(Backend.CODEX))
-
-    def test_agent_is_everything_except_gemini_api(self):
-        # api-vs-agent is the only taxonomy: agy is an agent too.
-        self.assertTrue(is_agent_backend(Backend.AGY))
-        self.assertTrue(is_agent_backend(Backend.CODEX))
-        self.assertTrue(is_agent_backend(Backend.CLAUDE))
-        self.assertFalse(is_agent_backend(Backend.GEMINI_API))
-
-    def test_postprocess_backend_string_values(self):
-        # Post-processing selects a backend from the "codex"/"claude" strings
-        # stored in the settings.agent_*_model backend segment.
+    def test_backend_string_values(self):
+        # Stages select a backend from the strings stored in the
+        # settings.agent_*_model backend segment.
+        self.assertEqual(Backend("agy"), Backend.AGY)
         self.assertEqual(Backend("codex"), Backend.CODEX)
         self.assertEqual(Backend("claude"), Backend.CLAUDE)
 
@@ -82,51 +66,56 @@ class EnforceSchemaTests(unittest.TestCase):
     def test_success_first_try(self):
         calls = []
 
-        def invoke_once(prompt):
+        def invoke_once(prompt, repairing=False):
             calls.append(prompt)
-            return InferenceResult(text='{"a": 1}', requests=1)
+            return '{"a": 1}'
 
         result = enforce_schema(
             invoke_once, schema=_Demo, base_prompt="P", max_retries=3
         )
-        self.assertEqual(result.text, '{"a": 1}')
-        self.assertEqual(result.requests, 1)
+        self.assertEqual(result, _Demo(a=1))
         self.assertEqual(calls, ["P"])
 
     def test_repair_then_succeeds(self):
         outputs = iter(['{"a": "bad"}', '{"a": 7}'])
         prompts = []
 
-        def invoke_once(prompt):
+        def invoke_once(prompt, repairing=False):
             prompts.append(prompt)
-            return InferenceResult(text=next(outputs), cost=0.5, requests=1)
+            return next(outputs)
 
         result = enforce_schema(
             invoke_once, schema=_Demo, base_prompt="P", max_retries=3
         )
-        self.assertEqual(result.text, '{"a": 7}')
-        self.assertEqual(result.requests, 2)
-        # cost and requests accumulate across attempts
-        self.assertEqual(result.cost, 1.0)
+        self.assertEqual(result, _Demo(a=7))
+        self.assertEqual(len(prompts), 2)
         self.assertNotIn("修正要求", prompts[0])
         self.assertIn("修正要求", prompts[1])
 
-    def test_exhaustion_raises(self):
-        def invoke_once(prompt):
-            return InferenceResult(text='{"a": "bad"}', requests=1)
+    def test_parses_json_out_of_fenced_prose(self):
+        result = enforce_schema(
+            lambda prompt, repairing=False: 'Sure:\n```json\n{"a": 3}\n```',
+            schema=_Demo,
+            base_prompt="P",
+        )
+        self.assertEqual(result, _Demo(a=3))
 
+    def test_exhaustion_raises(self):
         with self.assertRaises(SchemaValidationError):
             enforce_schema(
-                invoke_once, schema=_Demo, base_prompt="P", max_retries=3
+                lambda prompt, repairing=False: '{"a": "bad"}',
+                schema=_Demo,
+                base_prompt="P",
+                max_retries=3,
             )
 
     def test_validate_hook_rejects_schema_valid_output(self):
         outputs = iter(['{"a": 1}', '{"a": 7}'])
         prompts = []
 
-        def invoke_once(prompt):
+        def invoke_once(prompt, repairing=False):
             prompts.append(prompt)
-            return InferenceResult(text=next(outputs), requests=1)
+            return next(outputs)
 
         def validate(parsed):
             if parsed.a < 7:
@@ -139,21 +128,17 @@ class EnforceSchemaTests(unittest.TestCase):
             validate=validate,
             max_retries=3,
         )
-        self.assertEqual(result.text, '{"a": 7}')
-        self.assertEqual(result.requests, 2)
+        self.assertEqual(result, _Demo(a=7))
         # the invariant message is what the model is re-prompted with
         self.assertIn("a must be at least 7", prompts[1])
 
     def test_validate_hook_exhaustion_raises(self):
-        def invoke_once(prompt):
-            return InferenceResult(text='{"a": 1}', requests=1)
-
         def validate(parsed):
             raise ValueError("never good enough")
 
         with self.assertRaises(SchemaValidationError):
             enforce_schema(
-                invoke_once,
+                lambda prompt, repairing=False: '{"a": 1}',
                 schema=_Demo,
                 base_prompt="P",
                 validate=validate,
@@ -178,7 +163,7 @@ class EnforceSchemaTests(unittest.TestCase):
 
 
 class RunInferenceDispatchTests(unittest.TestCase):
-    def test_audio_rejected_for_agent_backend(self):
+    def test_audio_rejected_for_audio_incapable_backend(self):
         with self.assertRaises(UnsupportedMediaError):
             run_inference(
                 backend=Backend.CODEX,
@@ -186,21 +171,13 @@ class RunInferenceDispatchTests(unittest.TestCase):
                 audio=[Path("a.ogg")],
             )
 
-    def test_gemini_requires_model(self):
-        with self.assertRaises(InferenceError):
-            run_inference(backend=Backend.GEMINI_API, prompt="hi")
-
-    def test_agent_no_schema_returns_raw_message(self):
+    def test_no_schema_returns_raw_message(self):
         with patch.object(inf, "run_codex_exec", return_value="done") as m:
-            result = run_inference(
-                backend=Backend.CODEX, prompt="hi", system_prompt="SYS"
-            )
-        self.assertEqual(result.text, "done")
-        self.assertEqual(result.cost, 0.0)
-        # system_prompt is prepended to the user prompt for agent backends.
-        self.assertEqual(m.call_args.kwargs["prompt"], "SYS\n\nhi")
+            result = run_inference(backend=Backend.CODEX, prompt="hi")
+        self.assertEqual(result, "done")
+        self.assertEqual(m.call_args.kwargs["prompt"], "hi")
 
-    def test_agent_schema_mode_validates_and_repairs(self):
+    def test_schema_mode_validates_and_repairs(self):
         outputs = iter(['{"a": "bad"}', '{"a": 5}'])
         with patch.object(
             inf,
@@ -210,57 +187,54 @@ class RunInferenceDispatchTests(unittest.TestCase):
             result = run_inference(
                 backend=Backend.CLAUDE, prompt="hi", schema=_Demo
             )
-        self.assertEqual(result.text, '{"a": 5}')
-        self.assertEqual(result.requests, 2)
+        self.assertEqual(result, _Demo(a=5))
         self.assertEqual(m.call_count, 2)
         # The JSON Schema instruction rides along on the first attempt.
         self.assertIn("JSON Schema", m.call_args_list[0].kwargs["prompt"])
 
-    def test_gemini_api_routes_to_backend(self):
-        sentinel = InferenceResult(text='{"a": 1}', cost=0.12, requests=1)
-        with patch.object(inf, "run_gemini_api", return_value=sentinel) as m:
-            result = run_inference(
-                backend=Backend.GEMINI_API,
-                prompt="hi",
-                system_prompt="SYS",
-                schema=_Demo,
-                model="gemini-3.1-pro-preview",
-            )
-        # the shared repair loop returns a copy carrying summed cost/requests
-        self.assertEqual(result, sentinel)
-        self.assertEqual(m.call_args.kwargs["model"], "gemini-3.1-pro-preview")
-        self.assertEqual(m.call_args.kwargs["system_prompt"], "SYS")
-        self.assertIs(m.call_args.kwargs["schema"], _Demo)
-
     def test_agy_routes_images_and_audio(self):
-        from services.inference.agy import AgyResult
-
-        agy_result = AgyResult(response="agy out", requests=1)
-        with patch.object(inf, "run_agy", return_value=agy_result) as m:
+        with patch.object(inf, "run_agy", return_value="agy out") as m:
             result = run_inference(
                 backend=Backend.AGY,
                 prompt="user",
-                system_prompt="SYS",
                 images=[Path("f.jpg")],
                 audio=[Path("a.ogg")],
                 model="gemini-3.8-flash",
                 reasoning_effort="low",
             )
-        self.assertEqual(result.text, "agy out")
-        self.assertEqual(result.cost, 0.0)
-        # Single concatenated prompt; images + audio + model + effort forwarded
-        # (the wrapper maps model/effort to agy's --model string).
-        self.assertEqual(m.call_args.args[0], "SYS\n\nuser")
+        self.assertEqual(result, "agy out")
+        # images + audio + model + effort forwarded (the wrapper maps
+        # model/effort to agy's --model string).
+        self.assertEqual(m.call_args.args[0], "user")
         self.assertEqual(m.call_args.kwargs["images"], [Path("f.jpg")])
         self.assertEqual(m.call_args.kwargs["audio"], [Path("a.ogg")])
         self.assertEqual(m.call_args.kwargs["model"], "gemini-3.8-flash")
         self.assertEqual(m.call_args.kwargs["reasoning_effort"], "low")
 
+    def test_schema_repair_round_drops_audio(self):
+        outputs = iter(['{"a": "bad"}', '{"a": 2}'])
+        with patch.object(
+            inf, "run_agy", side_effect=lambda *a, **kw: next(outputs)
+        ) as m:
+            result = run_inference(
+                backend=Backend.AGY,
+                prompt="hi",
+                audio=[Path("a.ogg")],
+                schema=_Demo,
+                model="gemini-3.1-pro",
+            )
+        self.assertEqual(result, _Demo(a=2))
+        first, repair = m.call_args_list
+        self.assertEqual(first.kwargs["audio"], [Path("a.ogg")])
+        # The format fix re-sends the prompt but not the audio, and says so.
+        self.assertIsNone(repair.kwargs["audio"])
+        self.assertIn("本輪修正不再附上音訊", repair.args[0])
+
     def test_agy_requires_model(self):
         with self.assertRaises(InferenceError):
             run_inference(backend=Backend.AGY, prompt="hi")
 
-    def test_model_and_effort_thread_through_to_agent_runner(self):
+    def test_model_and_effort_thread_through_to_runner(self):
         with patch.object(inf, "run_codex_exec", return_value="ok") as m:
             run_inference(
                 backend=Backend.CODEX,
@@ -271,9 +245,9 @@ class RunInferenceDispatchTests(unittest.TestCase):
         self.assertEqual(m.call_args.kwargs["model"], "gpt-5.5")
         self.assertEqual(m.call_args.kwargs["reasoning_effort"], "low")
 
-    def test_agent_schema_retries_use_shared_hardcoded_cap(self):
+    def test_schema_retries_use_shared_hardcoded_cap(self):
         # The repair cap is the single hardcoded MAX_SCHEMA_RETRIES constant,
-        # shared by every prompt-based backend (no per-call / settings knob).
+        # shared by every backend (no per-call / settings knob).
         from services.inference.schema_enforce import MAX_SCHEMA_RETRIES
 
         with patch.object(
@@ -282,19 +256,6 @@ class RunInferenceDispatchTests(unittest.TestCase):
             with self.assertRaises(SchemaValidationError):
                 run_inference(backend=Backend.CLAUDE, prompt="hi", schema=_Demo)
         self.assertEqual(m.call_count, MAX_SCHEMA_RETRIES)
-
-
-class GeminiApiReasoningTests(unittest.TestCase):
-    def test_extra_clamps_to_high_thinking_level(self):
-        from services.inference.gemini_api import resolve_gemini_thinking_level
-
-        self.assertEqual(resolve_gemini_thinking_level("extra").name, "HIGH")
-
-    def test_max_and_ultra_clamp_to_high_thinking_level(self):
-        from services.inference.gemini_api import resolve_gemini_thinking_level
-
-        self.assertEqual(resolve_gemini_thinking_level("max").name, "HIGH")
-        self.assertEqual(resolve_gemini_thinking_level("ultra").name, "HIGH")
 
 
 class TimeoutSettingTests(unittest.TestCase):
@@ -398,25 +359,7 @@ class CodexCommandTests(unittest.TestCase):
             codex.run_codex_exec(prompt="hi", cwd=Path("."))
         self.assertIn(codex._DEFAULT_MODEL, captured["cmd"])
 
-    def test_codex_web_search_flag_enables_tool(self):
-        from types import SimpleNamespace
-
-        import services.inference.codex as codex
-
-        captured = {}
-
-        def fake_run(cmd, **kwargs):
-            captured["cmd"] = cmd
-            return SimpleNamespace(returncode=0, stdout="done", stderr="")
-
-        with (
-            patch.object(codex.shutil, "which", return_value="codex"),
-            patch.object(codex, "run_cli", side_effect=fake_run),
-        ):
-            codex.run_codex_exec(prompt="hi", cwd=Path("."), web_search=True)
-        self.assertIn("tools.web_search=true", captured["cmd"])
-
-    def test_codex_web_search_off_by_default(self):
+    def test_codex_always_enables_web_search(self):
         from types import SimpleNamespace
 
         import services.inference.codex as codex
@@ -432,7 +375,7 @@ class CodexCommandTests(unittest.TestCase):
             patch.object(codex, "run_cli", side_effect=fake_run),
         ):
             codex.run_codex_exec(prompt="hi", cwd=Path("."))
-        self.assertNotIn("tools.web_search=true", captured["cmd"])
+        self.assertIn("tools.web_search=true", captured["cmd"])
 
 
 class ClaudeCommandTests(unittest.TestCase):

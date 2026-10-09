@@ -241,7 +241,7 @@ def make_stages() -> list[Stage]:
         ),
         Stage(
             "prepass", "Pre-pass analysis", 5.0, 4,
-            {"backend": "gemini-api", "model": "gemini-2.5-pro", "audio": "attached"},
+            {"backend": "agy", "model": "gemini-3.1-pro", "audio": "attached"},
             script=[
                 (0.1, "audio uploaded to model"),
                 (0.3, "cast identified: 9 performers"),
@@ -252,7 +252,7 @@ def make_stages() -> list[Stage]:
         ),
         Stage(
             "chunks", "Chunk translation", 0.0, 12,
-            {"backend": "gemini-api", "concurrency": "4", "chunks": "18",
+            {"backend": "agy", "concurrency": "4", "chunks": "18",
              "cache": ".chunks/"},
         ),
         Stage("refine", "Refine", 0.0, 0, {"backend": "claude"}, skipped=True),

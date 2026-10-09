@@ -11,8 +11,7 @@ def run_asr(project: Project) -> None:
     transcription_result = asr.transcribe_to_file(
         project.audio_path, project.asr_path
     )
-    if transcription_result.total_cost > 0:
-        project.add_cost("elevenlabs", transcription_result.total_cost)
+    project.add_asr_cost(transcription_result.total_cost)
     logger.info(
         f"Stage ASR cost: ${transcription_result.total_cost:.4f} "
         f"for {transcription_result.audio_duration_secs:.2f}s"

@@ -119,9 +119,10 @@ Key control-flow details that are easy to break:
 - **Optional stages are gated twice**: by a `settings.enable_*` toggle OR a
   per-run `--refine/--glossary-check/--cover/--date-research` flag (the flag
   force-enables). `--chat` is the exception: per-run flag only.
-- **Cost accounting**: metered stages call `project.add_cost(service, amount)`,
-  which accumulates into `project.json`. `TranslationError` carries a partial
-  cost summary so a mid-run failure still records what was spent.
+- **Cost accounting**: ElevenLabs ASR is the only metered service; the ASR
+  stage calls `project.add_asr_cost(amount)`, accumulated as `asr_cost` in
+  `project.json`. Every model backend is a subscription agent, so model stages
+  record no cost.
 - **Stage timing logs**: successful main stages go through `WorkflowRunner`,
   which logs `Stage complete: ... (<elapsed>)` after the action and
   `mark_progress` finish. Cover/date side tasks use the same elapsed suffix,
@@ -270,13 +271,12 @@ Pydantic-settings, loaded from `.env`. Notable patterns:
 - **`ModelSpec`**: `*_MODEL` is written as `"backend/model"` or
   `"backend/model/effort"` (effort is one of low/medium/high/extra/max/ultra,
   default high) and parsed into `.backend` + `.model` + `.reasoning_effort`. `effort`
-  is mapped per client (gemini thinking_level,
+  is mapped per client (agy model variant,
   codex model_reasoning_effort, claude effort); backends without a matching
   value clamp `extra`/`max`/`ultra` to their highest supported value. The
   `ModelSpecField` annotation uses `NoDecode` so pydantic-settings doesn't
   JSON-decode the shorthand string — any new spec-shaped field needs the same
   annotation.
-- `AGENT_GEMINI_API_KEY` is required **only** when a stage uses `gemini-api`.
 
 ## Prompts are `.md` files
 

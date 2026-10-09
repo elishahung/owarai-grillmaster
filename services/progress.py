@@ -136,11 +136,11 @@ class NoopProgressReporter:
     ) -> None:
         return None
 
-    def chunk_finished(self, index: int, retries: int, cost: float) -> None:
+    def chunk_finished(self, index: int, retries: int) -> None:
         return None
 
     def chunk_failed(
-        self, index: int, message: str, retries: int = 0, cost: float = 0.0
+        self, index: int, message: str, retries: int = 0
     ) -> None:
         return None
 
@@ -287,7 +287,7 @@ class RichProgressReporter(NoopProgressReporter):
                 f"({from_index}-{to_index})"
             )
 
-    def chunk_finished(self, index: int, retries: int, cost: float) -> None:
+    def chunk_finished(self, index: int, retries: int) -> None:
         with self._lock:
             self._chunk_active = max(0, self._chunk_active - 1)
             self._chunk_retries += retries
@@ -295,12 +295,11 @@ class RichProgressReporter(NoopProgressReporter):
                 self.progress.update(self._chunk_task_id, advance=1)
             self._update_chunk_status(
                 f"active={self._chunk_active} failed={self._chunk_failed} "
-                f"retries={self._chunk_retries} last={index + 1} "
-                f"${cost:.4f}"
+                f"retries={self._chunk_retries} last={index + 1}"
             )
 
     def chunk_failed(
-        self, index: int, message: str, retries: int = 0, cost: float = 0.0
+        self, index: int, message: str, retries: int = 0
     ) -> None:
         with self._lock:
             self._chunk_active = max(0, self._chunk_active - 1)

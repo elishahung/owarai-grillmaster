@@ -177,8 +177,9 @@ class Project(BaseModel):
     parent_project_path: Path | None = None
     broadcast_date: date | None = None
     source_metadata: SourceMetadata = Field(default_factory=SourceMetadata)
-    total_cost: float = 0.0
-    service_costs: dict[str, float] = Field(default_factory=dict)
+    # ElevenLabs ASR spend, the only metered service (model stages run on
+    # subscription agents).
+    asr_cost: float = 0.0
     # Source-timeline bounds `video.mp4` was cut to (--start/--to), recorded
     # when the video is processed so later stages can rebase source-timed
     # data (live chat) without the flags being repeated on resume.
@@ -512,23 +513,17 @@ class Project(BaseModel):
         setattr(self, field_name, True)
         self.save()
 
-    def add_cost(self, service: str, amount: float) -> None:
-        """Accumulate non-negative API cost for a service and persist it."""
+    def add_asr_cost(self, amount: float) -> None:
+        """Accumulate non-negative ASR spend and persist it."""
         if amount < 0:
             raise ValueError("Cost amount must be non-negative")
-        if not service:
-            raise ValueError("Service name must not be empty")
         if amount == 0:
             return
 
-        self.total_cost += amount
-        self.service_costs[service] = (
-            self.service_costs.get(service, 0.0) + amount
-        )
+        self.asr_cost += amount
         logger.info(
-            f"Project {self.id}: Added ${amount:.4f} to {service} "
-            f"(service total ${self.service_costs[service]:.4f}, "
-            f"project total ${self.total_cost:.4f})"
+            f"Project {self.id}: Added ${amount:.4f} ASR cost "
+            f"(project ASR total ${self.asr_cost:.4f})"
         )
         self.save()
 

@@ -21,11 +21,11 @@ exact chunk index ranges, and chunk caches are keyed by range.
 
 ```
 services/translate/
-├── facade.py        # Translate: run_pre_pass + translate_chunks (asyncio)
+├── facade.py        # run_pre_pass + translate_chunks (asyncio)
 ├── chunker.py       # split_into_chunks (char-balanced)
 ├── assets.py        # frame sampling + per-chunk audio slicing (ffmpeg), cached
 ├── request.py       # TranslationRequest (paths + context bundle)
-├── errors.py        # TranslationError / ChunkTranslationError + cost summaries
+├── errors.py        # ChunkTranslationError / TranslationError
 ├── pre_pass/
 │   ├── pre_pass.py  # whole-film analysis → pre_pass.json
 │   ├── schema.py    # PrePassResult / characters / catchphrases / SegmentSummary
@@ -44,7 +44,7 @@ services/translate/
 
 One call over the **whole** film (full SRT + program title, description, and
 user `translation_hint` as separate sections + full audio for
-gemini backends + 20-40 SRT-start-aligned representative frames + optional
+audio-capable backends (agy) + 20-40 SRT-start-aligned representative frames + optional
 fixed-glossary + optional parent context). Produces a `PrePassResult` briefing:
 character roster, proper nouns / ASR-correction dict, catchphrase fixed
 translations, tone notes, and per-segment summaries with explicit
@@ -70,7 +70,7 @@ chunk system instruction; like every other input they do not touch cache
 reuse.
 
 **`pre_pass.json` never self-invalidates**: once it exists it is reused as-is
-(cost 0), regardless of backend/model/prompt changes. To re-run the pre-pass,
+(no model call), regardless of backend/model/prompt changes. To re-run the pre-pass,
 delete `.pre_pass/`.
 
 ## Official CC reference (optional input to both stages)
@@ -89,10 +89,9 @@ warning (best-effort), never a stage failure.
 
 ## Chunk translation (stage 8) — `chunk_worker.translate_chunk`
 
-Per chunk, concurrently (semaphore-bounded: `chunk_api_concurrency` for the
-network `gemini-api` backend, lower `chunk_agent_concurrency` for agent
-backends, each of which spawns a heavy local process). The worker is a
-cache-and-repair ladder:
+Per chunk, concurrently (semaphore-bounded by `agent_concurrency`; each call
+spawns a heavy local agent process). The worker is a cache-and-repair
+ladder:
 
 1. **Raw cache** (`chunk_XXXX-YYYY.raw.srt`) keyed on the chunk range only — an
    existing file skips the model call entirely. Caches never self-invalidate:
@@ -100,7 +99,9 @@ cache-and-repair ladder:
    deleting `.chunks/` (and `.pre_pass/` for the pre-pass).
 2. Build the user message: pre-pass briefing (global + this segment's summary)
    + the chunk's frame timestamps + the SRT slice. Call `run_inference`
-   (`schema=None`, free-form SRT out) with retries + exponential backoff.
+   (`schema=None`, free-form SRT out), retried up to `chunk_max_retries`
+   (fixed `_RETRY_DELAY_SECONDS` pause; quota and not-installed errors fail the
+   chunk at once).
 3. **Strict structural validation** (`validate_chunk_structure`): every source
    timecode appears exactly once, no unexpected or duplicate timecodes, block
    count matches, every output block has non-empty translated text.
@@ -110,8 +111,9 @@ cache-and-repair ladder:
    from `source.srt` but must preserve the source skeleton and cannot leave
    blank placeholder blocks. Result cached as `chunk_XXXX-YYYY.fixed.srt`.
 
-`facade._translate_chunks_async` gathers all chunks (collecting partial costs
-and per-chunk failures into a `TranslationError` summary on failure), runs
+`facade._translate_chunks_async` gathers all chunks (per-chunk failures are
+collected and raised together as one `TranslationError` after every chunk
+task finished, so successful chunks keep their caches), runs
 `normalizer.normalize_translated_blocks` (which **only** strips empty
 speaker-dash lines), then the facade itself **reindexes to contiguous 1..N**
 before writing `video.cht.srt`.

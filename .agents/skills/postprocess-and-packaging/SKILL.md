@@ -52,7 +52,7 @@ finalize — must read with `utf-8-sig`.
   context includes `Project.source_broadcast_year` when the platform label
   stated one (TVer archive re-uploads), and the prompt treats that year as
   authoritative
-  (`AGENT_COMMON_MODEL`, called with `web_search=True` and `cwd=None`
+  (`AGENT_COMMON_MODEL`, called with `cwd=None`
   so the agent gets a throwaway temp dir, never the project dir). Unlike the
   others the agent writes no files: it returns schema-validated JSON
   (`DateResearchResult`: status/date/trust tier/sources), Python persists it

@@ -145,10 +145,10 @@ class TuiProgressReporter(NoopProgressReporter):
     ) -> None:
         self.state.on_chunk_started(index, total, from_index, to_index)
 
-    def chunk_finished(self, index: int, retries: int, cost: float) -> None:
-        self.state.on_chunk_finished(index, retries, cost)
+    def chunk_finished(self, index: int, retries: int) -> None:
+        self.state.on_chunk_finished(index, retries)
 
     def chunk_failed(
-        self, index: int, message: str, retries: int = 0, cost: float = 0.0
+        self, index: int, message: str, retries: int = 0
     ) -> None:
-        self.state.on_chunk_failed(index, message, retries, cost)
+        self.state.on_chunk_failed(index, message, retries)

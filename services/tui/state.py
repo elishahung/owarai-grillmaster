@@ -108,7 +108,6 @@ class ChunkCell:
     to_index: int = 0
     state: ChunkState = ChunkState.PENDING
     retries: int = 0
-    cost: float = 0.0
     started_at: float | None = None
     elapsed: float = 0.0
 
@@ -125,7 +124,6 @@ class ChunkBoard:
     total: int = 0
     cells: dict[int, ChunkCell] = field(default_factory=dict)
     retries: int = 0
-    cost: float = 0.0
 
     @property
     def done(self) -> int:
@@ -180,8 +178,8 @@ class PipelineState:
         end = self.finished_at if self.finished_at is not None else monotonic()
         return end - self.started_at
 
-    def total_cost(self) -> float:
-        return float(getattr(self.project, "total_cost", 0.0) or 0.0)
+    def asr_cost(self) -> float:
+        return float(getattr(self.project, "asr_cost", 0.0) or 0.0)
 
     def total_progress(self) -> float:
         """Weighted overall progress across enabled pipeline stages."""
@@ -428,29 +426,21 @@ class PipelineState:
             cell.state = ChunkState.ACTIVE
             cell.started_at = monotonic()
 
-    def on_chunk_finished(
-        self, index: int, retries: int, cost: float
-    ) -> None:
+    def on_chunk_finished(self, index: int, retries: int) -> None:
         with self.lock:
             cell = self.chunks.cells.setdefault(index, ChunkCell(index))
             cell.state = ChunkState.DONE
             cell.retries = retries
-            cell.cost = cost
             cell.elapsed = cell.live_elapsed()
             self.chunks.retries += retries
-            self.chunks.cost += cost
 
-    def on_chunk_failed(
-        self, index: int, message: str, retries: int, cost: float
-    ) -> None:
+    def on_chunk_failed(self, index: int, message: str, retries: int) -> None:
         with self.lock:
             cell = self.chunks.cells.setdefault(index, ChunkCell(index))
             cell.state = ChunkState.FAILED
             cell.retries = retries
-            cell.cost = cost
             cell.elapsed = cell.live_elapsed()
             self.chunks.retries += retries
-            self.chunks.cost += cost
 
     # ---------- logs ----------
 

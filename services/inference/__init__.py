@@ -1,7 +1,7 @@
 """Unified model-inference layer.
 
-`run_inference` is the single entry point; it dispatches to a concrete backend
-(Gemini API / Antigravity CLI / Codex CLI / Claude Agent SDK). See `base.py` for the
+`run_inference` is the single entry point; it dispatches to a concrete agent
+backend (Antigravity CLI / Codex CLI / Claude Agent SDK). See `base.py` for the
 call contract — `schema`, `cwd`, and `audio` parameterize one call rather than
 splitting it into separate "agentic" and "inference" functions.
 """
@@ -11,7 +11,7 @@ from __future__ import annotations
 import tempfile
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
-from typing import Callable
+from typing import Callable, overload
 
 from loguru import logger
 from pydantic import BaseModel
@@ -23,12 +23,8 @@ from .base import (
     InferenceQuotaError,
     UnsupportedMediaError,
     backend_supports_audio,
-    fan_out_concurrency,
-    is_agent_backend,
-    is_gemini_backend,
     truncate_middle,
 )
-from .result import InferenceResult
 from .schema_enforce import (
     SchemaValidationError,
     enforce_schema,
@@ -45,7 +41,6 @@ from .claude_sdk import (
     ClaudeSDKRateLimitError,
     run_claude_sdk_exec,
 )
-from .gemini_api import GeminiApiError, run_gemini_api
 from .agy import (
     AgyError,
     AgyNotInstalledError,
@@ -58,28 +53,27 @@ __all__ = [
     "InferenceError",
     "InferenceNotInstalledError",
     "InferenceQuotaError",
-    "InferenceResult",
     "SchemaValidationError",
     "UnsupportedMediaError",
     "backend_supports_audio",
-    "fan_out_concurrency",
-    "is_agent_backend",
-    "is_gemini_backend",
     "run_inference",
     "run_codex_exec",
     "run_claude_sdk_exec",
-    "run_gemini_api",
     "run_agy",
     "CodexInvocationError",
     "CodexNotInstalledError",
     "ClaudeSDKExecError",
     "ClaudeSDKNotInstalledError",
     "ClaudeSDKRateLimitError",
-    "GeminiApiError",
     "AgyError",
     "AgyNotInstalledError",
     "AgyQuotaError",
 ]
+
+
+_REPAIR_WITHOUT_AUDIO_NOTE = (
+    "\n\n（本輪修正不再附上音訊；請沿用你上一輪聆聽得到的結論，只修正輸出。）"
+)
 
 
 @contextmanager
@@ -92,29 +86,39 @@ def _working_dir(cwd: Path | None):
             yield Path(tmp)
 
 
-def _run_with_schema(
-    invoke_once,
+@overload
+def run_inference(
     *,
-    base_prompt: str,
-    schema: type[BaseModel] | None,
-    validate,
-) -> InferenceResult:
-    """One shot when no schema is requested, the repair loop otherwise."""
-    if schema is None:
-        return invoke_once(base_prompt)
-    return enforce_schema(
-        invoke_once,
-        schema=schema,
-        base_prompt=base_prompt,
-        validate=validate,
-    )
+    backend: Backend,
+    prompt: str,
+    cwd: Path | None = None,
+    images: list[Path] | None = None,
+    audio: list[Path] | None = None,
+    schema: None = None,
+    model: str | None = None,
+    reasoning_effort: str = "high",
+) -> str: ...
+
+
+@overload
+def run_inference[T: BaseModel](
+    *,
+    backend: Backend,
+    prompt: str,
+    cwd: Path | None = None,
+    images: list[Path] | None = None,
+    audio: list[Path] | None = None,
+    schema: type[T],
+    validate: Callable[[T], None] | None = None,
+    model: str | None = None,
+    reasoning_effort: str = "high",
+) -> T: ...
 
 
 def run_inference(
     *,
     backend: Backend,
     prompt: str,
-    system_prompt: str | None = None,
     cwd: Path | None = None,
     images: list[Path] | None = None,
     audio: list[Path] | None = None,
@@ -122,32 +126,18 @@ def run_inference(
     validate: Callable[[BaseModel], None] | None = None,
     model: str | None = None,
     reasoning_effort: str = "high",
-    output_last_message_path: Path | None = None,
-    timeout: int | None = None,
-    web_search: bool = False,
-) -> InferenceResult:
-    """Run `prompt` through `backend`, returning an `InferenceResult`.
+) -> str | BaseModel:
+    """Run `prompt` through `backend`.
 
-    ``web_search=True`` ensures the backend's built-in web tools are enabled
-    for this call (agent backends only): codex gets ``tools.web_search=true``,
-    and claude/agy already expose them under their permission bypass.
-
-    Every backend's only job is `prompt → text`; validation lives HERE, so the
-    two branches differ solely in how the schema reaches the model:
-
-    * **gemini-api** enforces a schema natively (`response_json_schema`) and is
-      the sole metered backend.
-    * **agy / codex / claude** are single-shot text
-      generators, so the JSON-Schema instruction is appended to the prompt.
-
-    Both then run through the `enforce_schema` validate-and-repair loop.
-    `validate` (which requires `schema`) rejects output that parses but breaks a
-    caller invariant the schema cannot express — a list that must hold one
-    entry per input range, say — and its `ValueError` message is fed back as
-    the repair instruction.
-
-    See `services.inference.base` for the full contract. When `schema` is given
-    the result `.text` is guaranteed-parseable JSON for that model.
+    Every backend is a single-shot `prompt → text` agent with its built-in web
+    tools enabled. Without `schema` the model's raw final message is returned
+    (agentic file-writing callers pass `cwd` and inspect files after). With
+    `schema` its JSON-Schema instruction is appended, the output goes through
+    the `enforce_schema` validate-and-repair loop, and the parsed model is
+    returned. Repair rounds re-send the prompt and images but not the audio. `validate` (which requires `schema`) rejects output that parses
+    but breaks a caller invariant the schema cannot express — a list that must
+    hold one entry per input range, say — and its `ValueError` message is fed
+    back as the repair instruction.
     """
     backend = Backend(backend)
 
@@ -157,95 +147,67 @@ def run_inference(
             f"({len(audio)} file(s) given)"
         )
 
-    if is_gemini_backend(backend) and not model:
+    # codex/claude fall back to their own default model; agy has none.
+    if backend == Backend.AGY and not model:
         raise InferenceError(
             f"backend {backend.value!r} requires an explicit model"
-        )
-
-    if web_search and not is_agent_backend(backend):
-        raise InferenceError(
-            f"backend {backend.value!r} has no built-in web-search tool"
         )
 
     if validate is not None and schema is None:
         raise InferenceError("validate= requires a schema to validate against")
 
-    # gemini-api: native schema + metered cost + raw system_instruction, so the
-    # prompt carries no JSON-Schema suffix.
-    if backend == Backend.GEMINI_API:
+    full_prompt = prompt
+    if schema is not None:
+        full_prompt += schema_instruction(schema)
 
-        def invoke_api(p: str) -> InferenceResult:
-            return run_gemini_api(
-                prompt=p,
-                system_prompt=system_prompt,
-                images=images,
-                audio=audio,
-                schema=schema,
-                model=model,
-                reasoning_effort=reasoning_effort,
-                timeout=timeout,
-            )
+    # codex/claude need a working dir for their file tools; agy manages its own
+    # staged workspace, so it gets no work dir.
+    needs_workdir = backend in (Backend.CODEX, Backend.CLAUDE)
+    with _working_dir(cwd) if needs_workdir else nullcontext(None) as work:
 
-        result = _run_with_schema(
-            invoke_api, base_prompt=prompt, schema=schema, validate=validate
-        )
-    else:
-        # Prompt-based backends: system prompt and user prompt are one
-        # concatenated string, with the JSON-Schema instruction appended below.
-        full_prompt = (
-            f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
-        )
-        # codex/claude need a working dir for their file tools; agy is an agent
-        # too but manages its own staged workspace, so it gets no work dir.
-        needs_workdir = backend in (Backend.CODEX, Backend.CLAUDE)
-        work_ctx = _working_dir(cwd) if needs_workdir else nullcontext(None)
-        with work_ctx as work:
-
-            def invoke_once(p: str) -> InferenceResult:
-                if backend == Backend.AGY:
-                    # The prompt, images, and audio are staged to files; model +
-                    # effort are mapped to agy's --model string inside the wrapper.
-                    agy = run_agy(
-                        p,
-                        model=model,
-                        reasoning_effort=reasoning_effort,
-                        images=images,
-                        audio=audio,
-                        cwd=cwd,
-                        timeout=timeout,
-                    )
-                    return InferenceResult(
-                        text=agy.response, requests=agy.requests
-                    )
-                runner = (
-                    run_codex_exec
-                    if backend == Backend.CODEX
-                    else run_claude_sdk_exec
-                )
-                text = runner(
-                    prompt=p,
-                    cwd=work,
-                    images=images,
+        def invoke_once(p: str, *, repairing: bool = False) -> str:
+            if backend == Backend.AGY:
+                # A schema-repair round fixes the previous output's format;
+                # re-listening to the audio would only burn quota.
+                if repairing and audio:
+                    p += _REPAIR_WITHOUT_AUDIO_NOTE
+                # model + effort are mapped to agy's --model string inside the
+                # wrapper; the prompt, images, and audio are staged to files.
+                return run_agy(
+                    p,
                     model=model,
                     reasoning_effort=reasoning_effort,
-                    output_last_message_path=output_last_message_path,
-                    timeout=timeout,
-                    web_search=web_search,
+                    images=images,
+                    audio=None if repairing else audio,
+                    cwd=cwd,
                 )
-                return InferenceResult(text=text)
+            runner = (
+                run_codex_exec
+                if backend == Backend.CODEX
+                else run_claude_sdk_exec
+            )
+            return runner(
+                prompt=p,
+                cwd=work,
+                images=images,
+                model=model,
+                reasoning_effort=reasoning_effort,
+            )
 
-            result = _run_with_schema(
+        if schema is None:
+            text = invoke_once(full_prompt)
+            result: str | BaseModel = text
+        else:
+            result = enforce_schema(
                 invoke_once,
-                base_prompt=full_prompt
-                + (schema_instruction(schema) if schema else ""),
                 schema=schema,
+                base_prompt=full_prompt,
                 validate=validate,
             )
+            text = result.model_dump_json()
 
     # ONE final-message log site for every backend. Each backend's only job is
     # `prompt -> text`; logging (with middle-truncation so large SRT/JSON output
     # doesn't flood the log) lives here, not duplicated and diverging per backend.
-    logger.debug(
-        f"{backend.value} final message:\n{truncate_middle(result.text)}"
-    )
+    logger.debug(f"{backend.value} final message:\n{truncate_middle(text)}")
     return result

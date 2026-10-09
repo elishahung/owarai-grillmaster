@@ -27,7 +27,7 @@ class PipelineStateTests(unittest.TestCase):
     def setUp(self):
         self.state = PipelineState()
         self.reporter = TuiProgressReporter(self.state)
-        self.reporter.pipeline_started(MagicMock(total_cost=1.5), _plan())
+        self.reporter.pipeline_started(MagicMock(asr_cost=1.5), _plan())
 
     def test_plan_creates_items_with_disabled_states(self):
         keys = [item.key for item in self.state.items]
@@ -92,13 +92,12 @@ class PipelineStateTests(unittest.TestCase):
         self.assertEqual(self.state.chunks.total, 3)
         self.assertEqual(len(self.state.chunks.active), 2)
 
-        self.reporter.chunk_finished(0, retries=1, cost=0.02)
-        self.reporter.chunk_failed(2, "bad", retries=2, cost=0.01)
+        self.reporter.chunk_finished(0, retries=1)
+        self.reporter.chunk_failed(2, "bad", retries=2)
         board = self.state.chunks
         self.assertEqual(board.done, 1)
         self.assertEqual(board.failed, 1)
         self.assertEqual(board.retries, 3)
-        self.assertAlmostEqual(board.cost, 0.03)
         self.assertIs(board.cells[0].state, ChunkState.DONE)
         self.assertIs(board.cells[2].state, ChunkState.FAILED)
 
@@ -146,7 +145,7 @@ class PipelineStateTests(unittest.TestCase):
         self.assertEqual(self.state.chunks.total, 0)
         self.assertIsNone(self.state.current_stage_key)
         # A rerun rebuilds the items via pipeline_started.
-        self.reporter.pipeline_started(MagicMock(total_cost=0.0), _plan())
+        self.reporter.pipeline_started(MagicMock(asr_cost=0.0), _plan())
         self.assertIs(
             self.state.get("metadata").state, ItemState.PENDING
         )

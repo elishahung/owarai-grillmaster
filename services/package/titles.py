@@ -96,14 +96,13 @@ def generate_titles(source_root: Path) -> TitleSuggestions:
     # cwd is deliberately None (throwaway temp dir): the whole input is the
     # pre-pass content injected above, and this task must not touch project
     # files — Python owns writing titles.json.
-    inference = run_inference(
+    result = run_inference(
         backend=backend,
         prompt=prompt,
         schema=TitleSuggestions,
         model=spec.model,
         reasoning_effort=spec.reasoning_effort,
     )
-    result = TitleSuggestions.model_validate_json(inference.text)
 
     path = titles_path(source_root)
     path.parent.mkdir(parents=True, exist_ok=True)

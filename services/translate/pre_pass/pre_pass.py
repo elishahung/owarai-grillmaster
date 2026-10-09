@@ -1,12 +1,12 @@
 """Pre-pass analysis: scan full SRT once to produce a shared briefing for chunks.
 
-``run_pre_pass`` builds the system instruction (audio-conditioned on the
-selected backend's capability) and the user message, then delegates to
+``run_pre_pass`` builds the instruction (audio-conditioned on the selected
+backend's capability) and the user message, then delegates to
 ``services.inference.run_inference`` with the ``PrePassResult`` schema. The
-backend is chosen by ``settings.agent_prepass_model.backend`` (gemini-api /
-agy / claude / codex); backends without audio support drop audio and run on
-frames + SRT only. The
-parsed result is written as the explicit ``pre_pass.json`` hand-off.
+backend is chosen by ``settings.agent_prepass_model.backend`` (agy / claude /
+codex); backends without audio support drop audio and run on frames + SRT
+only. The parsed result is written as the explicit ``pre_pass.json``
+hand-off.
 """
 
 import json
@@ -21,13 +21,10 @@ from services.srt import SrtBlock
 from ..assets import prepare_pre_pass_media_assets
 from services.inference import (
     Backend,
-    InferenceQuotaError,
     backend_supports_audio,
-    is_agent_backend,
     run_inference,
 )
 from services.inference.tools import build_pre_pass_agent_instruction
-from ..errors import PrePassError
 from services.fixed_glossary import (
     FixedGlossary,
     filter_fixed_glossary,
@@ -165,16 +162,31 @@ def run_pre_pass(
     parent_pre_pass_context: str | None = None,
     official_subtitle_context: str | None = None,
     program_instruction: str | None = None,
-) -> tuple[PrePassResult, float]:
-    """Run the single pre-pass call. Returns (parsed result, cost in USD).
+) -> PrePassResult:
+    """Run the single pre-pass call and return the parsed briefing.
 
+    An existing ``pre_pass.json`` is reused as-is (no prompt/parameter
+    matching; delete ``.pre_pass/`` to force a re-run), before any media work.
     The backend is chosen by ``settings.agent_prepass_model``. When
-    ``backend_supports_audio`` is false for it, so audio extraction is skipped and the
-    instruction is rendered without audio claims. Cost is 0.0 for every backend
-    except gemini-api. ``segment_summaries`` coverage of the chunk boundaries is
-    enforced via ``run_inference(validate=)``, so a briefing that skips ranges is
-    repaired rather than accepted. Raises ``PrePassError`` on failure.
+    ``backend_supports_audio`` is false for it, audio extraction is skipped
+    and the instruction is rendered without audio claims. The agent frame
+    tool and web-search guidance are always appended. ``segment_summaries``
+    coverage of the chunk boundaries is enforced via
+    ``run_inference(validate=)``, so a briefing that skips ranges is repaired
+    rather than accepted.
     """
+    if pre_pass_path.exists():
+        try:
+            result = PrePassResult.model_validate_json(
+                pre_pass_path.read_text(encoding="utf-8")
+            )
+            logger.info(f"[pre-pass] Reusing existing {pre_pass_path}")
+            return result
+        except (OSError, ValueError) as e:
+            logger.warning(
+                f"[pre-pass] Existing pre_pass unusable ({e}); re-running"
+            )
+
     spec = settings.agent_prepass_model
     backend = Backend(spec.backend)
     has_audio = backend_supports_audio(backend)
@@ -236,135 +248,72 @@ def run_pre_pass(
         boundaries=boundaries,
         frame_timestamps=frame_timestamps,
     )
-    system_instruction = build_pre_pass_instruction(has_audio=has_audio)
+    instruction = build_pre_pass_instruction(has_audio=has_audio)
     if source_metadata_context:
-        system_instruction += f"\n\n{OFFICIAL_SOURCE_METADATA_INSTRUCTION}"
+        instruction += f"\n\n{OFFICIAL_SOURCE_METADATA_INSTRUCTION}"
     if official_subtitle_context:
-        system_instruction += f"\n\n{OFFICIAL_SUBTITLE_INSTRUCTION}"
+        instruction += f"\n\n{OFFICIAL_SUBTITLE_INSTRUCTION}"
     if fixed_glossary:
-        system_instruction += (
+        instruction += (
             f"\n\n{FIXED_GLOSSARY_FULL_INSTRUCTION}"
             if fixed_glossary_full
             else f"\n\n{FIXED_GLOSSARY_INSTRUCTION}"
         )
     if parent_pre_pass_context:
-        system_instruction += f"\n\n{PARENT_PRE_PASS_INSTRUCTION}"
+        instruction += f"\n\n{PARENT_PRE_PASS_INSTRUCTION}"
     if program_instruction:
-        system_instruction += f"\n\n{program_instruction}"
-
-    active_backend = spec.backend
-
-    agent_instruction_enabled = is_agent_backend(backend)
-    manifest_path = pre_pass_cache_dir / "manifest.json"
-
-    # An existing pre_pass.json is reused as-is: no prompt/parameter matching.
-    # Delete .pre_pass/ manually to force a re-run with new parameters.
-    if pre_pass_path.exists():
-        try:
-            result = PrePassResult.model_validate_json(
-                pre_pass_path.read_text(encoding="utf-8")
-            )
-            logger.info(f"[pre-pass] Reusing existing {pre_pass_path}")
-            return result, 0.0
-        except Exception as e:
-            logger.warning(
-                f"[pre-pass] Existing pre_pass unusable ({e}); re-running"
-            )
+        instruction += f"\n\n{program_instruction}"
+    last_block = chunks[-1][-1] if chunks and chunks[-1] else None
+    source_end = (
+        MediaProcessor.parse_timecode_line(last_block.timecode).end_seconds
+        if last_block is not None
+        else 0.0
+    )
+    instruction += "\n\n" + build_pre_pass_agent_instruction(
+        pre_pass_cache_dir.parent,
+        0.0,
+        source_end,
+    )
 
     if parent_pre_pass_context:
         logger.info(f"[pre-pass] Parent pre-pass context injected")
     if official_subtitle_context:
         logger.info("[pre-pass] Official CC subtitle context injected")
-
     logger.info(
-        f"[pre-pass] Backend: {active_backend} (model={spec.model}, "
+        f"[pre-pass] Backend: {spec.backend} (model={spec.model}, "
         f"effort={spec.reasoning_effort}, "
-        f"audio={'on' if has_audio else 'off'})"
+        f"audio={'on' if pre_pass_assets.audio else 'off'})"
     )
-    if agent_instruction_enabled:
-        last_block = chunks[-1][-1] if chunks and chunks[-1] else None
-        source_end = (
-            MediaProcessor.parse_timecode_line(last_block.timecode).end_seconds
-            if last_block is not None
-            else 0.0
-        )
-        system_instruction += "\n\n" + build_pre_pass_agent_instruction(
-            pre_pass_cache_dir.parent,
-            0.0,
-            source_end,
-        )
 
-    images = [frame.path for frame in pre_pass_assets.frames]
-    # Gate audio on the backend's capability, not just on the cached asset:
-    # an audio file may linger from an earlier gemini run, but an agent backend
-    # must never receive it (run_inference would raise UnsupportedMediaError).
-    audio = (
-        [pre_pass_assets.audio.path]
-        if (has_audio and pre_pass_assets.audio)
-        else None
+    result = run_inference(
+        backend=backend,
+        prompt=f"{instruction}\n\n{user_message}",
+        images=[frame.path for frame in pre_pass_assets.frames],
+        audio=[pre_pass_assets.audio] if pre_pass_assets.audio else None,
+        schema=PrePassResult,
+        validate=_segment_coverage_validator(boundaries),
+        cwd=pre_pass_cache_dir.parent,
+        model=spec.model,
+        reasoning_effort=spec.reasoning_effort,
     )
-    try:
-        io_result = run_inference(
-            backend=backend,
-            system_prompt=system_instruction,
-            prompt=user_message,
-            images=images,
-            audio=audio,
-            schema=PrePassResult,
-            validate=_segment_coverage_validator(boundaries),
-            cwd=pre_pass_cache_dir.parent,
-            model=spec.model,
-            reasoning_effort=spec.reasoning_effort,
-            # The agent instruction invites built-in web search; make sure the
-            # backend actually has the tool enabled (agent backends only).
-            web_search=agent_instruction_enabled,
-        )
-    except InferenceQuotaError as e:
-        logger.error(f"[pre-pass] {backend.value} quota exhausted: {e}")
-        raise PrePassError(
-            f"{backend.value} quota exhausted: {e}", accumulated_cost=0.0
-        ) from e
-    except Exception as e:
-        logger.error(f"[pre-pass] Failed: {e}")
-        raise PrePassError(f"Pre-pass failed: {e}", accumulated_cost=0.0) from e
-
-    result = PrePassResult.model_validate_json(io_result.text)
-    cost = io_result.cost
-    requests = io_result.requests
 
     pre_pass_path.parent.mkdir(parents=True, exist_ok=True)
     pre_pass_path.write_text(
         result.model_dump_json(indent=2),
         encoding="utf-8",
     )
+    # Records which model produced pre_pass.json; the sampled media is listed
+    # in the asset manifest (assets.json) beside it.
     pre_pass_cache_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "backend": active_backend,
-                "frames": [
-                    frame.model_dump(mode="json")
-                    for frame in pre_pass_assets.frames
-                ],
-                "audio": (
-                    pre_pass_assets.audio.model_dump(mode="json")
-                    if pre_pass_assets.audio
-                    else None
-                ),
-                "asset_manifest_path": str(pre_pass_assets.manifest_path),
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
+    (pre_pass_cache_dir / "manifest.json").write_text(
+        json.dumps({"model": str(spec)}, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
-    requests_note = f", requests: {requests}" if requests != 1 else ""
     logger.success(
         f"[pre-pass] Completed: {len(result.characters)} characters, "
         f"{len(result.proper_nouns)} proper_nouns, "
         f"{len(result.glossary)} glossary, "
         f"{len(result.catchphrases)} catchphrases, "
-        f"{len(result.segment_summaries)} segment_summaries "
-        f"(${cost:.4f}{requests_note})"
+        f"{len(result.segment_summaries)} segment_summaries"
     )
-    return result, cost
+    return result

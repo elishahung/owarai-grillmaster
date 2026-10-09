@@ -2,9 +2,9 @@
 
 Two layers of validation, one loop:
 
-* **schema** — the output must parse as the caller's Pydantic model. Backends
-  without native structured output (agy, codex, claude) get
-  the JSON Schema appended to the prompt; gemini-api enforces it natively.
+* **schema** — the output must parse as the caller's Pydantic model. No
+  backend has native structured output, so ``run_inference`` appends the
+  JSON Schema to the prompt.
 * **caller invariants the schema cannot express** — an optional ``validate``
   hook (e.g. "one ``segment_summary`` per chunk boundary": any list length is
   schema-valid, so only the caller can judge it).
@@ -22,7 +22,6 @@ from loguru import logger
 from pydantic import BaseModel
 
 from .base import InferenceError
-from .result import InferenceResult
 
 
 class SchemaValidationError(InferenceError):
@@ -68,32 +67,30 @@ def extract_json_object(text: str) -> str:
     return stripped
 
 
-def enforce_schema(
-    invoke_once: Callable[[str], InferenceResult],
+def enforce_schema[T: BaseModel](
+    invoke_once: Callable[..., str],
     *,
-    schema: type[BaseModel],
+    schema: type[T],
     base_prompt: str,
-    validate: Callable[[BaseModel], None] | None = None,
+    validate: Callable[[T], None] | None = None,
     max_retries: int = MAX_SCHEMA_RETRIES,
-) -> InferenceResult:
+) -> T:
     """Validate-and-repair loop around a single-shot backend invocation.
 
-    `invoke_once(prompt)` runs one backend round. `validate(parsed)` may raise
+    `invoke_once(prompt, repairing=...)` runs one backend round; `repairing` is
+    True on every round after the first, so the caller can drop inputs a
+    format fix does not need (audio). `validate(parsed)` may raise
     `ValueError` to reject an output that parses but breaks a caller invariant;
     its message is fed back verbatim as the repair instruction, so make it name
-    exactly what is missing. Returns the accepted result with `cost` and
-    `requests` summed across every attempt. Raises `SchemaValidationError` if
-    nothing is accepted within `max_retries`.
+    exactly what is missing. Returns the accepted, parsed model.
+    Raises `SchemaValidationError` if nothing is accepted within
+    `max_retries`.
     """
-    total_requests = 0
-    total_cost = 0.0
     last_error: ValueError | None = None
     repair = ""
     for attempt in range(1, max_retries + 1):
-        result = invoke_once(base_prompt + repair)
-        total_requests += result.requests
-        total_cost += result.cost
-        cleaned = extract_json_object(result.text)
+        text = invoke_once(base_prompt + repair, repairing=attempt > 1)
+        cleaned = extract_json_object(text)
         try:
             parsed = schema.model_validate_json(cleaned)
             if validate is not None:
@@ -110,18 +107,12 @@ def enforce_schema(
                 "\n\n【修正要求】你上一次的回應未通過輸出驗證。"
                 f"驗證錯誤：\n{e}\n\n"
                 "你上一次（無效）的輸出為：\n"
-                f"{result.text[:8000]}\n\n"
+                f"{text[:8000]}\n\n"
                 "請只輸出一個符合 schema 的修正後 JSON 物件，"
                 "不要任何說明文字或 markdown code fence。"
             )
             continue
-        return result.model_copy(
-            update={
-                "text": cleaned,
-                "cost": total_cost,
-                "requests": total_requests,
-            }
-        )
+        return parsed
 
     raise SchemaValidationError(
         f"output failed validation after {max_retries} attempts: {last_error}"

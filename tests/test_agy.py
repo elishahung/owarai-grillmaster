@@ -6,7 +6,6 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-os.environ.setdefault("AGENT_GEMINI_API_KEY", "test-key")
 
 from services.inference import agy as agy_mod
 from services.inference.agy import (
@@ -122,8 +121,7 @@ class RunAgyTests(unittest.TestCase):
                 reasoning_effort="high",
             )
 
-        self.assertEqual(out.response, "result body")
-        self.assertEqual(out.requests, 1)
+        self.assertEqual(out, "result body")
         argv = captured["argv"]
         self.assertEqual(argv[0], "agy")
         self.assertIn("--print", argv)
@@ -211,7 +209,7 @@ class RunAgyTests(unittest.TestCase):
         brain, log = self._fake_transcript(["audio/ogg"])
         captured = self._run_with_audio(brain, log)
 
-        self.assertEqual(captured["result"].response, "heard")
+        self.assertEqual(captured["result"], "heard")
         track = captured["track"]
         # Audio is not copied into the workspace; its directory is add-dir'd.
         self.assertNotIn("audio.ogg", captured["staged"])

@@ -352,8 +352,8 @@ class GrillMasterApp(App):
         info = Text()
         info.append(f"{progress * 100:3.0f}%", "bold")
         info.append(f"  stage {done}/{active}  ·  ")
-        info.append(f"elapsed {fmt_clock(state.wall_elapsed())}  ·  cost ")
-        info.append(f"${state.total_cost():.4f}", "green")
+        info.append(f"elapsed {fmt_clock(state.wall_elapsed())}  ·  ASR cost ")
+        info.append(f"${state.asr_cost():.4f}", "green")
         info.append("  ·  ")
         info.append(follow)
         line.add_row(bar(progress, width=40), info, status)
@@ -537,8 +537,6 @@ class GrillMasterApp(App):
         stats.append(str(board.retries), "dark_orange")
         stats.append("  ·  failed ")
         stats.append(str(board.failed), "red" if board.failed else "")
-        stats.append("  ·  cost ")
-        stats.append(f"${board.cost:.4f}", "green")
         parts: list = [grid, Text()]
         if board.active:
             parts.append(workers)
@@ -579,7 +577,7 @@ class GrillMasterApp(App):
             path = getattr(state.project, attr, None)
             if path is not None and Path(str(path)).exists():
                 table.add_row(label, str(path))
-        table.add_row("total cost", f"${state.total_cost():.4f}")
+        table.add_row("ASR cost", f"${state.asr_cost():.4f}")
         table.add_row("wall time", fmt_clock(state.wall_elapsed()))
         hint = Text(
             "\n↑/↓ browse stage history · o opens the selected artifact",

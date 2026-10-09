@@ -12,7 +12,7 @@ def _stub_project(tmp: Path) -> MagicMock:
     project = MagicMock()
     project.id = "demo"
     project.name = "demo show"
-    project.total_cost = 0.5
+    project.asr_cost = 0.5
     for attr in (
         "pre_pass_path",
         "refine_report_path",
@@ -46,7 +46,7 @@ def _scripted_state(tmp: Path) -> tuple[PipelineState, TuiProgressReporter]:
     reporter.stage_completed("download", 5.0)
     reporter.stage_started("chunks", "Translating subtitles")
     reporter.chunk_started(0, 4, 1, 40)
-    reporter.chunk_finished(0, retries=0, cost=0.01)
+    reporter.chunk_finished(0, retries=0)
     return state, reporter
 
 
@@ -195,7 +195,7 @@ class GrillMasterAppTests(unittest.IsolatedAsyncioTestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             state, reporter = _scripted_state(Path(tmp))
-            reporter.chunk_finished(1, 0, 0.0)
+            reporter.chunk_finished(1, 0)
             reporter.stage_completed("chunks", 60.0)
             reporter.stage_completed("finalize", 1.0)
             reporter.pipeline_completed()

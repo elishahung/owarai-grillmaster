@@ -1,46 +1,20 @@
-"""Error and summary types for translation cost tracking."""
-
-from pydantic import BaseModel, Field
+"""Error types raised by the translation stages."""
 
 
-class TranslationCostSummary(BaseModel):
-    total_cost: float
-    pre_pass_cost: float
-    chunk_costs: list[float] = Field(default_factory=list)
-    num_chunks: int
-    retries: int
-    elapsed_seconds: float
-    completed_chunks: int
-    failed_chunks: list[str] = Field(default_factory=list)
-
-
-class CostTrackingError(RuntimeError):
-    """Base error that preserves accumulated API cost."""
-
-    def __init__(self, message: str, accumulated_cost: float = 0.0):
-        super().__init__(message)
-        self.accumulated_cost = accumulated_cost
-
-
-class PrePassError(CostTrackingError):
-    """Raised when Gemini pre-pass fails after accruing cost."""
-
-
-class ChunkTranslationError(CostTrackingError):
-    """Raised when a chunk fails after accruing cost."""
+class ChunkTranslationError(RuntimeError):
+    """Raised when a chunk fails after exhausting its attempts or fix layer."""
 
     def __init__(
         self,
         message: str,
         *,
-        accumulated_cost: float = 0.0,
         retries: int = 0,
         chunk_index: int,
         total_chunks: int,
         from_index: int,
         to_index: int,
     ):
-        super().__init__(message, accumulated_cost=accumulated_cost)
+        super().__init__(message)
         self.retries = retries
         self.chunk_index = chunk_index
         self.total_chunks = total_chunks
@@ -56,8 +30,4 @@ class ChunkTranslationError(CostTrackingError):
 
 
 class TranslationError(RuntimeError):
-    """Raised when translation fails with a partial cost summary."""
-
-    def __init__(self, message: str, summary: TranslationCostSummary):
-        super().__init__(message)
-        self.summary = summary
+    """Raised when chunk translation cannot produce the full translated SRT."""

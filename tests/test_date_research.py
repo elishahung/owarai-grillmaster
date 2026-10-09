@@ -3,7 +3,6 @@ import shutil
 import unittest
 from datetime import date
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from pydantic import ValidationError
@@ -66,7 +65,9 @@ class DateResearchTests(unittest.TestCase):
             project.save()
             with patch(
                 "services.postprocess.date_research.run_inference",
-                return_value=SimpleNamespace(text=_found_result_json()),
+                return_value=DateResearchResult.model_validate_json(
+                    _found_result_json()
+                ),
             ) as mock_inference:
                 result = research_broadcast_date(project)
 
@@ -87,7 +88,9 @@ class DateResearchTests(unittest.TestCase):
             project.save()
             with patch(
                 "services.postprocess.date_research.run_inference",
-                return_value=SimpleNamespace(text=_unknown_result_json()),
+                return_value=DateResearchResult.model_validate_json(
+                    _unknown_result_json()
+                ),
             ):
                 result = research_broadcast_date(project)
 
@@ -121,7 +124,9 @@ class DateResearchTests(unittest.TestCase):
             )
             with patch(
                 "services.postprocess.date_research.run_inference",
-                return_value=SimpleNamespace(text=_found_result_json()),
+                return_value=DateResearchResult.model_validate_json(
+                    _found_result_json()
+                ),
             ) as mock_inference:
                 result = research_broadcast_date(project)
 
@@ -155,7 +160,9 @@ class DateResearchTests(unittest.TestCase):
             project.save()
             with patch(
                 "services.postprocess.date_research.run_inference",
-                return_value=SimpleNamespace(text=_unknown_result_json()),
+                return_value=DateResearchResult.model_validate_json(
+                    _unknown_result_json()
+                ),
             ) as mock_inference:
                 research_broadcast_date(project)
 
@@ -174,7 +181,9 @@ class DateResearchTests(unittest.TestCase):
             project.update_from_source_broadcast_date_label("2018年放送")
             with patch(
                 "services.postprocess.date_research.run_inference",
-                return_value=SimpleNamespace(text=_unknown_result_json()),
+                return_value=DateResearchResult.model_validate_json(
+                    _unknown_result_json()
+                ),
             ) as mock_inference:
                 research_broadcast_date(project)
 
@@ -264,7 +273,7 @@ class WorkflowDateResearchGateTests(unittest.TestCase):
         # only the date-research side-task logic is exercised.
         project = MagicMock()
         project.id = "demo"
-        project.total_cost = 0.0
+        project.asr_cost = 0.0
         for stage in workflow_module.ProgressStage:
             setattr(project, stage.value, True)
         project.is_cover_generated = True

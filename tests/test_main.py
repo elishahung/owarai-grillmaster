@@ -62,7 +62,7 @@ class MainCliTests(unittest.TestCase):
             patch.object(main_module, "SerialRun") as serial_run_cls,
         ):
             main_module.main(
-                ["serial", "BV1", "BV2", "--refine", "--remix",
+                ["serial", "BV1", "BV2", "--cover", "--remix",
                  "--parent-project", "archived/ep0"]
             )
 
@@ -70,9 +70,7 @@ class MainCliTests(unittest.TestCase):
             sources=["BV1", "BV2"],
             parent_project_path=Path("archived/ep0"),
             submit_kwargs=dict(
-                enable_refine=True,
-                enable_glossary_check=False,
-                enable_cover=False,
+                enable_cover=True,
                 enable_date_research=False,
                 enable_live_chat=False,
                 chat_layout=ChatLayout.SIDE,

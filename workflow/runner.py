@@ -22,6 +22,8 @@ class StageSpec:
     skipped_message: str
     on_skip: Callable[[], None] | None = None
     params: dict[str, str] = field(default_factory=dict)
+    # False only for an opt-in stage this run leaves off (the `--chat` pair).
+    enabled: bool = True
 
 
 class WorkflowRunner:
@@ -41,7 +43,11 @@ class WorkflowRunner:
         self.progress = progress if progress is not None else NoopProgressReporter()
 
     def run(self, spec: StageSpec, action: Callable[[], None]) -> bool:
-        """Run a stage action if incomplete and return whether to stop."""
+        """Run a stage action if enabled and incomplete; return whether to stop."""
+        if not spec.enabled:
+            logger.debug(f"Stage skipped: {spec.key} disabled for this run")
+            self.progress.stage_skipped(spec.key, "disabled")
+            return False
         if getattr(self.project, spec.stage.value):
             if spec.on_skip is not None:
                 spec.on_skip()
@@ -59,21 +65,6 @@ class WorkflowRunner:
         elapsed = format_elapsed(elapsed_seconds)
         logger.success(f"Stage complete: {spec.complete_message} ({elapsed})")
         return self._should_stop_after_stage(spec.stage)
-
-    def run_optional(
-        self,
-        *,
-        enabled: bool,
-        disabled_message: str,
-        spec: StageSpec,
-        action: Callable[[], None],
-    ) -> bool:
-        """Run an optional stage when enabled."""
-        if not enabled:
-            logger.debug(f"Stage skipped: {disabled_message}")
-            self.progress.stage_skipped(spec.key, "disabled")
-            return False
-        return self.run(spec, action)
 
     def _should_stop_after_stage(self, completed_stage: ProgressStage) -> bool:
         if self.break_after != completed_stage:

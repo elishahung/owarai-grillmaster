@@ -65,8 +65,8 @@ under `workflow/stages/` by subsystem; post-finalize archive/package is in
 | 6 | `SRT_COMPLETED`                  | `convert_file` ASR JSON → `video.ja.srt`                                     | `services/elevenlabs/srt_builder` |
 | 7 | `PREPASS_COMPLETED`              | One whole-film analysis call → `.pre_pass/pre_pass.json`                     | `services/translate` (pre_pass) |
 | 8 | `CHUNK_TRANSLATED`               | Concurrent per-chunk translation → `video.cht.srt`                          | `services/translate` (chunk) |
-| 9 | `SRT_REFINED` (optional)         | Agent polishes TC subtitles → `video.cht.refined.srt`                        | `services/postprocess/refine` |
-| 10| `GLOSSARY_CHECKED` (optional)    | Agent checks full-text terminology/facts, may correct `pre_pass.json` → `video.cht.glossary_checked.srt`| `services/postprocess/glossary_check` |
+| 9 | `SRT_REFINED`                    | Agent polishes TC subtitles → `video.cht.refined.srt`                        | `services/postprocess/refine` |
+| 10| `GLOSSARY_CHECKED`               | Agent checks full-text terminology/facts, may correct `pre_pass.json` → `video.cht.glossary_checked.srt`| `services/postprocess/glossary_check` |
 | 11| `FINALIZED`                      | Punctuation cleanup → styled `video.cht.ass` + `video.cht.finalized.srt`     | `services/finalize` |
 | 12| `CHAT_TRANSLATED` (optional)     | `--chat` only: chat batches + polish against the finalized SRT → `chat.cht.json` | `services/live_chat` |
 
@@ -116,9 +116,9 @@ Key control-flow details that are easy to break:
   re-spend tokens. A completed artifact left by a previous run is applied at
   kick-off even when the fallback is disabled (the result is already paid
   for); only the agent dispatch is gated on the flag.
-- **Optional stages are gated twice**: by a `settings.enable_*` toggle OR a
-  per-run `--refine/--glossary-check/--cover/--date-research` flag (the flag
-  force-enables). `--chat` is the exception: per-run flag only.
+- **Optional side tasks are gated twice**: by a `settings.enable_*` toggle OR
+  a per-run `--cover/--date-research` flag (the flag force-enables). The only
+  optional stages are the two `--chat` ones: per-run flag only.
 - **Cost accounting**: ElevenLabs ASR is the only metered service; the ASR
   stage calls `project.add_asr_cost(amount)`, accumulated as `asr_cost` in
   `project.json`. Every model backend is a subscription agent, so model stages
@@ -127,8 +127,10 @@ Key control-flow details that are easy to break:
   which logs `Stage complete: ... (<elapsed>)` after the action and
   `mark_progress` finish. Cover/date side tasks use the same elapsed suffix,
   measured from async dispatch to join.
-- **Finalize input precedence**: glossary-checked SRT → refined SRT → translated
-  SRT (first that exists wins).
+- **Refine → glossary check → finalize is a fixed chain** (no toggles): each
+  reads the previous stage's SRT, so finalize always reads the glossary-checked
+  SRT. The pre-pass always injects the whole fixed glossary as a reference
+  table (no per-episode filtering).
 - **Serial chains** (`grill serial SRC...`, `workflow/serial.py`): `SerialRun`
   submits sources in order; `submit_project`/`process_project` return the
   project's final directory (archived location, else `projects/<id>`), which
@@ -237,7 +239,9 @@ Key control-flow details that are easy to break:
   shape or `INSTRUCTION_KEY_DOCS`.
 - `services/fixed_glossary/` — loads `fixed_glossary.json` / `.md` (canonical
   term translations) consumed by pre-pass, glossary-check, **and finalize** (it
-  is a runtime input for name spacing, not just prompt content).
+  is a runtime input for name spacing, not just prompt content). A required
+  input: a missing file or bad top-level shape raises; only individual bad
+  entries are skipped with a warning.
 - `services/progress.py` — the reporter contract. `NoopProgressReporter` is the
   base protocol: legacy bars (`start_stage/advance/finish`), chunk callbacks,
   and structured lifecycle events (`pipeline_started(project, plan)` with

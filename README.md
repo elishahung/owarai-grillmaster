@@ -30,7 +30,7 @@
 ## 流程
 
 ```
-下載影片 → 語音辨識 → 全片簡報 → 分塊翻譯 → 潤飾 / 名詞校對（可選）→ 輸出 ASS + SRT → 歸檔 / 燒錄字幕（可選）
+下載影片 → 語音辨識 → 全片簡報 → 分塊翻譯 → 潤飾 → 名詞校對 → 輸出 ASS + SRT → 歸檔 / 燒錄字幕（可選）
 ```
 
 ## 安裝
@@ -77,8 +77,6 @@ AGENT_POSTPROCESS_MODEL=codex/gpt-6.1-sol/high
 AGENT_COMMON_MODEL=codex/gpt-6.1-sol/medium
 
 # 可選功能
-ENABLE_POSTPROCESS_REFINE=true             # 潤飾字幕
-ENABLE_POSTPROCESS_GLOSSARY_CHECK=true     # 名詞校對
 ENABLE_COVER_GENERATION=true               # 產生風格化封面
 ENABLE_BROADCAST_DATE_AGENT_FALLBACK=true  # 查不到播出日時上網找
 ENABLE_PACKAGE_TITLE_SUGGESTION=true       # 燒錄時產生候選標題

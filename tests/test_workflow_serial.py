@@ -21,7 +21,7 @@ class SerialRunTests(unittest.TestCase):
         run = SerialRun(
             sources=["BV1", "BV2", "BV3"],
             parent_project_path=Path("archive/ep0"),
-            submit_kwargs={"enable_refine": True},
+            submit_kwargs={"enable_cover": True},
         )
         finals = [Path("archive/ep1"), Path("archive/ep2"), Path("p/ep3")]
 
@@ -39,7 +39,7 @@ class SerialRunTests(unittest.TestCase):
                     source_str=source,
                     parent_project_path=parent,
                     progress=progress,
-                    enable_refine=True,
+                    enable_cover=True,
                 )
                 for source, parent in zip(
                     ["BV1", "BV2", "BV3"], [Path("archive/ep0"), *finals]

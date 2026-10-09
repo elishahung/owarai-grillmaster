@@ -48,26 +48,6 @@ ParentProjectOption = Annotated[
         show_default=False,
     ),
 ]
-RefineOption = Annotated[
-    bool,
-    typer.Option(
-        "--refine",
-        help=(
-            "Force-enable subtitle refinement stage for this run. "
-            "Overrides ENABLE_POSTPROCESS_REFINE setting."
-        ),
-    ),
-]
-GlossaryCheckOption = Annotated[
-    bool,
-    typer.Option(
-        "--glossary-check",
-        help=(
-            "Force-enable the fixed-glossary localization check stage "
-            "for this run."
-        ),
-    ),
-]
 CoverOption = Annotated[
     bool,
     typer.Option(
@@ -130,8 +110,6 @@ def _run_process(
     translation_hint: str | None,
     break_after: ProgressStage | None,
     parent_project: str | None,
-    refine: bool,
-    glossary_check: bool,
     cover: bool,
     date_research: bool,
     chat: bool,
@@ -143,8 +121,7 @@ def _run_process(
     logger.info(
         f"CLI invoked with source_str={source_str}, "
         f"translation_hint={translation_hint}, break_after={break_after}, "
-        f"parent_project={parent_project}, refine={refine}, "
-        f"glossary_check={glossary_check}, cover={cover}, "
+        f"parent_project={parent_project}, cover={cover}, "
         f"date_research={date_research}, chat={chat}, "
         f"chat_layout={chat_layout}, remix={remix}, start={start}, to={to}"
     )
@@ -168,8 +145,6 @@ def _run_process(
         translation_hint=translation_hint,
         break_after=break_after,
         parent_project_path=parent_project,
-        enable_refine=refine,
-        enable_glossary_check=glossary_check,
         enable_cover=cover,
         enable_date_research=date_research,
         enable_live_chat=chat,
@@ -259,8 +234,6 @@ def process(
         ),
     ] = None,
     parent_project: ParentProjectOption = None,
-    refine: RefineOption = False,
-    glossary_check: GlossaryCheckOption = False,
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
     chat: ChatOption = False,
@@ -296,8 +269,6 @@ def process(
         translation_hint=translation_hint,
         break_after=break_after,
         parent_project=parent_project,
-        refine=refine,
-        glossary_check=glossary_check,
         cover=cover,
         date_research=date_research,
         chat=chat,
@@ -324,8 +295,6 @@ def serial_command(
         ),
     ],
     parent_project: ParentProjectOption = None,
-    refine: RefineOption = False,
-    glossary_check: GlossaryCheckOption = False,
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
     chat: ChatOption = False,
@@ -335,8 +304,7 @@ def serial_command(
     """Process several videos back to back, seeding each from the previous one."""
     logger.info(
         f"CLI invoked with serial sources={sources}, "
-        f"parent_project={parent_project}, refine={refine}, "
-        f"glossary_check={glossary_check}, cover={cover}, "
+        f"parent_project={parent_project}, cover={cover}, "
         f"date_research={date_research}, chat={chat}, "
         f"chat_layout={chat_layout}, remix={remix}"
     )
@@ -347,8 +315,6 @@ def serial_command(
                 Path(parent_project) if parent_project else None
             ),
             submit_kwargs=dict(
-                enable_refine=refine,
-                enable_glossary_check=glossary_check,
                 enable_cover=cover,
                 enable_date_research=date_research,
                 enable_live_chat=chat,

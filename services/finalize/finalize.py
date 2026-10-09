@@ -151,14 +151,9 @@ def _curated_name_units() -> list[str]:
     episode-vetted via pre_pass when relevant and far more prone to
     coincidental substring matches. Pure-Han names never qualify (no Latin).
     """
-    glossary = load_fixed_glossary()
-    units: list[str] = []
-    for unit in glossary.talents:
-        units.extend(zh for _, zh in unit.entries())
-    units.extend(zh for _, zh in glossary.others)
     return [
         zh
-        for zh in units
+        for _, zh in load_fixed_glossary().entries()
         if _HAS_LATIN_RE.search(zh) and _CJK_RE.search(zh)
     ]
 

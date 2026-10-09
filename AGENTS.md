@@ -28,7 +28,7 @@ it left off.
 
 Pipeline at a glance:
 `download → combine → (live-chat fetch) → extract audio → ASR (ElevenLabs) →
-pre-pass analysis → concurrent chunk translation → (refine) → (glossary check)
+pre-pass analysis → concurrent chunk translation → refine → glossary check
 → finalize (ASS+SRT) → (live-chat translation) → (archive) → (package)`. Stages in parentheses are optional.
 
 Entry point: `main.py` (Typer CLI) → `workflow.submit_project`. Run with

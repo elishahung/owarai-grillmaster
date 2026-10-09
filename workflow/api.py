@@ -33,8 +33,6 @@ class WorkflowOptions:
     """Runtime options that affect one project processing invocation."""
 
     break_after: ProgressStage | None = None
-    enable_refine: bool = False
-    enable_glossary_check: bool = False
     enable_cover: bool = False
     enable_date_research: bool = False
     # Per-run only: no .env toggle, since most sources have no replay.
@@ -44,17 +42,6 @@ class WorkflowOptions:
     remix_noise_name: str | None = None
     section_start: float | None = None
     section_end: float | None = None
-
-    @property
-    def do_refine(self) -> bool:
-        return self.enable_refine or settings.enable_postprocess_refine
-
-    @property
-    def do_glossary_check(self) -> bool:
-        return (
-            self.enable_glossary_check
-            or settings.enable_postprocess_glossary_check
-        )
 
     @property
     def do_cover(self) -> bool:
@@ -81,8 +68,6 @@ def submit_project(
     translation_hint: str | None = None,
     break_after: ProgressStage | None = None,
     parent_project_path: str | None = None,
-    enable_refine: bool = False,
-    enable_glossary_check: bool = False,
     enable_cover: bool = False,
     enable_date_research: bool = False,
     enable_live_chat: bool = False,
@@ -107,8 +92,6 @@ def submit_project(
     return process_project(
         new_project.id,
         break_after=break_after,
-        enable_refine=enable_refine,
-        enable_glossary_check=enable_glossary_check,
         enable_cover=enable_cover,
         enable_date_research=enable_date_research,
         enable_live_chat=enable_live_chat,
@@ -123,8 +106,6 @@ def submit_project(
 def process_project(
     project_id: str,
     break_after: ProgressStage | None = None,
-    enable_refine: bool = False,
-    enable_glossary_check: bool = False,
     enable_cover: bool = False,
     enable_date_research: bool = False,
     enable_live_chat: bool = False,
@@ -150,8 +131,6 @@ def process_project(
                 project_id,
                 options=WorkflowOptions(
                     break_after=break_after,
-                    enable_refine=enable_refine,
-                    enable_glossary_check=enable_glossary_check,
                     enable_cover=enable_cover,
                     enable_date_research=enable_date_research,
                     enable_live_chat=enable_live_chat,
@@ -217,6 +196,7 @@ def _stage_specs(options: WorkflowOptions) -> dict[str, StageSpec]:
             complete_message="Live chat fetched",
             skipped_message="Live chat already fetched",
             params={"tool": "yt-dlp"},
+            enabled=options.enable_live_chat,
         ),
         "audio": StageSpec(
             stage=ProgressStage.AUDIO_PROCESSED,
@@ -300,6 +280,7 @@ def _stage_specs(options: WorkflowOptions) -> dict[str, StageSpec]:
             complete_message="Live chat translated",
             skipped_message="Live chat already translated",
             params={"model": str(settings.chat_model)},
+            enabled=options.enable_live_chat,
         ),
     }
 
@@ -308,18 +289,12 @@ def _build_plan(
     options: WorkflowOptions, specs: dict[str, StageSpec]
 ) -> list[PlannedStage]:
     """Describe everything this run may execute, for the progress reporter."""
-    optional_enabled = {
-        "refine": options.do_refine,
-        "glossary": options.do_glossary_check,
-        "chat_fetch": options.enable_live_chat,
-        "chat": options.enable_live_chat,
-    }
     plan = [
         PlannedStage(
             key=spec.key,
             label=spec.start_message,
             params=spec.params,
-            enabled=optional_enabled.get(spec.key, True),
+            enabled=spec.enabled,
         )
         for spec in specs.values()
     ]
@@ -416,11 +391,9 @@ def _process_project_impl(
             ):
                 return project.project_path
 
-            if runner.run_optional(
-                enabled=options.enable_live_chat,
-                disabled_message="Live chat disabled",
-                spec=specs["chat_fetch"],
-                action=lambda: live_chat.fetch_project_live_chat(project),
+            if runner.run(
+                specs["chat_fetch"],
+                lambda: live_chat.fetch_project_live_chat(project),
             ):
                 return project.project_path
 
@@ -454,21 +427,15 @@ def _process_project_impl(
             ):
                 return project.project_path
 
-            if runner.run_optional(
-                enabled=options.do_refine,
-                disabled_message="SRT refinement disabled",
-                spec=specs["refine"],
-                action=lambda: postprocess.refine_project_subtitles(project),
+            if runner.run(
+                specs["refine"],
+                lambda: postprocess.refine_project_subtitles(project),
             ):
                 return project.project_path
 
-            if runner.run_optional(
-                enabled=options.do_glossary_check,
-                disabled_message="Glossary check disabled",
-                spec=specs["glossary"],
-                action=lambda: postprocess.glossary_check_project_subtitles(
-                    project
-                ),
+            if runner.run(
+                specs["glossary"],
+                lambda: postprocess.glossary_check_project_subtitles(project),
             ):
                 return project.project_path
 
@@ -482,13 +449,9 @@ def _process_project_impl(
             # glossary-checked pre-pass are the ground truth chat is
             # translated against, and a chat failure leaves them finalized
             # (only archive/package wait for the resume).
-            if runner.run_optional(
-                enabled=options.enable_live_chat,
-                disabled_message="Live chat disabled",
-                spec=specs["chat"],
-                action=lambda: live_chat.translate_project_live_chat(
-                    project, progress
-                ),
+            if runner.run(
+                specs["chat"],
+                lambda: live_chat.translate_project_live_chat(project, progress),
             ):
                 return project.project_path
 

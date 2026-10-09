@@ -5,7 +5,6 @@ from unittest.mock import MagicMock, patch
 
 import workflow as workflow_module
 import workflow.api as workflow_api
-import workflow.side_tasks as side_tasks
 import workflow.stages.media as media_stage
 import workflow.stages.metadata as metadata_stage
 import workflow.stages.postprocess as postprocess_stage
@@ -49,7 +48,6 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.asr_path = Path("projects/demo/.asr/asr.json")
         project.srt_path = Path("projects/demo/video.ja.srt")
         project.translated_path = Path("projects/demo/video.cht.srt")
-        project.refined_srt_path = Path("projects/demo/video.cht.refined.srt")
         project.glossary_checked_srt_path = Path(
             "projects/demo/video.cht.glossary_checked.srt"
         )
@@ -269,7 +267,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
             chat_layout=ChatLayout.SIDE,
         )
 
-    def test_optional_refine_runs_when_forced(self):
+    def test_refine_runs_when_incomplete(self):
         project = self._build_completed_project_mock()
         project.is_srt_refined = False
 
@@ -282,33 +280,14 @@ class WorkflowBreakpointTests(unittest.TestCase):
             ) as refine,
             patch.object(workflow_api, "deliver_project"),
         ):
-            workflow_module.process_project("demo", enable_refine=True)
+            workflow_module.process_project("demo")
 
         refine.assert_called_once_with(project)
         project.mark_progress.assert_called_once_with(
             workflow_module.ProgressStage.SRT_REFINED
         )
 
-    def test_optional_refine_skips_when_disabled(self):
-        project = self._build_completed_project_mock()
-        project.is_srt_refined = False
-
-        with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
-            patch.object(
-                postprocess_stage, "refine_project_subtitles"
-            ) as refine,
-            patch.object(workflow_api.settings, "enable_postprocess_refine", False),
-            patch.object(workflow_api, "deliver_project"),
-        ):
-            workflow_module.process_project("demo")
-
-        refine.assert_not_called()
-        project.mark_progress.assert_not_called()
-
-    def test_optional_glossary_check_runs_when_forced(self):
+    def test_glossary_check_runs_when_incomplete(self):
         project = self._build_completed_project_mock()
         project.is_glossary_checked = False
 
@@ -321,9 +300,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
             ) as glossary_check,
             patch.object(workflow_api, "deliver_project"),
         ):
-            workflow_module.process_project(
-                "demo", enable_glossary_check=True
-            )
+            workflow_module.process_project("demo")
 
         glossary_check.assert_called_once_with(project)
         project.mark_progress.assert_called_once_with(

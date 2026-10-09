@@ -27,12 +27,10 @@ from services.inference import (
 from services.inference.tools import build_pre_pass_agent_instruction
 from services.fixed_glossary import (
     FixedGlossary,
-    filter_fixed_glossary,
     format_fixed_glossary_block,
     load_fixed_glossary,
 )
 from .prompts import (
-    FIXED_GLOSSARY_FULL_INSTRUCTION,
     FIXED_GLOSSARY_INSTRUCTION,
     OFFICIAL_SOURCE_METADATA_INSTRUCTION,
     OFFICIAL_SUBTITLE_INSTRUCTION,
@@ -100,7 +98,6 @@ def _build_user_message(
     parent_pre_pass_context: str | None,
     official_subtitle_context: str | None,
     fixed_glossary: FixedGlossary,
-    fixed_glossary_full: bool,
     srt_text: str,
     boundaries: list[tuple[int, int]],
     frame_timestamps: list[float],
@@ -120,11 +117,7 @@ def _build_user_message(
             "\n【上集 Pre-Pass JSON（請延續命名與術語一致性）】\n"
             f"{parent_pre_pass_context}"
         )
-    glossary_block = format_fixed_glossary_block(
-        fixed_glossary, full_mode=fixed_glossary_full
-    )
-    if glossary_block:
-        parts.append(glossary_block)
+    parts.append(format_fixed_glossary_block(fixed_glossary))
     if official_subtitle_context:
         parts.append(
             "\n【官方CC字幕（僅涵蓋部分口說台詞，時間軸為參考）】\n---\n"
@@ -202,38 +195,7 @@ def run_pre_pass(
     frame_timestamps = [
         frame.timestamp_seconds for frame in pre_pass_assets.frames
     ]
-    fixed_glossary_full = settings.enable_prepass_full_fixed_glossary
-    if fixed_glossary_full:
-        fixed_glossary = load_fixed_glossary()
-        if fixed_glossary:
-            entry_count = sum(
-                len(unit.entries()) for unit in fixed_glossary.talents
-            ) + len(fixed_glossary.others)
-            logger.info(
-                f"[pre-pass] Fixed glossary: full mode, "
-                f"{entry_count} entries injected"
-            )
-    else:
-        fixed_glossary = filter_fixed_glossary(
-            load_fixed_glossary(),
-            video_title,
-            video_description,
-            translation_hint,
-            srt_text,
-            source_metadata_context,
-            parent_pre_pass_context,
-        )
-        if fixed_glossary:
-            flat = [
-                *(e for unit in fixed_glossary.talents for e in unit.entries()),
-                *fixed_glossary.others,
-            ]
-            logger.info(
-                f"[pre-pass] Fixed glossary matched "
-                f"{len(fixed_glossary.talents)} talent unit(s), "
-                f"{len(fixed_glossary.others)} other(s): "
-                + ", ".join(f"{'/'.join(aliases)}→{zh}" for aliases, zh in flat)
-            )
+    fixed_glossary = load_fixed_glossary()
     boundaries = _chunk_boundaries(chunks)
     user_message = _build_user_message(
         video_title=video_title,
@@ -243,7 +205,6 @@ def run_pre_pass(
         parent_pre_pass_context=parent_pre_pass_context,
         official_subtitle_context=official_subtitle_context,
         fixed_glossary=fixed_glossary,
-        fixed_glossary_full=fixed_glossary_full,
         srt_text=srt_text,
         boundaries=boundaries,
         frame_timestamps=frame_timestamps,
@@ -253,12 +214,7 @@ def run_pre_pass(
         instruction += f"\n\n{OFFICIAL_SOURCE_METADATA_INSTRUCTION}"
     if official_subtitle_context:
         instruction += f"\n\n{OFFICIAL_SUBTITLE_INSTRUCTION}"
-    if fixed_glossary:
-        instruction += (
-            f"\n\n{FIXED_GLOSSARY_FULL_INSTRUCTION}"
-            if fixed_glossary_full
-            else f"\n\n{FIXED_GLOSSARY_INSTRUCTION}"
-        )
+    instruction += f"\n\n{FIXED_GLOSSARY_INSTRUCTION}"
     if parent_pre_pass_context:
         instruction += f"\n\n{PARENT_PRE_PASS_INSTRUCTION}"
     if program_instruction:
@@ -275,8 +231,12 @@ def run_pre_pass(
         source_end,
     )
 
+    logger.info(
+        f"[pre-pass] Fixed glossary injected: "
+        f"{len(fixed_glossary.entries())} entries"
+    )
     if parent_pre_pass_context:
-        logger.info(f"[pre-pass] Parent pre-pass context injected")
+        logger.info("[pre-pass] Parent pre-pass context injected")
     if official_subtitle_context:
         logger.info("[pre-pass] Official CC subtitle context injected")
     logger.info(

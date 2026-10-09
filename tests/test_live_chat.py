@@ -359,6 +359,11 @@ class LiveChatWorkflowTests(unittest.TestCase):
             (workflow_api.transcription, "convert_asr_to_srt"): "srt",
             (workflow_api.translation, "run_pre_pass"): "prepass",
             (workflow_api.translation, "translate_chunks"): "chunks",
+            (workflow_api.postprocess, "refine_project_subtitles"): "refine",
+            (
+                workflow_api.postprocess,
+                "glossary_check_project_subtitles",
+            ): "glossary",
             (workflow_api.postprocess, "finalize_project_subtitles"): "finalize",
             (workflow_api.live_chat, "translate_project_live_chat"): "chat",
         }
@@ -374,8 +379,6 @@ class LiveChatWorkflowTests(unittest.TestCase):
             )
             stack.enter_context(patch.object(workflow_api, "SideTaskManager"))
             for setting in (
-                "enable_postprocess_refine",
-                "enable_postprocess_glossary_check",
                 "enable_cover_generation",
                 "enable_broadcast_date_agent_fallback",
             ):
@@ -404,6 +407,8 @@ class LiveChatWorkflowTests(unittest.TestCase):
                 "srt",
                 "prepass",
                 "chunks",
+                "refine",
+                "glossary",
                 "finalize",
                 "chat",
             ],

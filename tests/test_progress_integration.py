@@ -32,7 +32,7 @@ from services.media import (
     package_usable_duration,
 )
 from services.progress import NoopProgressReporter, RichProgressReporter
-from services.srt import SrtBlock, parse_srt
+from services.srt import parse_srt
 from rich.console import Console
 
 
@@ -136,6 +136,8 @@ class WorkflowProgressTests(unittest.TestCase):
         project.is_asr_completed = True
         project.is_srt_completed = True
         project.is_prepass_completed = True
+        project.is_srt_refined = True
+        project.is_glossary_checked = True
         project.is_cover_generated = False
         project.is_broadcast_date_researched = True
         project.broadcast_date = None
@@ -166,16 +168,8 @@ class WorkflowProgressTests(unittest.TestCase):
             patch.object(translation_stage, "translate") as translate_mod,
             patch.object(workflow_api.settings, "archived_path", None),
             patch.object(workflow_api.settings, "package_path", None),
-            # Pin the optional-stage toggles so the expected event list does
+            # Pin the side-task toggles so the expected event list does
             # not depend on the local .env.
-            patch.object(
-                workflow_api.settings, "enable_postprocess_refine", False
-            ),
-            patch.object(
-                workflow_api.settings,
-                "enable_postprocess_glossary_check",
-                False,
-            ),
             patch.object(
                 workflow_api.settings, "enable_cover_generation", False
             ),
@@ -230,8 +224,8 @@ class WorkflowProgressTests(unittest.TestCase):
                 ("stage_skipped", "prepass", "already-complete"),
                 ("stage_started", "chunks"),
                 ("stage_completed", "chunks"),
-                ("stage_skipped", "refine", "disabled"),
-                ("stage_skipped", "glossary", "disabled"),
+                ("stage_skipped", "refine", "already-complete"),
+                ("stage_skipped", "glossary", "already-complete"),
                 ("stage_skipped", "finalize", "already-complete"),
                 ("stage_skipped", "chat", "disabled"),
                 ("pipeline_completed",),

@@ -1,7 +1,7 @@
 ---
 name: postprocess-and-packaging
 description: >-
-  Optional agent post-processing and deliverable assembly: `services/postprocess/`
+  Agent post-processing (mandatory refine + glossary check, optional cover / date research) and deliverable assembly: `services/postprocess/`
   (refine.py, glossary_check.py, cover.py, date_research.py, _srt_guard.py and
   their prompt .md
   files), `services/finalize/` (SRT → styled ASS + Netflix-TC punctuation), and
@@ -14,7 +14,7 @@ description: >-
 
 ## Post-processing (`services/postprocess/`)
 
-Optional agent passes, each a thin orchestrator over `run_inference` where the
+Agent passes, each a thin orchestrator over `run_inference` where the
 agent reads/writes files in the project dir and we validate afterward.
 `_srt_guard.py` validates **structure only** (block count, indexes, timecodes,
 non-empty text) — semantic quality is the agent's responsibility via prompts.
@@ -77,8 +77,9 @@ SRT → styled ASS + cleaned SRT. Two jobs, not one:
   applies deterministic spacing. So `services/fixed_glossary/` is a runtime
   input here, not just prompt content.
 
-Input precedence (enforced in `workflow.py`, not here): glossary-checked SRT →
-refined SRT → translated SRT — first that exists wins.
+Input: always the glossary-checked SRT (chosen in
+`workflow/stages/postprocess.py`, not here); refine and glossary check are
+mandatory stages.
 
 ## Packaging (`services/package/`)
 

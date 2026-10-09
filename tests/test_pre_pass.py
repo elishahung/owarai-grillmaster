@@ -69,7 +69,6 @@ class PrePassSegmentCoverageTests(unittest.TestCase):
             parent_pre_pass_context=None,
             official_subtitle_context=None,
             fixed_glossary=FixedGlossary(),
-            fixed_glossary_full=False,
             srt_text="SRT TEXT",
             boundaries=[(1, 115), (116, 233)],
             frame_timestamps=[],
@@ -88,7 +87,6 @@ class PrePassSegmentCoverageTests(unittest.TestCase):
             parent_pre_pass_context=None,
             official_subtitle_context=None,
             fixed_glossary=FixedGlossary(),
-            fixed_glossary_full=False,
             srt_text="SRT TEXT",
             boundaries=[(1, 115)],
             frame_timestamps=[],
@@ -117,10 +115,8 @@ class RunPrePassDispatchTests(unittest.TestCase):
             patch.object(
                 pp, "prepare_pre_pass_media_assets", return_value=assets
             ),
-            patch.object(pp, "load_fixed_glossary", return_value=None),
-            patch.object(pp, "filter_fixed_glossary", return_value=None),
             patch.object(
-                pp, "format_fixed_glossary_block", return_value=""
+                pp, "load_fixed_glossary", return_value=FixedGlossary()
             ),
             patch.object(
                 pp.settings,

@@ -162,8 +162,8 @@ class Project(BaseModel):
         is_srt_completed: Whether SRT subtitle file has been generated.
         is_prepass_completed: Whether the Gemini pre-pass briefing has been completed.
         is_chunk_translated: Whether concurrent chunk translation has been completed.
-        is_srt_refined: Whether the optional Codex-driven SRT refinement has been completed.
-        is_glossary_checked: Whether the optional Codex-driven fixed-glossary localization check has been completed.
+        is_srt_refined: Whether the agent SRT refinement has been completed.
+        is_glossary_checked: Whether the agent fixed-glossary localization check has been completed.
         is_finalized: Whether the final ASS + SRT outputs have been generated.
         is_chat_translated: Whether the optional live-chat replay has been translated.
         is_cover_generated: Whether the optional Codex-driven cover image has been generated.
@@ -337,7 +337,7 @@ class Project(BaseModel):
                     logger.info("Translation hint updated for existing project")
             if resolved_parent_path is not None:
                 logger.warning(
-                    f"Parent project is not supported for existing projects"
+                    "Parent project is not supported for existing projects"
                 )
 
             return project
@@ -806,7 +806,7 @@ class Project(BaseModel):
 
     @property
     def refined_srt_path(self) -> Path:
-        """Get the path to the Codex-refined Traditional Chinese SRT file."""
+        """Get the path to the agent-refined Traditional Chinese SRT file."""
         return self.project_path / REFINED_SRT_FILE_NAME
 
     @property
@@ -903,16 +903,15 @@ class Project(BaseModel):
 
     @property
     def refine_report_path(self) -> Path:
-        """Get the path to the Codex-written refinement summary report."""
+        """Get the path to the agent-written refinement summary report."""
         return self.refine_cache_dir / REFINE_REPORT_FILE_NAME
 
     @property
     def glossary_checked_srt_path(self) -> Path:
-        """Path to the Codex glossary-checked Traditional Chinese SRT file.
+        """Path to the glossary-checked Traditional Chinese SRT file.
 
-        Produced by the optional glossary-check stage, which copies the
-        refined SRT and swaps only fixed-glossary term mismatches. May be
-        absent when the stage ran but found nothing to check.
+        Written by the glossary-check stage from the refined SRT (the stage
+        fails without it); finalize reads this file.
         """
         return self.project_path / GLOSSARY_CHECKED_SRT_FILE_NAME
 

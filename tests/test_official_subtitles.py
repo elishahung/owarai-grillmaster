@@ -219,7 +219,6 @@ class PrePassUserMessageTests(unittest.TestCase):
             parent_pre_pass_context=None,
             official_subtitle_context=official_subtitle_context,
             fixed_glossary=FixedGlossary(),
-            fixed_glossary_full=False,
             srt_text="SRT TEXT",
             boundaries=[(1, 1)],
             frame_timestamps=[],

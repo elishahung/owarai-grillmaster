@@ -155,10 +155,6 @@ class Settings(BaseSettings):
         default=60,
         description="Frame budget interval in seconds for SRT-start-based pre-pass frame sampling",
     )
-    enable_prepass_full_fixed_glossary: bool = Field(
-        default=False,
-        description="Pre-pass fixed glossary injection mode. False = normalized substring pre-filter (only matched entries injected). True = inject the entire glossary as a reference table and let the model resolve matches.",
-    )
     chunk_char_limit: int = Field(
         default=6000,
         description="Target character count per chunk when splitting SRT for concurrent translation (~5 min of variety show subtitles)",
@@ -194,15 +190,7 @@ class Settings(BaseSettings):
         description="Path for final deliverable packaging. If set, after archive, burn ASS subtitles into the video and copy the cover image to <package_path>/<id>_<name>/",
     )
 
-    # --- Optional post-processing toggles -----------------------------------
-    enable_postprocess_refine: bool = Field(
-        default=False,
-        description="Enable optional agent-driven Traditional Chinese subtitle refinement stage between TRANSLATED and FINALIZED",
-    )
-    enable_postprocess_glossary_check: bool = Field(
-        default=False,
-        description="Enable optional agent-driven fixed-glossary localization check stage between SRT_REFINED and FINALIZED. Independent of refine; only runs if a refined SRT exists.",
-    )
+    # --- Optional agent extras ----------------------------------------------
     enable_cover_generation: bool = Field(
         default=False,
         description="Enable optional agent-driven cover image stylization (runs async after DOWNLOADED, joined before archive). Skipped entirely when break_after is set.",

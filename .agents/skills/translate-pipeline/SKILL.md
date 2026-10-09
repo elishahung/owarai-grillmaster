@@ -29,7 +29,7 @@ services/translate/
 ├── pre_pass/
 │   ├── pre_pass.py  # whole-film analysis → pre_pass.json
 │   ├── schema.py    # PrePassResult / characters / catchphrases / SegmentSummary
-│   └── prompts.py + prompts/   # pre_pass.md, fixed_glossary*.md,
+│   └── prompts.py + prompts/   # pre_pass.md, fixed_glossary.md,
 │                               # official_source_metadata.md, parent_pre_pass.md,
 │                               # official_subtitle.md
 └── chunk/
@@ -44,8 +44,9 @@ services/translate/
 
 One call over the **whole** film (full SRT + program title, description, and
 user `translation_hint` as separate sections + full audio for
-audio-capable backends (agy) + 20-40 SRT-start-aligned representative frames + optional
-fixed-glossary + optional parent context). Produces a `PrePassResult` briefing:
+audio-capable backends (agy) + 20-40 SRT-start-aligned representative frames + the
+whole fixed glossary as a reference table (the model decides which entries
+occur; no per-episode filter) + optional parent context). Produces a `PrePassResult` briefing:
 character roster, proper nouns / ASR-correction dict, catchphrase fixed
 translations, tone notes, and per-segment summaries with explicit
 `from_index`/`to_index` matching the chunk boundaries. Persisted to

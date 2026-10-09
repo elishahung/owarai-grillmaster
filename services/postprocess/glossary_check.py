@@ -66,13 +66,7 @@ def _glossary_zh_terms() -> list[str]:
     ordering strips a multi-word name (e.g. `Long Coat Daddy`) before any
     shorter entry that is a substring of it.
     """
-    glossary = load_fixed_glossary()
-    terms: set[str] = set()
-    for unit in glossary.talents:
-        for _aliases, zh in unit.entries():
-            terms.add(zh)
-    for _aliases, zh in glossary.others:
-        terms.add(zh)
+    terms = {zh for _aliases, zh in load_fixed_glossary().entries()}
     relevant = [term for term in terms if _SUSPECT_RE.search(term)]
     relevant.sort(key=len, reverse=True)
     return relevant
@@ -157,8 +151,6 @@ def _validate_pre_pass(project: Project) -> None:
 
 
 def _srt_text_changed(project: Project) -> bool:
-    if not project.glossary_checked_srt_path.exists():
-        return False
     return (
         # utf-8-sig so a Codex-written BOM on one side doesn't read as a change.
         project.refined_srt_path.read_text(encoding="utf-8-sig")
@@ -199,10 +191,6 @@ def glossary_check_subtitles(project: Project) -> None:
     )
     copied: list[Path] = []
     try:
-        if not FIXED_GLOSSARY_PATH.exists():
-            raise GlossaryCheckError(
-                f"fixed glossary json missing: {FIXED_GLOSSARY_PATH}"
-            )
         shutil.copyfile(FIXED_GLOSSARY_PATH, gloss_json_dst)
         copied.append(gloss_json_dst)
         if _FIXED_GLOSSARY_MD_PATH.exists():

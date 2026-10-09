@@ -12,8 +12,8 @@ description: >-
 # Live-chat replay
 
 Projects run without `--chat` never touch this package; its two stages are
-`run_optional` and skip as disabled. `--chat` is per-run only (no `.env`
-toggle), like `--refine`: a resume must pass it again.
+`StageSpec(enabled=False)` and skip as disabled. `--chat` is per-run only (no `.env`
+toggle): a resume must pass it again.
 
 ## Flow and placement
 

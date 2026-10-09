@@ -72,8 +72,8 @@ _LOG_FILE_NAME = "agy.log"
 _CONVERSATION_RE = re.compile(
     r"user message to conversation ([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})"
 )
-# Where agy keeps per-conversation transcripts (agy-internal layout; when it is
-# missing the audio check is skipped with a warning rather than failing).
+# Where agy keeps per-conversation transcripts (agy-internal layout; when it
+# cannot be found the audio check fails, so an agy update surfaces at once).
 _AGY_BRAIN_DIR = Path.home() / ".gemini" / "antigravity-cli" / "brain"
 _TRANSCRIPT_RELPATH = Path(".system_generated") / "logs" / "transcript_full.jsonl"
 
@@ -347,26 +347,29 @@ def _bootstrap_prompt(
     )
 
 
-def _count_heard_audio(log_file: Path) -> int | None:
+def _count_heard_audio(log_text: str) -> int:
     """How many audio media parts reached the model in this agy run.
 
     Reads the conversation id from agy's log, then counts ``audio/*`` media
-    parts in that conversation's transcript. Returns ``None`` when the log or
-    transcript cannot be found (agy-internal layout changed), so the caller
-    can skip the check instead of failing a run it cannot judge.
+    parts in that conversation's transcript. Raises ``AgyError`` when the
+    conversation or its transcript cannot be found: the run cannot be
+    verified, which means agy's internal layout changed and this check needs
+    updating.
     """
-    try:
-        log_text = log_file.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
     match = _CONVERSATION_RE.search(log_text)
     if match is None:
-        return None
+        raise AgyError(
+            "agy audio check failed: no conversation id in the agy log "
+            "(agy log format changed?)"
+        )
     transcript = _AGY_BRAIN_DIR / match.group(1) / _TRANSCRIPT_RELPATH
     try:
         lines = transcript.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return None
+    except OSError as exc:
+        raise AgyError(
+            f"agy audio check failed: cannot read transcript {transcript} "
+            "(agy transcript layout changed?)"
+        ) from exc
     heard = 0
     for line in lines:
         if '"audio/' not in line:
@@ -498,7 +501,13 @@ def run_agy(
             env=_scrubbed_env(),
             timeout=effective_timeout,
         )
-        heard = _count_heard_audio(log_file) if audio else None
+        # Read before the workspace is removed; judged after the error checks
+        # below so a quota failure is not masked by a missing conversation.
+        log_text = (
+            log_file.read_text(encoding="utf-8", errors="replace")
+            if audio and log_file.exists()
+            else ""
+        )
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
@@ -515,12 +524,8 @@ def run_agy(
         raise _classify_error(cleaned[-1000:])
 
     if audio:
-        if heard is None:
-            logger.warning(
-                "agy audio check skipped: conversation transcript not found, "
-                "cannot confirm the model listened to the audio"
-            )
-        elif heard < len(audio):
+        heard = _count_heard_audio(log_text)
+        if heard < len(audio):
             raise AgyError(
                 f"agy did not listen to the audio: {heard}/{len(audio)} "
                 "audio file(s) reached the model via view_file"

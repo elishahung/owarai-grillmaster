@@ -230,11 +230,20 @@ class RunAgyTests(unittest.TestCase):
             self._run_with_audio(brain, log)
         self.assertIn("did not listen", str(ctx.exception))
 
-    def test_audio_check_skipped_without_transcript(self):
-        # Unknown conversation layout: the run is not failed on a guess.
+    def test_missing_conversation_id_raises(self):
+        # agy changed its log format: the run cannot be verified, so it fails.
         brain = self._temp_dir()
-        captured = self._run_with_audio(brain, "no conversation id here\n")
-        self.assertEqual(captured["result"].response, "heard")
+        with self.assertRaises(AgyError) as ctx:
+            self._run_with_audio(brain, "no conversation id here\n")
+        self.assertIn("no conversation id", str(ctx.exception))
+
+    def test_missing_transcript_raises(self):
+        # The log names a conversation but agy moved its transcripts.
+        _, log = self._fake_transcript(["audio/ogg"])
+        empty_brain = self._temp_dir()
+        with self.assertRaises(AgyError) as ctx:
+            self._run_with_audio(empty_brain, log)
+        self.assertIn("cannot read transcript", str(ctx.exception))
 
     def test_missing_audio_raises(self):
         self._patch_which()

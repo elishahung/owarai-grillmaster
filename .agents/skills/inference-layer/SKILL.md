@@ -97,7 +97,7 @@ Backend runtime gotchas:
   a native `audio/*` media part. After the run, the conversation id from
   `--log-file` locates `~/.gemini/antigravity-cli/brain/<id>/.system_generated/
   logs/transcript_full.jsonl`; fewer audio media parts than audio files raises
-  `AgyError` (missing transcript only warns). Model ids map to agy display
+  `AgyError`, and so does a missing conversation id or transcript. Model ids map to agy display
   names via `_AGY_MODEL_BASES` — refresh it from `agy models` when Google
   rotates models.
 

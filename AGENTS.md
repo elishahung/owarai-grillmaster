@@ -42,8 +42,8 @@ Entry point: `main.py` (Typer CLI) → `workflow.submit_project`. Run with
 - **FFmpeg** must be installed and on `PATH` (media combine/extract/burn-in).
 - Config via a `.env` file (`settings.py` holds every key with its
   description; `README.md` lists only the common ones). Model
-  backends are selectable per stage (`gemini-api` / `gemini-cli` / `gemini-agy`
-  / `claude` / `codex`); only `gemini-api` is metered.
+  backends are selectable per stage (`gemini-api` / `agy` / `claude` /
+  `codex`); only `gemini-api` is metered.
 
 ### Running tests
 

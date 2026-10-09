@@ -4,8 +4,8 @@
 selected backend's capability) and the user message, then delegates to
 ``services.inference.run_inference`` with the ``PrePassResult`` schema. The
 backend is chosen by ``settings.agent_prepass_model.backend`` (gemini-api /
-gemini-cli / claude / codex); agent backends drop audio and run on frames +
-SRT only. The
+agy / claude / codex); backends without audio support drop audio and run on
+frames + SRT only. The
 parsed result is written as the explicit ``pre_pass.json`` hand-off.
 """
 
@@ -21,12 +21,12 @@ from services.srt import SrtBlock
 from ..assets import prepare_pre_pass_media_assets
 from services.inference import (
     Backend,
+    InferenceQuotaError,
     backend_supports_audio,
     is_agent_backend,
     run_inference,
 )
 from services.inference.tools import build_pre_pass_agent_instruction
-from services.inference.gemini_cli import GeminiCliQuotaError
 from ..errors import PrePassError
 from services.fixed_glossary import (
     FixedGlossary,
@@ -168,8 +168,8 @@ def run_pre_pass(
 ) -> tuple[PrePassResult, float]:
     """Run the single pre-pass call. Returns (parsed result, cost in USD).
 
-    The backend is chosen by ``settings.agent_prepass_model``. Agent backends
-    (claude/codex) cannot ingest audio, so audio extraction is skipped and the
+    The backend is chosen by ``settings.agent_prepass_model``. When
+    ``backend_supports_audio`` is false for it, so audio extraction is skipped and the
     instruction is rendered without audio claims. Cost is 0.0 for every backend
     except gemini-api. ``segment_summaries`` coverage of the chunk boundaries is
     enforced via ``run_inference(validate=)``, so a briefing that skips ranges is
@@ -319,10 +319,10 @@ def run_pre_pass(
             # backend actually has the tool enabled (agent backends only).
             web_search=agent_instruction_enabled,
         )
-    except GeminiCliQuotaError as e:
-        logger.error(f"[pre-pass] Gemini CLI quota exhausted: {e}")
+    except InferenceQuotaError as e:
+        logger.error(f"[pre-pass] {backend.value} quota exhausted: {e}")
         raise PrePassError(
-            f"Gemini CLI quota exhausted: {e}", accumulated_cost=0.0
+            f"{backend.value} quota exhausted: {e}", accumulated_cost=0.0
         ) from e
     except Exception as e:
         logger.error(f"[pre-pass] Failed: {e}")

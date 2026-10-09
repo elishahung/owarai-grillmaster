@@ -1,7 +1,7 @@
 """Chunk-worker system-instruction assembly from the prompt `.md` file.
 
 The base instruction lives as ``prompts/chunk.md``. Audio-bearing phrasing is
-swapped out when the backend cannot ingest audio (agent backends).
+swapped out when ``backend_supports_audio`` is false for the backend.
 """
 
 from __future__ import annotations

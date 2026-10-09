@@ -3,7 +3,7 @@
 Two layers of validation, one loop:
 
 * **schema** — the output must parse as the caller's Pydantic model. Backends
-  without native structured output (gemini-cli, gemini-agy, codex, claude) get
+  without native structured output (agy, codex, claude) get
   the JSON Schema appended to the prompt; gemini-api enforces it natively.
 * **caller invariants the schema cannot express** — an optional ``validate``
   hook (e.g. "one ``segment_summary`` per chunk boundary": any list length is

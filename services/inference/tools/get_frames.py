@@ -1,6 +1,6 @@
 """Shared implementation for on-demand project frame extraction.
 
-This is the on-demand frame tool the agent backends (gemini-cli / codex /
+This is the on-demand frame tool the agent backends (agy / codex /
 claude) run during pre-pass, chunk translation, and refine when they need to see
 a specific moment of the video (doubtful ASR, an unclear proper noun, an
 on-screen text card). Stage-specific wrapper scripts expose the small CLI

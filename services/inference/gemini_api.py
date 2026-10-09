@@ -34,7 +34,7 @@ def _api_client() -> genai.Client:
         if not settings.agent_gemini_api_key:
             raise GeminiApiError(
                 "AGENT_GEMINI_API_KEY is required for the gemini-api backend "
-                "(set it, or switch the stage backend to gemini-cli)"
+                "(set it, or switch the stage backend to agy)"
             )
         logger.debug("Initializing Gemini API client")
         _client = genai.Client(api_key=settings.agent_gemini_api_key)

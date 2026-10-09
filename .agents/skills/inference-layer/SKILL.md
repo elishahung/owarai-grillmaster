@@ -3,7 +3,7 @@ name: inference-layer
 description: >-
   The unified model-inference layer under `services/inference/`. Read this
   before touching `run_inference`, any backend file (`gemini_api.py`,
-  `gemini_cli.py`, `gemini_agy.py`, `codex.py`, `claude_sdk.py`), capability
+  `agy.py`, `codex.py`, `claude_sdk.py`), capability
   gating in `base.py`, the schema validate-and-repair loop in
   `schema_enforce.py`, or the agent frame tools under
   `services/inference/tools/` (`get_frames*.py`). Also read it when adding or
@@ -22,13 +22,12 @@ run_inference(*, backend, prompt, system_prompt=None, cwd=None,
               timeout=None, web_search=False) -> InferenceResult
 ```
 
-Five backends (`Backend` StrEnum in `base.py`):
+Four backends (`Backend` StrEnum in `base.py`):
 
 | Backend       | Auth            | Audio? | Schema handling | Cost |
 |---------------|-----------------|--------|-----------------|------|
 | `gemini-api`  | API key         | ✅     | native `response_json_schema` | metered (the only paid backend) |
-| `gemini-cli`  | subscription    | ✅     | prompt-appended + repair loop | free |
-| `gemini-agy`  | subscription    | ❌     | prompt-appended + repair loop | free |
+| `agy`  | subscription    | ✅     | prompt-appended + repair loop | free |
 | `codex`       | subscription    | ❌     | prompt-appended + repair loop | free |
 | `claude`      | subscription    | ❌     | prompt-appended + repair loop | free |
 
@@ -41,12 +40,12 @@ Design rules baked into this layer — preserve them:
   `is_agent_backend`, `is_gemini_backend`). Passing audio to a non-audio backend
   raises `UnsupportedMediaError`. Callers must gate audio on the *backend's*
   capability, not just on whether an audio asset exists. `is_agent_backend` is
-  "everything except gemini-api".
+  "everything except gemini-api". Subscription quota / rate-limit errors
+  subclass `InferenceQuotaError`; stages catch that, never a backend class.
 - **`web_search=True` enables the backend's built-in web tools** (agent
   backends only; gemini-api raises). Explicit enablement is required for codex
   (`-c tools.web_search=true` — off by default in `codex exec`; `--yolo` does
-  not add the tool) and gemini-cli (policy allow rules for
-  `google_web_search`/`web_fetch`); claude and gemini-agy already expose them
+  not add the tool); claude and agy already expose them
   under their permission bypass, so their runners treat the flag as a no-op.
   Every agent-instruction stage (pre-pass, chunk, refine, glossary check,
   date research) passes `web_search=is_agent_backend(backend)` (date research
@@ -72,20 +71,13 @@ Design rules baked into this layer — preserve them:
   `reasoning_effort` as low/medium/high/extra/max/ultra. Backend wrappers map
   that to their real values: Codex and Claude use `xhigh` for repo-level
   `extra` and `max` for `max`; Codex passes `ultra` through (only some models
-  accept it) while Claude clamps `ultra` to `max`; Gemini API and gemini-agy
+  accept it) while Claude clamps `ultra` to `max`; Gemini API and agy
   have no extra-high value and clamp `extra`/`max`/`ultra` to
-  `HIGH` / `High`; gemini-cli exposes no separate effort flag, so only the
-  model id is passed to that CLI.
+  `HIGH` / `High` (agy bakes effort into its `--model` display name).
 
 Backend runtime gotchas:
 
-- `gemini_cli.py` generates a **temporary TOML policy file at runtime** that
-  whitelists only the frame-tool wrapper command prefixes, and uses
-  include-dirs instead of `--yolo` (yolo's sandboxing breaks project-local
-  frame reads). `AGENT_GEMINI_GCP_PROJECT` is injected as a temporary
-  `GOOGLE_CLOUD_PROJECT`; API-key env vars are scrubbed from the subprocess so
-  it never silently switches to API-key billing.
-- CLI-shim subprocesses (`gemini_cli.py`, `codex.py`) must run via
+- CLI-shim subprocesses (`codex.py`) must run via
   `base.run_cli`, which **tree-kills on timeout** (`taskkill /T /F` on
   Windows, killpg on POSIX) — plain `subprocess.run(timeout=)` kills only the
   cmd.exe shim and then blocks forever draining pipes the hung node
@@ -94,10 +86,20 @@ Backend runtime gotchas:
   SDK replaces them with its opaque trailing exception: HTTP 401 includes the
   subscription re-login command, 429 remains `ClaudeSDKRateLimitError`, and
   other API failures retain their HTTP status and provider message.
-- `gemini_agy.py` (Antigravity CLI) **must run under a pty** (`pywinpty` on
+- `agy.py` (Antigravity CLI) **must run under a pty** (`pywinpty` on
   Windows, stdlib `pty` on POSIX) — `agy -p` drops stdout on a non-TTY — and
   stages the prompt (and images) into a temporary workspace file referenced by
-  `@<file>` tokens; the workspace is cleaned up after the call.
+  `@<file>` tokens; the workspace is cleaned up after the call. API-key env
+  vars are scrubbed so it stays on the subscription login.
+  **Audio does not attach via `@`** (agy >= 1.1.18): the bootstrap tells the
+  agent to open each audio file (read in place; its directory is
+  `--add-dir`'d, not copied) with its `view_file` tool, which yields
+  a native `audio/*` media part. After the run, the conversation id from
+  `--log-file` locates `~/.gemini/antigravity-cli/brain/<id>/.system_generated/
+  logs/transcript_full.jsonl`; fewer audio media parts than audio files raises
+  `AgyError` (missing transcript only warns). Model ids map to agy display
+  names via `_AGY_MODEL_BASES` — refresh it from `agy models` when Google
+  rotates models.
 
 ## Agent frame tools (`services/inference/tools/`)
 

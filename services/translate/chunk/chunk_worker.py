@@ -194,8 +194,8 @@ async def translate_chunk(
 ) -> ChunkTranslationResult:
     """Translate one chunk with persistent media cache and response caching.
 
-    The backend is chosen per `settings.agent_chunk_model`; agent backends drop
-    audio and translate on frames + SRT only. Output is free-form SRT (no JSON
+    The backend is chosen per `settings.agent_chunk_model`; backends without
+    audio support drop audio and translate on frames + SRT only. Output is free-form SRT (no JSON
     schema) — structural validation happens downstream, identical for every
     backend.
     """

@@ -277,8 +277,6 @@ Pydantic-settings, loaded from `.env`. Notable patterns:
   JSON-decode the shorthand string — any new spec-shaped field needs the same
   annotation.
 - `AGENT_GEMINI_API_KEY` is required **only** when a stage uses `gemini-api`.
-- `AGENT_GEMINI_GCP_PROJECT` is optional and applies **only** to `gemini-cli`
-  (see **inference-layer** for the env handling).
 
 ## Prompts are `.md` files
 

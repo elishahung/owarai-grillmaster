@@ -1,7 +1,7 @@
 """Unified model-inference layer.
 
 `run_inference` is the single entry point; it dispatches to a concrete backend
-(Gemini API / Gemini CLI / Codex CLI / Claude Agent SDK). See `base.py` for the
+(Gemini API / Antigravity CLI / Codex CLI / Claude Agent SDK). See `base.py` for the
 call contract — `schema`, `cwd`, and `audio` parameterize one call rather than
 splitting it into separate "agentic" and "inference" functions.
 """
@@ -20,6 +20,7 @@ from .base import (
     Backend,
     InferenceError,
     InferenceNotInstalledError,
+    InferenceQuotaError,
     UnsupportedMediaError,
     backend_supports_audio,
     fan_out_concurrency,
@@ -45,23 +46,18 @@ from .claude_sdk import (
     run_claude_sdk_exec,
 )
 from .gemini_api import GeminiApiError, run_gemini_api
-from .gemini_cli import (
-    GeminiCliError,
-    GeminiCliNotInstalledError,
-    GeminiCliQuotaError,
-    run_gemini_cli,
-)
-from .gemini_agy import (
-    GeminiAgyError,
-    GeminiAgyNotInstalledError,
-    GeminiAgyQuotaError,
-    run_gemini_agy,
+from .agy import (
+    AgyError,
+    AgyNotInstalledError,
+    AgyQuotaError,
+    run_agy,
 )
 
 __all__ = [
     "Backend",
     "InferenceError",
     "InferenceNotInstalledError",
+    "InferenceQuotaError",
     "InferenceResult",
     "SchemaValidationError",
     "UnsupportedMediaError",
@@ -73,20 +69,16 @@ __all__ = [
     "run_codex_exec",
     "run_claude_sdk_exec",
     "run_gemini_api",
-    "run_gemini_cli",
-    "run_gemini_agy",
+    "run_agy",
     "CodexInvocationError",
     "CodexNotInstalledError",
     "ClaudeSDKExecError",
     "ClaudeSDKNotInstalledError",
     "ClaudeSDKRateLimitError",
     "GeminiApiError",
-    "GeminiCliError",
-    "GeminiCliNotInstalledError",
-    "GeminiCliQuotaError",
-    "GeminiAgyError",
-    "GeminiAgyNotInstalledError",
-    "GeminiAgyQuotaError",
+    "AgyError",
+    "AgyNotInstalledError",
+    "AgyQuotaError",
 ]
 
 
@@ -138,15 +130,14 @@ def run_inference(
 
     ``web_search=True`` ensures the backend's built-in web tools are enabled
     for this call (agent backends only): codex gets ``tools.web_search=true``,
-    gemini-cli gets the web tools allow-listed in its policy, and
-    claude/gemini-agy already expose them under their permission bypass.
+    and claude/agy already expose them under their permission bypass.
 
     Every backend's only job is `prompt → text`; validation lives HERE, so the
     two branches differ solely in how the schema reaches the model:
 
     * **gemini-api** enforces a schema natively (`response_json_schema`) and is
       the sole metered backend.
-    * **gemini-cli / gemini-agy / codex / claude** are single-shot text
+    * **agy / codex / claude** are single-shot text
       generators, so the JSON-Schema instruction is appended to the prompt.
 
     Both then run through the `enforce_schema` validate-and-repair loop.
@@ -204,34 +195,22 @@ def run_inference(
         full_prompt = (
             f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
         )
-        # codex/claude need a working dir for their file tools; the gemini CLI is
-        # an agent too but manages its own media tempdir, so it gets no work dir.
+        # codex/claude need a working dir for their file tools; agy is an agent
+        # too but manages its own staged workspace, so it gets no work dir.
         needs_workdir = backend in (Backend.CODEX, Backend.CLAUDE)
         work_ctx = _working_dir(cwd) if needs_workdir else nullcontext(None)
         with work_ctx as work:
 
             def invoke_once(p: str) -> InferenceResult:
-                if backend == Backend.GEMINI_CLI:
-                    cli = run_gemini_cli(
-                        p,
-                        model=model,
-                        media_files=[*(audio or []), *(images or [])],
-                        cwd=cwd,
-                        timeout=timeout,
-                        web_search=web_search,
-                    )
-                    return InferenceResult(
-                        text=cli.response, requests=cli.requests
-                    )
-                if backend == Backend.GEMINI_AGY:
-                    # agy cannot ingest audio (capability-gated above); it sees
-                    # images only, and the prompt is staged to a file. model +
+                if backend == Backend.AGY:
+                    # The prompt, images, and audio are staged to files; model +
                     # effort are mapped to agy's --model string inside the wrapper.
-                    agy = run_gemini_agy(
+                    agy = run_agy(
                         p,
                         model=model,
                         reasoning_effort=reasoning_effort,
                         images=images,
+                        audio=audio,
                         cwd=cwd,
                         timeout=timeout,
                     )

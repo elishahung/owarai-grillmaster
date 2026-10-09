@@ -5,7 +5,7 @@ frames at specific timestamps on demand; ``build_frame_tool_instruction``
 renders the system-prompt block that teaches an agent backend when and how to
 call it. Stage helpers may also render non-CLI agent capability guidance such as
 web search. These instructions are appended only for agent backends
-(gemini-cli / gemini-agy / codex / claude); gemini-api cannot run local tools,
+(agy / codex / claude); gemini-api cannot run local tools,
 so it never sees them.
 """
 
@@ -45,18 +45,13 @@ __all__ = [
     "build_pre_pass_web_search_instruction",
     "build_refine_frame_tool_instruction",
     "frame_tool_command_prefix",
-    "frame_tool_command_prefixes",
 ]
 
 
 def frame_tool_command_prefix(stage: FrameToolStage) -> str:
-    """Return the stable shell command prefix used for Gemini CLI policy."""
+    """Return the shell command prefix an agent runs to invoke the frame tool."""
     python = Path(sys.executable).resolve()
     return f'& "{python}" "{FRAME_TOOL_SCRIPTS[stage]}"'
-
-
-def frame_tool_command_prefixes() -> list[str]:
-    return [frame_tool_command_prefix(stage) for stage in FrameToolStage]
 
 
 def build_frame_tool_instruction(

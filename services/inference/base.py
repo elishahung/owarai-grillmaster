@@ -1,7 +1,7 @@
 """Shared contract for the unified model-inference layer.
 
-One entry point — `run_inference` — drives every backend (Gemini API, Gemini
-CLI, Codex CLI, Claude Agent SDK). A call is parameterized, not split into
+One entry point — `run_inference` — drives every backend (Gemini API,
+Antigravity CLI, Codex CLI, Claude Agent SDK). A call is parameterized, not split into
 modes:
 
   * `schema=None`  -> return the model's raw final message (the historical
@@ -10,7 +10,7 @@ modes:
   * `schema=<Model>` -> the JSON Schema is appended to the prompt and the
     output is validated-and-repaired until it parses, then returned as text.
 
-Gemini backends additionally accept `audio`; the agent backends (Codex,
+Gemini backends additionally accept `audio`; the other agent backends (Codex,
 Claude) cannot ingest audio and raise `UnsupportedMediaError` if given any.
 """
 
@@ -27,7 +27,7 @@ from settings import settings
 def default_timeout_secs() -> int:
     """Per-invocation timeout shared by every backend, from AGENT_TIMEOUT_MINUTES.
 
-    The agent backends (gemini-cli / gemini-agy / codex / claude) pass it
+    The agent backends (agy / codex / claude) pass it
     straight to their subprocess/query timeout; gemini-api converts it to the
     genai SDK's milliseconds. Resolved per call rather than captured in a
     module constant, so the configured value is honoured wherever a backend
@@ -40,33 +40,27 @@ class Backend(StrEnum):
     """Selectable inference backend."""
 
     GEMINI_API = "gemini-api"
-    GEMINI_CLI = "gemini-cli"
-    GEMINI_AGY = "gemini-agy"
+    AGY = "agy"
     CODEX = "codex"
     CLAUDE = "claude"
 
 
-# gemini-agy (Antigravity CLI) is a Gemini agent backend like gemini-cli, but it
-# cannot ingest audio — so it joins codex/claude as audio-incapable.
-_AUDIO_CAPABLE = frozenset({Backend.GEMINI_API, Backend.GEMINI_CLI})
-_GEMINI = frozenset(
-    {Backend.GEMINI_API, Backend.GEMINI_CLI, Backend.GEMINI_AGY}
-)
+_GEMINI = frozenset({Backend.GEMINI_API, Backend.AGY})
+# Every Gemini backend hears audio (agy through its view_file tool); the other
+# agents (codex / claude) cannot.
+_AUDIO_CAPABLE = _GEMINI
 # Agent backends: subscription/OAuth, local, free. Everything EXCEPT the network
-# gemini-api backend — gemini-cli and gemini-agy are agents too (local CLI
-# subprocesses).
-_AGENT = frozenset(
-    {Backend.GEMINI_CLI, Backend.GEMINI_AGY, Backend.CODEX, Backend.CLAUDE}
-)
+# gemini-api backend — agy is an agent too (a local CLI subprocess).
+_AGENT = frozenset({Backend.AGY, Backend.CODEX, Backend.CLAUDE})
 
 
 def is_gemini_backend(backend: Backend) -> bool:
-    """True for the Gemini backends (genai SDK, gemini CLI, or Antigravity CLI)."""
+    """True for the Gemini backends (genai SDK or Antigravity CLI)."""
     return backend in _GEMINI
 
 
 def is_agent_backend(backend: Backend) -> bool:
-    """True for the agent backends (gemini-cli, gemini-agy, codex, claude).
+    """True for the agent backends (agy, codex, claude).
 
     The api-vs-agent split is the core taxonomy: only gemini-api is an API
     (network HTTP, metered, fans out widely); the others are agents
@@ -149,7 +143,7 @@ def run_cli(
     drains stdout/stderr with no time bound. When a node grandchild hangs
     (observed: a stalled model stream mid-turn), it keeps those pipes open
     forever, turning the timeout into a permanently wedged worker. Every
-    CLI-shim backend (gemini-cli, codex) must go through this instead.
+    CLI-shim backend (codex) must go through this instead.
     """
     process = subprocess.Popen(
         cmd,
@@ -183,6 +177,10 @@ class InferenceError(RuntimeError):
 
 class InferenceNotInstalledError(InferenceError):
     """Raised when a backend's executable or runtime is unavailable."""
+
+
+class InferenceQuotaError(InferenceError):
+    """Raised when a subscription backend reports its quota / rate limit."""
 
 
 class UnsupportedMediaError(InferenceError):

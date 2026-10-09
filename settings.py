@@ -101,13 +101,11 @@ class Settings(BaseSettings):
     # the maintainer, not exposed as configuration.
 
     # --- Agent / model backends (shared) ------------------------------------
-    # Every model-driven stage picks one backend: 'gemini-api', 'gemini-cli',
-    # 'gemini-agy', 'claude', or 'codex'. gemini-cli / gemini-agy / claude /
-    # codex use subscription/OAuth auth; gemini-api uses AGENT_GEMINI_API_KEY
-    # (only then is the key required). gemini-cli can additionally receive
-    # AGENT_GEMINI_GCP_PROJECT as subprocess-only GOOGLE_CLOUD_PROJECT for Code
-    # Assist subscription auth. Agent backends cannot ingest audio, so those
-    # stages run on frames + SRT only. Each stage sets one AGENT_*_MODEL spec
+    # Every model-driven stage picks one backend: 'gemini-api', 'agy',
+    # 'claude', or 'codex'. agy / claude / codex use subscription/OAuth
+    # auth; gemini-api uses AGENT_GEMINI_API_KEY (only then is the key
+    # required). Only the Gemini backends ingest audio; claude / codex stages
+    # run on frames + SRT only. Each stage sets one AGENT_*_MODEL spec
     # written as "backend/model" or "backend/model/effort" (effort
     # low/medium/high/extra/max/ultra, default high) and parsed into a
     # ModelSpec; the model and effort are passed to the selected backend (set
@@ -121,10 +119,6 @@ class Settings(BaseSettings):
         default=None,
         description="API key for Google Gemini. Required only when a stage uses the 'gemini-api' backend.",
     )
-    agent_gemini_gcp_project: str | None = Field(
-        default=None,
-        description="Optional Google Cloud project ID injected as GOOGLE_CLOUD_PROJECT for the gemini-cli subprocess only.",
-    )
 
     agent_timeout_minutes: int = Field(
         default=40,
@@ -133,23 +127,23 @@ class Settings(BaseSettings):
     )
 
     agent_prepass_model: ModelSpecField = Field(
-        default="gemini-cli/gemini-3.1-pro-preview",
-        description="Pre-pass spec as 'backend/model[/effort]'. Backend: 'gemini-api', 'gemini-cli', 'gemini-agy', 'claude', or 'codex'.",
+        default="agy/gemini-3.1-pro",
+        description="Pre-pass spec as 'backend/model[/effort]'. Backend: 'gemini-api', 'agy', 'claude', or 'codex'.",
     )
 
     agent_chunk_model: ModelSpecField = Field(
-        default="gemini-cli/gemini-3.1-pro-preview",
-        description="Chunk translation spec as 'backend/model[/effort]'. Backend: 'gemini-api', 'gemini-cli', 'gemini-agy', 'claude', or 'codex'.",
+        default="agy/gemini-3.1-pro",
+        description="Chunk translation spec as 'backend/model[/effort]'. Backend: 'gemini-api', 'agy', 'claude', or 'codex'.",
     )
 
     agent_postprocess_model: ModelSpecField = Field(
         default="codex/gpt-5.6-sol/medium",
-        description="Post-processing spec (subtitle refine + glossary_check) as 'backend/model[/effort]'. Backend: 'codex', 'claude', 'gemini-cli', or 'gemini-agy'.",
+        description="Post-processing spec (subtitle refine + glossary_check) as 'backend/model[/effort]'. Backend: 'codex', 'claude', or 'agy'.",
     )
 
     agent_common_model: ModelSpecField = Field(
         default="codex/gpt-5.5/medium",
-        description="Spec for lightweight utility agents (chunk structural fix + broadcast-date research) as 'backend/model[/effort]'. Backend: 'codex', 'claude', 'gemini-cli', or 'gemini-agy'. Cover generation is always Codex (image generation) but reuses this effort.",
+        description="Spec for lightweight utility agents (chunk structural fix + broadcast-date research) as 'backend/model[/effort]'. Backend: 'codex', 'claude', or 'agy'. Cover generation is always Codex (image generation) but reuses this effort.",
     )
 
     agent_chat_model: OptionalModelSpecField = Field(
@@ -183,7 +177,7 @@ class Settings(BaseSettings):
     chunk_agent_concurrency: int = Field(
         default=5,
         ge=1,
-        description="Maximum concurrent chunk processes for the agent backends (gemini-cli / codex / claude); lower than chunk_api_concurrency since each spawns a heavy local process.",
+        description="Maximum concurrent chunk processes for the agent backends (agy / codex / claude); lower than chunk_api_concurrency since each spawns a heavy local process.",
     )
     chunk_max_retries: int = Field(
         default=3,

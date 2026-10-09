@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 import unittest
@@ -7,14 +8,14 @@ from unittest.mock import patch
 
 os.environ.setdefault("AGENT_GEMINI_API_KEY", "test-key")
 
-from services.inference import gemini_agy as agy_mod
-from services.inference.gemini_agy import (
-    GeminiAgyError,
-    GeminiAgyNotInstalledError,
-    GeminiAgyQuotaError,
+from services.inference import agy as agy_mod
+from services.inference.agy import (
+    AgyError,
+    AgyNotInstalledError,
+    AgyQuotaError,
     clean_terminal_output,
     resolve_agy_model,
-    run_gemini_agy,
+    run_agy,
     slice_marked_answer,
 )
 
@@ -22,8 +23,8 @@ from services.inference.gemini_agy import (
 class ResolveAgyModelTests(unittest.TestCase):
     def test_maps_id_and_effort_to_display_name(self):
         self.assertEqual(
-            resolve_agy_model("gemini-3.5-flash", "high"),
-            "Gemini 3.5 Flash (High)",
+            resolve_agy_model("gemini-3.8-flash", "high"),
+            "Gemini 3.8 Flash (High)",
         )
         self.assertEqual(
             resolve_agy_model("gemini-3.1-pro", "low"),
@@ -34,23 +35,23 @@ class ResolveAgyModelTests(unittest.TestCase):
             "Gemini 3.1 Pro (High)",
         )
         self.assertEqual(
-            resolve_agy_model("gemini-3.5-flash", "ultra"),
-            "Gemini 3.5 Flash (High)",
+            resolve_agy_model("gemini-3.8-flash", "ultra"),
+            "Gemini 3.8 Flash (High)",
         )
 
     def test_case_insensitive_inputs(self):
         self.assertEqual(
-            resolve_agy_model("Gemini-3.5-Flash", "HIGH"),
-            "Gemini 3.5 Flash (High)",
+            resolve_agy_model("Gemini-3.8-Flash", "HIGH"),
+            "Gemini 3.8 Flash (High)",
         )
 
     def test_unknown_model_raises(self):
-        with self.assertRaises(GeminiAgyError):
+        with self.assertRaises(AgyError):
             resolve_agy_model("gpt-5.5", "high")
 
     def test_effort_not_offered_for_model_raises(self):
         # agy exposes only Low/High for Gemini 3.1 Pro, not Medium.
-        with self.assertRaises(GeminiAgyError):
+        with self.assertRaises(AgyError):
             resolve_agy_model("gemini-3.1-pro", "medium")
 
 
@@ -81,7 +82,7 @@ class SliceMarkedAnswerTests(unittest.TestCase):
         self.assertEqual(slice_marked_answer("  plain answer  "), "plain answer")
 
 
-class RunGeminiAgyTests(unittest.TestCase):
+class RunAgyTests(unittest.TestCase):
     def _temp_dir(self) -> Path:
         base = Path(__file__).resolve().parents[1] / "tmp_test_artifacts"
         base.mkdir(parents=True, exist_ok=True)
@@ -97,8 +98,8 @@ class RunGeminiAgyTests(unittest.TestCase):
 
     def test_not_installed(self):
         with patch.object(agy_mod.shutil, "which", return_value=None):
-            with self.assertRaises(GeminiAgyNotInstalledError):
-                run_gemini_agy("hi", model="gemini-3.5-flash")
+            with self.assertRaises(AgyNotInstalledError):
+                run_agy("hi", model="gemini-3.8-flash")
 
     def test_success_builds_argv_and_stages_prompt(self):
         self._patch_which()
@@ -115,9 +116,9 @@ class RunGeminiAgyTests(unittest.TestCase):
             return "chrome\n<<<AGY_BEGIN>>>\nresult body\n<<<AGY_END>>>\n"
 
         with patch.object(agy_mod, "_run_under_pty", side_effect=fake_pty):
-            out = run_gemini_agy(
+            out = run_agy(
                 "the full prompt",
-                model="gemini-3.5-flash",
+                model="gemini-3.8-flash",
                 reasoning_effort="high",
             )
 
@@ -128,8 +129,8 @@ class RunGeminiAgyTests(unittest.TestCase):
         self.assertIn("--print", argv)
         self.assertIn("--model", argv)
         # The id form is mapped to agy's exact display string.
-        self.assertIn("Gemini 3.5 Flash (High)", argv)
-        self.assertNotIn("gemini-3.5-flash", argv)
+        self.assertIn("Gemini 3.8 Flash (High)", argv)
+        self.assertNotIn("gemini-3.8-flash", argv)
         self.assertIn("--dangerously-skip-permissions", argv)
         # Workspace + repo root are added as accessible roots.
         add_dir_count = sum(1 for a in argv if a == "--add-dir")
@@ -156,13 +157,91 @@ class RunGeminiAgyTests(unittest.TestCase):
             return "<<<AGY_BEGIN>>>ok<<<AGY_END>>>"
 
         with patch.object(agy_mod, "_run_under_pty", side_effect=fake_pty):
-            run_gemini_agy("p", model="gemini-3.5-flash", images=[frame])
+            run_agy("p", model="gemini-3.8-flash", images=[frame])
 
         bootstrap = captured["argv"][2]
         # Image staged as NN_<name> and attached via @<abs path>, not "open this".
         self.assertIn("00_frame.jpg", captured["staged"])
         self.assertIn(f"@{Path(captured['cwd']) / '00_frame.jpg'}", bootstrap)
         self.assertNotIn("open and look", bootstrap.lower())
+
+    def _fake_transcript(self, media_mimes: list[str]) -> tuple[Path, str]:
+        """A fake agy brain dir holding one conversation transcript.
+
+        Returns (brain dir, log line naming that conversation).
+        """
+        brain = self._temp_dir()
+        conversation = "f92a0fba-1cf2-4c3f-b544-3afcbf51e9a7"
+        transcript = brain / conversation / agy_mod._TRANSCRIPT_RELPATH
+        transcript.parent.mkdir(parents=True)
+        steps = [{"type": "USER_INPUT"}] + [
+            {"type": "GENERIC", "media": [{"mime_type": mime, "uri": "x"}]}
+            for mime in media_mimes
+        ]
+        transcript.write_text(
+            "\n".join(json.dumps(step) for step in steps), encoding="utf-8"
+        )
+        log = f"I1010 server.go] Sending user message to conversation {conversation} (items=1, media=0)\n"
+        return brain, log
+
+    def _run_with_audio(self, brain: Path, log: str) -> dict:
+        self._patch_which()
+        work = self._temp_dir()
+        track = work / "audio.ogg"
+        track.write_bytes(b"ogg-bytes")
+        captured = {"track": track.resolve()}
+
+        def fake_pty(argv, *, cwd, env, timeout):
+            captured["argv"] = argv
+            captured["staged"] = sorted(p.name for p in Path(cwd).iterdir())
+            log_path = Path(argv[argv.index("--log-file") + 1])
+            log_path.write_text(log, encoding="utf-8")
+            return "<<<AGY_BEGIN>>>heard<<<AGY_END>>>"
+
+        with (
+            patch.object(agy_mod, "_AGY_BRAIN_DIR", brain),
+            patch.object(agy_mod, "_run_under_pty", side_effect=fake_pty),
+        ):
+            captured["result"] = run_agy(
+                "p", model="gemini-3.8-flash", audio=[track]
+            )
+        return captured
+
+    def test_audio_read_in_place_and_opened_via_view_file(self):
+        brain, log = self._fake_transcript(["audio/ogg"])
+        captured = self._run_with_audio(brain, log)
+
+        self.assertEqual(captured["result"].response, "heard")
+        track = captured["track"]
+        # Audio is not copied into the workspace; its directory is add-dir'd.
+        self.assertNotIn("audio.ogg", captured["staged"])
+        argv = captured["argv"]
+        self.assertIn(str(track.parent), argv)
+        bootstrap = argv[2]
+        # Audio is not @-attached (agy ignores that); the agent must view_file it.
+        self.assertIn("view_file", bootstrap)
+        self.assertIn(str(track), bootstrap)
+        self.assertNotIn(f"@{track}", bootstrap)
+
+    def test_audio_not_heard_raises(self):
+        # Only an image reached the model; the audio was never opened.
+        brain, log = self._fake_transcript(["image/jpeg"])
+        with self.assertRaises(AgyError) as ctx:
+            self._run_with_audio(brain, log)
+        self.assertIn("did not listen", str(ctx.exception))
+
+    def test_audio_check_skipped_without_transcript(self):
+        # Unknown conversation layout: the run is not failed on a guess.
+        brain = self._temp_dir()
+        captured = self._run_with_audio(brain, "no conversation id here\n")
+        self.assertEqual(captured["result"].response, "heard")
+
+    def test_missing_audio_raises(self):
+        self._patch_which()
+        with self.assertRaises(AgyError):
+            run_agy(
+                "p", model="gemini-3.8-flash", audio=[Path("does_not_exist.ogg")]
+            )
 
     def test_scrubs_paid_api_keys_from_env(self):
         self._patch_which()
@@ -176,7 +255,7 @@ class RunGeminiAgyTests(unittest.TestCase):
             patch.dict(os.environ, {"GEMINI_API_KEY": "paid"}, clear=False),
             patch.object(agy_mod, "_run_under_pty", side_effect=fake_pty),
         ):
-            run_gemini_agy("p", model="gemini-3.5-flash")
+            run_agy("p", model="gemini-3.8-flash")
         self.assertNotIn("GEMINI_API_KEY", captured["env"])
 
     def test_image_size_guard(self):
@@ -184,14 +263,14 @@ class RunGeminiAgyTests(unittest.TestCase):
         work = self._temp_dir()
         big = work / "frame.jpg"
         big.write_bytes(b"x" * 16)
-        with patch.object(agy_mod, "_MAX_MEDIA_FILE_MB", 0):
-            with self.assertRaises(GeminiAgyError):
-                run_gemini_agy("p", model="gemini-3.5-flash", images=[big])
+        with patch.object(agy_mod, "_MAX_IMAGE_FILE_MB", 0):
+            with self.assertRaises(AgyError):
+                run_agy("p", model="gemini-3.8-flash", images=[big])
 
     def test_missing_image_raises(self):
         self._patch_which()
-        with self.assertRaises(GeminiAgyError):
-            run_gemini_agy("p", model="gemini-3.5-flash", images=[Path("does_not_exist.jpg")])
+        with self.assertRaises(AgyError):
+            run_agy("p", model="gemini-3.8-flash", images=[Path("does_not_exist.jpg")])
 
     def test_quota_text_classified(self):
         self._patch_which()
@@ -200,8 +279,8 @@ class RunGeminiAgyTests(unittest.TestCase):
             return "Error: RESOURCE_EXHAUSTED quota exceeded (429)"
 
         with patch.object(agy_mod, "_run_under_pty", side_effect=fake_pty):
-            with self.assertRaises(GeminiAgyQuotaError):
-                run_gemini_agy("p", model="gemini-3.5-flash")
+            with self.assertRaises(AgyQuotaError):
+                run_agy("p", model="gemini-3.8-flash")
 
     def test_empty_output_raises(self):
         self._patch_which()
@@ -210,8 +289,8 @@ class RunGeminiAgyTests(unittest.TestCase):
             return "\x1b[0m\r\n   \r\n"
 
         with patch.object(agy_mod, "_run_under_pty", side_effect=fake_pty):
-            with self.assertRaises(GeminiAgyError):
-                run_gemini_agy("p", model="gemini-3.5-flash")
+            with self.assertRaises(AgyError):
+                run_agy("p", model="gemini-3.8-flash")
 
 
 if __name__ == "__main__":

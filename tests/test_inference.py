@@ -1,6 +1,7 @@
+import subprocess
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from pydantic import BaseModel
 
@@ -15,8 +16,8 @@ from services.inference import (
     is_gemini_backend,
     run_inference,
 )
+from services.inference import base as base_mod
 from services.inference.base import truncate_middle
-from services.inference.gemini_cli import GeminiCliResult
 from services.inference.schema_enforce import (
     SchemaValidationError,
     enforce_schema,
@@ -32,22 +33,20 @@ class _Demo(BaseModel):
 class CapabilityTests(unittest.TestCase):
     def test_audio_capability(self):
         self.assertTrue(backend_supports_audio(Backend.GEMINI_API))
-        self.assertTrue(backend_supports_audio(Backend.GEMINI_CLI))
+        # agy (Antigravity CLI) hears audio through view_file.
+        self.assertTrue(backend_supports_audio(Backend.AGY))
         self.assertFalse(backend_supports_audio(Backend.CODEX))
         self.assertFalse(backend_supports_audio(Backend.CLAUDE))
-        # gemini-agy (Antigravity CLI) cannot ingest audio.
-        self.assertFalse(backend_supports_audio(Backend.GEMINI_AGY))
 
     def test_family_helpers(self):
-        self.assertTrue(is_gemini_backend(Backend.GEMINI_CLI))
-        # gemini-agy is a Gemini backend (so it requires an explicit model).
-        self.assertTrue(is_gemini_backend(Backend.GEMINI_AGY))
+        self.assertTrue(is_gemini_backend(Backend.GEMINI_API))
+        # agy is a Gemini backend (so it requires an explicit model).
+        self.assertTrue(is_gemini_backend(Backend.AGY))
         self.assertFalse(is_gemini_backend(Backend.CODEX))
 
     def test_agent_is_everything_except_gemini_api(self):
-        # api-vs-agent is the only taxonomy: gemini-cli/gemini-agy are agents too.
-        self.assertTrue(is_agent_backend(Backend.GEMINI_CLI))
-        self.assertTrue(is_agent_backend(Backend.GEMINI_AGY))
+        # api-vs-agent is the only taxonomy: agy is an agent too.
+        self.assertTrue(is_agent_backend(Backend.AGY))
         self.assertTrue(is_agent_backend(Backend.CODEX))
         self.assertTrue(is_agent_backend(Backend.CLAUDE))
         self.assertFalse(is_agent_backend(Backend.GEMINI_API))
@@ -233,61 +232,33 @@ class RunInferenceDispatchTests(unittest.TestCase):
         self.assertEqual(m.call_args.kwargs["system_prompt"], "SYS")
         self.assertIs(m.call_args.kwargs["schema"], _Demo)
 
-    def test_gemini_cli_routes_media_and_concats_prompt(self):
-        cli_result = GeminiCliResult(
-            response="raw srt", requests=3, stats={}, raw_envelope={}
-        )
-        with patch.object(inf, "run_gemini_cli", return_value=cli_result) as m:
+    def test_agy_routes_images_and_audio(self):
+        from services.inference.agy import AgyResult
+
+        agy_result = AgyResult(response="agy out", requests=1)
+        with patch.object(inf, "run_agy", return_value=agy_result) as m:
             result = run_inference(
-                backend=Backend.GEMINI_CLI,
+                backend=Backend.AGY,
                 prompt="user",
                 system_prompt="SYS",
                 images=[Path("f.jpg")],
                 audio=[Path("a.ogg")],
-                model="gemini-3-flash-preview",
-            )
-        self.assertEqual(result.text, "raw srt")
-        self.assertEqual(result.requests, 3)
-        # Single concatenated prompt; media = audio first, then images.
-        self.assertEqual(m.call_args.args[0], "SYS\n\nuser")
-        self.assertEqual(
-            m.call_args.kwargs["media_files"], [Path("a.ogg"), Path("f.jpg")]
-        )
-
-    def test_gemini_agy_routes_images_and_rejects_audio(self):
-        from services.inference.gemini_agy import GeminiAgyResult
-
-        agy_result = GeminiAgyResult(response="agy out", requests=1)
-        with patch.object(inf, "run_gemini_agy", return_value=agy_result) as m:
-            result = run_inference(
-                backend=Backend.GEMINI_AGY,
-                prompt="user",
-                system_prompt="SYS",
-                images=[Path("f.jpg")],
-                model="gemini-3.5-flash",
+                model="gemini-3.8-flash",
                 reasoning_effort="low",
             )
         self.assertEqual(result.text, "agy out")
         self.assertEqual(result.cost, 0.0)
-        # Single concatenated prompt; images + model + effort forwarded, audio
-        # never passed (the wrapper maps model/effort to agy's --model string).
+        # Single concatenated prompt; images + audio + model + effort forwarded
+        # (the wrapper maps model/effort to agy's --model string).
         self.assertEqual(m.call_args.args[0], "SYS\n\nuser")
         self.assertEqual(m.call_args.kwargs["images"], [Path("f.jpg")])
-        self.assertEqual(m.call_args.kwargs["model"], "gemini-3.5-flash")
+        self.assertEqual(m.call_args.kwargs["audio"], [Path("a.ogg")])
+        self.assertEqual(m.call_args.kwargs["model"], "gemini-3.8-flash")
         self.assertEqual(m.call_args.kwargs["reasoning_effort"], "low")
 
-        # Audio to gemini-agy is rejected before any backend call.
-        with self.assertRaises(UnsupportedMediaError):
-            run_inference(
-                backend=Backend.GEMINI_AGY,
-                prompt="hi",
-                audio=[Path("a.ogg")],
-                model="m",
-            )
-
-    def test_gemini_agy_requires_model(self):
+    def test_agy_requires_model(self):
         with self.assertRaises(InferenceError):
-            run_inference(backend=Backend.GEMINI_AGY, prompt="hi")
+            run_inference(backend=Backend.AGY, prompt="hi")
 
     def test_model_and_effort_thread_through_to_agent_runner(self):
         with patch.object(inf, "run_codex_exec", return_value="ok") as m:
@@ -571,6 +542,65 @@ class ClaudeCommandTests(unittest.TestCase):
                 "Session limit reached",
             ):
                 claude.run_claude_sdk_exec(prompt="hi", cwd=Path("."))
+
+
+class ExtractJsonObjectTests(unittest.TestCase):
+    def test_clean_object_passthrough(self):
+        self.assertEqual(extract_json_object('{"a": 1}'), '{"a": 1}')
+
+    def test_strips_json_fence(self):
+        self.assertEqual(
+            extract_json_object('```json\n{"a": 1}\n```'), '{"a": 1}'
+        )
+
+    def test_strips_bare_fence(self):
+        self.assertEqual(
+            extract_json_object('```\n{"a": 1}\n```'), '{"a": 1}'
+        )
+
+    def test_unwraps_surrounding_prose(self):
+        self.assertEqual(
+            extract_json_object('Here you go:\n{"a": 1}\nThanks!'),
+            '{"a": 1}',
+        )
+
+    def test_no_braces_returns_stripped_input(self):
+        self.assertEqual(extract_json_object("  no json  "), "no json")
+
+
+class RunCliTreeKillTests(unittest.TestCase):
+    """The timeout path must tree-kill before draining pipes (see base.run_cli)."""
+
+    def test_timeout_tree_kills_then_drains_and_reraises(self):
+        proc = MagicMock()
+        proc.communicate.side_effect = [
+            subprocess.TimeoutExpired(cmd="codex", timeout=1),
+            ("", ""),
+        ]
+        with (
+            patch.object(base_mod.subprocess, "Popen", return_value=proc),
+            patch.object(base_mod, "kill_process_tree") as kill,
+        ):
+            with self.assertRaises(subprocess.TimeoutExpired):
+                base_mod.run_cli(["codex"], input="hi", timeout=1)
+        kill.assert_called_once_with(proc)
+        # The drain after the kill must itself be time-bounded.
+        self.assertEqual(proc.communicate.call_count, 2)
+        self.assertEqual(
+            proc.communicate.call_args.kwargs["timeout"],
+            base_mod._POST_KILL_DRAIN_SECS,
+        )
+
+    def test_success_returns_completed_process(self):
+        proc = MagicMock()
+        proc.communicate.return_value = ("out", "err")
+        proc.returncode = 0
+        with patch.object(base_mod.subprocess, "Popen", return_value=proc):
+            result = base_mod.run_cli(["codex"], input="hi", timeout=1)
+        self.assertEqual(result.stdout, "out")
+        self.assertEqual(result.stderr, "err")
+        self.assertEqual(result.returncode, 0)
+        proc.communicate.assert_called_once_with("hi", timeout=1)
 
 
 if __name__ == "__main__":

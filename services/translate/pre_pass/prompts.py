@@ -2,7 +2,7 @@
 
 The base instruction and conditional blocks live as `.md` under `prompts/`. The
 audio-bearing phrasing in the base instruction is swapped out when the selected
-backend cannot ingest audio (the agent backends), so the model is never told it
+backend cannot ingest audio (``backend_supports_audio``), so the model is never told it
 has an audio track it did not receive.
 """
 

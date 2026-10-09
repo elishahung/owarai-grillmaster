@@ -10,7 +10,7 @@ class InferenceResult(BaseModel):
 
     `text` is the model's final message — guaranteed-parseable JSON for the
     requested schema when one was given, otherwise the raw message. `cost` is
-    USD spent (0.0 for subscription backends: gemini-cli, codex, claude).
+    USD spent (0.0 for subscription backends: agy, codex, claude).
     `requests` is the number of backend model requests consumed (including any
     schema-repair retries).
     """

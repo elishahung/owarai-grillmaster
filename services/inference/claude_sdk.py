@@ -25,6 +25,7 @@ from .base import (
     default_timeout_secs,
     InferenceError,
     InferenceNotInstalledError,
+    InferenceQuotaError,
 )
 
 
@@ -32,14 +33,13 @@ class ClaudeSDKExecError(InferenceError):
     """Raised when the Claude Agent SDK query fails or times out."""
 
 
-class ClaudeSDKRateLimitError(ClaudeSDKExecError):
+class ClaudeSDKRateLimitError(ClaudeSDKExecError, InferenceQuotaError):
     """Raised when the subscription session / rate limit is hit (HTTP 429).
 
     The bundled CLI reports this mid-stream as a ``RateLimitEvent`` plus a 429
     ``ResultMessage``, then exits non-zero — which the SDK otherwise surfaces as
     the opaque ``"returned an error result: success"``. We detect the 429 and
-    raise this with the CLI's own human-readable reset message instead. Peer of
-    `GeminiCliQuotaError`.
+    raise this with the CLI's own human-readable reset message instead.
     """
 
 

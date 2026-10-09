@@ -3,7 +3,7 @@
 A pre-pass stage scans the full SRT once to produce a shared briefing
 (characters, proper nouns, glossary, tone); chunk workers then translate SRT
 slices concurrently against that briefing. Each stage picks a backend through
-`services.inference` (gemini-api / gemini-cli / claude / codex).
+`services.inference` (gemini-api / agy / claude / codex).
 """
 
 from .errors import (

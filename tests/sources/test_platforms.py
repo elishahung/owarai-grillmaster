@@ -8,8 +8,9 @@ from tests.sources.fakes import FakeJsonHttp
 from yt_dlp.extractor.abematv import AbemaTVBaseIE
 
 from grillmaster.core.source_id import Platform
+from grillmaster.core.talent import Talent
 from grillmaster.sources import abema, tver
-from grillmaster.sources.base import CookiePolicy, SourceExtras, SourceTalent
+from grillmaster.sources.base import CookiePolicy, SourceExtras
 from grillmaster.sources.errors import SourceHttpError
 from grillmaster.sources.registry import PLATFORMS, source_platform
 from grillmaster.sources.ytdlp import VideoInfo
@@ -128,7 +129,12 @@ def test_tver_talent_roles_skip_empty_genres():
         }
     )
     assert talents == (
-        SourceTalent("t001", "小栗　有以", "オグリ　ユイ", ("アイドル", "俳優")),
+        Talent(
+            id="t001",
+            name="小栗　有以",
+            name_kana="オグリ　ユイ",
+            roles=("アイドル", "俳優"),
+        ),
     )
 
 
@@ -146,7 +152,7 @@ def test_tver_extras_fetch_talents_and_the_on_air_label():
     extras = source_platform(Platform.TVER).fetch_extras("epdemo1", http)
 
     assert extras == SourceExtras(
-        talents=(SourceTalent("t1", "千鳥"),), broadcast_label="7月6日(月)放送分"
+        talents=(Talent(id="t1", name="千鳥"),), broadcast_label="7月6日(月)放送分"
     )
     session, episode = http.requests[1:]
     assert session.data == b"device_type=pc"
@@ -183,9 +189,11 @@ def test_abema_casts_take_the_role_of_their_heading():
         "90-979_s1_p359",
     )
     assert talents == (
-        SourceTalent("abema:90-979_s1_p359:1", "千鳥", roles=("MC",)),
-        SourceTalent(
-            "abema:90-979_s1_p359:2", "渡部健（アンジャッシュ）", roles=("ゲスト",)
+        Talent(id="abema:90-979_s1_p359:1", name="千鳥", roles=("MC",)),
+        Talent(
+            id="abema:90-979_s1_p359:2",
+            name="渡部健（アンジャッシュ）",
+            roles=("ゲスト",),
         ),
     )
 

@@ -10,9 +10,9 @@ from grillmaster.config.model import validate_config
 from grillmaster.config.secrets import Secrets
 from grillmaster.events.bus import EventBus
 from grillmaster.events.context import install_log_context
-from grillmaster.pipeline.stage import RunOptions
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.store import save_state
+from grillmaster.stages.base import RunOptions
 
 if TYPE_CHECKING:
     from pathlib import Path

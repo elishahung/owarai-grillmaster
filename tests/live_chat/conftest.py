@@ -1,33 +1,10 @@
-"""Builders for the live-chat tests: replay lines and translated logs."""
+"""Builders for the live-chat tests: the golden translated log."""
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from grillmaster.live_chat.schema import TranslatedChatLog, TranslatedChatMessage
-
-
-def replay_line(offset_ms: int, item: dict[str, Any]) -> str:
-    """One yt-dlp replay JSON line carrying `item` at `offset_ms`."""
-    return json.dumps(
-        {
-            "replayChatItemAction": {
-                "videoOffsetTimeMsec": str(offset_ms),
-                "actions": [{"addChatItemAction": {"item": item}}],
-            }
-        },
-        ensure_ascii=False,
-    )
-
-
-def text_item(author: str, *runs: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "liveChatTextMessageRenderer": {
-            "authorName": {"simpleText": author},
-            "message": {"runs": list(runs)},
-        }
-    }
 
 
 def golden_log() -> TranslatedChatLog:

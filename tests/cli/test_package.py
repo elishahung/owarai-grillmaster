@@ -18,8 +18,8 @@ if TYPE_CHECKING:
 
     from typer.testing import CliRunner
 
-    from grillmaster.pipeline.stage import RunOptions, StageContext
     from grillmaster.project.state import ProjectState
+    from grillmaster.stages.base import RunOptions, StageContext
 
 
 class Seen:

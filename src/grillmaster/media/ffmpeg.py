@@ -6,7 +6,8 @@ binary and the flags every run shares, and hand the argv to an injected
 whole process tree on a timeout, a stalled progress clock or a set `abort`
 event; the tree is also killed when the run is abandoned (Ctrl+C, a failing
 progress callback), and a non-zero exit becomes a `MediaError` carrying the
-stderr tail.
+stderr tail. While it runs the process is held in `core.process.LIVE_PROCESSES`,
+so `kill_all` can end it from another thread.
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from grillmaster.core.process import StderrTail, kill_process_tree
+from grillmaster.core.process import LIVE_PROCESSES, StderrTail, kill_process_tree
 from grillmaster.media.errors import MediaError
 
 if TYPE_CHECKING:
@@ -128,6 +129,7 @@ class SubprocessFfmpegRunner:
             )
         except FileNotFoundError:
             raise MediaError(f"{program} not found on PATH") from None
+        LIVE_PROCESSES.register(process)
 
         assert process.stderr is not None  # noqa: S101 - piped above
         stderr_tail = StderrTail(process.stderr, _STDERR_TAIL_LINES)
@@ -144,6 +146,7 @@ class SubprocessFfmpegRunner:
             watchdog.stop()
             kill_process_tree(process)
             process.wait()
+            LIVE_PROCESSES.unregister(process)
             stderr_tail.join()
 
         if watchdog.reason is not None:

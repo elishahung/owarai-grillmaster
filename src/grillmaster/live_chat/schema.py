@@ -4,14 +4,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from grillmaster.core.models import StrictModel
 
 
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class ChatMessage(_Strict):
+class ChatMessage(StrictModel):
     """One replayed chat message on the `video.mp4` timeline.
 
     `id` is the message's position in the normalized log and is what the
@@ -27,7 +23,7 @@ class ChatMessage(_Strict):
     amount: str | None = None
 
 
-class ChatLog(_Strict):
+class ChatLog(StrictModel):
     """Normalized chat messages, ordered by time (`work/04_chat_fetch/messages.json`)."""
 
     messages: list[ChatMessage]
@@ -39,7 +35,7 @@ class TranslatedChatMessage(ChatMessage):
     translation: str
 
 
-class TranslatedChatLog(_Strict):
+class TranslatedChatLog(StrictModel):
     """Translated chat consumed by packaging (`subs/chat.cht.json`)."""
 
     messages: list[TranslatedChatMessage]

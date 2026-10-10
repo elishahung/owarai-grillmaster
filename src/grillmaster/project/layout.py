@@ -15,6 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from grillmaster.core.paths import attempt_path
+from grillmaster.core.srt import chunk_range_name
 from grillmaster.core.stage_key import SideTaskKey, StageKey
 
 if TYPE_CHECKING:
@@ -27,23 +29,16 @@ _SESSION_DIR_NAME = "session"
 def session_dir(parent: Path, *, attempt: int = 1, label: str = "") -> Path:
     """Session record directory under `parent` for one agent task.
 
-    The first attempt is `session/`, retries are `session.2/`, `session.3/`.
-    `label` tells apart several tasks sharing one parent (chat translation
-    labels batches by their file stem, `ProjectLayout.chat_batch(i).stem`,
-    and the polish pass `polish`): `session_<label>/`, `session_<label>.2/`.
-    Names stay short for the MAX_PATH budget.
+    The first attempt is `session/`; the agent runner puts retries beside it
+    (`core.paths.attempt_path`: `session.2/`, `session.3/`), which `attempt`
+    reproduces for the MAX_PATH budget. `label` tells apart several tasks
+    sharing one parent (chat translation labels batches by their file stem,
+    `ProjectLayout.chat_batch(i).stem`, and the polish pass `polish`):
+    `session_<label>/`, `session_<label>.2/`. Names stay short for the
+    MAX_PATH budget.
     """
-    if attempt < 1:
-        raise ValueError(f"Attempts are 1-based: {attempt}")
     name = f"{_SESSION_DIR_NAME}_{label}" if label else _SESSION_DIR_NAME
-    return parent / (name if attempt == 1 else f"{name}.{attempt}")
-
-
-def chunk_range_name(from_index: int, to_index: int) -> str:
-    """`0001-0119`: the inclusive SRT index range of one translation chunk."""
-    if not 0 < from_index <= to_index:
-        raise ValueError(f"Invalid chunk range: {from_index}-{to_index}")
-    return f"{from_index:04d}-{to_index:04d}"
+    return attempt_path(parent / name, attempt)
 
 
 def _stamp(at: datetime) -> str:

@@ -10,7 +10,8 @@ from yt_dlp.utils import DownloadError
 
 from grillmaster.core.source_id import Platform, SourceId
 from grillmaster.core.stage_key import StageKey
-from grillmaster.project.state import ProjectState, SourceInfo, Talent
+from grillmaster.core.talent import Talent
+from grillmaster.project.state import ProjectState, SourceInfo
 from grillmaster.project.store import load_state
 from grillmaster.sources import tver
 from grillmaster.stages import metadata
@@ -18,7 +19,6 @@ from grillmaster.stages import metadata
 if TYPE_CHECKING:
     from tests.stages.conftest import MakeContext
 
-    from grillmaster.config.load import LoadedConfig
     from grillmaster.project.layout import ProjectLayout
 
 TVER_INFO = {
@@ -38,6 +38,7 @@ TVER_ROUTES: dict[str, object] = {
         "result": {"episode": {"content": {"broadcastDateLabel": "7月6日(月)放送分"}}}
     },
 }
+TALENT = Talent(id="t1", name="浜田雅功", roles=("芸人",))
 
 
 @pytest.fixture
@@ -47,14 +48,20 @@ def state(request: pytest.FixtureRequest) -> ProjectState:
     return ProjectState.create(source)
 
 
-def test_records_info_extras_and_the_broadcast_date(
-    make_context: MakeContext, layout: ProjectLayout, loaded: LoadedConfig
-):
-    ytdlp = FakeYtDlp(info=TVER_INFO)
+@pytest.fixture
+def ytdlp() -> FakeYtDlp:
+    return FakeYtDlp(info=TVER_INFO)
 
-    metadata.build(ytdlp, FakeJsonHttp(TVER_ROUTES)).run(
-        make_context(StageKey.METADATA)
-    )
+
+@pytest.fixture
+def http() -> FakeJsonHttp:
+    return FakeJsonHttp(TVER_ROUTES)
+
+
+def test_records_info_extras_and_the_broadcast_date(
+    make_context: MakeContext, layout: ProjectLayout, ytdlp: FakeYtDlp
+):
+    metadata.STAGE.run(make_context(StageKey.METADATA))
 
     saved = load_state(layout)
     assert saved.name == "水曜日のダウンタウン_第1回"
@@ -65,7 +72,7 @@ def test_records_info_extras_and_the_broadcast_date(
         series="水曜日のダウンタウン",
         channel="TBS",
         broadcast_label="7月6日(月)放送分",
-        talents=[Talent(id="t1", name="浜田雅功", roles=["芸人"])],
+        talents=[TALENT],
     )
     assert json.loads(layout.metadata_info.read_text(encoding="utf-8")) == TVER_INFO
     (call,) = ytdlp.calls
@@ -77,9 +84,7 @@ def test_records_info_extras_and_the_broadcast_date(
 def test_failed_extras_leave_the_date_to_the_availability_start(
     make_context: MakeContext, layout: ProjectLayout
 ):
-    metadata.build(FakeYtDlp(info=TVER_INFO), FakeJsonHttp()).run(
-        make_context(StageKey.METADATA)
-    )
+    metadata.STAGE.run(make_context(StageKey.METADATA, http=FakeJsonHttp()))
 
     saved = load_state(layout)
     assert saved.broadcast_date == date(2026, 7, 8)
@@ -90,30 +95,30 @@ def test_failed_extras_leave_the_date_to_the_availability_start(
 def test_a_rerun_never_erases_what_an_earlier_run_found(
     make_context: MakeContext, layout: ProjectLayout
 ):
-    metadata.build(FakeYtDlp(info=TVER_INFO), FakeJsonHttp(TVER_ROUTES)).run(
-        make_context(StageKey.METADATA)
-    )
+    metadata.STAGE.run(make_context(StageKey.METADATA))
     undated = {
         key: value for key, value in TVER_INFO.items() if key != "release_timestamp"
     }
 
-    metadata.build(
-        FakeYtDlp(info={**undated, "title": "新タイトル"}), FakeJsonHttp()
-    ).run(make_context(StageKey.METADATA))
+    metadata.STAGE.run(
+        make_context(
+            StageKey.METADATA,
+            ytdlp=FakeYtDlp(info={**undated, "title": "新タイトル"}),
+            http=FakeJsonHttp(),
+        )
+    )
 
     saved = load_state(layout)
     assert saved.source.title == "新タイトル"
     assert saved.broadcast_date == date(2026, 7, 6)
     assert saved.source.broadcast_label == "7月6日(月)放送分"
-    assert saved.source.talents == [Talent(id="t1", name="浜田雅功", roles=["芸人"])]
+    assert saved.source.talents == [TALENT]
 
 
 def test_reset_clears_the_recorded_metadata(
     make_context: MakeContext, layout: ProjectLayout
 ):
-    metadata.build(FakeYtDlp(info=TVER_INFO), FakeJsonHttp(TVER_ROUTES)).run(
-        make_context(StageKey.METADATA)
-    )
+    metadata.STAGE.run(make_context(StageKey.METADATA))
     saved = load_state(layout)
 
     metadata.STAGE.clear_state(saved)
@@ -138,9 +143,7 @@ def test_bilibili_keeps_the_title_only(
         "timestamp": 1777822200,
     }
 
-    metadata.build(FakeYtDlp(info=info), FakeJsonHttp()).run(
-        make_context(StageKey.METADATA)
-    )
+    metadata.STAGE.run(make_context(StageKey.METADATA, ytdlp=FakeYtDlp(info=info)))
 
     saved = load_state(layout)
     assert saved.source.title == "標題"
@@ -149,13 +152,7 @@ def test_bilibili_keeps_the_title_only(
 
 
 def test_extraction_failure_fails_the_stage(make_context: MakeContext):
-    stage = metadata.build(FakeYtDlp(fail_with=DownloadError("gone")), FakeJsonHttp())
+    ytdlp = FakeYtDlp(fail_with=DownloadError("gone"))
 
     with pytest.raises(DownloadError):
-        stage.run(make_context(StageKey.METADATA))
-
-
-def test_definition(layout: ProjectLayout, loaded: LoadedConfig):
-    assert metadata.STAGE.key is StageKey.METADATA
-    assert metadata.STAGE.outputs(layout) == ()
-    assert metadata.STAGE.params(loaded.config) == {"official_cc": "on"}
+        metadata.STAGE.run(make_context(StageKey.METADATA, ytdlp=ytdlp))

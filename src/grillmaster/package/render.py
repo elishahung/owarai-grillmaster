@@ -3,9 +3,9 @@
 Every package render applies one look: scale, a 0.2 degree rotate, crop,
 grade and grain, then the burn plan's subtitle layers, then trim and the
 1.03 tempo, encoded with NVENC; the audio gets the same tempo through
-rubberband plus a -54 dB pink-noise bed. `burn_in` renders a whole show,
-`render_subtitled_range` any set of parts of it (remix uses one part per
-segment).
+rubberband plus a -54 dB pink-noise bed. A `SubtitledRange` is one output
+over a span split into parts; `burn_in` renders the whole show as one, remix
+one per segment, all scheduled through `EncodeLanes`.
 
 Do not "clean up" the filter strings or encode arguments: every value is
 measured (see the comments on `_PACKAGE_VIDEO_FILTER` and the constants).
@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import contextvars
 import itertools
-import shutil
 import tempfile
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
@@ -33,7 +32,7 @@ from grillmaster.core.timecode import TimeRange
 from grillmaster.events.types import ProgressAdvanced, ProgressFinished, ProgressStarted
 from grillmaster.media import probe
 from grillmaster.media.ffmpeg import ffmpeg
-from grillmaster.media.video import concat_list_text
+from grillmaster.media.video import concat_copy
 from grillmaster.package.errors import PackageError, RenderAbortedError
 
 if TYPE_CHECKING:
@@ -55,11 +54,12 @@ PACKAGE_OUTPUT_FPS = 29.94
 PACKAGE_FRAME_WIDTH = 1920
 PACKAGE_FRAME_HEIGHT = 1080
 # One NVENC session tops out well below what the card can do: three encodes
-# running side by side finish in barely more wall time than one. Renders are
-# therefore spread over this many concurrent ffmpeg processes — remix
-# segments across the pool, and a plain burn-in split into this many parts.
+# running side by side finish in barely more wall time than one. Every render
+# therefore splits into video parts that share this many concurrent ffmpeg
+# encodes: a burn-in's parts, or the parts and noise heads of all remix
+# segments.
 PACKAGE_ENCODE_CONCURRENCY = 3
-# Below this, splitting a burn-in costs more in seeks and muxing than the
+# Below this, splitting a range costs more in seeks and muxing than the
 # parallel encode wins back.
 PACKAGE_MIN_PART_SECONDS = 120.0
 # NVENC runs in quality-targeted VBR, so -cq alone decides the bitrate and
@@ -368,43 +368,45 @@ def run_tracked(
     runner.run(
         argv,
         cwd=cwd,
-        on_progress=progress if progress is not None else _ignore_progress,
+        on_progress=progress if progress is not None else watch_only,
         abort=abort,
     )
     if progress is not None:
         progress.complete()
 
 
-def _ignore_progress(_seconds: float) -> None:
-    pass
+def watch_only(_seconds: float) -> None:
+    """A progress callback that reports nothing; passing it arms the
+    runner's stall watchdog for a run without a bar."""
 
 
 def run_in_pool[T](
-    jobs: Sequence[Callable[[threading.Event], T]],
-    *,
-    max_workers: int,
-    abort: threading.Event | None = None,
+    jobs: Sequence[Callable[[threading.Event], T]], *, max_workers: int
 ) -> list[T]:
     """Run `jobs` concurrently in the caller's log scope; results in job order.
 
-    Each job receives the pool's abort event (`abort`, or a fresh one) and
-    hands it to its ffmpeg runs. The first failure (or the caller being
-    interrupted) sets it, which kills the running ffmpeg processes; jobs
-    not yet started are cancelled, or raise `RenderAbortedError` when a
-    worker reaches them first. Once every job has ended, the first failure
-    that is not such a skip is re-raised. A nested pool shares its caller's
-    event, so a failure anywhere stops the whole render.
+    Each job receives the pool's abort event and hands it to its ffmpeg
+    runs. The first failure (or the caller being interrupted) sets it, which
+    kills the running ffmpeg processes; jobs not yet started are cancelled,
+    or raise `RenderAbortedError` when a worker reaches them first. Once
+    every job has ended, that first failure is re-raised, not the aborts it
+    caused.
     """
-    event = abort if abort is not None else threading.Event()
+    event = threading.Event()
+    lock = threading.Lock()
+    first: list[BaseException] = []
 
     def guarded(job: Callable[[threading.Event], T]) -> T:
         if event.is_set():
             raise RenderAbortedError("skipped: another render job failed")
         try:
             return job(event)
-        except BaseException:
+        except BaseException as error:
             # Set here, before this worker can pick up a queued job.
-            event.set()
+            with lock:
+                if not event.is_set():
+                    first.append(error)
+                event.set()
             raise
 
     def stop(futures: Sequence[Future[T]]) -> None:
@@ -412,25 +414,21 @@ def run_in_pool[T](
         for future in futures:
             future.cancel()
 
-    failures: list[BaseException] = []
+    failed = False
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = [
             pool.submit(contextvars.copy_context().run, guarded, job) for job in jobs
         ]
         try:
             for future in as_completed(futures):
-                error = None if future.cancelled() else future.exception()
-                if error is not None:
-                    failures.append(error)
+                if not future.cancelled() and future.exception() is not None:
+                    failed = True
                     stop(futures)
         except BaseException:
             stop(futures)
             raise
-    if failures:
-        raise next(
-            (error for error in failures if not isinstance(error, RenderAbortedError)),
-            failures[0],
-        )
+    if failed:
+        raise first[0]
     return [future.result() for future in futures]
 
 
@@ -450,6 +448,208 @@ def check_output_duration(runner: FfmpegRunner, output: Path, expected: float) -
         )
 
 
+# --- scheduling --------------------------------------------------------------
+
+type RenderJob = Callable[[threading.Event], None]
+
+
+class EncodeLanes:
+    """Caps a render's concurrent encodes: `PACKAGE_ENCODE_CONCURRENCY` NVENC
+    sessions plus one audio pass.
+
+    A render queues every job in one `run_in_pool` with a worker per job;
+    each job waits here for its lane, so the parts of all its outputs share
+    the sessions. Waiting jobs start roughly in queue order, and one that
+    gets its lane after the pool aborted is skipped (`RenderAbortedError`).
+    """
+
+    def __init__(self) -> None:
+        self._video = threading.Semaphore(PACKAGE_ENCODE_CONCURRENCY)
+        self._audio = threading.Semaphore(1)
+
+    def video(self, job: RenderJob) -> RenderJob:
+        """`job` holding an NVENC session while it runs."""
+        return _in_lane(self._video, job)
+
+    def audio(self, job: RenderJob) -> RenderJob:
+        """`job` holding the audio lane while it runs."""
+        return _in_lane(self._audio, job)
+
+
+def _in_lane(lane: threading.Semaphore, job: RenderJob) -> RenderJob:
+    def run(abort: threading.Event) -> None:
+        with lane:
+            if abort.is_set():
+                raise RenderAbortedError("skipped: another render job failed")
+            job(abort)
+
+    return run
+
+
+def after_all(jobs: Sequence[RenderJob], finish: RenderJob) -> list[RenderJob]:
+    """`jobs` wrapped so that whichever succeeds last then runs `finish`.
+
+    `finish` runs in that job's worker, outside any lane, while other
+    outputs' jobs keep encoding. A failed or skipped job never counts, so
+    `finish` never runs after a failure.
+    """
+    remaining = len(jobs)
+    lock = threading.Lock()
+
+    def counted(job: RenderJob) -> RenderJob:
+        def run(abort: threading.Event) -> None:
+            nonlocal remaining
+            job(abort)
+            with lock:
+                remaining -= 1
+                last = remaining == 0
+            if last:
+                finish(abort)
+
+        return run
+
+    return [counted(job) for job in jobs]
+
+
+def render_part_count(duration: float) -> int:
+    """How many video parts a range of `duration` source seconds renders as:
+    one per `PACKAGE_MIN_PART_SECONDS`, at most `PACKAGE_ENCODE_CONCURRENCY`."""
+    return min(
+        PACKAGE_ENCODE_CONCURRENCY,
+        max(1, int(duration // PACKAGE_MIN_PART_SECONDS)),
+    )
+
+
+def split_range(span: TimeRange, count: int) -> list[TimeRange]:
+    """Split `span` into `count` contiguous parts that encode in parallel.
+
+    Boundaries land on whole output frames counted from `span.start`, so the
+    parts concatenate to the frame count a single pass would have produced:
+    a source offset maps to output time as `offset / PACKAGE_TEMPO`, so one
+    output frame is `PACKAGE_TEMPO / PACKAGE_OUTPUT_FPS` of source.
+    """
+    if count < 1:
+        raise ValueError("part count must be positive")
+    if count == 1:
+        return [span]
+    frame_count = int(package_output_duration(span.duration) * PACKAGE_OUTPUT_FPS)
+    source_per_frame = PACKAGE_TEMPO / PACKAGE_OUTPUT_FPS
+    boundaries = [span.start]
+    boundaries += [
+        span.start + round(index * frame_count / count) * source_per_frame
+        for index in range(1, count)
+    ]
+    boundaries.append(span.end)
+    return [TimeRange(lower, upper) for lower, upper in itertools.pairwise(boundaries)]
+
+
+# --- subtitled ranges --------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class SubtitledRange:
+    """One subtitled output over contiguous `parts` of `video`: a video encode
+    per part, one audio encode over their whole span, then a mux.
+
+    Every ffmpeg process here owns exactly one filtergraph. That is not a
+    style choice: a single process feeding both a `-vf` graph and an audio
+    `-filter_complex` from the same input deadlocks partway through a long
+    range, and putting both in one `-filter_complex` runs them in series
+    instead (one graph, one thread). Separate processes give the
+    parallelism without either failure mode.
+
+    The audio is never split: a seam between two separately
+    rubberband-stretched halves is audible, while a seam between two
+    independently encoded video parts is not. Intermediate files go to
+    `scratch`. The burn plan's layers must live under the video's directory
+    (see `SubtitleLayer.filter`).
+    """
+
+    runner: FfmpegRunner
+    video: Path
+    burn: BurnPlan
+    parts: tuple[TimeRange, ...]
+    scratch: Path
+
+    def __post_init__(self) -> None:
+        if not self.parts:
+            raise ValueError("a subtitled range needs at least one part")
+        check_subtitles_under(self.video, self.burn)
+
+    @property
+    def span(self) -> TimeRange:
+        return TimeRange(self.parts[0].start, self.parts[-1].end)
+
+    @property
+    def output_duration(self) -> float:
+        """The sped-up length of the muxed output."""
+        return package_output_duration(self.span.duration)
+
+    @property
+    def _part_files(self) -> list[Path]:
+        return [
+            self.scratch / f"part{index:03d}.mp4" for index in range(len(self.parts))
+        ]
+
+    @property
+    def _audio_file(self) -> Path:
+        return self.scratch / "audio.m4a"
+
+    def jobs(
+        self, lanes: EncodeLanes, progress: RenderProgress, note: str | None = None
+    ) -> list[RenderJob]:
+        """The encodes: one video job per part, each advancing `progress` by
+        its share of the output (together they cover it all), and the
+        untracked audio job."""
+        video_jobs = [
+            lanes.video(
+                lambda abort, part=part, part_file=part_file: _encode_subtitled_range(
+                    self.runner,
+                    video=self.video,
+                    burn=self.burn,
+                    output=part_file,
+                    part=part,
+                    progress=progress.track(
+                        package_output_duration(part.duration), note
+                    ),
+                    abort=abort,
+                )
+            )
+            for part, part_file in zip(self.parts, self._part_files, strict=True)
+        ]
+        audio_job = lanes.audio(
+            lambda abort: _encode_package_audio(
+                self.runner,
+                video=self.video,
+                output=self._audio_file,
+                span=self.span,
+                abort=abort,
+            )
+        )
+        return [*video_jobs, audio_job]
+
+    def mux(self, output: Path, abort: threading.Event) -> None:
+        """Concatenate the encoded video parts and mux the one audio track in."""
+        output.parent.mkdir(parents=True, exist_ok=True)
+        concat_copy(
+            self.runner,
+            self._part_files,
+            output,
+            "-i",
+            str(self._audio_file),
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            on_progress=watch_only,
+            abort=abort,
+        )
+
+
 # --- burn-in -----------------------------------------------------------------
 
 
@@ -463,15 +663,10 @@ def burn_in(
 ) -> None:
     """Apply the package look, then burn the plan's ASS so rotate cannot tilt text.
 
-    The render is split into video parts that encode side by side plus one
-    pass over the audio (see `render_subtitled_range`). The audio is never
-    split: a seam between two separately rubberband-stretched halves is
-    audible, while a seam between two independently encoded video parts is
-    not. The output's duration is checked against the sped-up expectation:
-    a same-length output is a failed speed-up, not a success.
-
-    The burn plan's layers must live under the video's directory (see
-    `SubtitleLayer.filter`).
+    The range after the lead trim renders as one `SubtitledRange` split into
+    parts that encode side by side. The output's duration is checked
+    against the sped-up expectation: a same-length output is a failed
+    speed-up, not a success.
     """
     check_subtitles_under(video, burn)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -481,112 +676,26 @@ def burn_in(
     )
     usable_duration = package_usable_duration(probe.duration(runner, video))
     expected = package_output_duration(usable_duration)
-    parts = burn_in_parts(usable_duration)
-    logger.info(f"Burn-in rendering {len(parts)} video part(s)")
-    with render_progress(
-        events, "package:burn-in", "Burning subtitles", expected
-    ) as progress:
-        render_subtitled_range(
-            runner,
-            video=video,
-            burn=burn,
-            output=output,
-            parts=parts,
-            progress=progress,
-        )
-    check_output_duration(runner, output, expected)
-
-
-def burn_in_parts(usable_duration: float) -> list[TimeRange]:
-    """Split the burn-in range into parts that encode in parallel.
-
-    Boundaries land on whole output frames so the parts concatenate to the
-    frame count a single pass would have produced: a source offset maps to
-    output time as `offset / PACKAGE_TEMPO`, so one output frame is
-    `PACKAGE_TEMPO / PACKAGE_OUTPUT_FPS` of source.
-    """
-    start = float(PACKAGE_LEAD_TRIM_SECONDS)
-    end = start + usable_duration
-    part_count = min(
-        PACKAGE_ENCODE_CONCURRENCY,
-        max(1, int(usable_duration // PACKAGE_MIN_PART_SECONDS)),
+    span = TimeRange(
+        PACKAGE_LEAD_TRIM_SECONDS, PACKAGE_LEAD_TRIM_SECONDS + usable_duration
     )
-    if part_count == 1:
-        return [TimeRange(start, end)]
-
-    frame_count = int(package_output_duration(usable_duration) * PACKAGE_OUTPUT_FPS)
-    source_per_frame = PACKAGE_TEMPO / PACKAGE_OUTPUT_FPS
-    boundaries = [start]
-    boundaries += [
-        start + round(index * frame_count / part_count) * source_per_frame
-        for index in range(1, part_count)
-    ]
-    boundaries.append(end)
-    return [TimeRange(lower, upper) for lower, upper in itertools.pairwise(boundaries)]
-
-
-def render_subtitled_range(
-    runner: FfmpegRunner,
-    *,
-    video: Path,
-    burn: BurnPlan,
-    output: Path,
-    parts: Sequence[TimeRange],
-    progress: RenderProgress,
-    note: str | None = None,
-    abort: threading.Event | None = None,
-) -> None:
-    """Render `parts` as video and the whole span as audio, then mux.
-
-    Every ffmpeg process here owns exactly one filtergraph. That is not a
-    style choice: a single process feeding both a `-vf` graph and an audio
-    `-filter_complex` from the same input deadlocks partway through a long
-    range, and putting both in one `-filter_complex` runs them in series
-    instead (one graph, one thread). Separate processes give the
-    parallelism without either failure mode.
-
-    Only the video parts report progress; together they cover the whole
-    output, so the bar's total still adds up. `abort` is the caller's pool
-    event (see `run_in_pool`) when this range is one job of a larger render.
-    """
-    check_subtitles_under(video, burn)
-    abort = abort if abort is not None else threading.Event()
-    temp_dir = Path(tempfile.mkdtemp(prefix="grill_render_"))
-    try:
-        part_files = [temp_dir / f"part{index:03d}.mp4" for index in range(len(parts))]
-        audio_file = temp_dir / "audio.m4a"
-        jobs: list[Callable[[threading.Event], None]] = [
-            lambda event, part=part, part_file=part_file: _encode_subtitled_range(
-                runner,
-                video=video,
-                burn=burn,
-                output=part_file,
-                part=part,
-                progress=progress.track(package_output_duration(part.duration), note),
-                abort=event,
-            )
-            for part, part_file in zip(parts, part_files, strict=True)
-        ]
-        jobs.append(
-            lambda event: _encode_package_audio(
-                runner,
-                video=video,
-                output=audio_file,
-                span=TimeRange(parts[0].start, parts[-1].end),
-                abort=event,
-            )
+    parts = split_range(span, render_part_count(usable_duration))
+    logger.info(f"Burn-in rendering {len(parts)} video part(s)")
+    with (
+        tempfile.TemporaryDirectory(
+            prefix="grill_render_", ignore_cleanup_errors=True
+        ) as scratch,
+        render_progress(
+            events, "package:burn-in", "Burning subtitles", expected
+        ) as progress,
+    ):
+        render = SubtitledRange(runner, video, burn, tuple(parts), Path(scratch))
+        jobs = after_all(
+            render.jobs(EncodeLanes(), progress),
+            lambda abort: render.mux(output, abort),
         )
-        run_in_pool(jobs, max_workers=len(jobs), abort=abort)
-        _mux_package_output(
-            runner,
-            part_files=part_files,
-            audio_file=audio_file,
-            output=output,
-            scratch=temp_dir,
-            abort=abort,
-        )
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+        run_in_pool(jobs, max_workers=len(jobs))
+    check_output_duration(runner, output, expected)
 
 
 def _encode_subtitled_range(
@@ -612,7 +721,7 @@ def _encode_subtitled_range(
     is unchanged.
 
     The matching audio comes from `_encode_package_audio` in its own process;
-    see `render_subtitled_range` for why.
+    see `SubtitledRange` for why.
 
     The stream is picked as `0:v:0`, never `0:v`: sources carrying a
     cover-art mjpeg stream would otherwise get it re-encoded to h264 as a
@@ -663,40 +772,6 @@ def _encode_package_audio(
         "[a]",
         "-vn",
         *_PACKAGE_AUDIO_ENCODE_ARGS,
-        str(output),
-    )
-    run_tracked(runner, argv, None, abort=abort)
-
-
-def _mux_package_output(
-    runner: FfmpegRunner,
-    *,
-    part_files: Sequence[Path],
-    audio_file: Path,
-    output: Path,
-    scratch: Path,
-    abort: threading.Event,
-) -> None:
-    """Concatenate the video parts and mux the one audio track in."""
-    concat_list = scratch / "parts.txt"
-    concat_list.write_text(concat_list_text(part_files), encoding="utf-8")
-    argv = ffmpeg(
-        "-f",
-        "concat",
-        "-safe",
-        "0",
-        "-i",
-        str(concat_list),
-        "-i",
-        str(audio_file),
-        "-map",
-        "0:v:0",
-        "-map",
-        "1:a:0",
-        "-c",
-        "copy",
-        "-movflags",
-        "+faststart",
         str(output),
     )
     run_tracked(runner, argv, None, abort=abort)

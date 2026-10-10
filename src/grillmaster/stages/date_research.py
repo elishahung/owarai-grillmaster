@@ -20,24 +20,21 @@ from grillmaster.core.stage_key import SideTaskKey, StageKey
 from grillmaster.events.types import SkipReason
 from grillmaster.extras.date_research import (
     ResearchContext,
-    ResearchTalent,
     adopted_date,
     load_cached_result,
     research_broadcast_date,
 )
-from grillmaster.pipeline.side_tasks import SideTaskDef
-from grillmaster.pipeline.steps import StepOutcome
-from grillmaster.project.layout import session_dir
 from grillmaster.project.state import DateResearchRecord, now
 from grillmaster.sources.broadcast_date import parse_broadcast_label_year
+from grillmaster.stages._common import flag_or_feature, role_params
+from grillmaster.stages.base import SideTaskDef, StepOutcome
 
 if TYPE_CHECKING:
     from datetime import date
 
-    from grillmaster.config.model import AppConfig
     from grillmaster.extras.date_research import DateResearchResult
-    from grillmaster.pipeline.stage import RunOptions, StageContext
     from grillmaster.project.state import ProjectState
+    from grillmaster.stages.base import StageContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,12 +56,7 @@ def _context(state: ProjectState) -> ResearchContext:
         hint=state.translation_hint,
         broadcast_year=parse_broadcast_label_year(source.broadcast_label),
         broadcast_label=source.broadcast_label,
-        talents=tuple(
-            ResearchTalent(
-                name=talent.name, name_kana=talent.name_kana, roles=tuple(talent.roles)
-            )
-            for talent in source.talents
-        ),
+        talents=tuple(source.talents),
     )
 
 
@@ -79,7 +71,7 @@ def _run(ctx: StageContext) -> _Verdict:
         ctx.agents,
         _context(ctx.state),
         result_path=ctx.layout.date_research_result,
-        session_dir=session_dir(ctx.workdir),
+        session_dir=ctx.session_dir(),
     )
     return _verdict(ctx, result)
 
@@ -120,24 +112,16 @@ def _on_skip(ctx: StageContext, reason: SkipReason) -> None:
         ctx.update(lambda state: _record(state, outcome))
 
 
-def _enabled(options: RunOptions, config: AppConfig) -> bool:
-    return options.date_research or config.features.date_research
-
-
-def _params(config: AppConfig) -> dict[str, str]:
-    return {"model": str(config.agents.roles.spec(Role.UTILITY)), "web_search": "on"}
-
-
 TASK: SideTaskDef[_Verdict] = SideTaskDef(
     key=SideTaskKey.DATE_RESEARCH,
     label="Broadcast-date research",
     weight=1,
     start_after=StageKey.METADATA,
     run=_run,
-    enabled=_enabled,
+    enabled=flag_or_feature("date_research"),
     record=_record,
     describe=_describe,
     is_done=_is_done,
     on_skip=_on_skip,
-    params=_params,
+    params=role_params(Role.UTILITY, web_search="on"),
 )

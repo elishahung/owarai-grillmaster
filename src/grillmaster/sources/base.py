@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from datetime import date
 
     from grillmaster.core.source_id import Platform
+    from grillmaster.core.talent import Talent
     from grillmaster.sources.http import JsonHttp
     from grillmaster.sources.ytdlp import VideoInfo
 
@@ -32,16 +33,6 @@ class CookiePolicy(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class SourceTalent:
-    """A person or group the platform credits for the program."""
-
-    id: str
-    name: str
-    name_kana: str | None = None
-    roles: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
 class SourceExtras:
     """Platform metadata beyond yt-dlp's info.
 
@@ -50,7 +41,7 @@ class SourceExtras:
     reported (Unix seconds).
     """
 
-    talents: tuple[SourceTalent, ...] = ()
+    talents: tuple[Talent, ...] = ()
     broadcast_label: str | None = None
     on_air_epoch: int | None = None
 

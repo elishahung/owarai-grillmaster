@@ -9,11 +9,9 @@ local project (design §9.4, owner decision #32).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from grillmaster.events.types import PlanEntry, PlanKind, SkipReason, StepSkipped
-from grillmaster.pipeline.stage import no_params
 from grillmaster.pipeline.steps import execute_step
 
 if TYPE_CHECKING:
@@ -23,36 +21,15 @@ if TYPE_CHECKING:
     from grillmaster.config.model import AppConfig
     from grillmaster.events.bus import EventSink
     from grillmaster.pipeline.logs import ProjectLogs
-    from grillmaster.pipeline.stage import RunOptions, StageContext
     from grillmaster.pipeline.steps import UsageCollector
     from grillmaster.project.layout import ProjectLayout
+    from grillmaster.stages.base import DeliveryStepDef, RunOptions, StageContext
 
 ARCHIVE_KEY = "archive"
 _ARCHIVE_LABEL = "Archive"
 _ARCHIVE_WEIGHT = 1
 
 type Archive = Callable[[ProjectLayout], ProjectLayout]
-
-
-def always_deliver(_options: RunOptions, _config: AppConfig) -> bool:
-    return True
-
-
-@dataclass(frozen=True, slots=True)
-class DeliveryStepDef:
-    """One delivery step.
-
-    `run` returns the `StepCompleted` result text; `workdir` is the step's
-    own directory (its `StageContext.workdir`).
-    """
-
-    key: str
-    label: str
-    weight: int
-    run: Callable[[StageContext], str | None]
-    workdir: Callable[[ProjectLayout], Path]
-    enabled: Callable[[RunOptions, AppConfig], bool] = always_deliver
-    params: Callable[[AppConfig], dict[str, str]] = no_params
 
 
 def run_delivery(

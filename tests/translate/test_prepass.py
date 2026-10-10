@@ -3,8 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from tests.fakes import FakeAgentRunner
-from tests.translate.conftest import briefing
+from tests.fakes import FakeAgentRunner, make_briefing
 
 from grillmaster.agents.adapters.base import Capability
 from grillmaster.agents.errors import ValidationFailure
@@ -42,46 +41,46 @@ def prepass_task(session_dir: Path) -> AgentTask[Briefing]:
 
 def test_ensure_briefing_analyses_and_writes_on_a_miss(tmp_path: Path) -> None:
     output = tmp_path / "briefing.json"
-    agents = FakeAgentRunner({TASK_NAME: briefing((1, 6))})
+    agents = FakeAgentRunner({TASK_NAME: make_briefing((1, 6))})
 
     result = ensure_briefing(output, agents, lambda: prepass_task(tmp_path))
 
-    assert result == briefing((1, 6))
+    assert result == make_briefing((1, 6))
     assert read_model(output, Briefing) == result
 
 
 def test_ensure_briefing_reuses_the_file_without_preparing(tmp_path: Path) -> None:
     output = tmp_path / "briefing.json"
-    write_model(output, briefing((1, 6)))
+    write_model(output, make_briefing((1, 6)))
     prepared: list[bool] = []
 
     def prepare() -> AgentTask[Briefing]:
         prepared.append(True)
         return prepass_task(tmp_path)
 
-    assert ensure_briefing(output, FakeAgentRunner(), prepare) == briefing((1, 6))
+    assert ensure_briefing(output, FakeAgentRunner(), prepare) == make_briefing((1, 6))
     assert prepared == []
 
 
 def test_ensure_briefing_redoes_an_unreadable_file(tmp_path: Path) -> None:
     output = tmp_path / "briefing.json"
     output.write_text("{ truncated", encoding="utf-8")
-    agents = FakeAgentRunner({TASK_NAME: briefing((1, 6))})
+    agents = FakeAgentRunner({TASK_NAME: make_briefing((1, 6))})
 
     ensure_briefing(output, agents, lambda: prepass_task(tmp_path))
 
-    assert read_model(output, Briefing) == briefing((1, 6))
+    assert read_model(output, Briefing) == make_briefing((1, 6))
 
 
 def test_full_coverage_is_accepted() -> None:
     validate = segment_coverage_validator([(1, 115), (116, 233)])
-    validate(briefing((1, 115), (116, 233)))
+    validate(make_briefing((1, 115), (116, 233)))
 
 
 def test_missing_ranges_are_rejected_and_named() -> None:
     validate = segment_coverage_validator([(1, 115), (116, 233)])
     with pytest.raises(ValidationFailure) as caught:
-        validate(briefing((1, 115)))
+        validate(make_briefing((1, 115)))
     message = str(caught.value)
     assert "1/2" in message
     # Only the uncovered range is quoted back for the repair.
@@ -91,7 +90,7 @@ def test_missing_ranges_are_rejected_and_named() -> None:
 
 def test_shifted_range_does_not_count() -> None:
     with pytest.raises(ValidationFailure):
-        segment_coverage_validator([(1, 115)])(briefing((1, 116)))
+        segment_coverage_validator([(1, 115)])(make_briefing((1, 116)))
 
 
 def test_briefing_is_native_schema_compatible() -> None:
@@ -121,8 +120,8 @@ def test_build_prepass_task(
     assert task.validate is not None
     # The inputs have chunks 1-3 and 4-6; a briefing covering one fails.
     with pytest.raises(ValidationFailure):
-        task.validate(briefing((1, 3)))
-    task.validate(briefing((1, 3), (4, 6)))
+        task.validate(make_briefing((1, 3)))
+    task.validate(make_briefing((1, 3), (4, 6)))
 
 
 def test_build_prepass_task_without_audio(

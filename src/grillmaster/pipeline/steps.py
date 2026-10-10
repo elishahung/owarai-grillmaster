@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import threading
 from collections import Counter
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -23,6 +22,7 @@ from grillmaster.events.types import (
     StepFailed,
     StepStarted,
 )
+from grillmaster.stages.base import StepOutcome
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -56,13 +56,6 @@ class UsageCollector:
         with self._lock:
             usage = self._usage.pop(scope, None)
         return dict(usage) if usage is not None else None
-
-
-@dataclass(frozen=True, slots=True)
-class StepOutcome[T]:
-    value: T
-    elapsed: float
-    usage: Mapping[str, int] | None
 
 
 def _no_summary(_outcome: StepOutcome[object]) -> str | None:

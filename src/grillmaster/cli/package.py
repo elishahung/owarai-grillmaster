@@ -52,7 +52,7 @@ def package_command(
     from grillmaster.events.sinks import ConsoleSink
     from grillmaster.pipeline.registry import PIPELINE, Pipeline
     from grillmaster.pipeline.runner import deliver_project
-    from grillmaster.pipeline.stage import RunOptions
+    from grillmaster.stages.base import RunOptions
 
     loaded = load_or_exit()
     if loaded.config.paths.package is None:

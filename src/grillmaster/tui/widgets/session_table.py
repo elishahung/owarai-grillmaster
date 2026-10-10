@@ -9,7 +9,7 @@ from rich.table import Table
 from rich.text import Text
 from textual.widgets import Static
 
-from grillmaster.tui.state import SessionState, chunk_range
+from grillmaster.tui.state import SessionState
 from grillmaster.tui.widgets._common import SESSION_ICON, activity_text, fmt_clock
 
 if TYPE_CHECKING:
@@ -34,7 +34,7 @@ def listed_sessions(state: PipelineState, key: str) -> list[SessionView]:
     return [
         session
         for session in state.sessions_for(key)
-        if chunk_range(session.task) is None or session.state is not SessionState.OK
+        if session.span is None or session.state is not SessionState.OK
     ]
 
 

@@ -4,12 +4,9 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from tests.fakes import FakeAgentRunner, make_blocks
+from tests.fakes import FakeAgentRunner, make_blocks, make_briefing
 
 from grillmaster.agents.errors import AgentOutputError
-from grillmaster.config.load import LoadedConfig
-from grillmaster.config.model import ProgramsConfig
-from grillmaster.core.briefing import Briefing
 from grillmaster.core.json_artifact import write_model
 from grillmaster.core.srt import read_srt_file, serialize_srt, write_srt_file
 from grillmaster.core.stage_key import StageKey
@@ -29,15 +26,7 @@ if TYPE_CHECKING:
 
 BLOCKS = make_blocks(3)
 REFINED = [replace(block, text=f"潤飾 {block.index}") for block in BLOCKS]
-BRIEFING = Briefing(
-    summary="s",
-    characters=[],
-    proper_nouns=[],
-    glossary=[],
-    catchphrases=[],
-    tone_notes="t",
-    segment_summaries=[],
-)
+BRIEFING = make_briefing()
 
 
 @pytest.fixture
@@ -47,23 +36,9 @@ def state(state: ProjectState) -> ProjectState:
 
 
 @pytest.fixture
-def loaded(loaded: LoadedConfig) -> LoadedConfig:
-    programs = ProgramsConfig.model_validate(
-        {
-            "channel": {
-                "station": {
-                    "instruction": {"refine": "REFINE RULE", "chunks": "CHUNK RULE"}
-                }
-            }
-        }
-    )
-    config = loaded.config.model_copy(update={"programs": programs})
-    return LoadedConfig(root=loaded.root, config=config, secrets=loaded.secrets)
-
-
-@pytest.fixture
-def agents() -> FakeAgentRunner:
-    return FakeAgentRunner()
+def config_sections() -> dict[str, Any]:
+    rules = {"refine": "REFINE RULE", "chunks": "CHUNK RULE"}
+    return {"programs": {"channel": {"station": {"instruction": rules}}}}
 
 
 @pytest.fixture
@@ -140,9 +115,3 @@ def test_a_broken_skeleton_fails_the_stage(
 
     with pytest.raises(AgentOutputError):
         refine.STAGE.run(make_context(StageKey.REFINE))
-
-
-def test_declares_no_root_outputs(layout: ProjectLayout, loaded: LoadedConfig):
-    assert refine.STAGE.key is StageKey.REFINE
-    assert refine.STAGE.outputs(layout) == ()
-    assert refine.STAGE.params(loaded.config) == {"model": "codex/gpt-5.6-sol/medium"}

@@ -19,6 +19,13 @@ _BLOCK_SEPARATOR = re.compile(r"\r?\n(?:[ \t]*\r?\n)+")
 _MIN_BLOCK_LINES = 2
 
 
+def chunk_range_name(from_index: int, to_index: int) -> str:
+    """`0001-0119`: the inclusive SRT index range of one translation chunk."""
+    if not 0 < from_index <= to_index:
+        raise ValueError(f"Invalid chunk range: {from_index}-{to_index}")
+    return f"{from_index:04d}-{to_index:04d}"
+
+
 @dataclass(frozen=True, slots=True)
 class SrtBlock:
     """One SRT entry: index, timecode line, and text body."""

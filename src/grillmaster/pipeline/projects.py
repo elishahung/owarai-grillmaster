@@ -14,8 +14,8 @@ from grillmaster.project.store import create_project, load_state, save_state
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from grillmaster.pipeline.stage import RunOptions
     from grillmaster.project.state import ProjectState
+    from grillmaster.stages.base import RunOptions
 
 
 def existing_state(projects_root: Path, options: RunOptions) -> ProjectState | None:

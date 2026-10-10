@@ -18,8 +18,10 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
+from grillmaster.core.models import StrictModel
 from grillmaster.core.source_id import Platform, SourceId
 from grillmaster.core.stage_key import SideTaskKey, StageKey
+from grillmaster.core.talent import Talent
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -30,20 +32,7 @@ def now() -> datetime:
     return datetime.now().astimezone()
 
 
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid", validate_assignment=True)
-
-
-class Talent(_Strict):
-    """A person or group the source platform credits for the program."""
-
-    id: str
-    name: str
-    name_kana: str | None = None
-    roles: list[str] = Field(default_factory=list)
-
-
-class SourceInfo(_Strict):
+class SourceInfo(StrictModel):
     """Program metadata the source platform published.
 
     `series` / `channel` select the program rules in `grill.toml`;
@@ -60,7 +49,7 @@ class SourceInfo(_Strict):
     talents: list[Talent] = Field(default_factory=list)
 
 
-class Section(_Strict):
+class Section(StrictModel):
     """Source-timeline bounds (seconds) `video.mp4` was cut to; `None` = uncut."""
 
     start: float | None = Field(default=None, ge=0)
@@ -77,7 +66,7 @@ class Section(_Strict):
         return self.start is not None or self.end is not None
 
 
-class TaskRecord(_Strict):
+class TaskRecord(StrictModel):
     """Completion of a stage or side task."""
 
     completed_at: AwareDatetime
@@ -104,7 +93,7 @@ class DateResearchRecord(TaskRecord):
     broadcast_date: date | None = None
 
 
-class SideTasks(_Strict):
+class SideTasks(StrictModel):
     cover: TaskRecord | None = None
     date_research: DateResearchRecord | None = None
 
@@ -126,7 +115,7 @@ class SideTasks(_Strict):
                 self.date_research = record
 
 
-class ProjectState(_Strict):
+class ProjectState(StrictModel):
     id: str
     # Persisted rather than re-inferred: a bare ID is ambiguous across
     # platforms (`core.source_id.platform_of`).

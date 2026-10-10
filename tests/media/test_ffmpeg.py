@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from grillmaster.core.process import LIVE_PROCESSES, kill_all
 from grillmaster.media.errors import MediaError
 from grillmaster.media.ffmpeg import (
     SubprocessFfmpegRunner,
@@ -171,3 +172,27 @@ def test_a_set_abort_starts_nothing(runner: SubprocessFfmpegRunner, tmp_path: Pa
             abort=abort,
         )
     assert not output.exists()
+
+
+def test_kill_all_ends_a_running_ffmpeg(runner: SubprocessFfmpegRunner):
+    errors: list[MediaError] = []
+
+    def run() -> None:
+        try:
+            runner.run(_endless(), timeout=30)
+        except MediaError as error:
+            errors.append(error)
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    deadline = time.monotonic() + 10
+    while not LIVE_PROCESSES.live() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert len(LIVE_PROCESSES.live()) == 1
+
+    kill_all()
+    thread.join(timeout=10)
+    assert not thread.is_alive()
+    assert len(errors) == 1
+    assert "failed" in str(errors[0])
+    assert LIVE_PROCESSES.live() == []

@@ -108,7 +108,12 @@ ban-relative-imports = "parents"
 "asyncio.run".msg = "Pipeline code is thread-based; only agents.adapters.claude runs an event loop"
 
 [tool.ruff.lint.flake8-type-checking]
-runtime-evaluated-base-classes = ["pydantic.BaseModel", "pydantic_settings.BaseSettings"]
+runtime-evaluated-base-classes = [
+    "pydantic.BaseModel",
+    "pydantic_settings.BaseSettings",
+    "grillmaster.core.models.StrictModel",
+    "grillmaster.core.models.FrozenModel",
+]
 
 [tool.ruff.lint.pylint]
 max-branches = 15

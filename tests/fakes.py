@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,9 +13,13 @@ from grillmaster.agents.adapters.base import Capability
 from grillmaster.agents.errors import AgentOutputError, ValidationFailure
 from grillmaster.agents.runner import AgentRunner
 from grillmaster.agents.task import AgentResult, FilesOutput
+from grillmaster.core.briefing import Briefing, SegmentSummary, TermMapping
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec
 from grillmaster.core.srt import SrtBlock
 from grillmaster.core.timecode import format_timecode_line
+from grillmaster.core.tool_session import FramesTool
+from grillmaster.extras.cover import COVER_NAME
+from grillmaster.sources.live_chat import LIVE_CHAT_TRACK
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -255,3 +260,82 @@ class FakeAgentRunner(AgentRunner):
                 session_dir=task.session_dir,
             )
         raise AgentOutputError(f"{task.name}: scripted output never passed validation")
+
+
+# --- shared builders ----------------------------------------------------------
+
+
+def make_briefing(
+    *ranges: tuple[int, int],
+    summary: str = "summary",
+    names: Sequence[str] = (),
+) -> Briefing:
+    """A minimal briefing: one segment summary `seg a-b` per range, and a
+    proper noun `jp<i>` -> each of `names`."""
+    return Briefing(
+        summary=summary,
+        characters=[],
+        proper_nouns=[
+            TermMapping(source=f"jp{i}", target=name) for i, name in enumerate(names)
+        ],
+        glossary=[],
+        catchphrases=[],
+        tone_notes="tone",
+        segment_summaries=[
+            SegmentSummary(from_index=start, to_index=end, summary=f"seg {start}-{end}")
+            for start, end in ranges
+        ],
+    )
+
+
+def frames_tool(
+    root: Path,
+    frames_dir: Path | None = None,
+    window: tuple[float, float | None] = (0.0, None),
+) -> FramesTool:
+    """`get_frames` over `root/video.mp4` (frames in `root/frames` by default)."""
+    return FramesTool(
+        video=root / "video.mp4",
+        frames_dir=frames_dir or root / "frames",
+        window=window,
+        max_side=768,
+    )
+
+
+def text_item(author: str, *runs: dict[str, Any]) -> dict[str, Any]:
+    """A live-chat text message renderer with the given message runs."""
+    return {
+        "liveChatTextMessageRenderer": {
+            "authorName": {"simpleText": author},
+            "message": {"runs": list(runs)},
+        }
+    }
+
+
+def replay_line(offset_ms: int, item: dict[str, Any]) -> str:
+    """One yt-dlp replay JSON line carrying `item` at `offset_ms`."""
+    return json.dumps(
+        {
+            "replayChatItemAction": {
+                "videoOffsetTimeMsec": str(offset_ms),
+                "actions": [{"addChatItemAction": {"item": item}}],
+            }
+        },
+        ensure_ascii=False,
+    )
+
+
+def write_replay(options: Mapping[str, Any], replay: str) -> None:
+    """Play yt-dlp's live-chat download: `replay` at the track's file name."""
+    stem = Path(options["outtmpl"]["default"])
+    stem.with_name(f"{stem.name}.{LIVE_CHAT_TRACK}.json").write_text(
+        replay, encoding="utf-8"
+    )
+
+
+def draws(task: AgentTask[Any]) -> tuple[Path, ...]:
+    """A cover agent that writes `cover.png` into its workdir."""
+    assert task.workdir is not None
+    drawn = task.workdir / COVER_NAME
+    drawn.write_bytes(b"png")
+    return (drawn,)

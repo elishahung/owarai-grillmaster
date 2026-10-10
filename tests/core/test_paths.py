@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from grillmaster.core.paths import MAX_COMPONENT_UNITS, fit_dir_name, measure
+from grillmaster.core.paths import (
+    MAX_COMPONENT_UNITS,
+    attempt_path,
+    fit_dir_name,
+    measure,
+)
 
 KEEP = "260503_ep123"
 
@@ -80,3 +85,14 @@ def test_cjk_title_is_trimmed_within_the_component_limit():
 def test_measure_counts_platform_units():
     expected = 2 if os.name == "nt" else 4  # surrogate pair vs. UTF-8 bytes
     assert measure("😀") == expected
+
+
+def test_attempts_after_the_first_are_numbered_siblings():
+    first = Path("work/09_chunks/session")
+    assert attempt_path(first, 1) == first
+    assert attempt_path(first, 3) == Path("work/09_chunks/session.3")
+
+
+def test_attempts_are_one_based():
+    with pytest.raises(ValueError, match="1-based"):
+        attempt_path(Path("session"), 0)

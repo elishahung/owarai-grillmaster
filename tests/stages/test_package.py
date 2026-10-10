@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from tests.fakes import FakeAgentRunner
+from tests.fakes import make_briefing
 from tests.package.conftest import PackageFfmpeg, arg_after, encodes
-from tests.stages.conftest import ROLES
 
-from grillmaster.config.load import LoadedConfig
-from grillmaster.config.model import validate_config
-from grillmaster.core.briefing import Briefing
 from grillmaster.core.json_artifact import write_model
 from grillmaster.core.srt import SrtBlock, read_srt_file, write_srt_file
 from grillmaster.core.timecode import format_timecode_line
@@ -25,31 +22,26 @@ from grillmaster.package.render import (
     PACKAGE_LEAD_TRIM_SECONDS,
     package_output_duration,
 )
-from grillmaster.pipeline.stage import RunOptions, StageContext, StateStore
+from grillmaster.pipeline.state_store import StateStore
 from grillmaster.stages import package
+from grillmaster.stages.base import RunOptions, StageContext
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    from grillmaster.agents.runner import AgentRunner
-    from grillmaster.config.secrets import Secrets
+    from tests.fakes import FakeAgentRunner, FakeFfmpeg
+
+    from grillmaster.config.load import LoadedConfig
     from grillmaster.events.bus import EventBus
     from grillmaster.project.layout import ProjectLayout
     from grillmaster.project.state import ProjectState
+    from grillmaster.stages.base import Externals
 
     type MakeContext = Callable[..., StageContext]
 
 SOURCE_SECONDS = 1000.0
-BRIEFING = Briefing(
-    summary="demo",
-    characters=[],
-    proper_nouns=[],
-    glossary=[],
-    catchphrases=[],
-    tone_notes="",
-    segment_summaries=[],
-)
+BRIEFING = make_briefing(summary="demo")
 TITLES = TitleSuggestions(
     titles=[TitleSuggestion(title=f"標題{i}", reason="r") for i in range(3)]
 )
@@ -64,10 +56,8 @@ def package_root(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def config_data(package_root: Path) -> dict[str, Any]:
-    """`grill.toml` data; tests add sections before the context is built."""
+def config_sections(package_root: Path) -> dict[str, Any]:
     return {
-        "agents": {"roles": ROLES},
         "paths": {"package": str(package_root)},
         "package": {
             "remix_pool": "noise",
@@ -77,25 +67,14 @@ def config_data(package_root: Path) -> dict[str, Any]:
 
 
 @pytest.fixture
-def loaded(
-    tmp_path: Path, secrets: Secrets, config_data: dict[str, Any]
-) -> LoadedConfig:
-    return LoadedConfig(
-        root=tmp_path,
-        config=validate_config(config_data, root=tmp_path),
-        secrets=secrets,
-    )
-
-
-@pytest.fixture
 def state(state: ProjectState) -> ProjectState:
     state.name = "show"
     return state
 
 
 @pytest.fixture
-def agents(bus: EventBus) -> AgentRunner:
-    return FakeAgentRunner({"titles": TITLES}, events=bus)
+def script() -> dict[str, object]:
+    return {"titles": TITLES}
 
 
 @pytest.fixture
@@ -124,10 +103,13 @@ def make(
     layout: ProjectLayout,
     state: ProjectState,
     loaded: LoadedConfig,
-    agents: AgentRunner,
+    agents: FakeAgentRunner,
     bus: EventBus,
+    externals: Externals,
 ) -> MakeContext:
-    def build(**options: Any) -> StageContext:
+    """The package step's context over `ffmpeg`, with run options `options`."""
+
+    def build(ffmpeg: FakeFfmpeg, **options: Any) -> StageContext:
         return StageContext(
             layout=layout,
             store=StateStore(layout, state),
@@ -135,6 +117,7 @@ def make(
             options=RunOptions(source=state.source_id, **options),
             agents=agents,
             events=bus,
+            externals=replace(externals, ffmpeg=ffmpeg),
             workdir=package.STEP.workdir(layout),
         )
 
@@ -180,7 +163,7 @@ def test_burns_in_and_copies_the_artifacts_first(
 ):
     fake = burn_in_fake(finished, package_root)
 
-    result = package.build(fake).run(make())
+    result = package.STEP.run(make(fake))
 
     target = package_root / DESTINATION
     assert result == str(target)
@@ -204,7 +187,7 @@ def test_existing_titles_lead_the_info(
 ):
     write_model(finished.titles, TITLES)
 
-    package.build(burn_in_fake(finished, package_root)).run(make())
+    package.STEP.run(make(burn_in_fake(finished, package_root)))
 
     info = json.loads((package_root / DESTINATION / "info.json").read_text("utf-8"))
     assert list(info)[:2] == ["titles", "summary"]
@@ -215,13 +198,13 @@ def test_existing_titles_lead_the_info(
     [
         pytest.param(
             {
-                "agents": {"roles": ROLES},
-                "paths": {"package": "deliverables"},
+                "package": {},
                 "features": {"title_suggestion": True},
             },
             id="titles-on",
         )
     ],
+    indirect=True,
 )
 def test_title_suggestion_generates_and_caches_titles(
     make: MakeContext,
@@ -229,7 +212,7 @@ def test_title_suggestion_generates_and_caches_titles(
     package_root: Path,
     agents: FakeAgentRunner,
 ):
-    package.build(burn_in_fake(finished, package_root)).run(make())
+    package.STEP.run(make(burn_in_fake(finished, package_root)))
 
     task = agents.task("titles")
     assert task.session_dir == finished.package_work_dir / "session"
@@ -246,7 +229,7 @@ def test_remix_renders_parts_and_carries_the_insert(
     (judge / CURSOR_FILE_NAME).write_text('{"index": 1}', encoding="utf-8")
     fake = remix_fake(finished, package_root)
 
-    package.build(fake).run(make(remix="sleep"))
+    package.STEP.run(make(fake, remix="sleep"))
 
     target = package_root / DESTINATION
     assert sorted(path.name for path in target.iterdir()) == [
@@ -266,14 +249,13 @@ def test_remix_renders_parts_and_carries_the_insert(
     [
         pytest.param(
             {
-                "agents": {"roles": ROLES},
-                "paths": {"package": "deliverables"},
                 "package": {"remix_pool": "noise"},
                 "programs": {"series": {"ドキュメンタル": {"remix": True}}},
             },
             id="remix-series",
         )
     ],
+    indirect=True,
 )
 def test_a_remix_program_forces_a_remix_with_the_default_pool(
     make: MakeContext,
@@ -284,7 +266,7 @@ def test_a_remix_program_forces_a_remix_with_the_default_pool(
     state.source.series = "ドキュメンタル"
     make_pool(package_root, "noise", 1)
 
-    package.build(remix_fake(finished, package_root)).run(make())
+    package.STEP.run(make(remix_fake(finished, package_root)))
 
     assert (package_root / DESTINATION / "1.mp4").exists()
     assert not (package_root / DESTINATION / package.VIDEO_NAME).exists()
@@ -295,8 +277,6 @@ def test_a_remix_program_forces_a_remix_with_the_default_pool(
     [
         pytest.param(
             {
-                "agents": {"roles": ROLES},
-                "paths": {"package": "deliverables"},
                 "package": {
                     "inserts": [{"pool": "ending", "output": "outro", "when": "always"}]
                 },
@@ -304,13 +284,14 @@ def test_a_remix_program_forces_a_remix_with_the_default_pool(
             id="always-insert",
         )
     ],
+    indirect=True,
 )
 def test_an_always_insert_rides_along_a_plain_burn_in(
     make: MakeContext, finished: ProjectLayout, package_root: Path
 ):
     make_pool(package_root, "ending", 1)
 
-    package.build(burn_in_fake(finished, package_root)).run(make())
+    package.STEP.run(make(burn_in_fake(finished, package_root)))
 
     assert (package_root / DESTINATION / "outro.mp4").exists()
 
@@ -321,8 +302,8 @@ def test_a_missing_insert_pool_fails_before_any_draw(
     noise = make_pool(package_root, "sleep", 1)
 
     with pytest.raises(PoolError, match="judge"):
-        package.build(PackageFfmpeg({finished.video: SOURCE_SECONDS})).run(
-            make(remix="sleep")
+        package.STEP.run(
+            make(PackageFfmpeg({finished.video: SOURCE_SECONDS}), remix="sleep")
         )
     assert not (package_root / DESTINATION).exists()
     assert not (package_root / STAGING).exists()
@@ -335,8 +316,8 @@ def test_a_missing_noise_pool_draws_no_insert(
     judge = make_pool(package_root, "judge", 2)
 
     with pytest.raises(PoolError, match="sleep"):
-        package.build(PackageFfmpeg({finished.video: SOURCE_SECONDS})).run(
-            make(remix="sleep")
+        package.STEP.run(
+            make(PackageFfmpeg({finished.video: SOURCE_SECONDS}), remix="sleep")
         )
     assert not (judge / CURSOR_FILE_NAME).exists()
     assert not (package_root / STAGING).exists()
@@ -350,8 +331,8 @@ def test_an_unsplittable_remix_draws_nothing(
     write_srt_file(finished.cht_srt, [])
 
     with pytest.raises(PackageError, match="no subtitle time ranges"):
-        package.build(PackageFfmpeg({finished.video: SOURCE_SECONDS})).run(
-            make(remix="sleep")
+        package.STEP.run(
+            make(PackageFfmpeg({finished.video: SOURCE_SECONDS}), remix="sleep")
         )
     assert not (noise / CURSOR_FILE_NAME).exists()
     assert not (judge / CURSOR_FILE_NAME).exists()
@@ -365,7 +346,7 @@ def test_a_failed_render_removes_the_folder(
     fake.fail_encodes = MediaError("ffmpeg failed")
 
     with pytest.raises(MediaError):
-        package.build(fake).run(make())
+        package.STEP.run(make(fake))
     assert not (package_root / DESTINATION).exists()
     assert not (package_root / STAGING).exists()
 
@@ -373,13 +354,13 @@ def test_a_failed_render_removes_the_folder(
 def test_a_failed_repackage_keeps_the_previous_deliverable(
     make: MakeContext, finished: ProjectLayout, package_root: Path
 ):
-    package.build(burn_in_fake(finished, package_root)).run(make())
+    package.STEP.run(make(burn_in_fake(finished, package_root)))
     previous = sorted(path.name for path in (package_root / DESTINATION).iterdir())
     fake = burn_in_fake(finished, package_root)
     fake.fail_encodes = MediaError("ffmpeg failed")
 
     with pytest.raises(MediaError):
-        package.build(fake).run(make())
+        package.STEP.run(make(fake))
 
     target = package_root / DESTINATION
     assert sorted(path.name for path in target.iterdir()) == previous
@@ -393,7 +374,7 @@ def test_a_repackage_replaces_the_previous_deliverable(
     stale.parent.mkdir(parents=True)
     stale.write_bytes(b"old")
 
-    package.build(burn_in_fake(finished, package_root)).run(make())
+    package.STEP.run(make(burn_in_fake(finished, package_root)))
 
     assert not stale.exists()
     assert (package_root / DESTINATION / package.VIDEO_NAME).exists()
@@ -406,7 +387,7 @@ def test_missing_subtitles_fail_before_anything_is_created(
     finished.cht_ass.unlink()
 
     with pytest.raises(PackageError, match=r"cht\.ass"):
-        package.build(PackageFfmpeg()).run(make())
+        package.STEP.run(make(PackageFfmpeg()))
     assert not package_root.exists()
 
 
@@ -423,7 +404,7 @@ def test_chat_panel_is_rendered_into_the_package_workdir(
     write_model(finished.chat_cht_json, log)
     fake = burn_in_fake(finished, package_root)
 
-    package.build(fake).run(make(chat_layout=ChatLayout.SIDE))
+    package.STEP.run(make(fake, chat_layout=ChatLayout.SIDE))
 
     assert finished.chat_panel_ass.exists()
     chain = arg_after(next(a for a in encodes(fake) if "-vf" in a), "-vf")
@@ -440,8 +421,3 @@ def test_enabled_only_with_a_package_root(loaded: LoadedConfig, state: ProjectSt
         update={"paths": loaded.config.paths.model_copy(update={"package": None})}
     )
     assert not package.STEP.enabled(options, unset)
-
-
-def test_step_definition(layout: ProjectLayout):
-    assert package.STEP.key == "package"
-    assert package.STEP.workdir(layout) == layout.package_work_dir

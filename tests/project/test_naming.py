@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from grillmaster.core.fs import staging_dir
 from grillmaster.core.paths import MAX_COMPONENT_UNITS, MAX_PATH_UNITS, measure
 from grillmaster.core.stage_key import SideTaskKey, StageKey
 from grillmaster.project.layout import ProjectLayout, session_dir
@@ -122,5 +123,19 @@ def test_long_names_are_trimmed_to_the_budget(state: ProjectState, tmp_path: Pat
 
     assert destination.name.startswith("260503_epabc123_全力")
     assert measure(destination.name) <= MAX_COMPONENT_UNITS
-    absolute = os.path.abspath(destination)  # noqa: PTH100
-    assert measure(absolute) + PROJECT_INNER_PATH_RESERVE <= MAX_PATH_UNITS
+    # The project is copied in under the staging name before the swap.
+    staging = os.path.abspath(staging_dir(destination))  # noqa: PTH100
+    assert measure(staging) + PROJECT_INNER_PATH_RESERVE <= MAX_PATH_UNITS
+
+
+def test_long_package_names_leave_the_reserve_below_the_staging_name(
+    state: ProjectState, tmp_path: Path
+):
+    state.broadcast_date = date(2026, 5, 3)
+    state.name = "全力脱力タイムズ" * 40
+    reserve = 30
+    destination = package_destination(state, tmp_path / "package", reserve=reserve)
+
+    staging = os.path.abspath(staging_dir(destination))  # noqa: PTH100
+    assert destination.name.startswith("260503_epabc123_全力")
+    assert measure(staging) + reserve <= MAX_PATH_UNITS

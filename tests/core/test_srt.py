@@ -6,6 +6,7 @@ import pytest
 
 from grillmaster.core.srt import (
     SrtBlock,
+    chunk_range_name,
     parse_srt,
     read_srt_file,
     reindex,
@@ -108,3 +109,17 @@ def test_parse_rejects_incomplete_block():
 def test_parse_splits_on_whitespace_only_separator():
     text = "1\n00:00:01,000 --> 00:00:02,000\nA\n \t\n2\n00:00:03,000 --> 00:00:04,000\nB\n"
     assert [block.text for block in parse_srt(text)] == ["A", "B"]
+
+
+def test_chunk_range_name_pads_both_ends():
+    assert chunk_range_name(1, 119) == "0001-0119"
+
+
+@pytest.mark.parametrize(
+    ("from_index", "to_index"),
+    [(0, 5), (6, 5), (-1, 3)],
+    ids=["zero", "reversed", "negative"],
+)
+def test_invalid_chunk_ranges_raise(from_index: int, to_index: int):
+    with pytest.raises(ValueError, match="Invalid chunk range"):
+        chunk_range_name(from_index, to_index)

@@ -14,83 +14,30 @@ import contextlib
 import contextvars
 import threading
 import time
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from grillmaster.events.types import PlanKind, SkipReason, StepSkipped
-from grillmaster.pipeline.stage import no_params
 from grillmaster.pipeline.steps import UsageCollector, execute_step
-from grillmaster.project.state import TaskRecord, now
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from types import TracebackType
 
     from grillmaster.config.model import AppConfig
-    from grillmaster.core.stage_key import SideTaskKey, StageKey
+    from grillmaster.core.stage_key import StageKey
     from grillmaster.events.bus import EventSink
-    from grillmaster.pipeline.stage import RunOptions, StageContext
-    from grillmaster.pipeline.steps import StepOutcome
-    from grillmaster.project.state import ProjectState
+    from grillmaster.stages.base import (
+        RunOptions,
+        SideTaskDef,
+        StageContext,
+        StepOutcome,
+    )
 
 # How long an interrupted run (Ctrl-C) waits for running side tasks before it
 # leaves them to die with the process (their threads are daemons).
 INTERRUPT_WAIT_S = 2.0
-
-
-def describe(value: object) -> str | None:
-    """`SideTaskDef.describe` default: the payload as text, if any."""
-    return None if value is None else str(value)
-
-
-@dataclass(frozen=True, slots=True)
-class SideTaskDef[T]:
-    """One side task.
-
-    `run` does the work on a worker thread and returns only its payload;
-    the manager then writes the task's record into `state.side_tasks` under
-    the state lock: `record(state, outcome)` when given (a task-specific
-    record shape), else a plain `TaskRecord` of the step's elapsed time and
-    agent usage. `describe` turns the payload into the `StepCompleted`
-    result text. `enabled` combines the run flag with `[features]`.
-    `is_done` overrides the default completion check
-    (`state.side_tasks.is_done(key)`), e.g. date research is moot once the
-    metadata found a date. `on_skip` runs on the pipeline thread whenever
-    the task is not started at its start point, with the reason.
-    """
-
-    key: SideTaskKey
-    label: str
-    weight: int
-    start_after: StageKey
-    run: Callable[[StageContext], T]
-    enabled: Callable[[RunOptions, AppConfig], bool]
-    record: Callable[[ProjectState, StepOutcome[T]], None] | None = None
-    describe: Callable[[T], str | None] = describe
-    is_done: Callable[[ProjectState], bool] | None = None
-    on_skip: Callable[[StageContext, SkipReason], None] | None = None
-    params: Callable[[AppConfig], dict[str, str]] = no_params
-
-    def done(self, state: ProjectState) -> bool:
-        if self.is_done is not None:
-            return self.is_done(state)
-        return state.side_tasks.is_done(self.key)
-
-    def store(self, state: ProjectState, outcome: StepOutcome[T]) -> None:
-        """Write the record of a finished run (see `record`)."""
-        if self.record is not None:
-            self.record(state, outcome)
-            return
-        state.side_tasks.record(
-            self.key,
-            TaskRecord(
-                completed_at=now(),
-                elapsed_s=outcome.elapsed,
-                agent_usage=outcome.usage,
-            ),
-        )
 
 
 class SideTaskManager:

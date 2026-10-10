@@ -7,11 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from grillmaster.core.stage_key import SideTaskKey, StageKey
-from grillmaster.project.layout import (
-    ProjectLayout,
-    chunk_range_name,
-    session_dir,
-)
+from grillmaster.project.layout import ProjectLayout, session_dir
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -97,16 +93,6 @@ def test_every_stage_has_a_numbered_work_dir():
         "work/12_finalize",
         "work/13_chat_translate",
     ]
-
-
-@pytest.mark.parametrize(
-    ("from_index", "to_index"),
-    [(0, 5), (6, 5), (-1, 3)],
-    ids=["zero", "reversed", "negative"],
-)
-def test_invalid_chunk_ranges_raise(from_index: int, to_index: int):
-    with pytest.raises(ValueError, match="Invalid chunk range"):
-        chunk_range_name(from_index, to_index)
 
 
 def test_session_dirs_number_retries_and_label_shared_parents():

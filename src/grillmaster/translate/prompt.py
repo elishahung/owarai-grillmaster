@@ -25,14 +25,16 @@ from grillmaster.core.prompts import (
     render_program_instruction,
 )
 from grillmaster.core.srt import serialize_srt
+from grillmaster.core.talent import render_talent_lines
 from grillmaster.glossary.fixed import format_fixed_glossary_block
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from grillmaster.core.srt import SrtBlock
+    from grillmaster.core.talent import Talent
     from grillmaster.translate.chunker import Chunk
-    from grillmaster.translate.inputs import ChunkInputs, PrepassInputs, Talent
+    from grillmaster.translate.inputs import ChunkInputs, PrepassInputs
 
 _SLOT = re.compile(r"\{\{audio:([a-z_]+)\}\}")
 _FRAGMENT_HEADER = re.compile(r"^<!-- ([a-z_]+) -->$", re.MULTILINE)
@@ -180,12 +182,9 @@ def boundaries_json(boundaries: Sequence[tuple[int, int]]) -> str:
 
 
 def _talent_lines(talents: Sequence[Talent]) -> str:
-    lines = ["Official source cast/talent metadata:"]
-    for talent in talents:
-        roles = f" ({', '.join(talent.roles)})" if talent.roles else ""
-        kana = f" / {talent.name_kana}" if talent.name_kana else ""
-        lines.append(f"- {talent.name}{kana}{roles}")
-    return "\n".join(lines)
+    return "\n".join(
+        ["Official source cast/talent metadata:", *render_talent_lines(talents)]
+    )
 
 
 # --- chunks -----------------------------------------------------------------

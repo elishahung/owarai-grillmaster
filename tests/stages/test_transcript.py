@@ -48,8 +48,3 @@ def test_response_without_words_fails(make_context: MakeContext, layout: Project
     with pytest.raises(AsrError, match="timed words"):
         transcript.STAGE.run(make_context(StageKey.TRANSCRIPT))
     assert not layout.ja_srt.exists()
-
-
-def test_declares_the_japanese_srt(layout: ProjectLayout):
-    assert transcript.STAGE.key is StageKey.TRANSCRIPT
-    assert transcript.STAGE.outputs(layout) == (layout.ja_srt,)

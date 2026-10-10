@@ -1,31 +1,24 @@
 from __future__ import annotations
 
-from pathlib import Path
+from functools import partial
 from typing import TYPE_CHECKING
 
 import pytest
+from tests.fakes import write_replay
 from tests.sources.fakes import FakeYtDlp
 
 from grillmaster.sources.errors import SourceError
 from grillmaster.sources.live_chat import LIVE_CHAT_TRACK, download_live_chat
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-    from typing import Any
+    from pathlib import Path
 
 REPLAY = '{"replayChatItemAction": {"videoOffsetTimeMsec": "1000"}}\n'
 
 
-def write_replay(options: Mapping[str, Any]) -> None:
-    stem = Path(options["outtmpl"]["default"])
-    stem.with_name(f"{stem.name}.{LIVE_CHAT_TRACK}.json").write_text(
-        REPLAY, encoding="utf-8"
-    )
-
-
 def test_downloads_the_replay_track_only(tmp_path: Path):
     output = tmp_path / "chat" / "live_chat.jsonl"
-    ytdlp = FakeYtDlp(on_download=write_replay)
+    ytdlp = FakeYtDlp(on_download=partial(write_replay, replay=REPLAY))
 
     download_live_chat(
         ytdlp, "https://youtu.be/x", output, options={"noprogress": True}

@@ -8,9 +8,9 @@ import pytest
 from grillmaster.core.source_id import Platform, SourceId
 from grillmaster.core.stage_key import StageKey
 from grillmaster.pipeline.projects import open_project
-from grillmaster.pipeline.stage import RunOptions
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.store import create_project, load_state, save_state
+from grillmaster.stages.base import RunOptions
 
 if TYPE_CHECKING:
     from pathlib import Path

@@ -11,11 +11,11 @@ from yt_dlp.utils import DownloadError
 from grillmaster.core.source_id import Platform
 from grillmaster.events.types import ProgressAdvanced, ProgressFinished, ProgressStarted
 from grillmaster.sources.registry import source_platform
+from grillmaster.sources.thumbnails import JpegThumbnailFixupPP
 from grillmaster.sources.ytdlp import (
     CAPTION_LANGUAGES,
     FRAGMENT_RETRIES,
     DownloadProgress,
-    JpegThumbnailFixupPP,
     LoguruYtDlpLogger,
     VideoInfo,
     download_video,

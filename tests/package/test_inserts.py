@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from grillmaster.package.errors import PoolError
-from grillmaster.package.inserts import Insert, copy_inserts
+from grillmaster.package.inserts import INSERT_OUTPUT_MAX_LENGTH, Insert, copy_inserts
 from grillmaster.package.pools import CURSOR_FILE_NAME
 
 if TYPE_CHECKING:
@@ -58,3 +58,28 @@ def test_a_declared_pool_that_is_missing_fails(tmp_path: Path):
             package_root=tmp_path / "package",
             target_dir=target,
         )
+
+
+def test_an_overlong_suffix_fails_before_any_cursor_moves(tmp_path: Path):
+    package_root = tmp_path / "package"
+    target = tmp_path / "target"
+    target.mkdir()
+    judge = make_pool(package_root, "judge", ["first"])
+    ending = package_root / "pools" / "ending"
+    ending.mkdir(parents=True)
+    (ending / "001.matroska").write_text("credits", encoding="utf-8")
+
+    with pytest.raises(PoolError, match=r"001\.matroska"):
+        copy_inserts(
+            [Insert(pool="judge", output="judge"), Insert(pool="ending", output="end")],
+            package_root=package_root,
+            target_dir=target,
+        )
+    assert not (judge / CURSOR_FILE_NAME).exists()
+    assert list(target.iterdir()) == []
+
+
+def test_insert_outputs_are_capped_for_the_path_reserve():
+    Insert(pool="judge", output="x" * INSERT_OUTPUT_MAX_LENGTH)
+    with pytest.raises(ValueError, match="longer than"):
+        Insert(pool="judge", output="x" * (INSERT_OUTPUT_MAX_LENGTH + 1))

@@ -135,8 +135,8 @@ def run_command(
     from grillmaster.events.sinks import ConsoleSink
     from grillmaster.pipeline.registry import PIPELINE, Pipeline
     from grillmaster.pipeline.runner import run_project
-    from grillmaster.pipeline.stage import RunOptions
     from grillmaster.project.state import Section
+    from grillmaster.stages.base import RunOptions
 
     loaded = load_or_exit()
     try:

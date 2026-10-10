@@ -1,6 +1,5 @@
 """What refine and glossary check share: path-slotted prompt templates, the
-frame-tool prompt, the tool session, and the skeleton check of an
-agent-written SRT."""
+frame-tool prompt, and the skeleton check of an agent-written SRT."""
 
 from __future__ import annotations
 
@@ -10,7 +9,6 @@ from typing import TYPE_CHECKING
 from grillmaster.agents.errors import ValidationFailure
 from grillmaster.core.prompts import join_sections, load_prompt
 from grillmaster.core.srt import read_srt_file
-from grillmaster.core.tool_session import SrtCheckTool, ToolSession
 from grillmaster.postprocess.errors import PostprocessError
 from grillmaster.subtitles.structure import check_aligned
 
@@ -19,7 +17,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from grillmaster.core.srt import SrtBlock
-    from grillmaster.core.tool_session import FramesTool
 
 _PACKAGE = "grillmaster.postprocess"
 # `{name}` slots; JSON examples such as `{"source": ...}` never match.
@@ -46,17 +43,6 @@ def frames_prompt(stage_fragment: str) -> str:
     """The `get_frames` usage block followed by the stage's own guidance."""
     return join_sections(
         load_prompt(_PACKAGE, "frames_tool.md"), load_prompt(_PACKAGE, stage_fragment)
-    )
-
-
-def tool_session(
-    project_root: Path, frames: FramesTool, reference: Path
-) -> ToolSession:
-    """`get_frames` plus `check_srt` against the pass's reference SRT."""
-    return ToolSession(
-        project_root=project_root,
-        frames=frames,
-        check_srt=SrtCheckTool(reference_srt=reference),
     )
 
 

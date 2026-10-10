@@ -1,48 +1,43 @@
-"""Shared stage-test fixtures: a real project layout and state in `tmp_path`,
-a minimal config, and `make_context` to build a `StageContext` for a stage.
+"""Stage-test fixtures: a real project layout and state in `tmp_path`, a
+config built from `config_data`, a scripted `FakeAgentRunner`, fake process
+seams, and `make_context` to build a step's `StageContext`.
 
-Override `secrets` (or `agents`) in a test module to change what the
-context carries.
+Override `config_sections` (`grill.toml` sections), `script` (agent outputs
+by task name), `secrets`, `fake_ffmpeg`, `ytdlp`, `http` or `speech_to_text`
+in a test module to change what the context carries; parametrize
+`config_data` indirectly for a variant; `make_context(key, ffmpeg=...)`
+swaps one seam for a call.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any
 
 import pytest
-from tests.fakes import RecordingSink
+from tests.fakes import FakeAgentRunner
 
-from grillmaster.agents.runner import AgentRunner
 from grillmaster.config.load import LoadedConfig
 from grillmaster.config.model import validate_config
 from grillmaster.config.secrets import Secrets
-from grillmaster.core.source_id import Platform, SourceId
+from grillmaster.core.stage_key import StageKey
 from grillmaster.events.bus import EventBus
-from grillmaster.pipeline.stage import RunOptions, StageContext, StateStore
-from grillmaster.pipeline.steps import StepOutcome
+from grillmaster.pipeline.state_store import StateStore
 from grillmaster.project.layout import ProjectLayout
-from grillmaster.project.state import ProjectState
 from grillmaster.project.store import save_state
+from grillmaster.stages.base import RunOptions, StageContext, StepOutcome
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
-    from grillmaster.agents.adapters.base import AgentAdapter
-    from grillmaster.core.model_spec import Backend
-    from grillmaster.core.stage_key import SideTaskKey, StageKey
-    from grillmaster.pipeline.side_tasks import SideTaskDef
+    from tests.fakes import RecordingSink
 
-    type MakeContext = Callable[[StageKey], StageContext]
-    type MakeSideContext = Callable[[SideTaskKey], StageContext]
+    from grillmaster.core.stage_key import SideTaskKey
+    from grillmaster.project.state import ProjectState
+    from grillmaster.stages.base import Externals, SideTaskDef
 
-ROLES = {
-    "prepass": "agy/gemini-3.1-pro/high",
-    "chunk": "agy/gemini-3.1-pro",
-    "postprocess": "codex/gpt-5.6-sol/medium",
-    "utility": "codex/gpt-5.5/medium",
-    "image": "codex/gpt-5.5/high",
-}
+    type MakeContext = Callable[..., StageContext]
 
 
 @pytest.fixture
@@ -52,14 +47,37 @@ def secrets(monkeypatch: pytest.MonkeyPatch) -> Secrets:
 
 
 @pytest.fixture
-def loaded(tmp_path: Path, secrets: Secrets) -> LoadedConfig:
-    config = validate_config({"agents": {"roles": ROLES}}, root=tmp_path)
-    return LoadedConfig(root=tmp_path, config=config, secrets=secrets)
+def config_sections() -> dict[str, Any]:
+    """`grill.toml` sections besides `[agents.roles]`; modules override it."""
+    return {}
 
 
 @pytest.fixture
-def state() -> ProjectState:
-    return ProjectState.create(SourceId(Platform.TVER, "epabc123"))
+def config_data(
+    request: pytest.FixtureRequest,
+    roles: dict[str, str],
+    config_sections: dict[str, Any],
+) -> dict[str, Any]:
+    """The `grill.toml` data: `roles` and `config_sections`.
+
+    Parametrize it indirectly with overrides: entries under `roles` replace
+    single roles, any other key replaces that whole section.
+    """
+    overrides = dict(getattr(request, "param", {}))
+    role_overrides = overrides.pop("roles", {})
+    return {
+        "agents": {"roles": {**roles, **role_overrides}},
+        **config_sections,
+        **overrides,
+    }
+
+
+@pytest.fixture
+def loaded(
+    tmp_path: Path, secrets: Secrets, config_data: dict[str, Any]
+) -> LoadedConfig:
+    config = validate_config(config_data, root=tmp_path)
+    return LoadedConfig(root=tmp_path, config=config, secrets=secrets)
 
 
 @pytest.fixture
@@ -75,22 +93,21 @@ def options(state: ProjectState) -> RunOptions:
 
 
 @pytest.fixture
-def recording() -> RecordingSink:
-    return RecordingSink()
+def bus(recording_sink: RecordingSink) -> EventBus:
+    return EventBus([recording_sink])
 
 
 @pytest.fixture
-def bus(recording: RecordingSink) -> EventBus:
-    return EventBus([recording])
-
-
-def _no_adapter(backend: Backend) -> AgentAdapter:
-    raise AssertionError(f"this stage test runs no agents ({backend})")
+def script() -> dict[str, object]:
+    """Agent outputs by task name (see `FakeAgentRunner`); none by default."""
+    return {}
 
 
 @pytest.fixture
-def agents(bus: EventBus) -> AgentRunner:
-    return AgentRunner({}, _no_adapter, max_concurrent=1, timeout_s=1.0, events=bus)
+def agents(
+    loaded: LoadedConfig, script: dict[str, object], bus: EventBus
+) -> FakeAgentRunner:
+    return FakeAgentRunner(script, roles=loaded.config.agents.roles.specs(), events=bus)
 
 
 @pytest.fixture
@@ -100,40 +117,18 @@ def make_context(
     state: ProjectState,
     loaded: LoadedConfig,
     options: RunOptions,
-    agents: AgentRunner,
+    agents: FakeAgentRunner,
     bus: EventBus,
+    externals: Externals,
 ) -> MakeContext:
-    """`StageContext` for stage `key`, its workdir `work/NN_<key>/`."""
+    """`StageContext` for stage `key` (workdir `work/NN_<key>/`) or side task
+    `key` (`work/side/<key>/`); keyword arguments replace `Externals` seams."""
     store = StateStore(layout, state)
 
-    def make(key: StageKey) -> StageContext:
-        return StageContext(
-            layout=layout,
-            store=store,
-            loaded=loaded,
-            options=options,
-            agents=agents,
-            events=bus,
-            workdir=layout.work_dir(key),
+    def make(key: StageKey | SideTaskKey, **seams: Any) -> StageContext:
+        workdir = (
+            layout.work_dir(key) if isinstance(key, StageKey) else layout.side_dir(key)
         )
-
-    return make
-
-
-@pytest.fixture
-def make_side_context(
-    *,
-    layout: ProjectLayout,
-    state: ProjectState,
-    loaded: LoadedConfig,
-    options: RunOptions,
-    agents: AgentRunner,
-    bus: EventBus,
-) -> MakeSideContext:
-    """`StageContext` for side task `key`, its workdir `work/side/<key>/`."""
-    store = StateStore(layout, state)
-
-    def make(key: SideTaskKey) -> StageContext:
         return StageContext(
             layout=layout,
             store=store,
@@ -141,7 +136,8 @@ def make_side_context(
             options=options,
             agents=agents,
             events=bus,
-            workdir=layout.side_dir(key),
+            externals=replace(externals, **seams),
+            workdir=workdir,
         )
 
     return make

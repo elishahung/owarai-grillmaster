@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
 from tests.fakes import FakeFfmpeg, RecordingSink
+from tests.sources.fakes import FakeJsonHttp, FakeYtDlp
 
 from grillmaster.core.source_id import Platform, SourceId
 from grillmaster.legacy.services.program_config import config as program_config
 from grillmaster.project.state import ProjectState
+from grillmaster.stages.base import Externals
+
+if TYPE_CHECKING:
+    from grillmaster.asr.client import SpeechToText, SpeechToTextFactory
 
 
 @pytest.fixture(autouse=True)
@@ -26,6 +32,39 @@ def _isolate_program_config(tmp_path):
 @pytest.fixture
 def fake_ffmpeg() -> FakeFfmpeg:
     return FakeFfmpeg()
+
+
+@pytest.fixture
+def ytdlp() -> FakeYtDlp:
+    return FakeYtDlp()
+
+
+@pytest.fixture
+def http() -> FakeJsonHttp:
+    return FakeJsonHttp()
+
+
+def _no_speech_to_text(_api_key: str) -> SpeechToText:
+    raise AssertionError("this test reaches no ASR")
+
+
+@pytest.fixture
+def speech_to_text() -> SpeechToTextFactory:
+    return _no_speech_to_text
+
+
+@pytest.fixture
+def externals(
+    fake_ffmpeg: FakeFfmpeg,
+    ytdlp: FakeYtDlp,
+    http: FakeJsonHttp,
+    speech_to_text: SpeechToTextFactory,
+) -> Externals:
+    """Fake process seams; override `fake_ffmpeg`, `ytdlp`, `http` or
+    `speech_to_text` to change one."""
+    return Externals(
+        ffmpeg=fake_ffmpeg, ytdlp=ytdlp, http=http, speech_to_text=speech_to_text
+    )
 
 
 @pytest.fixture

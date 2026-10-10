@@ -50,9 +50,9 @@ from grillmaster.core.briefing import Briefing
 from grillmaster.core.fs import atomic_write_text
 from grillmaster.core.paths import MAX_PATH_UNITS, measure
 from grillmaster.core.source_id import Platform, platform_of
-from grillmaster.core.srt import SrtBlock, parse_srt, read_srt_file
+from grillmaster.core.srt import SrtBlock, chunk_range_name, parse_srt, read_srt_file
 from grillmaster.core.stage_key import StageKey
-from grillmaster.project.layout import ProjectLayout, chunk_range_name
+from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.naming import PROJECT_INNER_PATH_RESERVE
 from grillmaster.project.state import (
     DateResearchRecord,

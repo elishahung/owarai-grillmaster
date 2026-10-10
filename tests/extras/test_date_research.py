@@ -10,11 +10,11 @@ from tests.fakes import FakeAgentRunner
 from grillmaster.agents.adapters.base import Capability
 from grillmaster.agents.task import SchemaOutput
 from grillmaster.core.model_spec import Role
+from grillmaster.core.talent import Talent
 from grillmaster.extras.date_research import (
     TASK_NAME,
     DateResearchResult,
     ResearchContext,
-    ResearchTalent,
     adopted_date,
     build_date_research_task,
     load_cached_result,
@@ -117,8 +117,8 @@ def test_context_renders_every_known_field() -> None:
         description="企画の説明",
         hint="第2回の続き",
         talents=(
-            ResearchTalent("出演者A", name_kana="しゅつえんしゃ", roles=("MC",)),
-            ResearchTalent("出演者B"),
+            Talent(id="a", name="出演者A", name_kana="しゅつえんしゃ", roles=("MC",)),
+            Talent(id="b", name="出演者B"),
         ),
     )
 

@@ -13,9 +13,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import Field, StringConstraints
 
 from grillmaster.core.json_artifact import read_model
+from grillmaster.core.models import FrozenModel
 from grillmaster.glossary.errors import GlossaryError
 
 _DATA_DIR = Path(__file__).parent
@@ -27,21 +28,15 @@ FIXED_GLOSSARY_GUIDE_PATH = _DATA_DIR / "fixed_glossary.md"
 
 _NonEmpty = Annotated[str, StringConstraints(min_length=1)]
 
-_STRICT = ConfigDict(extra="forbid", frozen=True)
 
-
-class GlossaryEntry(BaseModel):
-    model_config = _STRICT
-
+class GlossaryEntry(FrozenModel):
     jp: tuple[_NonEmpty, ...] = Field(min_length=1)
     zh: _NonEmpty
 
 
-class TalentUnit(BaseModel):
+class TalentUnit(FrozenModel):
     """One act: an optional group plus at least one member; `group` is
     `None` for a solo talent."""
-
-    model_config = _STRICT
 
     group: GlossaryEntry | None = None
     members: tuple[GlossaryEntry, ...] = Field(min_length=1)
@@ -51,9 +46,7 @@ class TalentUnit(BaseModel):
         return [*([self.group] if self.group is not None else []), *self.members]
 
 
-class FixedGlossary(BaseModel):
-    model_config = _STRICT
-
+class FixedGlossary(FrozenModel):
     talents: tuple[TalentUnit, ...] = ()
     others: tuple[GlossaryEntry, ...] = ()
 

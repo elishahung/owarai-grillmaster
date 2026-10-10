@@ -6,10 +6,7 @@ from typing import TYPE_CHECKING, override
 import pytest
 from tests.fakes import FAKE_JPEG, FakeFfmpeg
 from tests.sources.fakes import FakeYtDlp
-from tests.stages.conftest import ROLES
 
-from grillmaster.config.load import LoadedConfig
-from grillmaster.config.model import validate_config
 from grillmaster.core.stage_key import StageKey
 from grillmaster.media.errors import MediaError
 from grillmaster.project.state import SourceInfo
@@ -23,7 +20,7 @@ if TYPE_CHECKING:
 
     from tests.stages.conftest import MakeContext
 
-    from grillmaster.config.secrets import Secrets
+    from grillmaster.config.load import LoadedConfig
     from grillmaster.media.ffmpeg import ProgressCallback
     from grillmaster.project.layout import ProjectLayout
     from grillmaster.project.state import ProjectState
@@ -33,14 +30,10 @@ CONTIGUOUS = "0.000000\n0.021333\n0.042667\n"
 
 
 @pytest.fixture
-def loaded(tmp_path: Path, secrets: Secrets) -> LoadedConfig:
-    """The stage-test config, with cookies configured and a real `grill.toml`."""
+def config_sections(tmp_path: Path) -> dict[str, Any]:
+    """Cookies configured, and a real `grill.toml` to register programs in."""
     (tmp_path / "grill.toml").write_text(GRILL_TOML, encoding="utf-8")
-    config = validate_config(
-        {"agents": {"roles": ROLES}, "paths": {"cookies": "cookies.txt"}},
-        root=tmp_path,
-    )
-    return LoadedConfig(root=tmp_path, config=config, secrets=secrets)
+    return {"paths": {"cookies": "cookies.txt"}}
 
 
 def write_download(options: Mapping[str, Any]) -> None:
@@ -67,7 +60,7 @@ def test_downloads_parts_and_poster_and_registers_the_program(
     ctx = make_context(StageKey.DOWNLOAD)
     ctx.state.source = SourceInfo(series="ドキュメンタル", channel="Prime Video")
 
-    download.build(ytdlp, fake_ffmpeg).run(ctx)
+    download.STAGE.run(ctx)
 
     assert layout.full_video.read_bytes() == b"video"
     assert not (layout.download_parts_dir / "0.mp4").exists()
@@ -86,14 +79,11 @@ def test_downloads_parts_and_poster_and_registers_the_program(
 
 
 def test_without_program_names_nothing_is_registered(
-    make_context: MakeContext,
-    loaded: LoadedConfig,
-    ytdlp: FakeYtDlp,
-    fake_ffmpeg: FakeFfmpeg,
+    make_context: MakeContext, loaded: LoadedConfig, fake_ffmpeg: FakeFfmpeg
 ):
     fake_ffmpeg.stdout = CONTIGUOUS
 
-    download.build(ytdlp, fake_ffmpeg).run(make_context(StageKey.DOWNLOAD))
+    download.STAGE.run(make_context(StageKey.DOWNLOAD))
 
     assert loaded.path.read_text(encoding="utf-8") == GRILL_TOML
 
@@ -101,7 +91,6 @@ def test_without_program_names_nothing_is_registered(
 def test_a_gapped_part_fails_and_names_the_file(
     make_context: MakeContext,
     loaded: LoadedConfig,
-    ytdlp: FakeYtDlp,
     fake_ffmpeg: FakeFfmpeg,
     state: ProjectState,
 ):
@@ -111,7 +100,7 @@ def test_a_gapped_part_fails_and_names_the_file(
     with pytest.raises(
         SourceError, match=r"0\.mp4 is missing audio at 141\.78s→150\.14s"
     ):
-        download.build(ytdlp, fake_ffmpeg).run(make_context(StageKey.DOWNLOAD))
+        download.STAGE.run(make_context(StageKey.DOWNLOAD))
     assert loaded.path.read_text(encoding="utf-8") == GRILL_TOML
 
 
@@ -129,7 +118,7 @@ def test_parts_are_joined_atomically_then_deleted(
     fake_ffmpeg.stdout = CONTIGUOUS
     ytdlp = FakeYtDlp(on_download=write_two_parts)
 
-    download.build(ytdlp, fake_ffmpeg).run(make_context(StageKey.DOWNLOAD))
+    download.STAGE.run(make_context(StageKey.DOWNLOAD, ytdlp=ytdlp))
 
     *probes, concat = fake_ffmpeg.calls
     assert [probe[-1] for probe in probes] == [
@@ -167,39 +156,33 @@ def test_an_interrupted_join_is_never_reused(
     ytdlp = FakeYtDlp(on_download=write_two_parts)
 
     with pytest.raises(MediaError, match="killed"):
-        download.build(ytdlp, DyingConcat(CONTIGUOUS)).run(
-            make_context(StageKey.DOWNLOAD)
+        download.STAGE.run(
+            make_context(StageKey.DOWNLOAD, ytdlp=ytdlp, ffmpeg=DyingConcat(CONTIGUOUS))
         )
     assert not layout.full_video.exists()
     assert (layout.download_parts_dir / "0.mp4").exists()
 
     fake_ffmpeg.stdout = CONTIGUOUS
-    download.build(ytdlp, fake_ffmpeg).run(make_context(StageKey.DOWNLOAD))
+    download.STAGE.run(make_context(StageKey.DOWNLOAD, ytdlp=ytdlp))
     assert layout.full_video.read_bytes() == FAKE_JPEG
 
 
 def test_an_existing_full_video_skips_the_download(
-    make_context: MakeContext, layout: ProjectLayout, fake_ffmpeg: FakeFfmpeg
+    make_context: MakeContext,
+    layout: ProjectLayout,
+    ytdlp: FakeYtDlp,
+    fake_ffmpeg: FakeFfmpeg,
 ):
     layout.full_video.parent.mkdir(parents=True)
     layout.full_video.write_bytes(b"joined")
-    ytdlp = FakeYtDlp(on_download=write_download)
 
-    download.build(ytdlp, fake_ffmpeg).run(make_context(StageKey.DOWNLOAD))
+    download.STAGE.run(make_context(StageKey.DOWNLOAD))
 
     assert ytdlp.calls == []
     assert fake_ffmpeg.calls == []
     assert layout.full_video.read_bytes() == b"joined"
 
 
-def test_a_download_without_parts_fails(
-    make_context: MakeContext, fake_ffmpeg: FakeFfmpeg
-):
+def test_a_download_without_parts_fails(make_context: MakeContext):
     with pytest.raises(SourceError, match="without video parts"):
-        download.build(FakeYtDlp(), fake_ffmpeg).run(make_context(StageKey.DOWNLOAD))
-
-
-def test_definition(layout: ProjectLayout, loaded: LoadedConfig):
-    assert download.STAGE.key is StageKey.DOWNLOAD
-    assert download.STAGE.outputs(layout) == (layout.poster,)
-    assert download.STAGE.params(loaded.config) == {"tool": "yt-dlp"}
+        download.STAGE.run(make_context(StageKey.DOWNLOAD, ytdlp=FakeYtDlp()))

@@ -6,33 +6,22 @@ from typing import TYPE_CHECKING
 
 from grillmaster.core.stage_key import StageKey
 from grillmaster.media.audio import extract_audio
-from grillmaster.media.ffmpeg import SubprocessFfmpegRunner
-from grillmaster.pipeline.stage import StageDef, require
+from grillmaster.stages._common import tool_params
+from grillmaster.stages.base import StageDef, require
 
 if TYPE_CHECKING:
-    from grillmaster.config.model import AppConfig
-    from grillmaster.media.ffmpeg import FfmpegRunner
-    from grillmaster.pipeline.stage import StageContext
+    from grillmaster.stages.base import StageContext
 
 
-def build(ffmpeg: FfmpegRunner) -> StageDef:
-    """The stage running ffmpeg through `ffmpeg` (tests pass a fake)."""
-
-    def run(ctx: StageContext) -> None:
-        video = require(ctx.layout.video, StageKey.COMBINE)
-        extract_audio(ffmpeg, video, ctx.layout.audio)
-
-    def params(_config: AppConfig) -> dict[str, str]:
-        return {"tool": "ffmpeg"}
-
-    return StageDef(
-        key=StageKey.AUDIO,
-        label="Extract audio",
-        weight=1,
-        run=run,
-        outputs=lambda _layout: (),
-        params=params,
-    )
+def _run(ctx: StageContext) -> None:
+    video = require(ctx.layout.video, StageKey.COMBINE)
+    extract_audio(ctx.ffmpeg, video, ctx.layout.audio)
 
 
-STAGE = build(SubprocessFfmpegRunner())
+STAGE = StageDef(
+    key=StageKey.AUDIO,
+    label="Extract audio",
+    weight=1,
+    run=_run,
+    params=tool_params("ffmpeg"),
+)

@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
 
 import pytest
-from tests.fakes import FakeAgentRunner
+from tests.fakes import FakeAgentRunner, draws
 
 from grillmaster.agents.adapters.base import Capability
 from grillmaster.agents.errors import AgentQuotaError
@@ -19,9 +18,6 @@ from grillmaster.extras.cover import (
     generate_cover,
 )
 from grillmaster.extras.errors import ExtrasError
-
-if TYPE_CHECKING:
-    from grillmaster.agents.task import AgentTask
 
 
 @pytest.fixture
@@ -39,14 +35,6 @@ def poster(tmp_path: Path) -> Path:
 @pytest.fixture
 def cover(tmp_path: Path) -> Path:
     return tmp_path / "cover.png"
-
-
-def draws(task: AgentTask[Any]) -> tuple[Path, ...]:
-    """A cover agent that writes `cover.png` into its workdir."""
-    assert task.workdir is not None
-    drawn = task.workdir / COVER_NAME
-    drawn.write_bytes(b"png")
-    return (drawn,)
 
 
 def run(agents: FakeAgentRunner, *, poster: Path, cover: Path, workdir: Path):

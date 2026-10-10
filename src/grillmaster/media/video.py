@@ -1,13 +1,15 @@
-"""Joining downloaded parts and cutting a section, both without re-encoding.
+"""Joining downloaded parts and cutting a section, both without re-encoding,
+and the concat demuxer run they and the package renders share.
 
-Both write under a temporary name and rename into place (`core.fs.
-partial_path`), so an interrupted run never leaves a truncated video under
-the final name.
+`join_parts` and `cut` write under a temporary name and rename into place
+(`core.fs.partial_path`), so an interrupted run never leaves a truncated
+video under the final name.
 """
 
 from __future__ import annotations
 
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -17,9 +19,10 @@ from grillmaster.core.fs import partial_path
 from grillmaster.media.ffmpeg import ffmpeg
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    import threading
+    from collections.abc import Iterator, Sequence
 
-    from grillmaster.media.ffmpeg import FfmpegRunner
+    from grillmaster.media.ffmpeg import FfmpegRunner, ProgressCallback
 
 # Stream copy of a long show over a slow disk can take minutes; never time out.
 _COPY_TIMEOUT_S = None
@@ -42,29 +45,59 @@ def join_parts(runner: FfmpegRunner, parts: Sequence[Path], output: Path) -> Non
         parts[0].replace(output)
         return
     logger.info(f"Joining {len(parts)} parts into {output}")
-    with tempfile.TemporaryDirectory(prefix="grill-concat-") as scratch:
-        concat_list = Path(scratch) / "parts.txt"
-        concat_list.write_text(concat_list_text(parts), encoding="utf-8")
-        _write(
+    with _into_place(output) as partial:
+        concat_copy(
             runner,
-            (
+            parts,
+            partial,
+            "-map",
+            "0",
+            "-c",
+            "copy",
+            "-movflags",
+            "faststart",
+            *_MP4,
+        )
+    for part in parts:
+        part.unlink()
+
+
+def concat_copy(
+    runner: FfmpegRunner,
+    inputs: Sequence[Path],
+    output: Path,
+    *extra: str,
+    on_progress: ProgressCallback | None = None,
+    abort: threading.Event | None = None,
+) -> None:
+    """Run the concat demuxer over `inputs` into `output`.
+
+    `extra` is everything between the concat input and the output: further
+    inputs, stream maps, codecs (`-c copy` or a partial re-encode) and
+    muxer flags. The list file lives in a temporary directory removed
+    afterwards. No timeout: a long show over a slow share takes minutes;
+    `on_progress` and `abort` reach the runner (see `FfmpegRunner.run`).
+    """
+    if not inputs:
+        raise ValueError("concat needs at least one input")
+    with tempfile.TemporaryDirectory(prefix="grill-concat-") as scratch:
+        concat_list = Path(scratch) / "inputs.txt"
+        concat_list.write_text(concat_list_text(inputs), encoding="utf-8")
+        runner.run(
+            ffmpeg(
                 "-f",
                 "concat",
                 "-safe",
                 "0",
                 "-i",
                 str(concat_list),
-                "-map",
-                "0",
-                "-c",
-                "copy",
-                "-movflags",
-                "faststart",
+                *extra,
+                str(output),
             ),
-            output,
+            timeout=_COPY_TIMEOUT_S,
+            on_progress=on_progress,
+            abort=abort,
         )
-    for part in parts:
-        part.unlink()
 
 
 def concat_list_text(parts: Sequence[Path]) -> str:
@@ -122,9 +155,17 @@ def cut(
 
 
 def _write(runner: FfmpegRunner, args: tuple[str, ...], output: Path) -> None:
+    with _into_place(output) as partial:
+        runner.run(ffmpeg(*args, *_MP4, str(partial)), timeout=_COPY_TIMEOUT_S)
+
+
+@contextmanager
+def _into_place(output: Path) -> Iterator[Path]:
+    """The temporary name to write `output` under; renamed into place when
+    the body succeeds, removed either way."""
     partial = partial_path(output)
     try:
-        runner.run(ffmpeg(*args, *_MP4, str(partial)), timeout=_COPY_TIMEOUT_S)
+        yield partial
         partial.replace(output)
     finally:
         partial.unlink(missing_ok=True)

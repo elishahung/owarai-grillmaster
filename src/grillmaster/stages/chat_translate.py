@@ -24,15 +24,15 @@ from grillmaster.live_chat.translate import (
     ChatTranslationInputs,
     translate_live_chat,
 )
-from grillmaster.pipeline.stage import StageDef, require
-from grillmaster.project.layout import session_dir
+from grillmaster.stages._common import chat_enabled, role_params
+from grillmaster.stages.base import StageDef, require
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
-    from grillmaster.config.model import AppConfig
-    from grillmaster.pipeline.stage import RunOptions, StageContext
     from grillmaster.project.layout import ProjectLayout
+    from grillmaster.stages.base import StageContext
 
 
 def _run(ctx: StageContext) -> None:
@@ -45,27 +45,18 @@ def _run(ctx: StageContext) -> None:
         source_subtitles=read_srt_file(require(layout.ja_srt, StageKey.TRANSCRIPT)),
         finalized_subtitles=read_srt_file(require(layout.cht_srt, StageKey.FINALIZE)),
     )
-    sessions = ctx.workdir
     files = ChatTranslationFiles(
         batch_cache=layout.chat_batch,
         polish_cache=layout.chat_polish,
-        session_dir=lambda label: session_dir(sessions, label=label),
+        session_dir=ctx.session_dir,
     )
     translated = translate_live_chat(inputs, files, ctx.agents)
     write_model(layout.chat_cht_json, translated)
     logger.success(f"Translated chat saved: {layout.chat_cht_json}")
 
 
-def _enabled(options: RunOptions) -> bool:
-    return options.chat
-
-
-def _outputs(layout: ProjectLayout) -> tuple[Path, ...]:
+def _outputs(layout: ProjectLayout) -> Sequence[Path]:
     return (layout.chat_cht_json,)
-
-
-def _params(config: AppConfig) -> dict[str, str]:
-    return {"model": str(config.agents.roles.spec(Role.CHAT))}
 
 
 STAGE = StageDef(
@@ -74,6 +65,6 @@ STAGE = StageDef(
     weight=3,
     run=_run,
     outputs=_outputs,
-    enabled=_enabled,
-    params=_params,
+    enabled=chat_enabled,
+    params=role_params(Role.CHAT),
 )

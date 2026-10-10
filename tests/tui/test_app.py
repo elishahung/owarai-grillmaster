@@ -10,7 +10,7 @@ import asyncio
 from typing import TYPE_CHECKING
 
 from rich.console import Console
-from tests.tui.fakes import PLAN
+from tests.tui.fakes import PLAN, FakeClock
 
 from grillmaster.events.context import stage_scope, task_scope
 from grillmaster.events.types import (
@@ -29,9 +29,14 @@ from grillmaster.events.types import (
     StepSkipped,
     StepStarted,
 )
-from grillmaster.tui.app import AppExit, GrillMasterApp
+from grillmaster.tui.app import (
+    CLOCK_REDRAW_SECONDS,
+    AppExit,
+    GrillMasterApp,
+    clipboard_payload,
+)
 from grillmaster.tui.sink import TuiSink
-from grillmaster.tui.state import PipelineState
+from grillmaster.tui.state import ACTIVITY_LINES, PipelineState
 from grillmaster.tui.widgets import ActivityLog, ChunkBoard, SessionTable
 from grillmaster.tui.widgets.chunk_board import render_chunk_board
 from grillmaster.tui.widgets.session_table import listed_sessions, render_session_table
@@ -319,3 +324,91 @@ def test_summary_lists_step_results_and_agent_totals():
     assert "Pipeline completed" in text
     assert "V:/out/show.mp4" in text
     assert "agent sessions  2 (0 repairs)" in text
+
+
+def test_ctrl_q_asks_twice_like_q_while_running():
+    sink = TuiSink()
+    _scripted(sink)
+    app = _app(sink)
+
+    async def drive() -> None:
+        async with app.run_test(size=SIZE) as pilot:
+            await _pump(app, pilot)
+            titles = [command.title for command in app.get_system_commands(app.screen)]
+            assert "Quit" not in titles
+            await pilot.press("ctrl+q")
+            await pilot.pause()
+            assert app.return_value is None
+            assert app.is_running
+            await pilot.press("ctrl+q")
+            await pilot.pause()
+
+    _run(drive())
+    assert app.return_value is AppExit.ABORTED
+
+
+def test_hidden_activity_log_is_not_fed_and_replays_its_ring_when_shown():
+    sink = TuiSink()
+    _scripted(sink)
+    burst = ACTIVITY_LINES + 500
+    for n in range(burst):
+        sink.emit(AgentActivity("chunks/0041-0080", ActivityKind.THOUGHT, f"t{n}"))
+    app = _app(sink)
+
+    async def drive() -> None:
+        async with app.run_test(size=SIZE) as pilot:
+            await _pump(app, pilot)
+            activity = app.query_one(ActivityLog)
+            # Never laid out: a write would be deferred without bound.
+            assert len(activity._deferred_renders) == 0  # pyright: ignore[reportPrivateUsage]
+            await pilot.press("a")
+            await pilot.pause()
+            assert len(activity.lines) == ACTIVITY_LINES
+            assert activity.lines[-1].text.endswith(f"t{burst - 1}")
+            await pilot.press("a")
+            sink.emit(AgentActivity("chunks/0041-0080", ActivityKind.THOUGHT, "late"))
+            await _pump(app, pilot)
+            assert len(activity._deferred_renders) == 0  # pyright: ignore[reportPrivateUsage]
+            await pilot.press("a")
+            await pilot.pause()
+            assert len(activity.lines) == ACTIVITY_LINES
+            assert activity.lines[-1].text.endswith("late")
+
+    _run(drive())
+
+
+class _DrawCounter(GrillMasterApp):
+    draws: int
+
+    def refresh_view(self) -> None:
+        self.draws += 1
+        super().refresh_view()
+
+
+def test_pump_redraws_only_on_change_or_for_the_clock():
+    sink = TuiSink()
+    _scripted(sink)
+    clock = FakeClock()
+    app = _DrawCounter(sink, PipelineState(clock), tick_seconds=None)
+    app.draws = 0
+
+    async def drive() -> None:
+        async with app.run_test(size=SIZE) as pilot:
+            await _pump(app, pilot)
+            drawn = app.draws
+            await _pump(app, pilot)
+            assert app.draws == drawn
+            sink.emit(LogLine("INFO", "news", "chunks"))
+            await _pump(app, pilot)
+            assert app.draws == drawn + 1
+            clock.now += CLOCK_REDRAW_SECONDS
+            await _pump(app, pilot)
+            assert app.draws == drawn + 2
+
+    _run(drive())
+
+
+def test_clipboard_payload_is_utf16_with_a_bom_for_clip_exe():
+    text = "みなみかわ"
+    assert clipboard_payload(text, "win32") == b"\xff\xfe" + text.encode("utf-16-le")
+    assert clipboard_payload(text, "linux") == text.encode("utf-8")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import shutil
+import threading
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -10,7 +11,7 @@ from tests.fakes import FAKE_JPEG
 from grillmaster.media.errors import MediaError
 from grillmaster.media.ffmpeg import SubprocessFfmpegRunner
 from grillmaster.media.probe import duration
-from grillmaster.media.video import concat_list_text, cut, join_parts
+from grillmaster.media.video import concat_copy, concat_list_text, cut, join_parts
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -186,3 +187,56 @@ def test_combine_and_cut_with_real_ffmpeg(tmp_path: Path, media_fixture: Path):
     assert duration(runner, full) == pytest.approx(4.0, abs=0.2)
     # Stream copy snaps to keyframes, so the cut may run a little long.
     assert 1.5 <= duration(runner, video) <= 3.5
+
+
+class ListReadingFfmpeg:
+    """Records each argv with the concat list's text, read while it exists."""
+
+    def __init__(self) -> None:
+        self.runs: list[tuple[list[str], str, dict[str, object]]] = []
+
+    def run(self, argv: Sequence[str], **options: object) -> str:
+        listing = Path(option(list(argv), "-i")).read_text(encoding="utf-8")
+        self.runs.append((list(argv), listing, options))
+        return ""
+
+
+def test_concat_copy_puts_extra_args_between_the_list_and_the_output(tmp_path: Path):
+    inputs = [tmp_path / "a.mp4", tmp_path / "b.mp4"]
+    output = tmp_path / "out.mp4"
+    runner = ListReadingFfmpeg()
+
+    concat_copy(runner, inputs, output, "-i", "audio.m4a", "-c", "copy")
+
+    ((argv, listing, options),) = runner.runs
+    concat_at = argv.index("concat")
+    assert argv[concat_at - 1 : concat_at + 4] == ["-f", "concat", "-safe", "0", "-i"]
+    assert argv[concat_at + 5 :] == ["-i", "audio.m4a", "-c", "copy", str(output)]
+    assert listing == concat_list_text(inputs)
+    assert not Path(argv[concat_at + 4]).exists()
+    assert options["timeout"] is None
+
+
+def test_concat_copy_passes_progress_and_abort_to_the_runner(tmp_path: Path):
+    runner = ListReadingFfmpeg()
+    abort = threading.Event()
+
+    def on_progress(_seconds: float) -> None:
+        pass
+
+    concat_copy(
+        runner,
+        [tmp_path / "a.mp4"],
+        tmp_path / "out.mp4",
+        on_progress=on_progress,
+        abort=abort,
+    )
+
+    ((_, _, options),) = runner.runs
+    assert options["on_progress"] is on_progress
+    assert options["abort"] is abort
+
+
+def test_concat_copy_needs_an_input(tmp_path: Path):
+    with pytest.raises(ValueError, match="at least one input"):
+        concat_copy(ListReadingFfmpeg(), [], tmp_path / "out.mp4")

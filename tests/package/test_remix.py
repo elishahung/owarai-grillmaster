@@ -22,7 +22,9 @@ from grillmaster.package.remix import (
 from grillmaster.package.render import (
     PACKAGE_ENCODE_ARGS,
     BurnPlan,
+    package_audio_graph,
     package_output_duration,
+    split_range,
 )
 
 if TYPE_CHECKING:
@@ -163,12 +165,27 @@ def test_renders_noise_headed_parts_and_reserves_the_noise(
         if "-af" in argv and "-vf" in argv
     )
     assert noise_cuts == [("0.000", "60.000"), ("60.000", "90.000")]
+    # Each segment's content renders as parts sharing the NVENC sessions,
+    # with one audio pass per segment.
     trims = sorted(
         arg_after(argv, "-vf").split(",trim=")[1].split(",")[0]
         for argv in calls
         if "-vf" in argv and "-af" not in argv
     )
-    assert trims == ["start=3.000:duration=498.500", "start=501.500:duration=498.500"]
+    parts = [part for segment in PLAN.segments for part in split_range(segment, 3)]
+    assert len(parts) == 6
+    assert trims == sorted(
+        f"start={part.start:.3f}:duration={part.duration:.3f}" for part in parts
+    )
+    audio_graphs = sorted(
+        arg_after(argv, "-filter_complex")
+        for argv in calls
+        if "-filter_complex" in argv
+    )
+    assert audio_graphs == sorted(
+        package_audio_graph(segment.start, segment.duration)
+        for segment in PLAN.segments
+    )
     noise_argv = next(argv for argv in calls if "-af" in argv and "-vf" in argv)
     assert arg_after(noise_argv, "-vf") == (
         "scale=1920:1080:flags=bicubic,format=yuv420p,fps=29.94"
@@ -269,9 +286,9 @@ def test_every_part_shares_one_abort_event(
         events=RecordingSink(),
     )
 
-    # Noise, video part, audio, mux and concat per segment: one failure
-    # anywhere must be able to stop all of them.
+    # Noise, three video parts, audio, mux and concat per segment: one
+    # failure anywhere must be able to stop all of them.
     events = {id(event) for event in fake.aborts}
-    assert len(fake.aborts) == 10
+    assert len(fake.aborts) == 14
     assert len(events) == 1
     assert None not in fake.aborts

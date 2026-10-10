@@ -5,6 +5,9 @@ A deliverable is named `YYMMDD_<id>_<name>` (`<id>_<name>` when undated). The
 name tail is trimmed so the destination plus everything later written inside
 it still fits the platform path limit (`core.paths`).
 
+Both destinations are built under a staging name (`core.fs.staged_dir`)
+before they are swapped in, so the budget counts that longer name.
+
 `PROJECT_INNER_PATH_RESERVE` is derived from `ProjectLayout` (its paths and
 its session/frames directory enumerations) rather than hand-counted, so a
 deeper layout path raises the reserve automatically.
@@ -16,6 +19,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from grillmaster.core.fs import STAGING_SUFFIX
 from grillmaster.core.paths import fit_dir_name, measure
 from grillmaster.project.layout import ProjectLayout, session_dir
 
@@ -97,11 +101,13 @@ def archive_group(state: ProjectState) -> Path:
 
 
 def _fit_deliverable_dir(state: ProjectState, parent: Path, reserve: int) -> Path:
+    """`parent/<deliverable name>`, trimmed so `reserve` units still fit below
+    its staging name (`<name>.partial`)."""
     return parent / fit_dir_name(
         parent=parent,
         keep=deliverable_stem(state),
         tail=state.name or "",
-        reserve=reserve,
+        reserve=len(STAGING_SUFFIX) + reserve,
     )
 
 
@@ -117,7 +123,8 @@ def package_destination(
 ) -> Path:
     """The deliverable folder, flat under `package_root`.
 
-    `reserve` is the room the caller keeps for the folder's own entries; the
-    `package` package passes its inner-path reserve.
+    `reserve` is the room the caller keeps for the folder's own entries
+    (counting the leading separator); the `package` package passes its
+    inner-path reserve.
     """
     return _fit_deliverable_dir(state, package_root, reserve)

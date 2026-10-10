@@ -7,7 +7,8 @@ every session whose task name starts with `chunks/`.
 
 The state is not locked: it is owned by the Textual thread, which applies
 the events `TuiSink` queued on the emitting threads (each stamped there with
-its time and step scope) before every render.
+its time and step scope) before every render. `version` counts the changes,
+so the app redraws only when it moved.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import time
 from collections import Counter, deque
 from dataclasses import dataclass, field
 from enum import StrEnum
+from itertools import islice
 from typing import TYPE_CHECKING, assert_never
 
 from grillmaster.events.types import (
@@ -76,7 +78,10 @@ class RingLog[T]:
         fresh = min(self.count - seen, len(self._items))
         if fresh <= 0:
             return []
-        return list(self._items)[-fresh:]
+        # Walk from the newest end: O(fresh), not O(len).
+        newest_first = list(islice(reversed(self._items), fresh))
+        newest_first.reverse()
+        return newest_first
 
     def __iter__(self) -> Iterator[T]:
         return iter(self._items)
@@ -173,6 +178,8 @@ class SessionView:
     model: str
     effort: str | None
     started_at: float
+    # `(from, to)` of a chunk task (`chunk_range`), else `None`.
+    span: tuple[int, int] | None = None
     attempts: int = 1
     state: SessionState = SessionState.RUNNING
     outcome: SessionOutcome | None = None
@@ -259,6 +266,8 @@ class PipelineState:
         self.error: str | None = None
         self.current_step_key: str | None = None
         self._bar_owner: dict[str, str] = {}
+        # Bumped by every change; the app redraws when it moved.
+        self.version = 0
 
     # -- reading -------------------------------------------------------------
 
@@ -278,9 +287,9 @@ class PipelineState:
     def chunk_cells(self, key: str) -> list[ChunkCell]:
         """The chunk board of step `key`, in block order."""
         cells = [
-            ChunkCell(*span, session)
+            ChunkCell(*session.span, session)
             for session in self.sessions_for(key)
-            if (span := chunk_range(session.task)) is not None
+            if session.span is not None
         ]
         return sorted(cells, key=lambda cell: cell.from_index)
 
@@ -342,6 +351,7 @@ class PipelineState:
         `stage` the step scope it was emitted in, which attributes progress
         bars and agent sessions that carry no step of their own."""
         at = self._clock() if at is None else at
+        self.version += 1
         match event:
             case RunStarted(project=project, plan=plan):
                 self._start_run(project, plan)
@@ -386,6 +396,7 @@ class PipelineState:
     def work_finished(self, error: str | None, *, at: float | None = None) -> None:
         """The work returned (`error=None`) or raised; the dashboard is done."""
         at = self._clock() if at is None else at
+        self.version += 1
         self.finished = True
         self.finished_at = at
         self.failed = error is not None
@@ -399,6 +410,7 @@ class PipelineState:
         """Clear the finished run before its work is started again; the
         retry's `RunStarted` rebuilds the steps (completed stages come back
         as already complete). The wall clock keeps running."""
+        self.version += 1
         self.finished = False
         self.failed = False
         self.error = None
@@ -499,6 +511,7 @@ class PipelineState:
                 model=event.model,
                 effort=event.effort,
                 started_at=at,
+                span=chunk_range(event.task),
             )
             return
         # The next attempt of a task whose session failed.

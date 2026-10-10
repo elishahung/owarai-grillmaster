@@ -393,3 +393,20 @@ def test_ring_log_hands_out_only_unseen_lines():
     assert log.since(seen) == [4, 5, 6]
     assert log.since(log.count) == []
     assert log.last() == 6
+
+
+def test_session_span_is_parsed_once_at_session_start(run_state: PipelineState):
+    run_state.apply(_session_started("chunks/0041-0080"))
+    run_state.apply(_session_started("prepass", stage="chunks"))
+    assert run_state.sessions["chunks/0041-0080"].span == (41, 80)
+    assert run_state.sessions["prepass"].span is None
+
+
+def test_version_moves_with_every_change(run_state: PipelineState):
+    seen = run_state.version
+    run_state.apply(LogLine("INFO", "hello"))
+    assert run_state.version == seen + 1
+    run_state.work_finished("boom")
+    assert run_state.version == seen + 2
+    run_state.reset_for_retry()
+    assert run_state.version == seen + 3

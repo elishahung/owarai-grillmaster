@@ -14,53 +14,46 @@ from typing import TYPE_CHECKING
 
 from grillmaster.config.programs import register_program
 from grillmaster.core.stage_key import StageKey
-from grillmaster.media.ffmpeg import SubprocessFfmpegRunner
-from grillmaster.pipeline.stage import StageDef
-from grillmaster.sources.registry import source_platform
-from grillmaster.sources.ytdlp import YtDlpLibrary, download_full_video, shared_options
+from grillmaster.sources.ytdlp import download_full_video
+from grillmaster.stages._common import source_request, tool_params
+from grillmaster.stages.base import StageDef
 
 if TYPE_CHECKING:
-    from grillmaster.config.model import AppConfig
-    from grillmaster.media.ffmpeg import FfmpegRunner
-    from grillmaster.pipeline.stage import StageContext
-    from grillmaster.sources.ytdlp import YtDlp
+    from collections.abc import Sequence
+    from pathlib import Path
+
+    from grillmaster.project.layout import ProjectLayout
+    from grillmaster.stages.base import StageContext
 
 
-def build(ytdlp: YtDlp, ffmpeg: FfmpegRunner) -> StageDef:
-    """The stage downloading through `ytdlp` and probing through `ffmpeg`."""
-
-    def run(ctx: StageContext) -> None:
-        state = ctx.state
-        platform = source_platform(state.platform)
-        platform.before_download()
-        download_full_video(
-            ytdlp,
-            ffmpeg,
-            platform.url(state.id),
-            parts_dir=ctx.layout.download_parts_dir,
-            output=ctx.layout.full_video,
-            poster=ctx.layout.poster,
-            options=shared_options(platform, ctx.config.paths.cookies),
-            captions=ctx.config.features.official_subtitles,
-            events=ctx.events,
-        )
-        source = state.source
-        if source.series or source.channel:
-            register_program(
-                ctx.config_file, series=source.series, channel=source.channel
-            )
-
-    def params(_config: AppConfig) -> dict[str, str]:
-        return {"tool": "yt-dlp"}
-
-    return StageDef(
-        key=StageKey.DOWNLOAD,
-        label="Download video",
-        weight=4,
-        run=run,
-        outputs=lambda layout: (layout.poster,),
-        params=params,
+def _run(ctx: StageContext) -> None:
+    request = source_request(ctx)
+    request.platform.before_download()
+    download_full_video(
+        ctx.ytdlp,
+        ctx.ffmpeg,
+        request.url,
+        parts_dir=ctx.layout.download_parts_dir,
+        output=ctx.layout.full_video,
+        poster=ctx.layout.poster,
+        options=request.options,
+        captions=ctx.config.features.official_subtitles,
+        events=ctx.events,
     )
+    source = ctx.state.source
+    if source.series or source.channel:
+        register_program(ctx.config_file, series=source.series, channel=source.channel)
 
 
-STAGE = build(YtDlpLibrary(), SubprocessFfmpegRunner())
+def _outputs(layout: ProjectLayout) -> Sequence[Path]:
+    return (layout.poster,)
+
+
+STAGE = StageDef(
+    key=StageKey.DOWNLOAD,
+    label="Download video",
+    weight=4,
+    run=_run,
+    outputs=_outputs,
+    params=tool_params("yt-dlp"),
+)

@@ -4,29 +4,25 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 import pytest
-from tests.fakes import FakeAgentRunner
 from tests.stages.conftest import complete_side_task
 
 from grillmaster.agents.errors import AgentQuotaError
-from grillmaster.config.model import validate_config
 from grillmaster.core.json_artifact import write_model
 from grillmaster.core.stage_key import SideTaskKey, StageKey
+from grillmaster.core.talent import Talent
 from grillmaster.events.types import PlanKind, SkipReason, StepSkipped
 from grillmaster.extras.date_research import TASK_NAME, DateResearchResult
 from grillmaster.pipeline.side_tasks import SideTaskManager
-from grillmaster.pipeline.stage import RunOptions
 from grillmaster.pipeline.steps import UsageCollector
-from grillmaster.project.state import DateResearchRecord, SourceInfo, Talent, now
+from grillmaster.project.state import DateResearchRecord, SourceInfo, now
 from grillmaster.project.store import load_state
+from grillmaster.stages.base import RunOptions
 from grillmaster.stages.date_research import TASK
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    from tests.fakes import FakeAgentRunner, RecordingSink
+    from tests.stages.conftest import MakeContext
 
-    from tests.fakes import RecordingSink
-    from tests.stages.conftest import MakeSideContext
-
-    from grillmaster.agents.runner import AgentRunner
     from grillmaster.config.load import LoadedConfig
     from grillmaster.events.bus import EventBus
     from grillmaster.project.layout import ProjectLayout
@@ -50,13 +46,8 @@ UNKNOWN = DateResearchResult(status="unknown")
 
 
 @pytest.fixture
-def fake_agents(loaded: LoadedConfig) -> FakeAgentRunner:
-    return FakeAgentRunner({TASK_NAME: FOUND}, roles=loaded.config.agents.roles.specs())
-
-
-@pytest.fixture
-def agents(fake_agents: FakeAgentRunner) -> AgentRunner:
-    return fake_agents
+def script() -> dict[str, object]:
+    return {TASK_NAME: FOUND}
 
 
 def cache(layout: ProjectLayout, result: DateResearchResult) -> None:
@@ -66,35 +57,6 @@ def cache(layout: ProjectLayout, result: DateResearchResult) -> None:
 def test_starts_after_the_metadata_stage() -> None:
     assert TASK.key is SideTaskKey.DATE_RESEARCH
     assert TASK.start_after is StageKey.METADATA
-
-
-@pytest.mark.parametrize(
-    ("flag", "feature", "expected"),
-    [(False, False, False), (True, False, True), (False, True, True)],
-)
-def test_enabled_by_the_run_flag_or_the_feature(
-    tmp_path: Path,
-    state: ProjectState,
-    roles: dict[str, str],
-    *,
-    flag: bool,
-    feature: bool,
-    expected: bool,
-) -> None:
-    config = validate_config(
-        {"agents": {"roles": roles}, "features": {"date_research": feature}},
-        root=tmp_path,
-    )
-    options = RunOptions(source=state.source_id, date_research=flag)
-
-    assert TASK.enabled(options, config) is expected
-
-
-def test_params_name_the_utility_role(loaded: LoadedConfig) -> None:
-    assert TASK.params(loaded.config) == {
-        "model": "codex/gpt-5.5/medium",
-        "web_search": "on",
-    }
 
 
 def test_moot_once_dated_or_researched(state: ProjectState) -> None:
@@ -121,11 +83,11 @@ def test_the_platform_date_wins_over_the_researched_one(state: ProjectState) -> 
 
 
 def test_found_date_is_applied_and_recorded(
-    make_side_context: MakeSideContext,
+    make_context: MakeContext,
     layout: ProjectLayout,
-    fake_agents: FakeAgentRunner,
+    agents: FakeAgentRunner,
 ) -> None:
-    summary = complete_side_task(TASK, make_side_context(SideTaskKey.DATE_RESEARCH))
+    summary = complete_side_task(TASK, make_context(SideTaskKey.DATE_RESEARCH))
 
     assert summary == "2026-02-04 (medium trust)"
     saved = load_state(layout)
@@ -138,19 +100,19 @@ def test_found_date_is_applied_and_recorded(
     assert record.broadcast_date == date(2026, 2, 4)
     assert layout.date_research_result.is_file()
     side = layout.side_dir(SideTaskKey.DATE_RESEARCH)
-    task = fake_agents.task(TASK_NAME)
+    task = agents.task(TASK_NAME)
     assert task.workdir is None
     assert task.session_dir == side / "session"
 
 
 def test_unknown_verdict_is_recorded_without_a_date(
-    make_side_context: MakeSideContext,
+    make_context: MakeContext,
     layout: ProjectLayout,
-    fake_agents: FakeAgentRunner,
+    agents: FakeAgentRunner,
 ) -> None:
-    fake_agents.script[TASK_NAME] = UNKNOWN
+    agents.script[TASK_NAME] = UNKNOWN
 
-    ctx = make_side_context(SideTaskKey.DATE_RESEARCH)
+    ctx = make_context(SideTaskKey.DATE_RESEARCH)
     assert complete_side_task(TASK, ctx) == "unknown"
 
     saved = load_state(layout)
@@ -165,21 +127,21 @@ def test_unknown_verdict_is_recorded_without_a_date(
 
 
 def test_research_is_seeded_with_the_project_metadata(
-    make_side_context: MakeSideContext,
+    make_context: MakeContext,
     state: ProjectState,
-    fake_agents: FakeAgentRunner,
+    agents: FakeAgentRunner,
 ) -> None:
     state.name = "archive_rerun"
     state.translation_hint = "第2回の続き"
     state.source = SourceInfo(
         title="番組タイトル",
         broadcast_label="2018年放送",
-        talents=[Talent(id="t1", name="出演者A", roles=["MC"])],
+        talents=[Talent(id="t1", name="出演者A", roles=("MC",))],
     )
 
-    TASK.run(make_side_context(SideTaskKey.DATE_RESEARCH))
+    TASK.run(make_context(SideTaskKey.DATE_RESEARCH))
 
-    prompt = fake_agents.task(TASK_NAME).prompt
+    prompt = agents.task(TASK_NAME).prompt
     assert "- Source URL: https://tver.jp/episodes/epabc123" in prompt
     assert "- File name: archive_rerun" in prompt
     assert "- Title: 番組タイトル" in prompt
@@ -192,27 +154,27 @@ def test_research_is_seeded_with_the_project_metadata(
 
 
 def test_cached_verdict_skips_the_agent(
-    make_side_context: MakeSideContext,
+    make_context: MakeContext,
     layout: ProjectLayout,
-    fake_agents: FakeAgentRunner,
+    agents: FakeAgentRunner,
 ) -> None:
     cache(layout, FOUND)
 
-    complete_side_task(TASK, make_side_context(SideTaskKey.DATE_RESEARCH))
+    complete_side_task(TASK, make_context(SideTaskKey.DATE_RESEARCH))
 
-    assert fake_agents.tasks == []
+    assert agents.tasks == []
     assert load_state(layout).side_tasks.date_research is not None
 
 
 def test_agent_failure_leaves_the_task_unrecorded(
-    make_side_context: MakeSideContext,
+    make_context: MakeContext,
     layout: ProjectLayout,
-    fake_agents: FakeAgentRunner,
+    agents: FakeAgentRunner,
 ) -> None:
-    fake_agents.script[TASK_NAME] = AgentQuotaError("429")
+    agents.script[TASK_NAME] = AgentQuotaError("429")
 
     with pytest.raises(AgentQuotaError):
-        TASK.run(make_side_context(SideTaskKey.DATE_RESEARCH))
+        TASK.run(make_context(SideTaskKey.DATE_RESEARCH))
 
     assert load_state(layout).side_tasks.date_research is None
 
@@ -222,12 +184,12 @@ def test_agent_failure_leaves_the_task_unrecorded(
 
 @pytest.mark.parametrize("reason", [SkipReason.DISABLED, SkipReason.BREAKPOINT])
 def test_skip_applies_a_paid_verdict(
-    make_side_context: MakeSideContext, layout: ProjectLayout, reason: SkipReason
+    make_context: MakeContext, layout: ProjectLayout, reason: SkipReason
 ) -> None:
     cache(layout, FOUND)
 
     assert TASK.on_skip is not None
-    TASK.on_skip(make_side_context(SideTaskKey.DATE_RESEARCH), reason)
+    TASK.on_skip(make_context(SideTaskKey.DATE_RESEARCH), reason)
 
     saved = load_state(layout)
     assert saved.effective_broadcast_date == date(2026, 2, 4)
@@ -237,17 +199,17 @@ def test_skip_applies_a_paid_verdict(
 
 
 def test_skip_without_a_verdict_changes_nothing(
-    make_side_context: MakeSideContext, layout: ProjectLayout
+    make_context: MakeContext, layout: ProjectLayout
 ) -> None:
     assert TASK.on_skip is not None
-    TASK.on_skip(make_side_context(SideTaskKey.DATE_RESEARCH), SkipReason.DISABLED)
+    TASK.on_skip(make_context(SideTaskKey.DATE_RESEARCH), SkipReason.DISABLED)
 
     assert load_state(layout).side_tasks.date_research is None
 
 
 @pytest.mark.parametrize("reason", list(SkipReason))
 def test_skip_never_overrides_an_existing_date(
-    make_side_context: MakeSideContext,
+    make_context: MakeContext,
     layout: ProjectLayout,
     state: ProjectState,
     reason: SkipReason,
@@ -256,7 +218,7 @@ def test_skip_never_overrides_an_existing_date(
     cache(layout, FOUND)
 
     assert TASK.on_skip is not None
-    TASK.on_skip(make_side_context(SideTaskKey.DATE_RESEARCH), reason)
+    TASK.on_skip(make_context(SideTaskKey.DATE_RESEARCH), reason)
 
     assert state.broadcast_date == date(2025, 1, 1)
     assert state.side_tasks.date_research is None
@@ -272,13 +234,13 @@ def test_skip_never_overrides_an_existing_date(
 )
 def test_manager_applies_the_paid_verdict_without_researching(
     *,
-    make_side_context: MakeSideContext,
+    make_context: MakeContext,
     layout: ProjectLayout,
     state: ProjectState,
     loaded: LoadedConfig,
-    fake_agents: FakeAgentRunner,
+    agents: FakeAgentRunner,
     bus: EventBus,
-    recording: RecordingSink,
+    recording_sink: RecordingSink,
     requested: bool,
     break_after: StageKey | None,
     reason: SkipReason,
@@ -290,7 +252,7 @@ def test_manager_applies_the_paid_verdict_without_researching(
 
     with SideTaskManager(
         (TASK,),
-        context=lambda task: make_side_context(task.key),
+        context=lambda task: make_context(task.key),
         options=run_options,
         config=loaded.config,
         events=bus,
@@ -298,8 +260,8 @@ def test_manager_applies_the_paid_verdict_without_researching(
     ) as manager:
         manager.stage_passed(StageKey.METADATA)
 
-    assert fake_agents.tasks == []
+    assert agents.tasks == []
     record = load_state(layout).side_tasks.date_research
     assert record is not None
     assert record.verdict == "unknown"
-    assert StepSkipped(TASK.key, PlanKind.SIDE_TASK, reason) in recording.events
+    assert StepSkipped(TASK.key, PlanKind.SIDE_TASK, reason) in recording_sink.events

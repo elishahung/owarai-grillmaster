@@ -205,13 +205,38 @@ class FeaturesConfig(BaseModel):
     )
 
 
+# Stems of the deliverable's own entries (`package.assemble`): an insert
+# output must not collide with them, nor with the all-digit remix parts.
+RESERVED_INSERT_STEMS = frozenset(
+    {"video", "cover", "info", "refine", "glossary_check"}
+)
+# The deliverable's path reserve counts insert stems up to this length
+# (`package.inserts.INSERT_OUTPUT_MAX_LENGTH`).
+INSERT_OUTPUT_MAX_LENGTH = 24
+
+
+def _check_insert_output(value: str) -> str:
+    if value.casefold() in RESERVED_INSERT_STEMS:
+        raise ValueError(
+            f"'{value}' is a reserved deliverable name "
+            f"({', '.join(sorted(RESERVED_INSERT_STEMS))}, or all digits)"
+        )
+    if value.isdigit():
+        raise ValueError(f"'{value}' is all digits, like the remix parts")
+    return value
+
+
 class InsertRule(BaseModel):
     """Copy the next file of a media pool into the deliverable."""
 
     model_config = _STRICT
 
     pool: FileName = Field(description="Pool folder under <package>/pools/.")
-    output: FileName = Field(
+    output: Annotated[
+        FileName,
+        StringConstraints(max_length=INSERT_OUTPUT_MAX_LENGTH),
+        AfterValidator(_check_insert_output),
+    ] = Field(
         description="Output file stem in the deliverable; programs reference inserts by it."
     )
     when: Literal["remix", "always"] = Field(

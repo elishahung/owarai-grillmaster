@@ -24,12 +24,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from pydantic import BaseModel, ConfigDict
 
 from grillmaster.agents.errors import ValidationFailure
 from grillmaster.agents.task import AgentJob, AgentTask, SchemaOutput
 from grillmaster.core.json_artifact import load_model, write_model
 from grillmaster.core.model_spec import Role
+from grillmaster.core.models import StrictModel
 from grillmaster.core.prompts import join_sections, load_prompt
 from grillmaster.core.timecode import format_clock
 from grillmaster.live_chat.schema import TranslatedChatLog, TranslatedChatMessage
@@ -73,22 +73,18 @@ class ChatTranslateError(Exception):
     """Chat translation could not produce its output (e.g. batches failed)."""
 
 
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class ChatLineTranslation(_Strict):
+class ChatLineTranslation(StrictModel):
     id: int
     text: str
 
 
-class ChatBatchTranslation(_Strict):
+class ChatBatchTranslation(StrictModel):
     """Structured output of one batch: one line per message id."""
 
     translations: list[ChatLineTranslation]
 
 
-class ChatPolish(_Strict):
+class ChatPolish(StrictModel):
     """Structured output of the polish pass: changed lines only."""
 
     corrections: list[ChatLineTranslation]

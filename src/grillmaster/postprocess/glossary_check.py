@@ -38,14 +38,13 @@ from grillmaster.postprocess._shared import (
     frames_prompt,
     read_reference,
     render_template,
-    tool_session,
 )
 from grillmaster.postprocess.errors import PostprocessError
 
 if TYPE_CHECKING:
     from grillmaster.agents.runner import AgentRunner
     from grillmaster.core.srt import SrtBlock
-    from grillmaster.core.tool_session import FramesTool
+    from grillmaster.core.tool_session import ToolSession
     from grillmaster.glossary.fixed import FixedGlossary
 
 TASK_NAME = "glossary"
@@ -188,17 +187,14 @@ def check_glossary(
     agents: AgentRunner,
     *,
     session_dir: Path,
-    project_root: Path,
-    frames: FramesTool,
+    tools: ToolSession,
 ) -> GlossaryOutcome:
     """Run the glossary check and settle its accepted outputs.
 
     Raises `PostprocessError` when an input is missing and lets agent errors
     through; the fixed-glossary copies are removed either way.
     """
-    task = build_glossary_task(
-        inputs, session_dir=session_dir, project_root=project_root, frames=frames
-    )
+    task = build_glossary_task(inputs, session_dir=session_dir, tools=tools)
     copies = inputs.glossary_copies
     sources = (inputs.fixed_glossary_path, inputs.fixed_glossary_guide_path)
     try:
@@ -215,11 +211,11 @@ def build_glossary_task(
     inputs: GlossaryInputs,
     *,
     session_dir: Path,
-    project_root: Path,
-    frames: FramesTool,
+    tools: ToolSession,
 ) -> AgentTask[tuple[Path, ...]]:
     """The glossary-check call; raises `PostprocessError` when the refined
-    SRT or the pre-pass briefing is missing."""
+    SRT or the pre-pass briefing is missing. `tools` offers `get_frames` and
+    `check_srt` against the refined SRT; its project root is readable."""
     reference = read_reference(inputs.refined_srt, "refined SRT before glossary check")
     original = _read_briefing(inputs.briefing)
     suspects = suspect_blocks(reference, inputs.fixed_glossary)
@@ -290,8 +286,8 @@ def build_glossary_task(
                 Path(inputs.briefing_candidate.name),
             ),
         ),
-        tools=tool_session(project_root, frames, inputs.refined_srt),
-        add_dirs=(project_root,),
+        tools=tools,
+        add_dirs=(tools.project_root,),
         validate=validate,
     )
 

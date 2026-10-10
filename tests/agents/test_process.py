@@ -8,6 +8,7 @@ import time
 import pytest
 
 from grillmaster.agents.process import ProcessSpec, TimeoutExpired, run_text, spawn
+from grillmaster.core.process import LIVE_PROCESSES, kill_all
 
 _UTF8 = "import sys; sys.stdout.reconfigure(encoding='utf-8'); "
 
@@ -66,3 +67,19 @@ def test_run_text_collects_output_and_raises_on_timeout():
     assert (result.returncode, result.stdout) == (0, "a\nb")
     with pytest.raises(TimeoutExpired):
         run_text(_python("import time; time.sleep(60)", timeout_s=0.5))
+
+
+def test_a_spawned_tree_is_live_until_waited_and_kill_all_ends_it():
+    before = LIVE_PROCESSES.live()
+    process = spawn(_python("print('up', flush=True); import time; time.sleep(60)"))
+    began = time.monotonic()
+    lines = process.lines()
+    assert next(lines) == "up"
+    fresh = [item for item in LIVE_PROCESSES.live() if item not in before]
+    assert len(fresh) == 1
+
+    kill_all()
+    assert list(lines) == []
+    assert process.wait() != 0
+    assert time.monotonic() - began < 20
+    assert LIVE_PROCESSES.live() == before

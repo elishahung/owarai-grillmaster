@@ -42,6 +42,15 @@ def measure(text: str) -> int:
     return len(text.encode("utf-8"))
 
 
+def attempt_path(first: Path, attempt: int) -> Path:
+    """Where attempt `attempt` (1-based) of something first written at
+    `first` goes: `first` itself, then siblings `<name>.2`, `<name>.3`, ...
+    (agent session records per retry)."""
+    if attempt < 1:
+        raise ValueError(f"Attempts are 1-based: {attempt}")
+    return first if attempt == 1 else first.with_name(f"{first.name}.{attempt}")
+
+
 def fit_dir_name(
     *,
     parent: Path,

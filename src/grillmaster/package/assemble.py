@@ -4,7 +4,8 @@ The caller fills the folder in a fixed order: plain copies (cover, `info.json`,
 reports, inserts) land first so the folder is inspectable while the long
 render runs, then the render. `deliverable_dir` builds it under a staging name
 and swaps it in only when everything succeeded, so a deliverable is either
-complete or the previous one.
+complete or the previous one. `PACKAGE_INNER_PATH_RESERVE` is the room its
+entries need below the folder (see `project.naming`).
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 from pydantic import ValidationError
 
+from grillmaster.core.fs import staged_dir
 from grillmaster.core.json_artifact import read_model
 from grillmaster.live_chat.layout import ChatLayout
 from grillmaster.live_chat.render import chat_placement, write_chat_ass
@@ -24,6 +26,10 @@ from grillmaster.live_chat.schema import TranslatedChatLog
 from grillmaster.media import probe
 from grillmaster.media.errors import MediaError
 from grillmaster.package.errors import PackageError
+from grillmaster.package.inserts import (
+    INSERT_OUTPUT_MAX_LENGTH,
+    INSERT_SUFFIX_ALLOWANCE,
+)
 from grillmaster.package.render import BurnPlan, SubtitleLayer
 
 if TYPE_CHECKING:
@@ -33,16 +39,33 @@ if TYPE_CHECKING:
     from grillmaster.core.briefing import Briefing
     from grillmaster.media.ffmpeg import FfmpegRunner
 
-# The deliverable is built as `<name>.partial`; the replaced one waits as
-# `<name>.old` until the new one is in place.
-STAGING_SUFFIX = ".partial"
-_BACKUP_SUFFIX = ".old"
-# Room kept inside the deliverable folder for its own entries, counting the
-# leading separator: the folder is flat and its longest fixed entry is
-# `/glossary_check.md` (insert outputs are short user-chosen stems). It is
-# built under the longer staging name.
-PACKAGE_INNER_PATH_RESERVE = 24 + len(STAGING_SUFFIX)
+# The deliverable folder is flat. Its fixed entries: the plain burn-in, the
+# cover (`extras.cover` copies `cover.png` or `cover.jpg`), `info.json` and
+# the agent reports; a remix writes `1.mp4`, `2.mp4`, ... instead of the
+# video. `config` reserves these stems (and all-digit ones) so an insert
+# output can never collide with them.
+VIDEO_FILE_NAME = "video.mp4"
 INFO_FILE_NAME = "info.json"
+REFINE_REPORT_NAME = "refine.md"
+GLOSSARY_REPORT_NAME = "glossary_check.md"
+FIXED_ENTRY_NAMES = (
+    VIDEO_FILE_NAME,
+    "cover.png",
+    "cover.jpg",
+    INFO_FILE_NAME,
+    REFINE_REPORT_NAME,
+    GLOSSARY_REPORT_NAME,
+)
+# Remix parts are numbered from 1; no realistic show reaches 100 parts.
+_LONGEST_REMIX_PART = "99.mp4"
+# Room kept inside the deliverable folder for its own entries (inserts
+# included), counting the leading separator; `project.naming` adds the
+# staging name on top.
+PACKAGE_INNER_PATH_RESERVE = 1 + max(
+    *(len(name) for name in FIXED_ENTRY_NAMES),
+    len(_LONGEST_REMIX_PART),
+    INSERT_OUTPUT_MAX_LENGTH + INSERT_SUFFIX_ALLOWANCE,
+)
 
 
 def require_inputs(*paths: Path) -> None:
@@ -55,48 +78,10 @@ def require_inputs(*paths: Path) -> None:
 @contextmanager
 def deliverable_dir(destination: Path) -> Iterator[Path]:
     """An empty staging folder that becomes `destination` when the body
-    succeeds.
-
-    The body fills `<destination>.partial`; on success it replaces
-    `destination`, on failure it is removed and an existing `destination`
-    (the previous deliverable) is untouched. A staging folder left by a
-    crash is cleared first.
-    """
-    staging = destination.with_name(f"{destination.name}{STAGING_SUFFIX}")
-    if staging.exists():
-        logger.warning(f"Removing a stale deliverable staging folder: {staging}")
-        shutil.rmtree(staging)
-    staging.mkdir(parents=True)
-    try:
+    succeeds (`core.fs.staged_dir`): a deliverable is either complete or the
+    previous one."""
+    with staged_dir(destination) as staging:
         yield staging
-    except BaseException:
-        shutil.rmtree(staging, ignore_errors=True)
-        raise
-    _swap_in(staging, destination)
-
-
-def _swap_in(staging: Path, destination: Path) -> None:
-    """Replace `destination` with `staging`; the old one is restored when the
-    final rename fails."""
-    backup = destination.with_name(f"{destination.name}{_BACKUP_SUFFIX}")
-    if destination.exists():
-        logger.info(f"Replacing the existing deliverable: {destination}")
-        if backup.exists():
-            shutil.rmtree(backup)
-        destination.rename(backup)
-    try:
-        staging.replace(destination)
-    except BaseException:
-        if backup.exists():
-            backup.rename(destination)
-        raise
-    if backup.exists():
-        try:
-            shutil.rmtree(backup)
-        except OSError as error:
-            logger.warning(
-                f"Could not remove the replaced deliverable {backup}: {error}"
-            )
 
 
 def write_info(

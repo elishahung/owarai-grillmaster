@@ -6,14 +6,14 @@ boundaries; each part renders as a noise cut from a media pool followed by
 the subtitled content (`1.mp4`, `2.mp4`, ...). Noise is transcoded at remix
 time with a format-only fit (no look filters) so the concat can stream-copy
 the video. `plan_remix` picks the segments before anything is drawn from a
-pool; `render_remix` then reserves the noise before anything renders.
+pool; `render_remix` then reserves the noise before anything renders, and
+spreads every segment's encodes over the shared NVENC sessions.
 """
 
 from __future__ import annotations
 
 import itertools
 import math
-import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -24,32 +24,35 @@ from loguru import logger
 from grillmaster.core.timecode import TimeRange
 from grillmaster.media import probe
 from grillmaster.media.ffmpeg import ffmpeg
-from grillmaster.media.video import concat_list_text
+from grillmaster.media.video import concat_copy
 from grillmaster.package.errors import PackageError
 from grillmaster.package.render import (
     PACKAGE_ENCODE_ARGS,
-    PACKAGE_ENCODE_CONCURRENCY,
     PACKAGE_FRAME_HEIGHT,
     PACKAGE_FRAME_WIDTH,
     PACKAGE_LEAD_TRIM_SECONDS,
     PACKAGE_OUTPUT_FPS,
+    EncodeLanes,
+    SubtitledRange,
+    after_all,
     check_output_duration,
     check_subtitles_under,
-    package_output_duration,
+    render_part_count,
     render_progress,
-    render_subtitled_range,
     run_in_pool,
     run_tracked,
+    split_range,
+    watch_only,
 )
 
 if TYPE_CHECKING:
     import threading
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
     from grillmaster.events.bus import EventSink
     from grillmaster.media.ffmpeg import FfmpegRunner
     from grillmaster.package.pools import Cut, MediaPool
-    from grillmaster.package.render import BurnPlan, RenderProgress
+    from grillmaster.package.render import BurnPlan, RenderJob, RenderProgress
 
 NOISE_CUT_SECONDS = 60
 REMIX_TARGET_SEGMENT_SECONDS = 15 * 60
@@ -102,79 +105,89 @@ def render_remix(
     """Render the planned remix parts of `video` into `target_dir`; returns them.
 
     One noise cut per part is reserved from `noise` before any render, so a
-    failed run still consumes it. Each part is probed against its expected
-    length (see `check_output_duration`).
+    failed run still consumes it. Every segment's content splits into video
+    parts (`split_range`), and the parts and noise heads of all segments
+    share the NVENC sessions (`EncodeLanes`); each segment's audio renders
+    once. A segment is muxed and concatenated as soon as its own encodes
+    finish, then probed against its expected length (see
+    `check_output_duration`).
     """
     check_subtitles_under(video, burn)
     segments = plan.segments
     cuts = noise.reserve_seconds(NOISE_CUT_SECONDS, count=len(segments), ffmpeg=runner)
     outputs = [target_dir / f"{index}.mp4" for index in range(1, len(segments) + 1)]
-    total = sum(
-        package_output_duration(segment.duration) + cut.duration
-        for segment, cut in zip(segments, cuts, strict=True)
-    )
-    with render_progress(
-        events, "package:remix", "Remixing subtitles", total
-    ) as progress:
-        # Segments are independent files, and one encode never saturates
-        # the card, so they render side by side against one shared bar.
-        jobs: list[Callable[[threading.Event], None]] = [
-            lambda event, segment=segment, cut=cut, output=output: build_remix_output(
+    with tempfile.TemporaryDirectory(
+        prefix="grill_remix_", ignore_cleanup_errors=True
+    ) as scratch_root:
+        remixes = [
+            _RemixOutput(
                 runner,
-                video=video,
-                burn=burn,
-                output=output,
                 head_noise=cut,
-                segment=segment,
-                progress=progress,
-                abort=event,
+                content=SubtitledRange(
+                    runner,
+                    video,
+                    burn,
+                    tuple(split_range(segment, render_part_count(segment.duration))),
+                    Path(scratch_root) / str(index),
+                ),
+                output=output,
             )
-            for segment, cut, output in zip(segments, cuts, outputs, strict=True)
+            for index, (segment, cut, output) in enumerate(
+                zip(segments, cuts, outputs, strict=True), start=1
+            )
         ]
-        run_in_pool(jobs, max_workers=PACKAGE_ENCODE_CONCURRENCY)
+        total = sum(remix.expected_duration for remix in remixes)
+        with render_progress(
+            events, "package:remix", "Remixing subtitles", total
+        ) as progress:
+            lanes = EncodeLanes()
+            jobs = [job for remix in remixes for job in remix.jobs(lanes, progress)]
+            run_in_pool(jobs, max_workers=len(jobs))
     return outputs
 
 
-def build_remix_output(
-    runner: FfmpegRunner,
-    *,
-    video: Path,
-    burn: BurnPlan,
-    output: Path,
-    head_noise: Cut,
-    segment: TimeRange,
-    progress: RenderProgress,
-    abort: threading.Event | None = None,
-) -> None:
-    """Create one noise + subtitled segment remix output and check its length."""
-    temp_dir = Path(tempfile.mkdtemp(prefix="grill_remix_"))
-    try:
-        head = temp_dir / "head.mp4"
-        target = temp_dir / "target.mp4"
-        encode_noise_segment(
-            runner,
-            head_noise,
-            head,
-            progress=progress,
-            note=f"Noise for {output.name}",
-            abort=abort,
+@dataclass(frozen=True, slots=True)
+class _RemixOutput:
+    """One remix part: a noise head, then the subtitled content segment."""
+
+    runner: FfmpegRunner
+    head_noise: Cut
+    content: SubtitledRange
+    output: Path
+
+    @property
+    def expected_duration(self) -> float:
+        return self.head_noise.duration + self.content.output_duration
+
+    def jobs(self, lanes: EncodeLanes, progress: RenderProgress) -> list[RenderJob]:
+        """The noise head and content encodes, then (after the last of them)
+        the finishing concat."""
+        head = lanes.video(
+            lambda abort: encode_noise_segment(
+                self.runner,
+                self.head_noise,
+                self._head_file,
+                progress=progress,
+                note=f"Noise for {self.output.name}",
+                abort=abort,
+            )
         )
-        render_subtitled_range(
-            runner,
-            video=video,
-            burn=burn,
-            output=target,
-            parts=[segment],
-            progress=progress,
-            note=f"Remixing {output.name}",
-            abort=abort,
+        return after_all(
+            [head, *self.content.jobs(lanes, progress, f"Remixing {self.output.name}")],
+            self._finish,
         )
-        concat_remix_segments(runner, [head, target], output, abort=abort)
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-    check_output_duration(
-        runner, output, head_noise.duration + package_output_duration(segment.duration)
-    )
+
+    @property
+    def _head_file(self) -> Path:
+        return self.content.scratch / "head.mp4"
+
+    def _finish(self, abort: threading.Event) -> None:
+        target = self.content.scratch / "target.mp4"
+        self.content.mux(target, abort)
+        concat_remix_segments(
+            self.runner, [self._head_file, target], self.output, abort=abort
+        )
+        check_output_duration(self.runner, self.output, self.expected_duration)
 
 
 def encode_noise_segment(
@@ -231,34 +244,26 @@ def concat_remix_segments(
     abort: threading.Event | None = None,
 ) -> None:
     """Concatenate normalized remix segments into an upload-safe MP4."""
-    if not inputs:
-        raise ValueError("inputs must not be empty")
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="grill_concat_") as scratch:
-        concat_list = Path(scratch) / "segments.txt"
-        concat_list.write_text(concat_list_text(inputs), encoding="utf-8")
-        argv = ffmpeg(
-            "-f",
-            "concat",
-            "-safe",
-            "0",
-            "-i",
-            str(concat_list),
-            "-c:v",
-            "copy",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "192k",
-            "-af",
-            "aresample=async=1:first_pts=0",
-            "-avoid_negative_ts",
-            "make_zero",
-            "-movflags",
-            "+faststart",
-            str(output),
-        )
-        run_tracked(runner, argv, None, abort=abort)
+    concat_copy(
+        runner,
+        inputs,
+        output,
+        "-c:v",
+        "copy",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-af",
+        "aresample=async=1:first_pts=0",
+        "-avoid_negative_ts",
+        "make_zero",
+        "-movflags",
+        "+faststart",
+        on_progress=watch_only,
+        abort=abort,
+    )
 
 
 def select_remix_segments(

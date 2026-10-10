@@ -22,6 +22,7 @@ from loguru import logger
 
 from grillmaster.agents.adapters import AdapterRegistry
 from grillmaster.agents.runner import AgentRunner
+from grillmaster.asr.client import connect_elevenlabs
 from grillmaster.events.bus import EventBus
 from grillmaster.events.context import stage_scope
 from grillmaster.events.types import (
@@ -32,15 +33,19 @@ from grillmaster.events.types import (
     SkipReason,
     StepSkipped,
 )
+from grillmaster.media.ffmpeg import SubprocessFfmpegRunner
 from grillmaster.pipeline.delivery import run_archive, run_delivery
 from grillmaster.pipeline.logs import ProjectLogs
 from grillmaster.pipeline.projects import existing_state, open_project
 from grillmaster.pipeline.registry import PIPELINE, Pipeline
 from grillmaster.pipeline.side_tasks import SideTaskManager
-from grillmaster.pipeline.stage import StageContext, StateStore
+from grillmaster.pipeline.state_store import StateStore
 from grillmaster.pipeline.steps import UsageCollector, execute_step
 from grillmaster.project.state import now as local_now
 from grillmaster.project.store import archive_project, load_state
+from grillmaster.sources.http import UrllibJsonHttp
+from grillmaster.sources.ytdlp import YtDlpLibrary
+from grillmaster.stages.base import Externals, StageContext
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -50,10 +55,9 @@ if TYPE_CHECKING:
     from grillmaster.config.load import LoadedConfig
     from grillmaster.events.bus import EventSink
     from grillmaster.pipeline.delivery import Archive
-    from grillmaster.pipeline.stage import RunOptions, StageDef
-    from grillmaster.pipeline.steps import StepOutcome
     from grillmaster.project.layout import ProjectLayout
     from grillmaster.project.state import ProjectState
+    from grillmaster.stages.base import RunOptions, StageDef, StepOutcome
 
 _SECONDS_PER_MINUTE = 60
 
@@ -69,9 +73,10 @@ def run_project(
     project's final layout.
 
     A rejected run (`Pipeline.check`, against the existing state if any)
-    creates nothing. The agent runner is built from `[agents]`; events go
-    to `sinks` (plus the project's JSONL log). With `[paths] archive` set,
-    a complete run ends by moving the project there.
+    creates nothing. The agent runner is built from `[agents]`, the
+    processes and services by `real_externals`; events go to `sinks` (plus
+    the project's JSONL log). With `[paths] archive` set, a complete run
+    ends by moving the project there.
     """
     pipeline.check(
         options,
@@ -90,6 +95,7 @@ def run_project(
         loaded=loaded,
         options=options,
         agents=_agent_runner(loaded, events),
+        externals=real_externals(),
         events=events,
         pipeline=pipeline,
         archive=archive_to(archive_root) if archive_root is not None else None,
@@ -114,6 +120,7 @@ def deliver_project(
         loaded=loaded,
         options=options,
         agents=_agent_runner(loaded, events),
+        externals=real_externals(),
         events=events,
         pipeline=Pipeline((), delivery=pipeline.delivery),
     )
@@ -130,6 +137,17 @@ def archive_to(archived_root: Path) -> Archive:
         return archive_project(layout, load_state(layout), archived_root)
 
     return move
+
+
+def real_externals() -> Externals:
+    """The real ffmpeg, yt-dlp, platform HTTP and ElevenLabs seams; each
+    loads its heavy library only on first use."""
+    return Externals(
+        ffmpeg=SubprocessFfmpegRunner(),
+        ytdlp=YtDlpLibrary(),
+        http=UrllibJsonHttp(),
+        speech_to_text=connect_elevenlabs,
+    )
 
 
 def _agent_runner(loaded: LoadedConfig, events: EventBus) -> AgentRunner:
@@ -150,6 +168,7 @@ def run_pipeline(
     loaded: LoadedConfig,
     options: RunOptions,
     agents: AgentRunner,
+    externals: Externals,
     events: EventBus,
     pipeline: Pipeline = PIPELINE,
     archive: Archive | None = None,
@@ -170,6 +189,7 @@ def run_pipeline(
         loaded=loaded,
         options=options,
         agents=agents,
+        externals=externals,
         events=events,
         archive=archive,
         clock=clock,
@@ -186,6 +206,7 @@ class _Run:
         loaded: LoadedConfig,
         options: RunOptions,
         agents: AgentRunner,
+        externals: Externals,
         events: EventBus,
         archive: Archive | None,
         clock: Callable[[], float],
@@ -195,6 +216,7 @@ class _Run:
         self._loaded = loaded
         self._options = options
         self._agents = agents
+        self._externals = externals
         self._events = events
         self._archive = archive
         self._clock = clock
@@ -281,7 +303,7 @@ class _Run:
                 )
             return
 
-        def record(outcome: StepOutcome[None]) -> None:
+        def record(outcome: StepOutcome[str | None]) -> str | None:
             params = stage.params(self._loaded.config)
             self._store.update(
                 lambda state: state.mark_done(
@@ -291,6 +313,7 @@ class _Run:
                     agent_usage=outcome.usage,
                 )
             )
+            return outcome.value
 
         execute_step(
             key,
@@ -310,5 +333,6 @@ class _Run:
             options=self._options,
             agents=self._agents,
             events=self._events,
+            externals=self._externals,
             workdir=workdir,
         )

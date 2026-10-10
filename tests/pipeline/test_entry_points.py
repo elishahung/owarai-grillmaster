@@ -22,9 +22,9 @@ from grillmaster.events.types import (
 from grillmaster.package.errors import PackageError
 from grillmaster.pipeline.registry import Pipeline
 from grillmaster.pipeline.runner import archive_to, deliver_project, run_project
-from grillmaster.pipeline.stage import RunOptions
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.store import load_state, save_state
+from grillmaster.stages.base import RunOptions
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -33,8 +33,8 @@ if TYPE_CHECKING:
     from tests.fakes import RecordingSink
 
     from grillmaster.events.types import Event
-    from grillmaster.pipeline.stage import StageContext
     from grillmaster.project.state import ProjectState
+    from grillmaster.stages.base import StageContext
 
 SOURCE = SourceId(Platform.TVER, "epnew1")
 

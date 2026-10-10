@@ -4,7 +4,8 @@
 Everything goes through the injectable `YtDlp` seam (`YtDlpLibrary` is the
 real one), so tests never run a live extraction. yt-dlp's own output
 always goes to loguru and its progress to events: no raw stdout ever
-reaches a screen the TUI owns.
+reaches a screen the TUI owns. The `yt_dlp` package loads on first use, so
+importing the stage registry stays light.
 """
 
 from __future__ import annotations
@@ -15,12 +16,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
-import yt_dlp
 from loguru import logger
 from pydantic import BaseModel, ConfigDict, field_validator
-from yt_dlp.postprocessor.common import PostProcessor
-from yt_dlp.postprocessor.ffmpeg import FFmpegThumbnailsConvertorPP
-from yt_dlp.utils import replace_extension
 
 from grillmaster.core.fs import atomic_write_text
 from grillmaster.events.types import ProgressAdvanced, ProgressFinished, ProgressStarted
@@ -31,6 +28,8 @@ from grillmaster.sources.errors import SourceError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
+
+    from yt_dlp.postprocessor.common import PostProcessor
 
     from grillmaster.events.bus import EventSink
     from grillmaster.media.ffmpeg import FfmpegRunner
@@ -47,7 +46,6 @@ CAPTION_LANGUAGES = ("ja", "ja-*")
 _PART_NAME = re.compile(r"\d+\.mp4")
 _PROGRESS_INTERVAL_S = 0.25  # yt-dlp fires hooks far more often
 _MIB = 1024 * 1024
-_JPEG_MAGIC = b"\xff\xd8\xff"
 
 
 def fragment_retry_sleep(attempt: int) -> float:
@@ -83,6 +81,8 @@ class YtDlpLibrary:
         download: bool,
         before_download: Sequence[PostProcessor] = (),
     ) -> dict[str, Any]:
+        import yt_dlp  # noqa: PLC0415 - heavy, loaded on first use
+
         with yt_dlp.YoutubeDL(dict(options)) as ydl:  # pyright: ignore[reportArgumentType]
             for processor in before_download:
                 ydl.add_post_processor(processor, when="before_dl")
@@ -202,6 +202,14 @@ def download_video(
     from the video; a re-run resumes from it. With `captions`, platform
     closed captions land beside the parts (see `official_subs`).
     """
+    from yt_dlp.postprocessor.ffmpeg import (  # noqa: PLC0415 - heavy
+        FFmpegThumbnailsConvertorPP,
+    )
+
+    from grillmaster.sources.thumbnails import (  # noqa: PLC0415 - imports yt_dlp
+        JpegThumbnailFixupPP,
+    )
+
     if poster.suffix != ".jpg":
         raise ValueError(f"The poster is converted to JPEG: {poster}")
     progress = DownloadProgress(events, clock)
@@ -392,34 +400,3 @@ def _note(update: Mapping[str, Any]) -> str | None:
     if eta := update.get("eta"):
         parts.append(f"eta {int(eta)}s")
     return " · ".join(parts) or None
-
-
-class JpegThumbnailFixupPP(PostProcessor):
-    """Rename thumbnails whose bytes are JPEG but whose extension is not.
-
-    ABEMA slot (live archive) thumbnails are JPEG bytes under a `.png` name.
-    `FFmpegThumbnailsConvertorPP` forces the image2 demuxer, which picks the
-    decoder from the extension, so converting the mislabeled file fails with
-    "Conversion failed!". Mirrors yt-dlp's own webp fixup, which skips JPEG.
-    """
-
-    def run(self, information: Any) -> tuple[list[str], Any]:
-        for thumbnail in information.get("thumbnails") or []:
-            filepath = thumbnail.get("filepath")
-            if not filepath or not Path(filepath).exists():
-                continue
-            if Path(filepath).suffix.lower() in {".jpg", ".jpeg"}:
-                continue
-            with Path(filepath).open("rb") as handle:
-                if handle.read(3) != _JPEG_MAGIC:
-                    continue
-            logger.info(f"Correcting thumbnail {filepath} extension to jpg")
-            jpg_filepath = replace_extension(filepath, "jpg")
-            Path(filepath).replace(jpg_filepath)
-            thumbnail["filepath"] = jpg_filepath
-            files_to_move = information.get("__files_to_move") or {}
-            if filepath in files_to_move:
-                files_to_move[jpg_filepath] = replace_extension(
-                    files_to_move.pop(filepath), "jpg"
-                )
-        return [], information

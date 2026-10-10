@@ -13,30 +13,28 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from grillmaster.core.model_spec import Role
 from grillmaster.core.stage_key import StageKey
+from grillmaster.core.tool_session import SrtCheckTool, ToolSession
 from grillmaster.glossary.fixed import (
     FIXED_GLOSSARY_GUIDE_PATH,
     FIXED_GLOSSARY_PATH,
     load_fixed_glossary,
 )
-from grillmaster.pipeline.stage import StageDef, require
 from grillmaster.postprocess.glossary_check import GlossaryInputs, check_glossary
-from grillmaster.project.layout import session_dir
-from grillmaster.stages._postprocess import (
-    postprocess_params,
-    program_instruction,
-    whole_video_frames,
-)
+from grillmaster.stages._common import frames_tool, program_rules, role_params
+from grillmaster.stages.base import StageDef, require
 
 if TYPE_CHECKING:
-    from grillmaster.pipeline.stage import StageContext
+    from grillmaster.stages.base import StageContext
 
 
 def _run(ctx: StageContext) -> None:
     layout = ctx.layout
     official = layout.ja_official_srt
+    refined = require(layout.refined_srt, StageKey.REFINE)
     inputs = GlossaryInputs(
-        refined_srt=require(layout.refined_srt, StageKey.REFINE),
+        refined_srt=refined,
         ja_srt=layout.ja_srt,
         briefing=require(layout.prepass_briefing, StageKey.PREPASS),
         official_srt=official if official.exists() else None,
@@ -47,14 +45,15 @@ def _run(ctx: StageContext) -> None:
         report=layout.glossary_report,
         briefing_candidate=layout.glossary_briefing_candidate,
         corrected_briefing=layout.glossary_briefing,
-        program_instruction=program_instruction(ctx, StageKey.GLOSSARY),
+        program_instruction=program_rules(ctx).instruction_text(StageKey.GLOSSARY),
+    )
+    tools = ToolSession(
+        project_root=layout.root,
+        frames=frames_tool(ctx, layout.glossary_frames_dir),
+        check_srt=SrtCheckTool(reference_srt=refined),
     )
     outcome = check_glossary(
-        inputs,
-        ctx.agents,
-        session_dir=session_dir(ctx.workdir),
-        project_root=layout.root,
-        frames=whole_video_frames(ctx, layout.glossary_frames_dir),
+        inputs, ctx.agents, session_dir=ctx.session_dir(), tools=tools
     )
     logger.success(
         "Glossary check validated: "
@@ -73,6 +72,5 @@ STAGE = StageDef(
     label="Glossary check",
     weight=2,
     run=_run,
-    outputs=lambda _layout: (),
-    params=postprocess_params,
+    params=role_params(Role.POSTPROCESS),
 )

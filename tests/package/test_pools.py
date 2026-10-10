@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import json
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING
 
 import pytest
 from tests.package.conftest import PackageFfmpeg
 
 from grillmaster.package.errors import PoolError
-from grillmaster.package.pools import CURSOR_FILE_NAME, MediaPool, require_pools
+from grillmaster.package.pools import (
+    CURSOR_FILE_NAME,
+    CURSOR_LOCK_NAME,
+    MediaPool,
+    require_pools,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -199,3 +206,55 @@ def test_require_pools_moves_no_cursor(tmp_path: Path):
     directory = make_pool(tmp_path, ["001.mp4", "002.mp4"])
     require_pools(tmp_path, ["sleep"])
     assert not (directory / CURSOR_FILE_NAME).exists()
+
+
+# --- cursor lock -------------------------------------------------------------------
+
+
+def test_concurrent_draws_never_take_the_same_file(tmp_path: Path):
+    names = [f"{index:03d}.mp4" for index in range(1, 9)]
+    directory = make_pool(tmp_path, names)
+    pools = [MediaPool(directory) for _ in names]
+    start = threading.Barrier(len(pools))
+
+    def draw(pool: MediaPool) -> str:
+        start.wait(5)
+        return pool.next_file().name
+
+    with ThreadPoolExecutor(max_workers=len(pools)) as executor:
+        drawn = list(executor.map(draw, pools))
+
+    assert sorted(drawn) == names
+    assert cursor_of(directory) == {"index": 0, "seconds": 0}
+    assert not (directory / CURSOR_LOCK_NAME).exists()
+
+
+def test_a_draw_waits_for_the_lock_holder(tmp_path: Path):
+    directory = make_pool(tmp_path, ["001.mp4", "002.mp4"])
+    lock = directory / CURSOR_LOCK_NAME
+    lock.write_text("", encoding="utf-8")
+    drawn: list[str] = []
+    thread = threading.Thread(
+        target=lambda: drawn.append(MediaPool(directory).next_file().name)
+    )
+
+    thread.start()
+    thread.join(0.2)
+    assert drawn == []
+    lock.unlink()
+    thread.join(5)
+
+    assert drawn == ["001.mp4"]
+
+
+def test_a_lock_left_by_a_crash_fails_the_draw(tmp_path: Path):
+    directory = make_pool(tmp_path, ["001.mp4"], cursor={"index": 0})
+    (directory / CURSOR_LOCK_NAME).write_text("", encoding="utf-8")
+
+    with pytest.raises(PoolError, match=r"locked.*\.cursor\.lock"):
+        MediaPool(directory, lock_timeout=0.1).next_file()
+    with pytest.raises(PoolError, match="locked"):
+        MediaPool(directory, lock_timeout=0.1).reserve_seconds(
+            60, count=1, ffmpeg=probing(directory, {"001.mp4": 600.0})
+        )
+    assert cursor_of(directory) == {"index": 0}

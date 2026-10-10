@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from tests.live_chat.conftest import replay_line, text_item
+from tests.fakes import replay_line, text_item
 
 from grillmaster.live_chat.parse import parse_live_chat
 

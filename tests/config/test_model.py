@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 from grillmaster.config.model import (
+    INSERT_OUTPUT_MAX_LENGTH,
     INSTRUCTION_STAGES,
     AgentRoles,
     AppConfig,
@@ -169,6 +170,32 @@ def test_pool_and_output_names_are_plain_file_names(
     data = {**minimal_data, "package": {"inserts": [{"pool": name, "output": "o"}]}}
     with pytest.raises(ValidationError):
         validate_config(data, root=Path())
+
+
+@pytest.mark.parametrize(
+    ("output", "message"),
+    [
+        ("video", "reserved"),
+        ("Cover", "reserved"),
+        ("info", "reserved"),
+        ("refine", "reserved"),
+        ("glossary_check", "reserved"),
+        ("12", "all digits"),
+        ("x" * (INSERT_OUTPUT_MAX_LENGTH + 1), "at most"),
+    ],
+)
+def test_insert_outputs_avoid_the_deliverables_own_names(
+    minimal_data: dict[str, Any], output: str, message: str
+):
+    data = {**minimal_data, "package": {"inserts": [{"pool": "p", "output": output}]}}
+    with pytest.raises(ValidationError, match=message):
+        validate_config(data, root=Path())
+
+
+def test_an_insert_output_may_use_the_whole_length(minimal_data: dict[str, Any]):
+    output = "x" * INSERT_OUTPUT_MAX_LENGTH
+    data = {**minimal_data, "package": {"inserts": [{"pool": "p", "output": output}]}}
+    assert validate_config(data, root=Path()).package.inserts[0].output == output
 
 
 def test_programs_may_only_list_declared_inserts(minimal_data: dict[str, Any]):

@@ -1,21 +1,17 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import pytest
-from tests.fakes import FakeAgentRunner, FakeFfmpeg, make_blocks
-from tests.stages.conftest import ROLES
-from tests.translate.conftest import briefing
+from tests.fakes import FakeAgentRunner, FakeFfmpeg, make_blocks, make_briefing
 
 from grillmaster.agents.errors import AgentQuotaError
-from grillmaster.config.load import LoadedConfig
-from grillmaster.config.model import validate_config
 from grillmaster.core.briefing import Briefing
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.srt import SrtBlock, write_srt_file
 from grillmaster.core.stage_key import StageKey
+from grillmaster.core.talent import Talent
 from grillmaster.project.layout import ProjectLayout
-from grillmaster.project.state import Talent
 from grillmaster.stages import prepass
 
 if TYPE_CHECKING:
@@ -23,40 +19,18 @@ if TYPE_CHECKING:
 
     from tests.stages.conftest import MakeContext
 
-    from grillmaster.agents.runner import AgentRunner
-    from grillmaster.config.secrets import Secrets
     from grillmaster.project.state import ProjectState
 
 _BLOCKS = make_blocks(6)
 
 
 @pytest.fixture
-def config_data() -> dict[str, Any]:
-    return {"agents": {"roles": dict(ROLES)}}
+def script() -> dict[str, object]:
+    return {"prepass": make_briefing((1, 6))}
 
 
 @pytest.fixture
-def loaded(
-    tmp_path: Path, secrets: Secrets, config_data: dict[str, Any]
-) -> LoadedConfig:
-    config = validate_config(config_data, root=tmp_path)
-    return LoadedConfig(root=tmp_path, config=config, secrets=secrets)
-
-
-@pytest.fixture
-def fake_agents(loaded: LoadedConfig) -> FakeAgentRunner:
-    return FakeAgentRunner(
-        roles=loaded.config.agents.roles.specs(), script={"prepass": briefing((1, 6))}
-    )
-
-
-@pytest.fixture
-def agents(fake_agents: FakeAgentRunner) -> AgentRunner:
-    return fake_agents
-
-
-@pytest.fixture
-def ffmpeg() -> FakeFfmpeg:
+def fake_ffmpeg() -> FakeFfmpeg:
     return FakeFfmpeg(duration=60.0)
 
 
@@ -72,13 +46,13 @@ def source_srt(layout: ProjectLayout) -> None:
 def test_writes_the_briefing_from_one_agent_call(
     make_context: MakeContext,
     layout: ProjectLayout,
-    fake_agents: FakeAgentRunner,
-    ffmpeg: FakeFfmpeg,
+    agents: FakeAgentRunner,
+    fake_ffmpeg: FakeFfmpeg,
 ) -> None:
-    prepass.build(ffmpeg).run(make_context(StageKey.PREPASS))
+    prepass.STAGE.run(make_context(StageKey.PREPASS))
 
-    assert read_model(layout.prepass_briefing, Briefing) == briefing((1, 6))
-    [task] = fake_agents.tasks
+    assert read_model(layout.prepass_briefing, Briefing) == make_briefing((1, 6))
+    [task] = agents.tasks
     workdir = layout.work_dir(StageKey.PREPASS)
     assert task.workdir == workdir
     assert task.session_dir == workdir / "session"
@@ -99,28 +73,27 @@ def test_writes_the_briefing_from_one_agent_call(
 def test_existing_briefing_is_reused_before_any_work(
     make_context: MakeContext,
     layout: ProjectLayout,
-    fake_agents: FakeAgentRunner,
-    ffmpeg: FakeFfmpeg,
+    agents: FakeAgentRunner,
+    fake_ffmpeg: FakeFfmpeg,
 ) -> None:
-    write_model(layout.prepass_briefing, briefing((1, 6), summary="cached"))
+    write_model(layout.prepass_briefing, make_briefing((1, 6), summary="cached"))
 
-    prepass.build(ffmpeg).run(make_context(StageKey.PREPASS))
+    prepass.STAGE.run(make_context(StageKey.PREPASS))
 
-    assert fake_agents.tasks == []
-    assert ffmpeg.calls == []
+    assert agents.tasks == []
+    assert fake_ffmpeg.calls == []
     assert read_model(layout.prepass_briefing, Briefing).summary == "cached"
 
 
 @pytest.mark.parametrize(
-    "config_data",
-    [{"agents": {"roles": {**ROLES, "prepass": "codex/gpt-5.5/high"}}}],
+    "config_data", [{"roles": {"prepass": "codex/gpt-5.5/high"}}], indirect=True
 )
 def test_backend_without_audio_input_gets_no_audio(
-    make_context: MakeContext, fake_agents: FakeAgentRunner, ffmpeg: FakeFfmpeg
+    make_context: MakeContext, agents: FakeAgentRunner, fake_ffmpeg: FakeFfmpeg
 ) -> None:
-    prepass.build(ffmpeg).run(make_context(StageKey.PREPASS))
+    prepass.STAGE.run(make_context(StageKey.PREPASS))
 
-    [task] = fake_agents.tasks
+    [task] = agents.tasks
     assert task.audio == ()
     assert task.add_dirs == ()
     assert "Full Source Audio" not in task.instructions
@@ -128,38 +101,32 @@ def test_backend_without_audio_input_gets_no_audio(
 
 @pytest.mark.parametrize(
     "config_data",
-    [
-        {
-            "agents": {"roles": dict(ROLES)},
-            "programs": {
-                "series": {"番組": {"instruction": {"prepass": "番組ルール"}}}
-            },
-        }
-    ],
+    [{"programs": {"series": {"番組": {"instruction": {"prepass": "番組ルール"}}}}}],
+    indirect=True,
 )
 def test_source_context_reaches_the_prompt(
     tmp_path: Path,
     make_context: MakeContext,
     state: ProjectState,
-    fake_agents: FakeAgentRunner,
-    ffmpeg: FakeFfmpeg,
+    agents: FakeAgentRunner,
+    fake_ffmpeg: FakeFfmpeg,
 ) -> None:
     ctx = make_context(StageKey.PREPASS)
     state.translation_hint = "第2回"
     state.source.title = "番組タイトル"
     state.source.series = "番組"
-    state.source.talents = [Talent(id="t1", name="浜田雅功", roles=["MC"])]
+    state.source.talents = [Talent(id="t1", name="浜田雅功", roles=("MC",))]
     write_srt_file(
         ctx.layout.ja_official_srt,
         [SrtBlock(1, "00:00:02,000 --> 00:00:03,000", "公式")],
     )
     parent = ProjectLayout(tmp_path / "parent")
-    write_model(parent.prepass_briefing, briefing(summary="前回"))
+    write_model(parent.prepass_briefing, make_briefing(summary="前回"))
     state.parent = parent.root
 
-    prepass.build(ffmpeg).run(ctx)
+    prepass.STAGE.run(ctx)
 
-    task = fake_agents.task("prepass")
+    task = agents.task("prepass")
     assert "番組ルール" in task.instructions
     assert "### OFFICIAL SOURCE METADATA" in task.instructions
     assert "### OFFICIAL CLOSED CAPTIONS" in task.instructions
@@ -175,50 +142,44 @@ def test_parent_glossary_briefing_wins(
     tmp_path: Path,
     make_context: MakeContext,
     state: ProjectState,
-    fake_agents: FakeAgentRunner,
-    ffmpeg: FakeFfmpeg,
+    agents: FakeAgentRunner,
+    fake_ffmpeg: FakeFfmpeg,
 ) -> None:
     parent = ProjectLayout(tmp_path / "parent")
-    write_model(parent.prepass_briefing, briefing(summary="raw"))
-    write_model(parent.glossary_briefing, briefing(summary="checked"))
+    write_model(parent.prepass_briefing, make_briefing(summary="raw"))
+    write_model(parent.glossary_briefing, make_briefing(summary="checked"))
     state.parent = parent.root
 
-    prepass.build(ffmpeg).run(make_context(StageKey.PREPASS))
+    prepass.STAGE.run(make_context(StageKey.PREPASS))
 
-    assert '"summary": "checked"' in fake_agents.task("prepass").prompt
+    assert '"summary": "checked"' in agents.task("prepass").prompt
 
 
 def test_missing_parent_briefing_fails_before_any_work(
     tmp_path: Path,
     make_context: MakeContext,
     state: ProjectState,
-    fake_agents: FakeAgentRunner,
-    ffmpeg: FakeFfmpeg,
+    agents: FakeAgentRunner,
+    fake_ffmpeg: FakeFfmpeg,
 ) -> None:
     state.parent = tmp_path / "no_such_parent"
 
     with pytest.raises(FileNotFoundError):
-        prepass.build(ffmpeg).run(make_context(StageKey.PREPASS))
+        prepass.STAGE.run(make_context(StageKey.PREPASS))
 
-    assert ffmpeg.calls == []
-    assert fake_agents.tasks == []
+    assert fake_ffmpeg.calls == []
+    assert agents.tasks == []
 
 
 def test_agent_failure_writes_no_briefing(
     make_context: MakeContext,
     layout: ProjectLayout,
-    fake_agents: FakeAgentRunner,
-    ffmpeg: FakeFfmpeg,
+    agents: FakeAgentRunner,
+    fake_ffmpeg: FakeFfmpeg,
 ) -> None:
-    fake_agents.script["prepass"] = AgentQuotaError("quota resets in 8h")
+    agents.script["prepass"] = AgentQuotaError("quota resets in 8h")
 
     with pytest.raises(AgentQuotaError):
-        prepass.build(ffmpeg).run(make_context(StageKey.PREPASS))
+        prepass.STAGE.run(make_context(StageKey.PREPASS))
 
     assert not layout.prepass_briefing.exists()
-
-
-def test_definition(layout: ProjectLayout, loaded: LoadedConfig) -> None:
-    assert prepass.STAGE.key is StageKey.PREPASS
-    assert prepass.STAGE.outputs(layout) == ()
-    assert prepass.STAGE.params(loaded.config) == {"model": "agy/gemini-3.1-pro/high"}

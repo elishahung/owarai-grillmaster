@@ -3,19 +3,25 @@ from __future__ import annotations
 import inspect
 import re
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from tests.pipeline.fakes import Journal, fake_delivery, fake_side_task, fake_stage
 
 from grillmaster.core.stage_key import SideTaskKey, StageKey
 from grillmaster.events.types import PlanEntry, PlanKind
-from grillmaster.pipeline.registry import STAGES, Pipeline
-from grillmaster.pipeline.stage import no_clear
+from grillmaster.pipeline.registry import DELIVERY, SIDE_TASKS, STAGES, Pipeline
+from grillmaster.stages.base import no_clear
 
 if TYPE_CHECKING:
     from grillmaster.config.load import LoadedConfig
-    from grillmaster.pipeline.stage import RunOptions, StageDef
+    from grillmaster.project.layout import ProjectLayout
+    from grillmaster.stages.base import (
+        DeliveryStepDef,
+        RunOptions,
+        SideTaskDef,
+        StageDef,
+    )
 
 
 def test_out_of_order_stages_are_rejected():
@@ -146,3 +152,31 @@ def test_a_stage_writing_state_clears_it_on_reset(stage: StageDef):
         assert stage.clear_state is not no_clear, (
             f"{stage.key} writes ProjectState but declares no clear_state"
         )
+
+
+DEFINITIONS = (*STAGES, *SIDE_TASKS, *DELIVERY)
+
+
+@pytest.mark.parametrize("definition", DEFINITIONS, ids=lambda d: str(d.key))
+def test_each_definition_lives_in_its_keys_module(
+    definition: StageDef | SideTaskDef[Any] | DeliveryStepDef, loaded: LoadedConfig
+):
+    module = inspect.getmodule(definition.run)
+    assert module is not None
+    assert module.__name__ == f"grillmaster.stages.{definition.key}"
+    params = definition.params(loaded.config)
+    assert all(isinstance(value, str) and value for value in params.values())
+
+
+@pytest.mark.parametrize("stage", STAGES, ids=lambda stage: stage.key)
+def test_stage_outputs_are_root_deliverables(stage: StageDef, layout: ProjectLayout):
+    for output in stage.outputs(layout):
+        assert output.is_relative_to(layout.root)
+        assert not output.is_relative_to(layout.work_root)
+
+
+@pytest.mark.parametrize("step", DELIVERY, ids=lambda step: step.key)
+def test_delivery_steps_work_under_the_project(
+    step: DeliveryStepDef, layout: ProjectLayout
+):
+    assert step.workdir(layout).is_relative_to(layout.work_root)

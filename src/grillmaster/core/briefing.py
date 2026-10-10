@@ -12,33 +12,31 @@ from __future__ import annotations
 import json
 from collections import Counter
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import field_validator
+
+from grillmaster.core.models import StrictModel
 
 
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class Character(_Strict):
+class Character(StrictModel):
     name_jp: str
     name_zh: str
     role_note: str
 
 
-class TermMapping(_Strict):
+class TermMapping(StrictModel):
     """One `source -> target` rendering agreed for the whole episode."""
 
     source: str
     target: str
 
 
-class Catchphrase(_Strict):
+class Catchphrase(StrictModel):
     phrase_jp: str
     phrase_zh: str
     note: str
 
 
-class SegmentSummary(_Strict):
+class SegmentSummary(StrictModel):
     """What happens inside one chunk range (SRT indexes, inclusive)."""
 
     from_index: int
@@ -46,7 +44,7 @@ class SegmentSummary(_Strict):
     summary: str
 
 
-class Briefing(_Strict):
+class Briefing(StrictModel):
     summary: str
     characters: list[Character]
     proper_nouns: list[TermMapping]

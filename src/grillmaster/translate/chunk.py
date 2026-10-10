@@ -20,13 +20,13 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from pydantic import BaseModel, ConfigDict
 
 from grillmaster.agents.errors import ValidationFailure
 from grillmaster.agents.task import AgentJob, AgentTask, SchemaOutput
 from grillmaster.core.json_artifact import load_model, write_model
 from grillmaster.core.model_spec import Role
-from grillmaster.core.srt import reindex
+from grillmaster.core.models import StrictModel
+from grillmaster.core.srt import chunk_range_name, reindex
 from grillmaster.core.tool_session import FramesTool, ToolSession
 from grillmaster.translate import prompt
 from grillmaster.translate.assets import prepare_chunk_assets
@@ -50,18 +50,14 @@ if TYPE_CHECKING:
 _DEBRIS_LINES = frozenset({"", "-"})
 
 
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class ChunkLine(_Strict):
+class ChunkLine(StrictModel):
     """The translated text for source block `index`."""
 
     index: int
     text: str
 
 
-class ChunkTranslation(_Strict):
+class ChunkTranslation(StrictModel):
     blocks: list[ChunkLine]
 
 
@@ -195,7 +191,7 @@ def _chunk_task(
 
 def task_name(chunk: Chunk) -> str:
     """`chunks/0001-0119`: events and the TUI chunk board key on this prefix."""
-    return f"chunks/{chunk.from_index:04d}-{chunk.to_index:04d}"
+    return f"chunks/{chunk_range_name(chunk.from_index, chunk.to_index)}"
 
 
 def build_chunk_task(

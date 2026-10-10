@@ -1,16 +1,21 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from pathlib import Path
 
 import pytest
 from tests.package.conftest import PackageFfmpeg
 
+from grillmaster.config import model as config_model
+from grillmaster.config.model import RESERVED_INSERT_STEMS
 from grillmaster.core.briefing import Briefing, TermMapping
+from grillmaster.core.paths import measure
 from grillmaster.live_chat.layout import ChatLayout
 from grillmaster.live_chat.render import PictureBox
 from grillmaster.live_chat.schema import TranslatedChatLog, TranslatedChatMessage
 from grillmaster.package.assemble import (
+    FIXED_ENTRY_NAMES,
+    PACKAGE_INNER_PATH_RESERVE,
     build_burn_plan,
     copy_reports,
     deliverable_dir,
@@ -18,10 +23,11 @@ from grillmaster.package.assemble import (
     write_info,
 )
 from grillmaster.package.errors import PackageError
+from grillmaster.package.inserts import (
+    INSERT_OUTPUT_MAX_LENGTH,
+    INSERT_SUFFIX_ALLOWANCE,
+)
 from grillmaster.package.render import BurnPlan
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 BRIEFING = Briefing(
     summary="demo",
@@ -135,6 +141,24 @@ def test_require_inputs_names_the_missing_file(tmp_path: Path):
     present.write_bytes(b"video")
     with pytest.raises(PackageError, match=r"cht\.ass"):
         require_inputs(present, tmp_path / "cht.ass")
+
+
+# --- path reserve ----------------------------------------------------------------
+
+
+def test_reserve_fits_every_fixed_entry_and_the_longest_insert():
+    longest_insert = (
+        "x" * INSERT_OUTPUT_MAX_LENGTH + "." + "x" * (INSERT_SUFFIX_ALLOWANCE - 1)
+    )
+    for name in (*FIXED_ENTRY_NAMES, "99.mp4", longest_insert):
+        assert 1 + measure(name) <= PACKAGE_INNER_PATH_RESERVE
+
+
+def test_config_keeps_inserts_off_the_fixed_entries():
+    # `config` cannot import `package`, so the shared names are checked here.
+    stems = {Path(name).stem for name in FIXED_ENTRY_NAMES}
+    assert stems <= RESERVED_INSERT_STEMS
+    assert config_model.INSERT_OUTPUT_MAX_LENGTH == INSERT_OUTPUT_MAX_LENGTH
 
 
 # --- burn plan (ported from the legacy chat burn plan) --------------------------

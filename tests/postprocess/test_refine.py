@@ -5,13 +5,13 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from tests.fakes import make_blocks
+from tests.fakes import frames_tool, make_blocks
 
 from grillmaster.agents.errors import ValidationFailure
 from grillmaster.agents.task import FilesOutput
 from grillmaster.core.model_spec import Role
 from grillmaster.core.srt import serialize_srt, write_srt_file
-from grillmaster.core.tool_session import FramesTool
+from grillmaster.core.tool_session import SrtCheckTool, ToolSession
 from grillmaster.postprocess._shared import render_template
 from grillmaster.postprocess.errors import PostprocessError
 from grillmaster.postprocess.refine import (
@@ -41,28 +41,24 @@ def inputs(tmp_path: Path) -> RefineInputs:
 
 
 @pytest.fixture
-def frames(tmp_path: Path) -> FramesTool:
-    return FramesTool(
-        video=tmp_path / "video.mp4",
-        frames_dir=tmp_path / "work" / "10_refine" / "frames",
-        window=(0.0, None),
-        max_side=768,
+def tools(inputs: RefineInputs, tmp_path: Path) -> ToolSession:
+    return ToolSession(
+        project_root=tmp_path,
+        frames=frames_tool(tmp_path, tmp_path / "work" / "10_refine" / "frames"),
+        check_srt=SrtCheckTool(reference_srt=inputs.translated_srt),
     )
 
 
-def build(inputs: RefineInputs, frames: FramesTool, tmp_path: Path):
+def build(inputs: RefineInputs, tools: ToolSession):
     return build_refine_task(
         inputs,
         session_dir=inputs.workdir / "session",
-        project_root=tmp_path,
-        frames=frames,
+        tools=tools,
     )
 
 
-def test_task_writes_in_the_stage_directory(
-    inputs: RefineInputs, frames: FramesTool, tmp_path: Path
-):
-    task = build(inputs, frames, tmp_path)
+def test_task_writes_in_the_stage_directory(inputs: RefineInputs, tools: ToolSession):
+    task = build(inputs, tools)
 
     assert task.name == TASK_NAME
     assert task.role is Role.POSTPROCESS
@@ -70,17 +66,15 @@ def test_task_writes_in_the_stage_directory(
     assert task.output == FilesOutput(
         (Path("refined.srt"),), optional=(Path("report.md"),)
     )
-    assert task.add_dirs == (tmp_path,)
+    assert task.add_dirs == (tools.project_root,)
     assert task.tools is not None
-    assert task.tools.frames == frames
+    assert task.tools is tools
     assert task.tools.check_srt is not None
     assert task.tools.check_srt.reference_srt == inputs.translated_srt
 
 
-def test_prompt_names_inputs_by_absolute_path(
-    inputs: RefineInputs, frames: FramesTool, tmp_path: Path
-):
-    task = build(inputs, frames, tmp_path)
+def test_prompt_names_inputs_by_absolute_path(inputs: RefineInputs, tools: ToolSession):
+    task = build(inputs, tools)
 
     for path in (
         inputs.translated_srt,
@@ -97,11 +91,9 @@ def test_prompt_names_inputs_by_absolute_path(
     assert "`get_frames`" in task.prompt
 
 
-def test_program_instruction_is_appended(
-    inputs: RefineInputs, frames: FramesTool, tmp_path: Path
-):
-    plain = build(inputs, frames, tmp_path)
-    ruled = build(replace(inputs, program_instruction="REFINE RULE"), frames, tmp_path)
+def test_program_instruction_is_appended(inputs: RefineInputs, tools: ToolSession):
+    plain = build(inputs, tools)
+    ruled = build(replace(inputs, program_instruction="REFINE RULE"), tools)
 
     assert "REFINE RULE" not in plain.instructions
     assert ruled.instructions.startswith(plain.instructions)
@@ -109,9 +101,9 @@ def test_program_instruction_is_appended(
 
 
 def test_validator_accepts_a_rewrite_keeping_the_skeleton(
-    inputs: RefineInputs, frames: FramesTool, tmp_path: Path
+    inputs: RefineInputs, tools: ToolSession
 ):
-    task = build(inputs, frames, tmp_path)
+    task = build(inputs, tools)
     rewritten = [replace(block, text=f"潤飾 {block.index}") for block in REFERENCE]
     # Codex sometimes writes a BOM.
     inputs.output_srt.write_text(serialize_srt(rewritten), encoding="utf-8-sig")
@@ -136,12 +128,11 @@ def test_validator_accepts_a_rewrite_keeping_the_skeleton(
 )
 def test_validator_rejects_a_broken_skeleton(
     inputs: RefineInputs,
-    frames: FramesTool,
-    tmp_path: Path,
+    tools: ToolSession,
     content: str,
     expected: str,
 ):
-    task = build(inputs, frames, tmp_path)
+    task = build(inputs, tools)
     inputs.output_srt.write_text(content, encoding="utf-8")
 
     assert task.validate is not None
@@ -150,12 +141,12 @@ def test_validator_rejects_a_broken_skeleton(
 
 
 def test_missing_translation_fails_before_any_agent(
-    inputs: RefineInputs, frames: FramesTool, tmp_path: Path
+    inputs: RefineInputs, tools: ToolSession
 ):
     inputs.translated_srt.unlink()
 
     with pytest.raises(PostprocessError, match="translated SRT"):
-        build(inputs, frames, tmp_path)
+        build(inputs, tools)
 
 
 def test_outputs_must_share_a_directory(inputs: RefineInputs, tmp_path: Path):

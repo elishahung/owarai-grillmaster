@@ -15,27 +15,26 @@ from datetime import date
 from typing import TYPE_CHECKING, Literal
 
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import Field, model_validator
 
 from grillmaster.agents.adapters.base import Capability
 from grillmaster.agents.task import AgentTask, SchemaOutput
 from grillmaster.core.json_artifact import load_model, write_model
 from grillmaster.core.model_spec import Role
+from grillmaster.core.models import StrictModel
 from grillmaster.core.prompts import load_prompt
+from grillmaster.core.talent import render_talent_lines
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from grillmaster.agents.runner import AgentRunner
+    from grillmaster.core.talent import Talent
 
 TASK_NAME = "date_research"
 
 
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class DateResearchSource(_Strict):
+class DateResearchSource(StrictModel):
     """One source consulted as evidence for the reported date."""
 
     url: str
@@ -43,14 +42,14 @@ class DateResearchSource(_Strict):
     evidence_summary: str
 
 
-class RejectedCandidate(_Strict):
+class RejectedCandidate(StrictModel):
     """A candidate date found but rejected, with the reason."""
 
     date: str
     reason: str
 
 
-class DateResearchResult(_Strict):
+class DateResearchResult(StrictModel):
     """The research agent's verdict on the original broadcast date."""
 
     status: Literal["found", "unknown"]
@@ -71,15 +70,6 @@ class DateResearchResult(_Strict):
 
 
 @dataclass(frozen=True, slots=True)
-class ResearchTalent:
-    """A cast member the source platform credits."""
-
-    name: str
-    name_kana: str | None = None
-    roles: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
 class ResearchContext:
     """What the project knows about the episode: the research seed.
 
@@ -96,7 +86,7 @@ class ResearchContext:
     hint: str | None = None
     broadcast_year: int | None = None
     broadcast_label: str | None = None
-    talents: tuple[ResearchTalent, ...] = ()
+    talents: tuple[Talent, ...] = ()
 
 
 def render_context(context: ResearchContext) -> str:
@@ -123,10 +113,7 @@ def render_context(context: ResearchContext) -> str:
         )
     if context.talents:
         lines.append("- Official source cast/talent metadata:")
-        for talent in context.talents:
-            role_text = f" ({', '.join(talent.roles)})" if talent.roles else ""
-            kana_text = f" / {talent.name_kana}" if talent.name_kana else ""
-            lines.append(f"- {talent.name}{kana_text}{role_text}")
+        lines.extend(render_talent_lines(context.talents))
     return "\n".join(lines)
 
 

@@ -15,12 +15,6 @@ layers =
     (grillmaster.project) | (grillmaster.config)
     (grillmaster.media) | (grillmaster.glossary)
     grillmaster.core | grillmaster.events
-# Stage modules build their definitions from the pipeline's definition types.
-ignore_imports =
-    grillmaster.stages.** -> grillmaster.pipeline.stage
-    grillmaster.stages.** -> grillmaster.pipeline.side_tasks
-    grillmaster.stages.** -> grillmaster.pipeline.delivery
-    grillmaster.stages.** -> grillmaster.pipeline.steps
 
 [importlinter:contract:domain-purity]
 # Extend source_modules as each new domain package lands.

@@ -4,7 +4,9 @@ Agent CLIs on Windows are batch shims (cmd.exe -> node) that spawn children
 of their own, and an agent may start shell tools. `Popen.kill` reaches only
 the direct child, and a surviving descendant keeps the stdout pipe open, so a
 timeout kills the whole tree (`taskkill /T /F` on Windows, the session's
-process group on POSIX). Output is decoded as UTF-8 explicitly: the Windows
+process group on POSIX). Every spawned tree is held in
+`core.process.LIVE_PROCESSES` until it is dead, so an abort can kill it from
+another thread. Output is decoded as UTF-8 explicitly: the Windows
 locale code page would garble Japanese.
 """
 
@@ -18,7 +20,7 @@ from dataclasses import dataclass
 from subprocess import CalledProcessError, TimeoutExpired
 from typing import IO, TYPE_CHECKING, Protocol
 
-from grillmaster.core.process import StderrTail, kill_process_tree
+from grillmaster.core.process import LIVE_PROCESSES, StderrTail, kill_process_tree
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -93,6 +95,7 @@ class _PopenLineProcess:
             # `killpg` reaches every descendant.
             start_new_session=sys.platform != "win32",
         )
+        LIVE_PROCESSES.register(self._process)
         self._stderr = StderrTail(_pipe(self._process.stderr), _STDERR_TAIL_LINES)
         self._timed_out = threading.Event()
         self._stdin_lock = threading.Lock()
@@ -116,6 +119,7 @@ class _PopenLineProcess:
             # or the watchdog killed it. Nothing of the tree may outlive this.
             self._watchdog.cancel()
             kill_process_tree(self._process)
+            LIVE_PROCESSES.unregister(self._process)
 
     def close_stdin(self) -> None:
         self._writer.join()
@@ -132,6 +136,7 @@ class _PopenLineProcess:
         except TimeoutExpired:
             kill_process_tree(self._process)
             code = self._process.wait(timeout=_EXIT_WAIT_S)
+        LIVE_PROCESSES.unregister(self._process)
         self._stderr.join(timeout=_EXIT_WAIT_S)
         self.close_stdin()
         return code

@@ -153,6 +153,7 @@
         },
         "output": {
           "description": "Output file stem in the deliverable; programs reference inserts by it.",
+          "maxLength": 24,
           "minLength": 1,
           "pattern": "^[^\\\\/:*?\"<>|]+$",
           "title": "Output",

@@ -1,5 +1,5 @@
 """The `grill` Typer app: `run` (also the bare `grill <src>`), `package`,
-`reset`, `status`, `doctor`."""
+`archive`, `reset`, `status`, `doctor`."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import click
 import typer
 from typer.core import TyperGroup
 
+from grillmaster.cli.archive import archive_command
 from grillmaster.cli.doctor import doctor_command
 from grillmaster.cli.package import package_command
 from grillmaster.cli.reset import reset_command
@@ -44,6 +45,7 @@ app = typer.Typer(
 )
 app.command(DEFAULT_COMMAND)(run_command)
 app.command("package")(package_command)
+app.command("archive")(archive_command)
 app.command("reset")(reset_command)
 app.command("status")(status_command)
 app.command("doctor")(doctor_command)

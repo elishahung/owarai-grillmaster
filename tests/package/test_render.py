@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import itertools
 import threading
+import time
 from typing import TYPE_CHECKING
 
 import pytest
-from tests.fakes import RecordingSink
+from tests.fakes import Recorder, RecordingSink
 from tests.package.conftest import PackageFfmpeg, arg_after, encodes
 
+from grillmaster.core.timecode import TimeRange
 from grillmaster.events.types import ProgressAdvanced, ProgressFinished, ProgressStarted
 from grillmaster.live_chat.render import PictureBox
 from grillmaster.media.errors import MediaError
-from grillmaster.package.errors import PackageError, RenderAbortedError
+from grillmaster.package.errors import PackageError
 from grillmaster.package.render import (
     PACKAGE_ENCODE_ARGS,
     PACKAGE_ENCODE_CONCURRENCY,
@@ -20,19 +22,24 @@ from grillmaster.package.render import (
     PACKAGE_OUTPUT_FPS,
     PACKAGE_TEMPO,
     BurnPlan,
+    EncodeLanes,
     SubtitleLayer,
+    after_all,
     burn_in,
-    burn_in_parts,
     package_audio_graph,
     package_output_duration,
     package_seek_args,
     package_usable_duration,
     package_video_chain,
+    render_part_count,
     run_in_pool,
+    split_range,
 )
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from grillmaster.package.render import RenderJob
 
 # Golden strings: the package recipe is measured and must not drift. The
 # look part is byte-identical to the legacy media module's.
@@ -133,45 +140,141 @@ def test_usable_duration_rejects_a_video_inside_the_lead_trim():
         package_usable_duration(PACKAGE_LEAD_TRIM_SECONDS)
 
 
-# --- burn_in_parts (ported) ---------------------------------------------------
+# --- parts (ported) -------------------------------------------------------------
+
+TRIMMED = TimeRange(PACKAGE_LEAD_TRIM_SECONDS, PACKAGE_LEAD_TRIM_SECONDS + 7200.0)
 
 
-def test_short_video_stays_one_part():
-    parts = burn_in_parts(PACKAGE_MIN_PART_SECONDS * 2 - 1)
-    assert len(parts) == 1
-    assert parts[0].start == PACKAGE_LEAD_TRIM_SECONDS
+def test_short_range_stays_one_part():
+    assert render_part_count(PACKAGE_MIN_PART_SECONDS * 2 - 1) == 1
+    span = TimeRange(3.0, 100.0)
+    assert split_range(span, 1) == [span]
 
 
 def test_part_count_is_capped_by_the_minimum_part_length():
-    assert len(burn_in_parts(PACKAGE_MIN_PART_SECONDS * 2)) == 2
+    assert render_part_count(PACKAGE_MIN_PART_SECONDS * 2) == 2
 
 
-def test_long_video_uses_the_whole_encode_pool():
-    assert len(burn_in_parts(7200.0)) == PACKAGE_ENCODE_CONCURRENCY
+def test_long_range_uses_the_whole_encode_pool():
+    assert render_part_count(7200.0) == PACKAGE_ENCODE_CONCURRENCY
 
 
-def test_parts_tile_the_trimmed_range_without_gaps():
-    usable = 7200.0
-    parts = burn_in_parts(usable)
-    assert parts[0].start == PACKAGE_LEAD_TRIM_SECONDS
-    assert parts[-1].end == pytest.approx(PACKAGE_LEAD_TRIM_SECONDS + usable)
+def test_split_rejects_no_parts():
+    with pytest.raises(ValueError, match="positive"):
+        split_range(TRIMMED, 0)
+
+
+@pytest.mark.parametrize(
+    "span", [TRIMMED, TimeRange(501.5, 1000.0)], ids=["burn-in", "remix-segment"]
+)
+def test_parts_tile_the_span_without_gaps(span: TimeRange):
+    parts = split_range(span, 3)
+    assert len(parts) == 3
+    assert parts[0].start == span.start
+    assert parts[-1].end == span.end
     for earlier, later in itertools.pairwise(parts):
         assert earlier.end == later.start
 
 
-def test_boundaries_land_on_whole_output_frames():
+@pytest.mark.parametrize(
+    "span", [TRIMMED, TimeRange(501.5, 1000.0)], ids=["burn-in", "remix-segment"]
+)
+def test_boundaries_land_on_whole_output_frames(span: TimeRange):
     # Only the last part carries the sub-frame remainder; every boundary
-    # before it must sit on a frame, or the concatenated parts would not add
-    # up to the frame count a single pass produces.
-    parts = burn_in_parts(7200.0)
+    # before it must sit on a frame counted from the span's start, or the
+    # concatenated parts would not add up to the frame count a single pass
+    # produces.
+    parts = split_range(span, 3)
     for part in parts[:-1]:
         frames = package_output_duration(part.duration) * PACKAGE_OUTPUT_FPS
         assert frames == pytest.approx(round(frames), abs=1e-6)
     total = sum(package_output_duration(part.duration) for part in parts)
-    assert total == pytest.approx(package_output_duration(7200.0))
+    assert total == pytest.approx(package_output_duration(span.duration))
     first = parts[0].duration
     frames_in_first = round(package_output_duration(first) * PACKAGE_OUTPUT_FPS)
     assert first / frames_in_first == pytest.approx(PACKAGE_TEMPO / PACKAGE_OUTPUT_FPS)
+
+
+# --- scheduling -------------------------------------------------------------------
+
+
+class Peak:
+    """The most jobs of a kind seen running at once."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._running = 0
+        self.peak = 0
+
+    def job(self, _abort: threading.Event) -> None:
+        with self._lock:
+            self._running += 1
+            self.peak = max(self.peak, self._running)
+        time.sleep(0.02)
+        with self._lock:
+            self._running -= 1
+
+
+def test_lanes_cap_the_nvenc_sessions_and_the_audio_pass():
+    video, audio = Peak(), Peak()
+    lanes = EncodeLanes()
+    jobs = [lanes.video(video.job) for _ in range(8)]
+    jobs += [lanes.audio(audio.job) for _ in range(3)]
+
+    run_in_pool(jobs, max_workers=len(jobs))
+
+    assert video.peak == PACKAGE_ENCODE_CONCURRENCY
+    assert audio.peak == 1
+
+
+def test_a_job_reaching_its_lane_after_a_failure_is_skipped():
+    lanes = EncodeLanes()
+    ran: list[int] = []
+    holding = threading.Barrier(PACKAGE_ENCODE_CONCURRENCY)
+
+    def hold_then_fail(index: int) -> RenderJob:
+        def run(abort: threading.Event) -> None:
+            holding.wait(5)
+            if index == 0:
+                raise MediaError("nvenc out of sessions")
+            # A real render's ffmpeg is killed by the runner on abort.
+            abort.wait(5)
+            raise MediaError("ffmpeg aborted")
+
+        return run
+
+    jobs = [lanes.video(hold_then_fail(index)) for index in range(3)]
+    jobs.append(lanes.video(lambda _abort: ran.append(1)))
+
+    with pytest.raises(MediaError, match="nvenc"):
+        run_in_pool(jobs, max_workers=len(jobs))
+    assert ran == []
+
+
+def test_after_all_finishes_once_after_the_last_job():
+    order = Recorder[str]()
+    jobs = after_all(
+        [lambda _abort, name=name: order.add(name) for name in ("a", "b", "c")],
+        lambda _abort: order.add("finish"),
+    )
+
+    run_in_pool(jobs, max_workers=len(jobs))
+
+    assert sorted(order.items[:3]) == ["a", "b", "c"]
+    assert order.items[3:] == ["finish"]
+
+
+def test_after_all_never_finishes_after_a_failure():
+    finished: list[int] = []
+
+    def fail(_abort: threading.Event) -> None:
+        raise MediaError("boom")
+
+    jobs = after_all([fail, lambda _abort: None], lambda _abort: finished.append(1))
+
+    with pytest.raises(MediaError):
+        run_in_pool(jobs, max_workers=1)
+    assert finished == []
 
 
 # --- burn_in ------------------------------------------------------------------
@@ -327,23 +430,4 @@ def test_first_failure_aborts_running_jobs_and_cancels_queued_ones():
 
     with pytest.raises(MediaError, match="nvenc"):
         run_in_pool([fail, long_render, queued], max_workers=2)
-    assert ran == []
-
-
-def test_a_nested_pool_shares_the_callers_abort_event():
-    outer = threading.Event()
-    seen: list[threading.Event] = []
-
-    run_in_pool([seen.append, seen.append], max_workers=2, abort=outer)
-
-    assert seen == [outer, outer]
-
-
-def test_an_aborted_pool_starts_no_job():
-    abort = threading.Event()
-    abort.set()
-    ran: list[int] = []
-
-    with pytest.raises(RenderAbortedError):
-        run_in_pool([lambda _abort: ran.append(1)], max_workers=1, abort=abort)
     assert ran == []

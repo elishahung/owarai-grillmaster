@@ -13,12 +13,11 @@ from typing import TYPE_CHECKING
 from grillmaster.core.model_spec import Role
 from grillmaster.core.stage_key import SideTaskKey, StageKey
 from grillmaster.extras.cover import generate_cover
-from grillmaster.pipeline.side_tasks import SideTaskDef
-from grillmaster.project.layout import session_dir
+from grillmaster.stages._common import flag_or_feature, role_params
+from grillmaster.stages.base import SideTaskDef
 
 if TYPE_CHECKING:
-    from grillmaster.config.model import AppConfig
-    from grillmaster.pipeline.stage import RunOptions, StageContext
+    from grillmaster.stages.base import StageContext
 
 
 def _run(ctx: StageContext) -> str:
@@ -27,17 +26,9 @@ def _run(ctx: StageContext) -> str:
         poster=ctx.layout.poster,
         cover=ctx.layout.cover,
         workdir=ctx.workdir,
-        session_dir=session_dir(ctx.workdir),
+        session_dir=ctx.session_dir(),
     )
     return ctx.layout.cover.name
-
-
-def _enabled(options: RunOptions, config: AppConfig) -> bool:
-    return options.cover or config.features.cover
-
-
-def _params(config: AppConfig) -> dict[str, str]:
-    return {"model": str(config.agents.roles.spec(Role.IMAGE))}
 
 
 TASK: SideTaskDef[str] = SideTaskDef(
@@ -46,6 +37,6 @@ TASK: SideTaskDef[str] = SideTaskDef(
     weight=1,
     start_after=StageKey.DOWNLOAD,
     run=_run,
-    enabled=_enabled,
-    params=_params,
+    enabled=flag_or_feature("cover"),
+    params=role_params(Role.IMAGE),
 )

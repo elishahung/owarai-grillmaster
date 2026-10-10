@@ -5,12 +5,15 @@ steps and side tasks; detail panel for the selected step (params, progress
 bars, chunk board, sessions table) or the run summary; a log pane for the
 selected step. `a` swaps the detail panel for the full agent activity log.
 
-On a timer the app drains `TuiSink` into its `PipelineState` and re-renders;
-it never receives events directly.
+On a timer the app drains `TuiSink` into its `PipelineState` and re-renders
+when the state changed (or once a second, for the clocks); it never receives
+events directly. Every way out (`q`, `ctrl+c`, `ctrl+q`) asks twice while
+the work runs; the command palette offers no Quit.
 """
 
 from __future__ import annotations
 
+import codecs
 import subprocess
 import sys
 from enum import StrEnum
@@ -38,14 +41,18 @@ from grillmaster.tui.widgets import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
-    from textual.app import ComposeResult
+    from textual.app import ComposeResult, SystemCommand
+    from textual.screen import Screen
 
     from grillmaster.tui.sink import TuiSink
 
 ABORT_CONFIRM_WINDOW = 3.0  # seconds between the two `q` presses
 TICK_SECONDS = 0.1
+# Redraw an unchanged state this often, so elapsed clocks keep moving.
+CLOCK_REDRAW_SECONDS = 1.0
+CLIPBOARD_TIMEOUT_S = 2.0
 
 CLIPBOARD_COMMAND = {
     "win32": ["clip.exe"],
@@ -58,14 +65,31 @@ class AppExit(StrEnum):
     ABORTED = "aborted"  # the user left while the work was running
 
 
+def clipboard_payload(text: str, platform: str = sys.platform) -> bytes:
+    """`text` encoded for the platform's clipboard helper.
+
+    clip.exe decodes BOM-less input with the console code page (cp950
+    garbles Japanese), but takes UTF-16LE with a BOM as Unicode and drops
+    the BOM.
+    """
+    if platform == "win32":
+        return codecs.BOM_UTF16_LE + text.encode("utf-16-le")
+    return text.encode("utf-8")
+
+
 def put_on_clipboard(text: str) -> None:
-    """Hand `text` to the OS clipboard, raising if the helper fails.
+    """Hand `text` to the OS clipboard, raising if the helper fails or takes
+    longer than `CLIPBOARD_TIMEOUT_S` (it runs on the UI thread).
 
     Textual's own copy rides OSC 52, which conhost ignores; the platform
-    helper actually lands it. clip.exe wants UTF-8 without a BOM (a BOM
-    arrives as a literal character in the pasted text).
+    helper actually lands it.
     """
-    subprocess.run(CLIPBOARD_COMMAND, input=text.encode("utf-8"), check=True)  # noqa: TID251 - an OS helper, not a pipeline child process
+    subprocess.run(  # noqa: TID251 - an OS helper, not a pipeline child process
+        CLIPBOARD_COMMAND,
+        input=clipboard_payload(text),
+        check=True,
+        timeout=CLIPBOARD_TIMEOUT_S,
+    )
 
 
 class GrillMasterApp(App[AppExit]):
@@ -104,6 +128,8 @@ class GrillMasterApp(App[AppExit]):
             "pagedown", "detail_scroll(1)", "Scroll detail", priority=True, show=False
         ),
         Binding("ctrl+c", "quit_or_abort", "Quit", show=False, priority=True),
+        # Replaces Textual's own `ctrl+q`, which quits without asking.
+        Binding("ctrl+q", "quit_or_abort", "Quit", show=False, priority=True),
     ]
 
     def __init__(
@@ -124,6 +150,8 @@ class GrillMasterApp(App[AppExit]):
         self._tick_seconds = tick_seconds
         self._abort_armed_at: float | None = None
         self._scrolled_to: str | None = None
+        self._drawn_version: int | None = None
+        self._drawn_at = 0.0
 
     def compose(self) -> ComposeResult:
         yield Header(id="header")
@@ -139,6 +167,13 @@ class GrillMasterApp(App[AppExit]):
         yield LogPane(id="log")
         yield Footer()
 
+    def get_system_commands(self, screen: Screen) -> Iterator[SystemCommand]:
+        """Textual's palette commands minus Quit, which would skip the abort
+        confirmation."""
+        for command in super().get_system_commands(screen):
+            if command.title != "Quit":
+                yield command
+
     def on_mount(self) -> None:
         if self._tick_seconds is not None:
             self.set_interval(self._tick_seconds, self.pump)
@@ -147,8 +182,14 @@ class GrillMasterApp(App[AppExit]):
     # -- refresh -------------------------------------------------------------
 
     def pump(self) -> None:
-        """Apply the queued events and re-render."""
+        """Apply the queued events; re-render when the state changed or the
+        clocks are due."""
         self.sink.feed(self.state)
+        if (
+            self.state.version == self._drawn_version
+            and self.state.now() - self._drawn_at < CLOCK_REDRAW_SECONDS
+        ):
+            return
         if self.view.follow:
             self._follow_running()
         self._keep_selection_valid()
@@ -171,6 +212,8 @@ class GrillMasterApp(App[AppExit]):
 
     def refresh_view(self) -> None:
         state, view = self.state, self.view
+        self._drawn_version = state.version
+        self._drawn_at = state.now()
         try:
             self.query_one(Header).show(state, view)
             self.query_one(StageList).show(state, view)
@@ -190,7 +233,10 @@ class GrillMasterApp(App[AppExit]):
             self.query_one("#detail-scroll").display = not view.activity
             activity = self.query_one(ActivityLog)
             activity.display = view.activity
-            activity.show(state)
+            if view.activity:
+                activity.show(state)
+            else:
+                activity.forget()
             if step is None:
                 self.query_one(LogPane).show(state.pipeline_log, "log")
             else:

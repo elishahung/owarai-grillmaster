@@ -15,14 +15,13 @@ import uuid
 from typing import TYPE_CHECKING, Any, override
 
 from loguru import logger
-from yt_dlp.extractor.abematv import AbemaTVBaseIE
 
 from grillmaster.core.source_id import Platform
+from grillmaster.core.talent import Talent
 from grillmaster.sources.base import (
     CookiePolicy,
     SourceExtras,
     SourcePlatform,
-    SourceTalent,
 )
 from grillmaster.sources.broadcast_date import JST, date_from_epoch
 from grillmaster.sources.errors import SourceHttpError
@@ -92,19 +91,21 @@ def reset_auth_cache() -> None:
     license handler, and fail every HLS key fetch. Clearing the cache makes
     the download re-authorize, as a fresh process would.
     """
+    from yt_dlp.extractor.abematv import AbemaTVBaseIE  # noqa: PLC0415 - heavy
+
     AbemaTVBaseIE._USERTOKEN = None  # noqa: SLF001 - yt-dlp keeps no public reset
     AbemaTVBaseIE._DEVICE_ID = None  # noqa: SLF001
     AbemaTVBaseIE._MEDIATOKEN = None  # noqa: SLF001
     logger.debug("Cleared the cached ABEMA device token before download")
 
 
-def parse_casts(payload: dict[str, Any], episode_id: str) -> tuple[SourceTalent, ...]:
+def parse_casts(payload: dict[str, Any], episode_id: str) -> tuple[Talent, ...]:
     """Talents from `credit.casts`, where `■<role>` lines head each group."""
     credit = payload.get("credit")
     raw_casts = credit.get("casts") if isinstance(credit, dict) else None
     if not isinstance(raw_casts, list):
         return ()
-    talents: list[SourceTalent] = []
+    talents: list[Talent] = []
     role: str | None = None
     for raw in raw_casts:
         if not isinstance(raw, str) or not (cast := raw.strip()):
@@ -113,7 +114,7 @@ def parse_casts(payload: dict[str, Any], episode_id: str) -> tuple[SourceTalent,
             role = cast.lstrip(_ROLE_MARK).strip() or None
             continue
         talents.append(
-            SourceTalent(
+            Talent(
                 id=f"abema:{episode_id}:{len(talents) + 1}",
                 name=cast,
                 roles=(role,) if role else (),
@@ -140,6 +141,8 @@ def _get_json(url: str, http: JsonHttp) -> Any:
 
 
 def _device_token(http: JsonHttp) -> str:
+    from yt_dlp.extractor.abematv import AbemaTVBaseIE  # noqa: PLC0415 - heavy
+
     device_id = str(uuid.uuid4())
     body = json.dumps(
         {

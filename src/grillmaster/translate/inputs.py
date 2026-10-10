@@ -16,18 +16,10 @@ if TYPE_CHECKING:
 
     from grillmaster.core.briefing import Briefing
     from grillmaster.core.srt import SrtBlock
+    from grillmaster.core.talent import Talent
     from grillmaster.glossary.fixed import FixedGlossary
     from grillmaster.translate.assets import MediaAssets
     from grillmaster.translate.chunker import Chunk
-
-
-@dataclass(frozen=True, slots=True)
-class Talent:
-    """A cast member the source platform credits."""
-
-    name: str
-    name_kana: str | None = None
-    roles: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

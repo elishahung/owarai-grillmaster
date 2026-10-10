@@ -12,14 +12,14 @@ from grillmaster.asr.payload import read_payload
 from grillmaster.asr.srt_builder import build_srt_blocks
 from grillmaster.core.srt import write_srt_file
 from grillmaster.core.stage_key import StageKey
-from grillmaster.pipeline.stage import StageDef, require
+from grillmaster.stages.base import StageDef, require
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from grillmaster.pipeline.stage import StageContext
     from grillmaster.project.layout import ProjectLayout
+    from grillmaster.stages.base import StageContext
 
 
 def _run(ctx: StageContext) -> None:

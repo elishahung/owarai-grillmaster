@@ -3,12 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from tests.translate.conftest import briefing
+from tests.fakes import make_briefing
 
 from grillmaster.core.prompts import load_prompt
 from grillmaster.core.srt import SrtBlock
+from grillmaster.core.talent import Talent
 from grillmaster.translate import prompt
-from grillmaster.translate.inputs import SourceContext, Talent
+from grillmaster.translate.inputs import SourceContext
 from grillmaster.translate.prompt import PromptSection, render_audio_template
 
 if TYPE_CHECKING:
@@ -90,10 +91,10 @@ def test_prepass_instruction_adds_conditional_blocks(
     prepass_inputs: Callable[..., PrepassInputs],
 ) -> None:
     source = SourceContext(
-        talents=(Talent("浜田雅功"),),
+        talents=(Talent(id="t1", name="浜田雅功"),),
         program_instruction="番組ルール",
         official_subtitles=(SrtBlock(1, "00:00:01,000 --> 00:00:02,000", "CC"),),
-        parent_briefing=briefing(),
+        parent_briefing=make_briefing(),
     )
     text = prompt.prepass_instruction(prepass_inputs(source=source))
     sections = [
@@ -139,11 +140,11 @@ def test_prepass_message_sections(
         description="企画の説明",
         hint="第2回の続き",
         talents=(
-            Talent("浜田雅功", "はまだまさとし", ("MC",)),
-            Talent("松本人志"),
+            Talent(id="t1", name="浜田雅功", name_kana="はまだまさとし", roles=("MC",)),
+            Talent(id="t2", name="松本人志"),
         ),
         official_subtitles=(SrtBlock(1, "00:00:01,000 --> 00:00:02,000", "公式"),),
-        parent_briefing=briefing(summary="前回"),
+        parent_briefing=make_briefing(summary="前回"),
     )
     message = prompt.prepass_message(prepass_inputs(source=source))
     assert f"{PromptSection.TITLE}\n番組タイトル" in message

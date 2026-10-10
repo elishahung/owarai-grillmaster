@@ -8,9 +8,7 @@ from typing import TYPE_CHECKING
 from tests.fakes import Recorder
 
 from grillmaster.events.context import current_stage
-from grillmaster.pipeline.delivery import DeliveryStepDef
-from grillmaster.pipeline.side_tasks import SideTaskDef
-from grillmaster.pipeline.stage import StageDef, no_clear
+from grillmaster.stages.base import DeliveryStepDef, SideTaskDef, StageDef, no_clear
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -19,9 +17,9 @@ if TYPE_CHECKING:
     from grillmaster.config.model import AppConfig
     from grillmaster.core.stage_key import SideTaskKey, StageKey
     from grillmaster.events.types import SkipReason
-    from grillmaster.pipeline.stage import RunOptions, StageContext
     from grillmaster.project.layout import ProjectLayout
     from grillmaster.project.state import ProjectState
+    from grillmaster.stages.base import RunOptions, StageContext
 
 
 class StageFailedError(RuntimeError):
@@ -46,16 +44,15 @@ def fake_stage(
     key: StageKey,
     journal: Journal,
     *,
-    action: Callable[[StageContext], None] | None = None,
+    action: Callable[[StageContext], str | None] | None = None,
     enabled: bool = True,
     outputs: Callable[[ProjectLayout], Sequence[Path]] = lambda layout: (),
     params: dict[str, str] | None = None,
     clear_state: Callable[[ProjectState], None] = no_clear,
 ) -> StageDef:
-    def run(ctx: StageContext) -> None:
+    def run(ctx: StageContext) -> str | None:
         journal.add(f"run:{key}@{current_stage()}")
-        if action is not None:
-            action(ctx)
+        return None if action is None else action(ctx)
 
     def on_skip(ctx: StageContext) -> None:
         journal.add(f"on_skip:{key}")

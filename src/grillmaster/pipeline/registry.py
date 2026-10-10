@@ -36,10 +36,13 @@ if TYPE_CHECKING:
     from grillmaster.config.model import AppConfig
     from grillmaster.config.secrets import Secrets
     from grillmaster.core.stage_key import StageKey
-    from grillmaster.pipeline.delivery import DeliveryStepDef
-    from grillmaster.pipeline.side_tasks import SideTaskDef
-    from grillmaster.pipeline.stage import RunOptions, StageDef
     from grillmaster.project.state import ProjectState
+    from grillmaster.stages.base import (
+        DeliveryStepDef,
+        RunOptions,
+        SideTaskDef,
+        StageDef,
+    )
 
 
 @dataclass(frozen=True, slots=True)

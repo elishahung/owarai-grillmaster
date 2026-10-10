@@ -16,15 +16,15 @@ from grillmaster.core.json_artifact import read_model
 from grillmaster.core.srt import read_srt_file
 from grillmaster.core.stage_key import StageKey
 from grillmaster.glossary.fixed import load_fixed_glossary
-from grillmaster.pipeline.stage import StageDef, require
+from grillmaster.stages.base import StageDef, require
 from grillmaster.subtitles.finalize import name_units, write_finalized
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
-    from grillmaster.pipeline.stage import StageContext
     from grillmaster.project.layout import ProjectLayout
+    from grillmaster.stages.base import StageContext
 
 
 def _run(ctx: StageContext) -> None:

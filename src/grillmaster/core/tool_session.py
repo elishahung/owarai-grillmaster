@@ -13,9 +13,10 @@ from __future__ import annotations
 from enum import StrEnum
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import model_validator
 
 from grillmaster.core.json_artifact import read_model, write_model
+from grillmaster.core.models import FrozenModel
 
 SESSION_ENV_VAR = "GRILL_TOOL_SESSION"
 
@@ -25,11 +26,7 @@ class ToolName(StrEnum):
     CHECK_SRT = "check_srt"
 
 
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class FramesTool(_Strict):
+class FramesTool(FrozenModel):
     """`get_frames`: stills from `video`, cached under `frames_dir`."""
 
     video: Path
@@ -48,14 +45,14 @@ class FramesTool(_Strict):
         return self
 
 
-class SrtCheckTool(_Strict):
+class SrtCheckTool(FrozenModel):
     """`check_srt`: the candidate must keep the reference's block count,
     indexes and timecodes."""
 
     reference_srt: Path
 
 
-class ToolSession(_Strict):
+class ToolSession(FrozenModel):
     project_root: Path
     frames: FramesTool | None
     check_srt: SrtCheckTool | None

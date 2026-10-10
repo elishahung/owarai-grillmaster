@@ -5,8 +5,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from pydantic import ValidationError
-from tests.fakes import FakeAgentRunner
-from tests.translate.conftest import briefing
+from tests.fakes import FakeAgentRunner, make_briefing
 
 from grillmaster.agents.adapters.base import Capability
 from grillmaster.agents.errors import AgentOutputError
@@ -34,7 +33,7 @@ TITLES = TitleSuggestions.model_validate(
         ]
     }
 )
-BRIEFING = briefing((1, 3), summary="demo")
+BRIEFING = make_briefing((1, 3), summary="demo")
 
 
 @pytest.fixture

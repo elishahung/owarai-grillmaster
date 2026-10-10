@@ -59,6 +59,7 @@ from grillmaster.agents.task import (
 )
 from grillmaster.core.fs import atomic_write_text
 from grillmaster.core.json_artifact import write_model
+from grillmaster.core.paths import attempt_path
 from grillmaster.events.context import current_stage, task_scope
 from grillmaster.events.types import (
     ActivityKind,
@@ -587,7 +588,4 @@ def _merge_defects(defects: Sequence[TurnDefect]) -> TurnDefect:
 
 
 def _session_dir(base: Path, attempt: int) -> Path:
-    resolved = base.resolve()
-    return (
-        resolved if attempt == 1 else resolved.with_name(f"{resolved.name}.{attempt}")
-    )
+    return attempt_path(base.resolve(), attempt)

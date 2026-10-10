@@ -39,10 +39,10 @@ from grillmaster.events.types import (
 )
 from grillmaster.pipeline.registry import Pipeline
 from grillmaster.pipeline.runner import run_pipeline, run_project
-from grillmaster.pipeline.stage import RunOptions
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.state import TaskRecord, now
 from grillmaster.project.store import load_state, save_state
+from grillmaster.stages.base import RunOptions
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -57,8 +57,8 @@ if TYPE_CHECKING:
     from grillmaster.events.bus import EventBus
     from grillmaster.events.types import Event
     from grillmaster.pipeline.delivery import Archive
-    from grillmaster.pipeline.stage import StageContext
     from grillmaster.project.state import ProjectState
+    from grillmaster.stages.base import Externals, StageContext
 
 STARTED_AT = datetime(2026, 10, 10, 12, 0, 0).astimezone()
 
@@ -79,6 +79,7 @@ def run(
     options: RunOptions,
     agents: AgentRunner,
     bus: EventBus,
+    externals: Externals,
 ) -> Runner:
     """Run `pipeline` on the fixture project; keyword overrides for options."""
 
@@ -91,6 +92,7 @@ def run(
             loaded=loaded,
             options=replace(options, **overrides),
             agents=agents,
+            externals=externals,
             events=bus,
             pipeline=pipeline,
             archive=archive,
@@ -199,6 +201,16 @@ def test_event_sequence(
         StepCompleted("archive", PlanKind.DELIVERY, 1.0, str(archived.root)),
         RunFinished(RunOutcome.COMPLETED),
     ]
+
+
+def test_a_stage_result_reaches_its_completion_event(
+    run: Runner, journal: Journal, recording_sink: RecordingSink
+):
+    stage = fake_stage(StageKey.ASR, journal, action=lambda ctx: "$0.4000")
+
+    run(Pipeline((stage,)))
+
+    assert StepCompleted("asr", PlanKind.STAGE, 1.0, "$0.4000") in recording_sink.events
 
 
 def test_resume_skips_completed_stages(

@@ -13,11 +13,11 @@ from urllib.parse import urlencode
 from loguru import logger
 
 from grillmaster.core.source_id import Platform
+from grillmaster.core.talent import Talent
 from grillmaster.sources.base import (
     CookiePolicy,
     SourceExtras,
     SourcePlatform,
-    SourceTalent,
 )
 from grillmaster.sources.broadcast_date import resolve_tver_broadcast_date
 from grillmaster.sources.errors import SourceHttpError
@@ -63,7 +63,7 @@ class TverPlatform(SourcePlatform):
         )
 
 
-def fetch_talents(episode_id: str, http: JsonHttp) -> tuple[SourceTalent, ...]:
+def fetch_talents(episode_id: str, http: JsonHttp) -> tuple[Talent, ...]:
     """Episode talents; empty when the API fails."""
     try:
         payload = http.request(TALENTS_URL.format(id=episode_id), headers=_WEB_HEADERS)
@@ -75,12 +75,12 @@ def fetch_talents(episode_id: str, http: JsonHttp) -> tuple[SourceTalent, ...]:
     return talents
 
 
-def parse_talents(payload: object) -> tuple[SourceTalent, ...]:
+def parse_talents(payload: object) -> tuple[Talent, ...]:
     """Talents from the contents API; malformed entries are skipped."""
     raw_talents = payload.get("talents") if isinstance(payload, dict) else None
     if not isinstance(raw_talents, list):
         return ()
-    talents: list[SourceTalent] = []
+    talents: list[Talent] = []
     for raw in raw_talents:
         if not isinstance(raw, dict):
             continue
@@ -94,7 +94,7 @@ def parse_talents(payload: object) -> tuple[SourceTalent, ...]:
             if isinstance(role, str) and role
         )
         talents.append(
-            SourceTalent(
+            Talent(
                 id=talent_id,
                 name=name,
                 name_kana=kana if isinstance(kana, str) else None,

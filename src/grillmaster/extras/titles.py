@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
 
 from grillmaster.agents.adapters.base import Capability
 from grillmaster.agents.errors import AgentError
@@ -19,6 +19,7 @@ from grillmaster.agents.task import AgentTask, SchemaOutput
 from grillmaster.core.briefing import Briefing
 from grillmaster.core.json_artifact import load_model, read_model, write_model
 from grillmaster.core.model_spec import Role
+from grillmaster.core.models import StrictModel
 from grillmaster.core.prompts import load_prompt
 
 if TYPE_CHECKING:
@@ -31,11 +32,7 @@ TASK_NAME = "titles"
 TITLE_COUNT = 3
 
 
-class _Strict(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
-class TitleSuggestion(_Strict):
+class TitleSuggestion(StrictModel):
     """One candidate title with the reason it was chosen."""
 
     # The bounds reach the model through the native schema; pydantic still
@@ -44,7 +41,7 @@ class TitleSuggestion(_Strict):
     reason: str
 
 
-class TitleSuggestions(_Strict):
+class TitleSuggestions(StrictModel):
     """The title agent's candidate titles."""
 
     titles: list[TitleSuggestion] = Field(

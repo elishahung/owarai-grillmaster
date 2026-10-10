@@ -13,6 +13,8 @@ from typing import TYPE_CHECKING
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from grillmaster.config.errors import ConfigError
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -25,6 +27,16 @@ class Secrets(BaseSettings):
     )
 
     elevenlabs_api_key: SecretStr | None = None
+
+    def require_elevenlabs_api_key(self) -> str:
+        """The ElevenLabs key; `ConfigError` when it is not set."""
+        key = self.elevenlabs_api_key
+        if key is None or not key.get_secret_value():
+            raise ConfigError(
+                f"ELEVENLABS_API_KEY is not set; add it to the {ENV_FILE_NAME} "
+                "beside grill.toml or to the environment"
+            )
+        return key.get_secret_value()
 
 
 def load_secrets(root: Path) -> Secrets:

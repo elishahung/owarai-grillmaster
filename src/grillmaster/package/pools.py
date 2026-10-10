@@ -5,28 +5,36 @@ container) and a `.cursor.json` saying where the next draw starts. Inserts
 take whole files in rotation (`next_file`); remix noise walks the files in
 seconds (`reserve_seconds`). Both advance the cursor **before** the caller
 uses what it drew: concurrent packaging runs must never ship the same media,
-so a draw is a commitment and a run that then fails simply skips it.
+so a draw is a commitment and a run that then fails simply skips it. Each
+read-modify-write of the cursor holds `.cursor.lock`, so two runs drawing at
+once take consecutive media rather than the same.
 """
 
 from __future__ import annotations
 
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from grillmaster.core.fs import exclusive_lock
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.media import probe
 from grillmaster.package.errors import PoolError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Iterator
     from pathlib import Path
 
     from grillmaster.media.ffmpeg import FfmpegRunner
 
 POOLS_DIR_NAME = "pools"
 CURSOR_FILE_NAME = ".cursor.json"
+CURSOR_LOCK_NAME = ".cursor.lock"
+# A draw holds the lock for a few file reads and, for a seconds walk, an
+# ffprobe per file it walks; a lock held longer belongs to a crashed run.
+CURSOR_LOCK_TIMEOUT_SECONDS = 60.0
 _STEM_DIGITS = 3
 
 
@@ -59,8 +67,11 @@ class Cut:
 class MediaPool:
     """One pool directory; every draw re-reads the files and the cursor."""
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(
+        self, directory: Path, *, lock_timeout: float = CURSOR_LOCK_TIMEOUT_SECONDS
+    ) -> None:
         self.directory = directory
+        self._lock_timeout = lock_timeout
 
     @classmethod
     def under(cls, package_root: Path, name: str) -> MediaPool:
@@ -99,8 +110,9 @@ class MediaPool:
     def next_file(self) -> Path:
         """The next file in rotation; wraps to the first after the last."""
         files = self.files()
-        index = self._read_cursor().index % len(files)
-        self._write_cursor(_Cursor(index=(index + 1) % len(files)))
+        with self._cursor_lock():
+            index = self._read_cursor().index % len(files)
+            self._write_cursor(_Cursor(index=(index + 1) % len(files)))
         return files[index]
 
     def reserve_seconds(
@@ -126,32 +138,46 @@ class MediaPool:
                 durations[index] = probe.duration(ffmpeg, files[index])
             return durations[index]
 
-        cursor = self._read_cursor()
-        index = cursor.index % len(files)
-        start = float(cursor.seconds)
-        cuts: list[Cut] = []
-        for _ in range(count):
-            skipped = 0
-            while duration_of(index) - start <= 0:
-                index = (index + 1) % len(files)
-                start = 0.0
-                skipped += 1
-                if skipped > len(files):
-                    raise PoolError(f"No usable media in pool: {self.directory}")
-            remaining = duration_of(index) - start
-            if remaining < 2 * seconds:
-                cuts.append(Cut(files[index], start, remaining))
-                index = (index + 1) % len(files)
-                start = 0.0
-            else:
-                cuts.append(Cut(files[index], start, float(seconds)))
-                start += seconds
-        self._write_cursor(_Cursor(index=index, seconds=int(start)))
+        with self._cursor_lock():
+            cursor = self._read_cursor()
+            index = cursor.index % len(files)
+            start = float(cursor.seconds)
+            cuts: list[Cut] = []
+            for _ in range(count):
+                skipped = 0
+                while duration_of(index) - start <= 0:
+                    index = (index + 1) % len(files)
+                    start = 0.0
+                    skipped += 1
+                    if skipped > len(files):
+                        raise PoolError(f"No usable media in pool: {self.directory}")
+                remaining = duration_of(index) - start
+                if remaining < 2 * seconds:
+                    cuts.append(Cut(files[index], start, remaining))
+                    index = (index + 1) % len(files)
+                    start = 0.0
+                else:
+                    cuts.append(Cut(files[index], start, float(seconds)))
+                    start += seconds
+            self._write_cursor(_Cursor(index=index, seconds=int(start)))
         return cuts
 
     @property
     def _cursor_path(self) -> Path:
         return self.directory / CURSOR_FILE_NAME
+
+    @contextmanager
+    def _cursor_lock(self) -> Iterator[None]:
+        with ExitStack() as stack:
+            try:
+                stack.enter_context(
+                    exclusive_lock(
+                        self.directory / CURSOR_LOCK_NAME, timeout=self._lock_timeout
+                    )
+                )
+            except TimeoutError as error:
+                raise PoolError(f"Media pool cursor is locked: {error}") from error
+            yield
 
     def _read_cursor(self) -> _Cursor:
         if not self._cursor_path.exists():

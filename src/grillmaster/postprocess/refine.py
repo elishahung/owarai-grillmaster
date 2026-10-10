@@ -21,11 +21,10 @@ from grillmaster.postprocess._shared import (
     frames_prompt,
     read_reference,
     render_template,
-    tool_session,
 )
 
 if TYPE_CHECKING:
-    from grillmaster.core.tool_session import FramesTool
+    from grillmaster.core.tool_session import ToolSession
 
 TASK_NAME = "refine"
 
@@ -64,12 +63,12 @@ def build_refine_task(
     inputs: RefineInputs,
     *,
     session_dir: Path,
-    project_root: Path,
-    frames: FramesTool,
+    tools: ToolSession,
 ) -> AgentTask[tuple[Path, ...]]:
     """The refine call; raises `PostprocessError` when the translation is missing.
 
-    The project root is readable (`add_dirs`) so the absolute input paths in
+    `tools` offers `get_frames` and `check_srt` against the translated SRT.
+    Its project root is readable (`add_dirs`) so the absolute input paths in
     the prompt resolve on every backend.
     """
     reference = read_reference(
@@ -106,7 +105,7 @@ def build_refine_task(
         output=FilesOutput(
             (Path(inputs.output_srt.name),), optional=(Path(inputs.report.name),)
         ),
-        tools=tool_session(project_root, frames, inputs.translated_srt),
-        add_dirs=(project_root,),
+        tools=tools,
+        add_dirs=(tools.project_root,),
         validate=validate,
     )

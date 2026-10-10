@@ -13,51 +13,31 @@ from typing import TYPE_CHECKING
 from grillmaster.core.json_artifact import write_model
 from grillmaster.core.stage_key import StageKey
 from grillmaster.live_chat.parse import parse_live_chat
-from grillmaster.pipeline.stage import StageDef
 from grillmaster.sources.live_chat import download_live_chat
-from grillmaster.sources.registry import source_platform
-from grillmaster.sources.ytdlp import YtDlpLibrary, shared_options
+from grillmaster.stages._common import chat_enabled, source_request, tool_params
+from grillmaster.stages.base import StageDef
 
 if TYPE_CHECKING:
-    from grillmaster.config.model import AppConfig
-    from grillmaster.pipeline.stage import RunOptions, StageContext
-    from grillmaster.sources.ytdlp import YtDlp
+    from grillmaster.stages.base import StageContext
 
 
-def build(ytdlp: YtDlp) -> StageDef:
-    """The stage downloading through `ytdlp` (tests pass a fake)."""
-
-    def run(ctx: StageContext) -> None:
-        state = ctx.state
-        platform = source_platform(state.platform)
-        download_live_chat(
-            ytdlp,
-            platform.url(state.id),
-            ctx.layout.chat_raw,
-            options=shared_options(platform, ctx.config.paths.cookies),
-        )
-        log = parse_live_chat(
-            ctx.layout.chat_raw,
-            section_start=state.section.start,
-            section_end=state.section.end,
-        )
-        write_model(ctx.layout.chat_messages, log)
-
-    def enabled(options: RunOptions) -> bool:
-        return options.chat
-
-    def params(_config: AppConfig) -> dict[str, str]:
-        return {"tool": "yt-dlp"}
-
-    return StageDef(
-        key=StageKey.CHAT_FETCH,
-        label="Fetch live chat",
-        weight=1,
-        run=run,
-        outputs=lambda _layout: (),
-        enabled=enabled,
-        params=params,
+def _run(ctx: StageContext) -> None:
+    request = source_request(ctx)
+    download_live_chat(
+        ctx.ytdlp, request.url, ctx.layout.chat_raw, options=request.options
     )
+    section = ctx.state.section
+    log = parse_live_chat(
+        ctx.layout.chat_raw, section_start=section.start, section_end=section.end
+    )
+    write_model(ctx.layout.chat_messages, log)
 
 
-STAGE = build(YtDlpLibrary())
+STAGE = StageDef(
+    key=StageKey.CHAT_FETCH,
+    label="Fetch live chat",
+    weight=1,
+    run=_run,
+    enabled=chat_enabled,
+    params=tool_params("yt-dlp"),
+)

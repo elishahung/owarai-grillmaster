@@ -4,7 +4,7 @@ import shutil
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from tests.fakes import FakeAgentRunner, make_blocks
+from tests.fakes import FakeAgentRunner, make_blocks, make_briefing
 
 from grillmaster.agents.errors import AgentOutputError
 from grillmaster.core.briefing import Briefing
@@ -22,24 +22,10 @@ if TYPE_CHECKING:
     from tests.stages.conftest import MakeContext
 
     from grillmaster.agents.task import AgentTask
-    from grillmaster.config.load import LoadedConfig
     from grillmaster.project.layout import ProjectLayout
 
-BRIEFING = Briefing(
-    summary="s",
-    characters=[],
-    proper_nouns=[],
-    glossary=[],
-    catchphrases=[],
-    tone_notes="t",
-    segment_summaries=[],
-)
+BRIEFING = make_briefing()
 CORRECTED = BRIEFING.model_copy(update={"summary": "fixed"})
-
-
-@pytest.fixture
-def agents() -> FakeAgentRunner:
-    return FakeAgentRunner()
 
 
 @pytest.fixture
@@ -176,9 +162,3 @@ def test_official_captions_join_the_prompt(
     instructions = agents.task(TASK_NAME).instructions
     assert "Official CC reference" in instructions
     assert str(project.ja_official_srt) in instructions
-
-
-def test_declares_no_root_outputs(layout: ProjectLayout, loaded: LoadedConfig):
-    assert glossary.STAGE.key is StageKey.GLOSSARY
-    assert glossary.STAGE.outputs(layout) == ()
-    assert glossary.STAGE.params(loaded.config) == {"model": "codex/gpt-5.6-sol/medium"}

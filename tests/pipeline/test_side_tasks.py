@@ -16,10 +16,11 @@ from grillmaster.events.types import (
     StepCompleted,
 )
 from grillmaster.pipeline.side_tasks import SideTaskManager
-from grillmaster.pipeline.stage import StageContext, StateStore
+from grillmaster.pipeline.state_store import StateStore
 from grillmaster.pipeline.steps import UsageCollector
 from grillmaster.project.state import DateResearchRecord, now
 from grillmaster.project.store import load_state
+from grillmaster.stages.base import StageContext
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -29,11 +30,9 @@ if TYPE_CHECKING:
     from grillmaster.agents.runner import AgentRunner
     from grillmaster.config.load import LoadedConfig
     from grillmaster.events.bus import EventBus
-    from grillmaster.pipeline.side_tasks import SideTaskDef
-    from grillmaster.pipeline.stage import RunOptions
-    from grillmaster.pipeline.steps import StepOutcome
     from grillmaster.project.layout import ProjectLayout
     from grillmaster.project.state import ProjectState
+    from grillmaster.stages.base import Externals, RunOptions, SideTaskDef, StepOutcome
 
 
 @pytest.fixture
@@ -45,6 +44,7 @@ def make_manager(
     options: RunOptions,
     agents: AgentRunner,
     bus: EventBus,
+    externals: Externals,
 ) -> Callable[..., SideTaskManager]:
     store = StateStore(layout, state)
 
@@ -56,6 +56,7 @@ def make_manager(
             options=options,
             agents=agents,
             events=bus,
+            externals=externals,
             workdir=layout.side_dir(task.key),
         )
 

@@ -4,7 +4,9 @@
 worker); it stamps the event with the time and the step/task scope of that
 thread and queues it. The Textual thread drains the queue into its
 `PipelineState` before each render (`feed`), so the state never needs a
-lock and an activity burst never blocks an agent thread on the UI.
+lock and an activity burst never blocks an agent thread on the UI. Once the
+dashboard is gone nothing drains the queue, so `detach` turns the sink into
+a pass-through (or a drop) for whatever the work still emits.
 
 `log_bridge` turns loguru records into `LogLine` events for the sink.
 """
@@ -58,12 +60,26 @@ class TuiSink:
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock
         self._queue: queue.SimpleQueue[Observed | WorkDone] = queue.SimpleQueue()
+        self._detached = False
+        self._forward: EventSink | None = None
 
     def emit(self, event: Event) -> None:
+        if self._detached:
+            if self._forward is not None:
+                self._forward.emit(event)
+            return
         self._queue.put(Observed(event, self._clock(), current_stage(), current_task()))
 
     def work_done(self, error: str | None) -> None:
-        self._queue.put(WorkDone(error, self._clock()))
+        if not self._detached:
+            self._queue.put(WorkDone(error, self._clock()))
+
+    def detach(self, forward: EventSink | None = None) -> None:
+        """Stop queueing: later events go to `forward` (or are dropped) and
+        whatever is queued is discarded. For when no dashboard drains it."""
+        self._forward = forward
+        self._detached = True
+        self.drain()
 
     def drain(self) -> list[Observed | WorkDone]:
         """Everything queued so far, oldest first."""

@@ -25,6 +25,8 @@ from grillmaster.tui.state import LogEntry, PipelineState
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
+    from grillmaster.events.types import Event
+
 
 def test_emit_stamps_time_and_the_emitting_scope():
     clock = FakeClock(42.0)
@@ -130,3 +132,30 @@ def test_log_bridge_lines_land_in_the_step_log(bridged):
     download = state.step("download")
     assert download is not None
     assert list(download.log) == [LogEntry("SUCCESS", "S downloaded")]
+
+
+class _Recorder:
+    def __init__(self) -> None:
+        self.events: list[Event] = []
+
+    def emit(self, event: Event) -> None:
+        self.events.append(event)
+
+
+def test_detach_discards_the_queue_and_forwards_later_events():
+    sink = TuiSink()
+    sink.emit(LogLine("INFO", "queued"))
+    forward = _Recorder()
+    sink.detach(forward)
+    late = LogLine("INFO", "late")
+    sink.emit(late)
+    sink.work_done(None)
+    assert sink.drain() == []
+    assert forward.events == [late]
+
+
+def test_detach_without_a_target_drops_events():
+    sink = TuiSink()
+    sink.detach()
+    sink.emit(LogLine("INFO", "dropped"))
+    assert sink.drain() == []

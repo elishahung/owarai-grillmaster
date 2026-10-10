@@ -16,7 +16,6 @@ import tomllib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import tomlkit
 from loguru import logger
 
 from grillmaster.config.errors import ConfigError
@@ -102,6 +101,8 @@ def register_program(
     user's comments and layout stay byte-for-byte. Returns the labels of the
     entries added; the file is not touched when there are none.
     """
+    import tomlkit  # noqa: PLC0415 - only a new program needs it
+
     # newline="": keep the file's own line endings for the byte-exact rewrite.
     raw = toml_path.read_text(encoding="utf-8", newline="")
     bom = _BOM if raw.startswith(_BOM) else ""

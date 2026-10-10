@@ -168,7 +168,9 @@ src/grillmaster/
 │   ├── source_id.py     # Platform enum、ID/URL 解析、source_url（原 Project.parse_source_str/.source）
 │   ├── paths.py         # MAX_PATH 預算與 fit_dir_name（原 services/paths.py）
 │   ├── stage_key.py     # StageKey StrEnum（順序即執行順序；layout 與 registry 共用）
-│   └── tool_session.py  # MCP session manifest model（agents 寫、agent_tools 讀）
+│   ├── tool_session.py  # MCP session manifest model（agents 寫、agent_tools 讀）
+│   ├── models.py        # StrictModel / FrozenModel（pydantic 共用基底）
+│   └── talent.py        # Talent（sources/state/translate/extras 共用唯一一份）
 ├── project/
 │   ├── state.py         # ProjectState、StageRecord ledger
 │   ├── layout.py        # ProjectLayout：所有路徑（唯一一份）
@@ -185,7 +187,7 @@ src/grillmaster/
 ├── agent_tools/         # §7：MCP stdio server
 │   ├── __main__.py  server.py  frames.py  srt_check.py
 ├── pipeline/
-│   ├── stage.py         # StageDef、StageContext
+│   ├── state_store.py   # StateStore：StageContext.state/update 背後的鎖與 atomic 存檔
 │   ├── registry.py      # 唯一的 stage 清單（順序、編號、權重、啟用條件）
 │   ├── runner.py        # 跑 stage、記 ledger、break-after
 │   ├── side_tasks.py    # cover / date research 的啟動與 join
@@ -193,6 +195,8 @@ src/grillmaster/
 │   ├── delivery.py      # package 等 delivery step，與最後的 archive 搬移
 │   └── serial.py
 ├── stages/              # 每個 stage 一個模組：從 layout 組輸入 → 呼叫領域 → 寫輸出
+│   ├── base.py          # StageDef、SideTaskDef、DeliveryStepDef、StageContext、RunOptions、Externals（pipeline 只往下 import）
+│   ├── _common.py       # 共用 glue：program_rules、source_request、frames_tool、role_params/tool_params 等
 │   ├── metadata.py download.py combine.py chat_fetch.py audio.py asr.py
 │   ├── transcript.py prepass.py chunks.py refine.py glossary.py finalize.py
 │   └── chat_translate.py cover.py date_research.py
@@ -527,7 +531,7 @@ class StageDef:
     # transcript, prepass, chunks, refine, glossary, finalize, chat_translate
     label: str
     weight: int
-    run: Callable[[StageContext], None]
+    run: Callable[[StageContext], str | None]  # 回傳值成為 StepCompleted.result（例：ASR 費用）
     outputs: Callable[
         [ProjectLayout], Sequence[Path]
     ]  # 宣告的成品（subs/…）；reset 與「只寫自己的東西」測試用
@@ -549,7 +553,7 @@ DELIVERY: tuple[DeliveryStepDef, ...] = (package,)  # 非 stage，但 label/weig
 
 `StageKey` 放在 `core/stage_key.py`，順序即執行順序；`ProjectLayout`（work 目錄編號）與遷移腳本在 registry 存在之前就能用它。
 
-`StageContext` 提供：`layout`、`state`（含 `update()` atomic 存檔）、`config`、`options`（本次執行參數）、`agents`（AgentRunner）、`events`、`workdir`（本 stage 的 `work/NN_key/`，已建立）。
+`StageContext` 提供：`layout`、`state`（含 `update()` atomic 存檔）、`config`、`options`（本次執行參數）、`agents`（AgentRunner）、`events`、`workdir`（本 stage 的 `work/NN_key/`，延遲建立）、`session_dir(label)`，以及外部程序 seam `ffmpeg`、`ytdlp`、`http`、`speech_to_text`（`run_project` 建一次 `Externals` 傳入；測試換 fake）。stage 是純模組函式，沒有 build factory。
 
 ### 9.2 Runner
 
@@ -805,7 +809,7 @@ prepass = "..."
 
 ### 12.6 素材池與泛化的 placeholder（judge）
 
-`package/pools.py` 統一「`<package>/pools/<name>/` 內 `001.*`、`002.*`… 連號素材 + `.cursor.json` 游標 + 先保留再使用」：
+`package/pools.py` 統一「`<package>/pools/<name>/` 內 `001.*`、`002.*`… 連號素材 + `.cursor.json` 游標 + 先保留再使用」（游標讀改寫持有 `.cursor.lock`，O_EXCL 互斥）：
 
 ```python
 class MediaPool:
@@ -840,6 +844,7 @@ class MediaPool:
 | `grill run <src> [HINT]`（= `grill <src>`） | 處理單一來源；選項：`--break-after`、`--parent`、`--cover`、`--date-research`、`--chat`、`--chat-layout`、`--remix [pool]`、`--start`、`--to` |
 | `grill serial <src>...` | 串接多集 |
 | `grill package <dir>` | 重新打包 |
+| `grill archive <id>` | 只做歸檔搬移（打包成功、歸檔失敗時免重 render） |
 | `grill reset <id> --from/--only <stage>` | 顯式重跑（§9.5） |
 | `grill status [<id>]` | 印 ledger、每個 stage 的模型、成本、session 結果 |
 | `grill doctor [--setup]` | 檢查 ffmpeg、三個 CLI 版本/登入、MCP 註冊、`grill.toml` 驗證；`--setup` 做一次性註冊（S2 路線 b） |

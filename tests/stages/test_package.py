@@ -80,7 +80,7 @@ def script() -> dict[str, object]:
 @pytest.fixture
 def finished(layout: ProjectLayout) -> ProjectLayout:
     """A project whose stages all ran: video, subtitles, briefing, reports."""
-    layout.subs_dir.mkdir(parents=True)
+    layout.root.mkdir(parents=True, exist_ok=True)
     layout.video.write_bytes(b"video")
     layout.cht_ass.write_text("ass", encoding="utf-8")
     write_srt_file(
@@ -410,7 +410,7 @@ def test_chat_panel_is_rendered_into_the_package_workdir(
     chain = arg_after(next(a for a in encodes(fake) if "-vf" in a), "-vf")
     assert (
         "pad=1920:1080:0:108:black,subtitles=work/package/chat.ass,"
-        "subtitles=subs/cht.ass:force_style='MarginR=394,MarginV=24',"
+        "subtitles=video.cht.ass:force_style='MarginR=394,MarginV=24',"
     ) in chain
 
 

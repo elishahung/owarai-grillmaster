@@ -74,9 +74,9 @@ def arg_after(argv: list[str], flag: str) -> str:
 
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
-    """A project directory holding `video.mp4` and `subs/cht.ass`."""
+    """A project directory holding `video.mp4`, `video.cht.ass` and `subs/`."""
     root = tmp_path / "project"
     (root / "subs").mkdir(parents=True)
     (root / "video.mp4").write_bytes(b"video")
-    (root / "subs" / "cht.ass").write_text("ass", encoding="utf-8")
+    (root / "video.cht.ass").write_text("ass", encoding="utf-8")
     return root

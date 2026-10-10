@@ -194,7 +194,7 @@ src/grillmaster/
 │   ├── runner.py        # 跑 stage、記 ledger、break-after
 │   ├── side_tasks.py    # cover / date research 的啟動與 join
 │   ├── steps.py         # 單一 step 執行器（Started/Completed/Failed、token 用量）
-│   ├── delivery.py      # package 等 delivery step，與最後的 archive 搬移
+│   ├── delivery.py      # stage 完成後的 archive 搬移，與 package 等 delivery step
 │   └── serial.py
 ├── stages/              # 每個 stage 一個模組：從 layout 組輸入 → 呼叫領域 → 寫輸出
 │   ├── base.py          # StageDef、SideTaskDef、DeliveryStepDef、StageContext、RunOptions、Externals（pipeline 只往下 import）
@@ -536,7 +536,7 @@ class StageDef:
     run: Callable[[StageContext], str | None]  # 回傳值成為 StepCompleted.result（例：ASR 費用）
     outputs: Callable[
         [ProjectLayout], Sequence[Path]
-    ]  # 宣告的成品（subs/…）；reset 與「只寫自己的東西」測試用
+    ]  # 宣告的成品（video.cht.*、subs/…）；reset 與「只寫自己的東西」測試用
     enabled: Callable[[RunOptions], bool] = always
     on_skip: Callable[[StageContext], None] | None = (
         None  # 例：section 參數在續跑時被忽略的警告
@@ -578,7 +578,7 @@ for stage in STAGES:
 
 ### 9.4 Delivery
 
-順序改為 stages → delivery step（package）→ 關閉 run log 與 JSONL → archive → `RunFinished`（#32 package→archive）。package 因此只讀本地專案、不讀 NAS 上的歸檔；archive 不是 `DeliveryStepDef`，由 runner 在 log 關閉後以注入的 `archive(layout) -> layout` 執行（只有注入時才出現在 plan），其事件只到 console/TUI。`serial` 改用 `pipeline` 的公開 API（`pipeline.runner.run_project`），parent 的 briefing 透過 `ProjectLayout(parent_dir).effective_briefing()` 讀取。
+順序為 stages →（side tasks join）→ archive → delivery step（package）→ `RunFinished`。owner 推翻了 #32（package→archive），恢復原設計：stage 一完成就歸檔（有設 `[paths] archive` 時），package 讀 NAS 上的歸檔副本。archive 不是 `DeliveryStepDef`，由 runner 以注入的 `archive(layout) -> layout` 執行（只有注入時才出現在 plan，排在 package 之前）：搬移前關閉 run log 與 JSONL（Windows 不能搬有開啟檔案的目錄），搬移後在新位置以 append 模式重開同一組檔案，`StateStore` 改指向新目錄；搬移失敗則在原處重開。archive 失敗時 run 失敗、package 不執行；package 失敗時 run 也失敗（`ArchivedDeliveryError`），訊息給出 `grill package "<歸檔目錄>"`，因為歸檔後 ID 在本地已解析不到，serial 也把該集視為完成、從下一集續跑。`--break-after` 仍跳過 archive 與 delivery。`serial` 改用 `pipeline` 的公開 API（`pipeline.runner.run_project`），parent 的 briefing 透過 `ProjectLayout(parent_dir).effective_briefing()` 讀取。
 
 ### 9.5 新指令 `grill reset`
 
@@ -601,12 +601,12 @@ grill reset <id> --only chunks     # 只清 chunks（下游不動，使用者自
 projects/<id>/
 ├── project.json               # ProjectState（§10.2）
 ├── video.mp4                  # 處理用影片（section 執行時為裁切後）
+├── video.cht.srt              # finalized 繁中 SRT（與影片同名，播放器自動載入）
+├── video.cht.ass              # 樣式化 ASS
 ├── poster.jpg  cover.png
 ├── subs/
 │   ├── ja.srt                 # ASR 產生的日文字幕（transcript stage 輸出）
 │   ├── ja.official.srt        # 平台 CC（有才有）
-│   ├── cht.srt                # finalized 繁中 SRT
-│   ├── cht.ass                # 樣式化 ASS
 │   └── chat.cht.json          # 翻好的聊天室（--chat 才有）
 ├── work/
 │   ├── 01_metadata/           info.json（yt-dlp）
@@ -634,6 +634,7 @@ projects/<id>/
 
 - 編號 = `StageKey` 順序。改變 stage 順序就是目錄結構變更（no-compat 原則下可接受）。`work/side/` 與 `work/package/` 不屬於 stage，刻意不編號。
 - `07_transcript`、`12_finalize` 這種沒有中間產物的 stage 不建立空目錄（`StageContext.workdir` 延遲建立）。
+- 最終字幕 `video.cht.srt` / `video.cht.ass` 放在根目錄、與 `video.mp4` 同 stem（`ProjectLayout` 由 `video` 路徑推導），播放器才會自動載入；`subs/` 只放日文字幕與聊天室。
 - `subs/ja.official.srt` 由 combine stage 產生（section 執行時要依裁切範圍平移/過濾 timestamp，所以必須在 combine 之後）。平台沒有 CC 或多段影片時不產生，這是正常情況；**有下載到 CC 但正規化失敗則讓 stage 失敗**（現行是警告後繼續，依「fail loudly」原則改掉）。`features.official_subtitles = false` 時完全不下載。
 - `ProjectLayout` 是**唯一**知道這些路徑的地方；package、TUI artifacts、agent_tools manifest 一律從 layout 取，刪掉 `project` 模組匯出的檔名常數。
 
@@ -686,7 +687,7 @@ layout.effective_briefing() -> Path   # glossary 版存在就用它，否則 pre
 | 舊 | 新 |
 |---|---|
 | `project.json` 的 `is_*`、`is_cover_generated`、`is_broadcast_date_researched` | `stages` ledger、`side_tasks`（研究過且 found 時，`broadcast_date` 搬進 `side_tasks.date_research.broadcast_date`） |
-| `video.ja.srt` / `video.official.ja.srt` / `video.cht.finalized.srt` / `video.cht.ass` / `chat.cht.json` | `subs/ja.srt` / `subs/ja.official.srt` / `subs/cht.srt` / `subs/cht.ass` / `subs/chat.cht.json` |
+| `video.ja.srt` / `video.official.ja.srt` / `video.cht.finalized.srt` / `video.cht.ass` / `chat.cht.json` | `subs/ja.srt` / `subs/ja.official.srt` / `video.cht.srt` / `video.cht.ass` / `subs/chat.cht.json`（繁中字幕原先遷到 `subs/cht.*`，owner 後來決定放回根目錄，見 §10.1） |
 | `poster.cover.png` | `cover.png` |
 | `metadata.info.json`、下載的分段 mp4 與 CC 原檔、`video.full.mp4` | `work/01_metadata/info.json`、`work/02_download/`、`work/02_download/full.mp4` |
 | `.asr/audio.ogg`、`.asr/asr.json` | `work/05_audio/`、`work/06_asr/` |
@@ -704,7 +705,7 @@ layout.effective_briefing() -> Path   # glossary 版存在就用它，否則 pre
 
 ### 11.1 檔案
 
-- `grill.toml`：gitignored，位置由 cwd 往上找，找不到用 `GRILL_HOME`。`projects/` 目錄相對於 `grill.toml` 所在位置，所以 `grill` 可以在任何目錄執行，`scripts/grill.bat` 的 `cd` 不再必要（改成 `uv tool install --editable .` 或保留一行 `uv run --project`）。
+- `grill.toml`：gitignored，位置由 cwd 往上找，找不到用 `GRILL_HOME`。`projects/` 目錄相對於 `grill.toml` 所在位置，所以 `grill` 可以在任何目錄執行，啟動器放在只供加入 PATH 的 `bin/grill.bat`（`scripts/` 是開發工具，不進 PATH）。
 - `grill.example.toml`：tracked，每個鍵都有註解。
 - `grill.schema.json`：由 `AppConfig` 產生，`grill.toml` 第一行 `#:schema ./grill.schema.json` 讓 Taplo / Even Better TOML 補全與驗證；測試斷言 schema 是最新的。
 - `.env`：只剩 `ELEVENLABS_API_KEY` 這類金鑰。
@@ -848,7 +849,7 @@ class MediaPool:
 | `grill run <src> [HINT]`（= `grill <src>`） | 處理單一來源；選項：`--break-after`、`--parent`、`--cover`、`--date-research`、`--chat`、`--chat-layout`、`--remix [pool]`、`--start`、`--to` |
 | `grill serial <src>...` | 串接多集 |
 | `grill package <dir>` | 重新打包 |
-| `grill archive <id>` | 只做歸檔搬移（打包成功、歸檔失敗時免重 render） |
+| `grill archive <id>` | 只做歸檔搬移（歸檔失敗時重試，免重跑 stage；之後再 `grill package <歸檔目錄>`） |
 | `grill reset <id> --from/--only <stage>` | 顯式重跑（§9.5） |
 | `grill status [<id>]` | 印 ledger、每個 stage 的模型、成本、session 結果 |
 | `grill doctor [--setup]` | 檢查 ffmpeg、三個 CLI 版本/登入、MCP 註冊、`grill.toml` 驗證；`--setup` 做一次性註冊（S2 路線 b） |

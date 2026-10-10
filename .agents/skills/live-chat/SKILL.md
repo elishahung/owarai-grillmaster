@@ -28,8 +28,8 @@ For registry and ledger rules, see **project-architecture**.
 - Normalization keeps text messages and Super Chats (`kind="paid"`, `amount`). It drops
   membership, gift and system items, and emoji runs, which libass cannot draw.
   `ChatMessage.id` is the message's final position in the log.
-- Translate runs after finalize, so `subs/cht.srt` and `effective_briefing()` serve as ground
-  truth. `subs/ja.srt` is paired with `cht.srt` by position, only when the block counts match.
+- Translate runs after finalize, so `video.cht.srt` and `effective_briefing()` serve as ground
+  truth. `subs/ja.srt` is paired with `video.cht.srt` by position, only when the block counts match.
   A chat failure leaves the main subtitles finalized.
 - `live_chat` must not import `grillmaster.project` or `grillmaster.config` (import-linter). The
   stage passes in `ChatTranslationInputs` and `ChatTranslationFiles` (cache paths, session dirs).
@@ -71,7 +71,7 @@ For registry and ledger rules, see **project-architecture**.
   - `side`: the 16:9 picture is shrunk into the left `SIDE_VIDEO_WIDTH` box. Chat fills the
     black right column with no background and scrolls out at the top edge. The dialogue moves to
     the bottom bar via `force_style` margins built from `subtitles.ass.MARGIN_H`.
-    `subs/cht.ass` is never rewritten.
+    `video.cht.ass` is never rewritten.
   - `overlay`: full frame, with a translucent rounded panel on the right that ends above the
     dialogue.
 - `package/render.py::BurnPlan` owns the ffmpeg syntax. The layers are `(chat.ass, dialogue)`,

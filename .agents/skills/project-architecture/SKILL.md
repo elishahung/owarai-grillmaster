@@ -65,11 +65,12 @@ members is a layout change. `pipeline/registry.py` holds the only lists:
 | 6 | `asr` | `work/06_asr/asr.json`; adds `asr_cost_usd` (an existing `asr.json` costs nothing) |
 | 7 | `transcript` | `subs/ja.srt` |
 | 8–11 | `prepass`, `chunks`, `refine`, `glossary` | work dirs only (translate-pipeline, postprocess-and-packaging) |
-| 12 | `finalize` | `subs/cht.srt`, `subs/cht.ass` |
+| 12 | `finalize` | `video.cht.srt`, `video.cht.ass` (root, `video.mp4`'s stem: players auto-load them) |
 | 13 | `chat_translate` | `--chat` only: `subs/chat.cht.json` |
 
 Side tasks: `cover` (after `download`), `date_research` (after `metadata`).
-Delivery: `package`. Archive is not a step definition; the runner does it last.
+Delivery: `package`. Archive is not a step definition; the runner does it
+between the stages and delivery.
 
 **Stage API (`stages/base.py`, below `pipeline`):**
 - `StageDef(key, label, weight, run, outputs, enabled, on_skip, params,
@@ -103,8 +104,12 @@ preflight of every stage that will run; a rejected run creates nothing) →
 step executor: scope, Started/Completed/Failed, per-step token usage) then
 `state.mark_done` with an atomic save. `--break-after <key>` stops after that
 stage (ran, complete or disabled) and reports the rest as `breakpoint`; side
-tasks and delivery are skipped entirely. Then side tasks join, delivery runs,
-project logs close, archive moves the directory, `RunFinished`.
+tasks, archive and delivery are skipped entirely. Then side tasks join, the
+archive move runs (`delivery.run_archive`: logs close, the directory moves,
+`ProjectLogs.relocate` reopens the same files appending, `StateStore.relocate`
+repoints saves), delivery runs on the moved layout, `RunFinished`. A delivery
+failure after a move raises `ArchivedDeliveryError` naming `grill package
+"<archived dir>"` (the ID no longer resolves locally).
 `deliver_project` (`grill package`) runs only the delivery steps.
 
 **Side tasks (`pipeline/side_tasks.py`):** start on a daemon thread with a
@@ -121,13 +126,15 @@ the only sanctioned way to force a re-run.
 **Serial (`pipeline/serial.py`):** each project's final directory (archived
 one when `[paths] archive` is set) becomes the next `--parent`; the pre-pass
 reads `ProjectLayout(parent).effective_briefing()`. Stops at the first failure
-and logs the resume command; emits `BatchItemStarted`.
+and logs the resume command (an `ArchivedDeliveryError` project counts as done,
+since re-running its source would start over); emits `BatchItemStarted`.
 
 ## Project (`project/`)
 
 - `layout.py` `ProjectLayout` is the **only** place that spells a project
   path (pure calculator, never creates dirs). Root: `project.json`,
-  `video.mp4`, `poster.jpg`, `cover.png`, `subs/`, `logs/{run,events}-<ts>`.
+  `video.mp4` + `video.cht.{srt,ass}`, `poster.jpg`, `cover.png`, `subs/`
+  (`ja.srt`, `ja.official.srt`, `chat.cht.json`), `logs/{run,events}-<ts>`.
   Work: `work/NN_<key>/`, unnumbered `work/side/<task>/` and `work/package/`.
   Agent sessions: `session/`, `session_<label>/`, retries `session.2/`.
   `effective_briefing()` = glossary's briefing if present, else pre-pass's.
@@ -214,7 +221,8 @@ is expanded in `cli/args.py`. On a TTY the run goes through
 - Caches hit on fixed filenames and never self-invalidate; `grill reset` is
   the explicit re-run. Never add hash or staleness checks.
 - Agent-written stages (refine, glossary) discard old output on re-entry.
-- Side tasks join in `finally`; `--break-after` skips side tasks and delivery.
+- Side tasks join in `finally`; `--break-after` skips side tasks, archive and
+  delivery.
 - Every agent call goes through `AgentRunner`; only ElevenLabs is metered.
 - Windows MAX_PATH 260: generated directory names go through the path budget.
 - Agent-written SRTs may carry a BOM; read them with `core.srt.read_srt_file`.
@@ -228,7 +236,7 @@ is expanded in `cli/args.py`. On a TTY the run goes through
 - New side task: `SideTaskKey`, `stages/<key>.py` `TASK`, a `SideTasks` field,
   add it to `SIDE_TASKS`; `start_after` must name a registered stage.
 - New delivery step: `stages/<key>.py` exporting a `DeliveryStepDef`, add it
-  to `DELIVERY` (runs after the stages, before archive).
+  to `DELIVERY` (runs after the archive move, on the moved layout).
 - New platform: `sources/` + `core/source_id.py` only.
 - New backend, capability or agent tool: agent-orchestration.
 - Done means `uv run poe check` (fmt-check, ruff, basedpyright, import-linter,

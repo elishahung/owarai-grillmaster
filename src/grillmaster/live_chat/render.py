@@ -122,7 +122,7 @@ class ChatPlacement:
 
     `picture` is the box the picture is letterboxed into (`None` keeps the
     full frame); `dialogue_style` is the `force_style` for the dialogue ASS
-    layer (`None` burns it unchanged; `subs/cht.ass` is never rewritten).
+    layer (`None` burns it unchanged; `video.cht.ass` is never rewritten).
     """
 
     picture: PictureBox | None

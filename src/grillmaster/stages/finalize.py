@@ -1,5 +1,6 @@
 """Finalize stage: `work/11_glossary/checked.srt` into the deliverables
-`subs/cht.ass` and `subs/cht.srt` (name spacing + Netflix-TC punctuation).
+`video.cht.ass` and `video.cht.srt` beside `video.mp4`, where players pick
+them up (name spacing + Netflix-TC punctuation).
 
 Name units come from the effective briefing and the fixed glossary. No
 intermediates, so `work/12_finalize/` is never created. The step result

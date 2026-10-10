@@ -1,4 +1,4 @@
-"""Run one project through the stages, side tasks, delivery and archive.
+"""Run one project through the stages, side tasks, archive and delivery.
 
 Per stage, in registry order: skip it when disabled for this run, skip it
 (running `on_skip`) when the ledger already has it, otherwise run it as a
@@ -6,8 +6,9 @@ step and record it in the ledger with an atomic save. The run stops after the
 `--break-after` stage whether that stage ran, was already complete or was
 disabled; the stages after it are reported skipped (`breakpoint`). Side
 tasks start as the loop passes their stage and are joined when the loop
-ends, however it ends. Then come the delivery steps, the project's logs
-close, and the archive move (when one is wired) runs last.
+ends, however it ends. Then the archive move (when one is wired) relocates
+the project, its logs and its state store, and the delivery steps run on the
+project where it now lives.
 
 `run_project` is the `grill run` entry (archive wired from `[paths] archive`);
 `deliver_project` runs only the delivery steps on an existing project
@@ -77,7 +78,7 @@ def run_project(
     creates nothing. The agent runner is built from `[agents]`, the
     processes and services by `real_externals`; events go to `sinks` (plus
     the project's JSONL log). With `[paths] archive` set, a complete run
-    ends by moving the project there.
+    moves the project there once the stages finish, and packages it there.
     """
     pipeline.check(
         options,
@@ -140,6 +141,18 @@ def archive_to(archived_root: Path) -> Archive:
     return move
 
 
+class ArchivedDeliveryError(RuntimeError):
+    """A delivery step failed after the archive move: the project no longer
+    resolves by ID, so the message names `grill package <archived dir>`."""
+
+    def __init__(self, archived: ProjectLayout, error: Exception) -> None:
+        super().__init__(
+            f"{error} (the project is already archived; resume with: "
+            f'grill package "{archived.root}")'
+        )
+        self.archived = archived
+
+
 def real_externals() -> Externals:
     """The real ffmpeg, yt-dlp, platform HTTP and ElevenLabs seams; each
     loads its heavy library only on first use."""
@@ -179,8 +192,10 @@ def run_pipeline(
     """Run an opened project; returns its final layout (moved by `archive`).
 
     `archive` moves the project directory and returns its new layout; it is
-    planned and run only when given. Raises whatever a stage, delivery step
-    or the archive raised, after the side tasks are joined and
+    planned and run only when given, right after the stages, so delivery
+    reads the moved project. Raises whatever a stage, the archive or a
+    delivery step raised (a delivery failure after a move as
+    `ArchivedDeliveryError`), after the side tasks are joined and
     `RunFinished(failed)` is emitted.
     """
     pipeline.check(options, loaded.config, loaded.secrets, state=state)
@@ -245,29 +260,36 @@ class _Run:
 
     def _steps(self, logs: ProjectLogs) -> ProjectLayout:
         self._stages()
-        run_delivery(
-            self._pipeline.delivery,
-            layout=self._store.layout,
-            context=self._context,
-            options=self._options,
-            config=self._loaded.config,
-            events=self._events,
-            clock=self._clock,
-            usage=self._usage,
-        )
         state = self._store.state
         logger.info(f"Project {state.id} total ASR cost: ${state.asr_cost_usd:.4f}")
-        if self._archive is None:
-            return self._store.layout
-        return run_archive(
-            self._archive,
-            self._store.layout,
-            logs=logs,
-            options=self._options,
-            events=self._events,
-            clock=self._clock,
-            usage=self._usage,
-        )
+        local = self._store.layout
+        if self._archive is not None:
+            moved = run_archive(
+                self._archive,
+                local,
+                logs=logs,
+                options=self._options,
+                events=self._events,
+                clock=self._clock,
+                usage=self._usage,
+            )
+            self._store.relocate(moved)
+        try:
+            run_delivery(
+                self._pipeline.delivery,
+                layout=self._store.layout,
+                context=self._context,
+                options=self._options,
+                config=self._loaded.config,
+                events=self._events,
+                clock=self._clock,
+                usage=self._usage,
+            )
+        except Exception as error:
+            if self._store.layout == local:
+                raise
+            raise ArchivedDeliveryError(self._store.layout, error) from error
+        return self._store.layout
 
     def _stages(self) -> None:
         with SideTaskManager(

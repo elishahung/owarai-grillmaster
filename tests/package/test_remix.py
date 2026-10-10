@@ -148,7 +148,7 @@ def test_renders_noise_headed_parts_and_reserves_the_noise(
     outputs = render_remix(
         fake,
         video=project / "video.mp4",
-        burn=BurnPlan.dialogue(project / "subs" / "cht.ass"),
+        burn=BurnPlan.dialogue(project / "video.cht.ass"),
         plan=PLAN,
         noise=noise,
         target_dir=target,
@@ -222,7 +222,7 @@ def test_a_failed_render_still_consumes_the_reserved_noise(
         render_remix(
             failing,
             video=project / "video.mp4",
-            burn=BurnPlan.dialogue(project / "subs" / "cht.ass"),
+            burn=BurnPlan.dialogue(project / "video.cht.ass"),
             plan=PLAN,
             noise=noise,
             target_dir=target,
@@ -254,7 +254,7 @@ def test_a_truncated_part_fails_the_remix(
         render_remix(
             fake,
             video=project / "video.mp4",
-            burn=BurnPlan.dialogue(project / "subs" / "cht.ass"),
+            burn=BurnPlan.dialogue(project / "video.cht.ass"),
             plan=PLAN,
             noise=noise,
             target_dir=target,
@@ -279,7 +279,7 @@ def test_every_part_shares_one_abort_event(
     render_remix(
         fake,
         video=project / "video.mp4",
-        burn=BurnPlan.dialogue(project / "subs" / "cht.ass"),
+        burn=BurnPlan.dialogue(project / "video.cht.ass"),
         plan=PLAN,
         noise=noise,
         target_dir=target,

@@ -7,12 +7,21 @@ from typing import TYPE_CHECKING
 
 import pytest
 from loguru import logger
-from tests.pipeline.fakes import Journal, StageFailedError, fake_stage
+from tests.pipeline.fakes import (
+    Journal,
+    StageFailedError,
+    failing,
+    fake_delivery,
+    fake_stage,
+)
 
+from grillmaster.config.load import LoadedConfig
+from grillmaster.config.model import validate_config
 from grillmaster.core.source_id import Platform, SourceId
 from grillmaster.core.stage_key import StageKey
 from grillmaster.events.types import BatchItemStarted, RunStarted
 from grillmaster.pipeline.registry import Pipeline
+from grillmaster.pipeline.runner import ArchivedDeliveryError
 from grillmaster.pipeline.serial import SerialRun
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.store import load_state, save_state
@@ -23,7 +32,6 @@ if TYPE_CHECKING:
 
     from tests.fakes import RecordingSink
 
-    from grillmaster.config.load import LoadedConfig
     from grillmaster.project.state import ProjectState
     from grillmaster.stages.base import StageContext
 
@@ -129,6 +137,36 @@ def test_failure_stops_the_chain_and_a_rerun_continues_it(
         load_state(final).parent
         == ProjectLayout.for_id(loaded.projects_root, EP2.video_id).root
     )
+
+
+def test_a_package_failure_after_the_archive_moves_the_chain_past_it(
+    *,
+    loaded: LoadedConfig,
+    roles: dict[str, str],
+    journal: Journal,
+    recording_sink: RecordingSink,
+    errors: list[str],
+    tmp_path: Path,
+):
+    archive_root = tmp_path / "archive"
+    config = validate_config(
+        {"agents": {"roles": roles}, "paths": {"archive": str(archive_root)}},
+        root=loaded.root,
+    )
+    archiving = LoadedConfig(root=loaded.root, config=config, secrets=loaded.secrets)
+    pipeline = Pipeline(
+        (fake_stage(StageKey.METADATA, journal),),
+        delivery=(fake_delivery("package", journal, action=failing("render broke")),),
+    )
+    chain = serial(EP1, EP2)
+
+    with pytest.raises(ArchivedDeliveryError):
+        chain.run(archiving, sinks=[recording_sink], pipeline=pipeline)
+
+    # Re-running EP1's source would start it over locally: the chain moves on.
+    archived = archive_root / "etc" / EP1.video_id
+    assert (chain.position, chain.parent) == (1, archived)
+    assert f"grill serial eptwo222 --parent {archived}" in errors[-1]
 
 
 def test_resume_command_quotes_paths_with_spaces():

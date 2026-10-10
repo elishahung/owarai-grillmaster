@@ -3,7 +3,7 @@ name: postprocess-and-packaging
 description: >-
   Agent post-processing and deliverable assembly under `src/grillmaster/`: `postprocess/`
   (refine + glossary check), `extras/` (cover, date research, titles), `subtitles/`
-  (skeleton check, finalize to cht.srt/cht.ass), `package/` (folder, NVENC render, remix,
+  (skeleton check, finalize to video.cht.srt/.ass), `package/` (folder, NVENC render, remix,
   pools, inserts) and their glue in `stages/{refine,glossary,finalize,cover,date_research,package}.py`,
   `pipeline/side_tasks.py`, `pipeline/delivery.py`. Read this before changing refine, glossary
   check, cover, date research, titles, finalize punctuation, ASS styling, or packaging.
@@ -46,7 +46,8 @@ own semantic rules and get `ProgramRules.instruction_text(<stage>)` appended.
 
 ## Finalize (`subtitles/finalize.py`, `subtitles/ass.py`)
 
-`checked.srt` → `subs/cht.ass` + `subs/cht.srt` (declared `outputs`; no
+`checked.srt` → `video.cht.ass` + `video.cht.srt` at the project root, sharing
+`video.mp4`'s stem so players auto-load them (declared `outputs`; no
 `work/12_finalize/`). Deterministic and last: name spacing (effective briefing
 names + curated Han/kana-Latin `zh` from the fixed glossary, longest first),
 then Netflix-TC punctuation. `subtitles/ass.py` holds canvas, font, margins and
@@ -75,11 +76,12 @@ exit even when a stage failed, skipped entirely by `--break-after`; done =
 
 Delivery step, not a stage: no ledger entry, runs every complete run when
 `[paths] package` is set, or alone via `grill package <dir|id> [--remix [pool]]
-[--chat-layout]`. In a run it reads the local project; archive comes after it,
-once project logs close (`delivery.run_archive`), and a package failure skips
-it. `grill archive <id>` retries only the move.
+[--chat-layout]`. In a run it comes after the archive move
+(`delivery.run_archive`), so with `[paths] archive` set it reads the archived
+copy; a failure there raises `ArchivedDeliveryError` naming
+`grill package "<archived dir>"`. `grill archive <id>` retries only the move.
 
-`_run` order: require `video.mp4`, `cht.ass`, `cht.srt` → remix pool (`--remix`
+`_run` order: require `video.mp4`, `video.cht.ass`, `video.cht.srt` → remix pool (`--remix`
 wins, else a `remix = true` program uses `package.remix_pool`; a missing pool
 fails) and inserts → `require_pools` + `plan_remix` **before any cursor moves**
 → titles → burn plan → `deliverable_dir` (staged `<name>.partial`, swapped in
@@ -108,7 +110,7 @@ against usable/1.03 (same length = failed speed-up; short = SMB/VPN truncation).
   never bare `0:v` (cover-art mjpeg streams).
 
 **Remix**: after the lead trim, `round_half_up(duration / 15 min)` segments
-(≥ 2, ≥ 60 s) snapped to `cht.srt` cue gaps; `N.mp4` = 60 s noise cut
+(≥ 2, ≥ 60 s) snapped to `video.cht.srt` cue gaps; `N.mp4` = 60 s noise cut
 (format-only fit) + content, concat stream-copied.
 
 **Pools** (`pools.py`): `<package>/pools/<name>/` with contiguous `001.*`… and

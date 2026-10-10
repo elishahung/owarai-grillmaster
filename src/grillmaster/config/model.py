@@ -89,7 +89,7 @@ class PathsConfig(BaseModel):
 
     archive: ConfigPath | None = Field(
         default=None,
-        description="Finished projects move here after delivery; unset keeps them in projects/.",
+        description="Finished projects move here once the stages finish, before packaging; unset keeps them in projects/.",
     )
     package: ConfigPath | None = Field(
         default=None,

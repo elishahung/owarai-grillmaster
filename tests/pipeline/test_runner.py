@@ -38,7 +38,11 @@ from grillmaster.events.types import (
     StepStarted,
 )
 from grillmaster.pipeline.registry import Pipeline
-from grillmaster.pipeline.runner import run_pipeline, run_project
+from grillmaster.pipeline.runner import (
+    ArchivedDeliveryError,
+    run_pipeline,
+    run_project,
+)
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.state import TaskRecord, now
 from grillmaster.project.store import load_state, save_state
@@ -188,17 +192,17 @@ def test_event_sequence(
                     {"tool": "yt-dlp"},
                     2,
                 ),
-                PlanEntry("package", "Deliver package", PlanKind.DELIVERY, True, {}, 3),
                 PlanEntry("archive", "Archive", PlanKind.DELIVERY, True, {}, 1),
+                PlanEntry("package", "Deliver package", PlanKind.DELIVERY, True, {}, 3),
             ),
         ),
         StepSkipped("metadata", PlanKind.STAGE, SkipReason.DISABLED),
         StepStarted("download", PlanKind.STAGE),
         StepCompleted("download", PlanKind.STAGE, 1.0),
-        StepStarted("package", PlanKind.DELIVERY),
-        StepCompleted("package", PlanKind.DELIVERY, 1.0),
         StepStarted("archive", PlanKind.DELIVERY),
         StepCompleted("archive", PlanKind.DELIVERY, 1.0, str(archived.root)),
+        StepStarted("package", PlanKind.DELIVERY),
+        StepCompleted("package", PlanKind.DELIVERY, 1.0),
         RunFinished(RunOutcome.COMPLETED),
     ]
 
@@ -325,8 +329,8 @@ def test_break_after_stops_and_skips_side_tasks_delivery_and_archive(
     assert steps(events)[-4:] == [
         StepCompleted("download", PlanKind.STAGE, 1.0),
         StepSkipped("combine", PlanKind.STAGE, SkipReason.BREAKPOINT),
-        StepSkipped("package", PlanKind.DELIVERY, SkipReason.BREAKPOINT),
         StepSkipped("archive", PlanKind.DELIVERY, SkipReason.BREAKPOINT),
+        StepSkipped("package", PlanKind.DELIVERY, SkipReason.BREAKPOINT),
     ]
     assert StepSkipped("cover", PlanKind.SIDE_TASK, SkipReason.BREAKPOINT) in events
     assert events[-1] == RunFinished(RunOutcome.COMPLETED)
@@ -613,7 +617,13 @@ def test_delivery_skips_disabled_steps_and_works_in_its_declared_dir(
     assert StepCompleted("package", PlanKind.DELIVERY, 1.0, "video.mp4") in events
 
 
-def test_archive_runs_last_with_the_logs_closed(
+def logged_steps(path: Path) -> list[tuple[str, str | None]]:
+    """`(type, key)` of every event in a JSONL log."""
+    records = [json.loads(line) for line in path.read_text("utf-8").splitlines()]
+    return [(record["type"], record.get("key")) for record in records]
+
+
+def test_archive_runs_before_delivery_and_the_logs_follow_the_project(
     run: Runner,
     journal: Journal,
     layout: ProjectLayout,
@@ -623,8 +633,12 @@ def test_archive_runs_last_with_the_logs_closed(
     def work(ctx: StageContext) -> None:
         logger.info("working")
 
+    seen: list[tuple[ProjectLayout, Path]] = []
+
     def package(ctx: StageContext) -> None:
-        assert ctx.layout == layout  # package reads the local project
+        seen.append((ctx.layout, ctx.workdir))
+        ctx.state.name = "packaged"
+        ctx.save()
         logger.info("packaging")
 
     pipeline = Pipeline(
@@ -632,28 +646,92 @@ def test_archive_runs_last_with_the_logs_closed(
         delivery=(fake_delivery("package", journal, action=package),),
     )
     assert run(pipeline, archive=archive) == archived
+    # Package reads the archived project, and its state saves land there.
+    assert seen == [(archived, archived.work_root / "package")]
+    assert load_state(archived).name == "packaged"
     assert not layout.root.exists()
+    # The run keeps appending to the same two files at the new location.
+    assert sorted(path.name for path in archived.logs_dir.iterdir()) == [
+        archived.events_log(STARTED_AT).name,
+        archived.run_log(STARTED_AT).name,
+    ]
     text = archived.run_log(STARTED_AT).read_text(encoding="utf-8")
     assert "[metadata] working" in text
     assert "[package] packaging" in text
-    assert "moving" not in text
-    lines = archived.events_log(STARTED_AT).read_text(encoding="utf-8").splitlines()
-    assert json.loads(lines[-1])["type"] == "StepCompleted"  # package's
-    assert load_state(archived).is_done(StageKey.METADATA)
+    assert "moving" not in text  # the move itself logs only to live sinks
+    assert logged_steps(archived.events_log(STARTED_AT))[-5:] == [
+        ("StepStarted", "archive"),
+        ("StepCompleted", "archive"),
+        ("StepStarted", "package"),
+        ("StepCompleted", "package"),
+        ("RunFinished", None),
+    ]
 
 
-def test_archive_failure_fails_the_run(
-    run: Runner, journal: Journal, recording_sink: RecordingSink
+def test_archive_failure_fails_the_run_before_delivery(
+    run: Runner,
+    journal: Journal,
+    recording_sink: RecordingSink,
+    layout: ProjectLayout,
 ):
     def broken(layout: ProjectLayout) -> ProjectLayout:
         raise OSError("NAS unreachable")
 
+    pipeline = Pipeline(
+        (fake_stage(StageKey.METADATA, journal),),
+        delivery=(fake_delivery("package", journal),),
+    )
     with pytest.raises(OSError, match="NAS unreachable"):
-        run(Pipeline((fake_stage(StageKey.METADATA, journal),)), archive=broken)
+        run(pipeline, archive=broken)
+    assert journal.entries == ["run:metadata@metadata"]
     assert recording_sink.events[-2:] == [
         StepFailed("archive", PlanKind.DELIVERY, "NAS unreachable"),
         RunFinished(RunOutcome.FAILED, "NAS unreachable"),
     ]
+    # The logs reopen where the project still is.
+    assert logged_steps(layout.events_log(STARTED_AT))[-3:] == [
+        ("StepStarted", "archive"),
+        ("StepFailed", "archive"),
+        ("RunFinished", None),
+    ]
+
+
+def test_a_package_failure_after_the_archive_names_the_archived_directory(
+    run: Runner,
+    journal: Journal,
+    recording_sink: RecordingSink,
+    archive: Archive,
+    archived: ProjectLayout,
+):
+    pipeline = Pipeline(
+        (fake_stage(StageKey.METADATA, journal),),
+        delivery=(fake_delivery("package", journal, action=failing("render broke")),),
+    )
+    with pytest.raises(ArchivedDeliveryError, match="render broke") as caught:
+        run(pipeline, archive=archive)
+    assert caught.value.archived == archived
+    message = str(caught.value)
+    assert f'resume with: grill package "{archived.root}"' in message
+    assert recording_sink.events[-2:] == [
+        StepFailed("package", PlanKind.DELIVERY, "render broke"),
+        RunFinished(RunOutcome.FAILED, message),
+    ]
+    assert load_state(archived).is_done(StageKey.METADATA)
+    assert logged_steps(archived.events_log(STARTED_AT))[-2:] == [
+        ("StepFailed", "package"),
+        ("RunFinished", None),
+    ]
+
+
+def test_a_package_failure_without_an_archive_raises_unchanged(
+    run: Runner, journal: Journal
+):
+    pipeline = Pipeline(
+        (fake_stage(StageKey.METADATA, journal),),
+        delivery=(fake_delivery("package", journal, action=failing("render broke")),),
+    )
+    with pytest.raises(StageFailedError, match=r"^render broke$"):
+        run(pipeline)
 
 
 def test_run_project_creates_and_runs_the_project(

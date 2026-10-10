@@ -7,7 +7,8 @@
 # Unknown keys are errors, so a typo fails loudly at startup.
 
 [paths]
-# Finished projects move here after delivery; omit to keep them in projects/.
+# Finished projects move here once the stages finish (packaging then reads
+# them there); omit to keep them in projects/.
 archive = 'V:\show\grilled'
 # Deliverable root: one folder per project (burned-in video, cover, titles).
 # Media pools for remix noise and inserts live in <package>/pools/<name>/.

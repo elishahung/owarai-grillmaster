@@ -1,10 +1,12 @@
-"""Delivery: the steps after the last stage (package), then the archive move.
+"""Delivery: the archive move after the last stage, then the delivery steps
+(package).
 
 Delivery steps are not stages: they have no ledger entry and run again on
-every complete run. A `--break-after` run skips them. Archive is not a
-`DeliveryStepDef`: it moves the project directory, so the runner performs it
-last, after the project's logs are closed, and delivery steps always read the
-local project (design §9.4, owner decision #32).
+every complete run. A `--break-after` run skips them and the archive. Archive
+is not a `DeliveryStepDef`: it moves the project directory, so the runner
+performs it as soon as the stages (and side tasks) are done, and the delivery
+steps then read the project where it now lives, the archived copy when an
+archive is configured (design §9.4).
 """
 
 from __future__ import annotations
@@ -98,17 +100,30 @@ def run_archive(
 ) -> ProjectLayout:
     """Move the project with `archive`; returns where it lives now.
 
-    Closes the project's logs first (Windows cannot move a directory with
-    open files), so from here on only live sinks see the run's events.
+    The project's logs close for the move (Windows cannot move a directory
+    with open files) and reopen, appending, wherever the project then lives:
+    the new location, or the old one when the move failed. `StepStarted` is
+    thus written before the move and the outcome after it; only the log lines
+    of the move itself reach just the live sinks.
     """
     if not options.complete_run:
         events.emit(StepSkipped(ARCHIVE_KEY, PlanKind.DELIVERY, SkipReason.BREAKPOINT))
         return layout
-    logs.close()
+
+    def move() -> ProjectLayout:
+        logs.close()
+        try:
+            moved = archive(layout)
+        except BaseException:
+            logs.relocate(layout)
+            raise
+        logs.relocate(moved)
+        return moved
+
     outcome = execute_step(
         ARCHIVE_KEY,
         PlanKind.DELIVERY,
-        lambda: archive(layout),
+        move,
         events=events,
         clock=clock,
         usage=usage,

@@ -180,7 +180,7 @@ def plan_for(project: Path, layout: ChatLayout) -> BurnPlan:
     return build_burn_plan(
         PackageFfmpeg({project / "video.mp4": 4.0}),
         video=project / "video.mp4",
-        dialogue=project / "subs" / "cht.ass",
+        dialogue=project / "video.cht.ass",
         chat=project / "subs" / "chat.cht.json",
         chat_ass=project / "work" / "package" / "chat.ass",
         layout=layout,
@@ -188,7 +188,7 @@ def plan_for(project: Path, layout: ChatLayout) -> BurnPlan:
 
 
 def test_dialogue_alone_without_chat_or_with_layout_none(project: Path):
-    dialogue_only = BurnPlan.dialogue(project / "subs" / "cht.ass")
+    dialogue_only = BurnPlan.dialogue(project / "video.cht.ass")
     assert plan_for(project, ChatLayout.SIDE) == dialogue_only
     write_chat(project / "subs" / "chat.cht.json")
     assert plan_for(project, ChatLayout.NONE) == dialogue_only
@@ -205,7 +205,7 @@ def test_side_layout_letterboxes_the_picture_beside_the_chat(project: Path):
     # over the picture.
     assert [layer.filter(project) for layer in plan.layers] == [
         "subtitles=work/package/chat.ass",
-        "subtitles=subs/cht.ass:force_style='MarginR=394,MarginV=24'",
+        "subtitles=video.cht.ass:force_style='MarginR=394,MarginV=24'",
     ]
     ass = (project / "work" / "package" / "chat.ass").read_text(encoding="utf-8-sig")
     # Messages sit straight on the black column: no panel background.
@@ -221,7 +221,7 @@ def test_overlay_layout_keeps_the_full_frame(project: Path):
     assert plan.canvas_filter is None
     assert [layer.filter(project) for layer in plan.layers] == [
         "subtitles=work/package/chat.ass",
-        "subtitles=subs/cht.ass",
+        "subtitles=video.cht.ass",
     ]
 
 
@@ -229,7 +229,7 @@ def test_unreadable_chat_falls_back_to_dialogue_only(project: Path):
     chat = project / "subs" / "chat.cht.json"
     chat.write_text("not json", encoding="utf-8")
     assert plan_for(project, ChatLayout.SIDE) == BurnPlan.dialogue(
-        project / "subs" / "cht.ass"
+        project / "video.cht.ass"
     )
 
 
@@ -237,5 +237,5 @@ def test_undecodable_chat_falls_back_to_dialogue_only(project: Path):
     chat = project / "subs" / "chat.cht.json"
     chat.write_bytes(b'{"messages": ["\xff\xfe"]}')
     assert plan_for(project, ChatLayout.SIDE) == BurnPlan.dialogue(
-        project / "subs" / "cht.ass"
+        project / "video.cht.ass"
     )

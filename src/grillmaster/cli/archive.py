@@ -18,8 +18,9 @@ def archive_command(
 ) -> None:
     """Archive a finished project without running any stage or delivery step.
 
-    For a run whose package succeeded but whose archive move failed (a NAS
-    behind a dropped VPN): the move is retried without re-rendering.
+    For a run whose archive move failed (a NAS behind a dropped VPN): the
+    move is retried without re-running any stage; `grill package <archived
+    dir>` then builds the deliverable, which the failed run never reached.
     """
     from grillmaster.core.stage_key import StageKey
     from grillmaster.project.errors import ProjectError

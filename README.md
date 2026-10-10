@@ -42,7 +42,7 @@ uv sync
 uv tool install --editable .   # 把 grill 裝到 PATH
 ```
 
-或者把 `scripts/` 加到 PATH，用 `scripts/grill.bat` 執行 repo 內 `.venv` 的 `grill`
+或者把 `bin/` 加到 PATH，用 `bin/grill.bat` 執行 repo 內 `.venv` 的 `grill`（`bin/` 只放這個啟動器；`scripts/` 是開發工具，不要加進 PATH）
 
 `grill` 會從目前目錄往上找 `grill.toml`，找不到就用 `GRILL_HOME` 指定的目錄；`projects/` 與 `.env` 都放在 `grill.toml` 旁邊。用 `uv tool install` 在其他目錄執行時，把 `GRILL_HOME` 設成 repo 根目錄即可
 
@@ -72,7 +72,7 @@ grill serial ep100001 ep100002 ep100003
 # 重新燒錄已完成的專案（可用 ID 或資料夾）
 grill package <專案 ID 或資料夾>
 
-# 打包成功但歸檔失敗時，只重做歸檔
+# 歸檔失敗時只重做歸檔（之後再對歸檔資料夾執行 grill package）
 grill archive <專案 ID>
 
 # 從某個 stage 起重跑（清掉該 stage 及之後的結果）；--only 只清單一 stage
@@ -92,7 +92,7 @@ grill status [專案 ID]
 
 ```toml
 [paths]
-archive = 'NAS:\video\ai'          # 完成後歸檔位置
+archive = 'NAS:\video\ai'          # stage 完成後的歸檔位置（打包前）
 package = 'NAS:\video\package'     # 燒錄字幕後的成品位置
 
 [agents.roles]                      # 各角色模型，格式為 backend/model[/effort]
@@ -130,12 +130,12 @@ ELEVENLABS_API_KEY=xxx
 
 每個專案在 `projects/<影片 ID>/`：
 
-- `subs/cht.ass`：套好樣式的繁中字幕
-- `subs/cht.srt`：給不支援 ASS 的播放器
-- `subs/ja.srt`：日文原文字幕（`ja.official.srt` 為平台官方字幕，有才有）
 - `video.mp4`、`poster.jpg`、`cover.png`（有開封面時）
+- `video.cht.ass`：套好樣式的繁中字幕，與影片同名，播放器會自動載入
+- `video.cht.srt`：給不支援 ASS 的播放器
+- `subs/ja.srt`：日文原文字幕（`ja.official.srt` 為平台官方字幕，有才有）
 - `project.json`：專案狀態與各 stage 完成紀錄
 - `work/NN_<stage>/`：各 stage 的中間產物與 agent session 紀錄
 - `logs/`：每次執行的 log 與事件紀錄
 
-設定 `[paths] package` 時，燒錄好的影片、封面與候選標題會輸出到該目錄；設定 `[paths] archive` 時，完成的專案會整個搬過去
+設定 `[paths] archive` 時，stage 全部完成後專案會整個搬過去，打包再從歸檔位置讀取；設定 `[paths] package` 時，燒錄好的影片、封面與候選標題會輸出到該目錄。歸檔後打包失敗，錯誤訊息會給出對歸檔資料夾執行的 `grill package` 指令

@@ -2,14 +2,16 @@
 `[paths] package`, burned-in (or remixed) and ready to upload.
 
 Runs after the last stage of every complete run, and alone via `grill
-package`; it always reads the local project (archive comes after it). Title
+package`; in a run it reads the project where it lives after the archive
+move (the archived copy when `[paths] archive` is set). Title
 suggestions are generated here (cached in `work/package/titles.json`), the
 chat panel is rendered to `work/package/chat.ass`. A remix comes from
 `--remix [pool]` or a program rule (`remix = true`, using `package.remix_pool`);
 inserts follow `[[package.inserts]]` and the program's `inserts`. Pools are
 checked and the remix segments picked before any pool cursor moves; the
 folder is built under a staging name and replaces the previous deliverable
-only on success. Any failure fails the run, before the archive move.
+only on success. Any failure fails the run; the archive move already
+happened, so the resume command is `grill package <archived dir>`.
 """
 
 from __future__ import annotations

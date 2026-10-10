@@ -68,7 +68,7 @@ def test_stage_weight_must_be_positive():
         replace(stage, weight=0)
 
 
-def test_plan_lists_stages_delivery_archive_then_side_tasks(
+def test_plan_lists_stages_archive_delivery_then_side_tasks(
     options: RunOptions, loaded: LoadedConfig
 ):
     journal = Journal()
@@ -94,8 +94,8 @@ def test_plan_lists_stages_delivery_archive_then_side_tasks(
             1,
         ),
         PlanEntry("chat_fetch", "Stage chat_fetch", PlanKind.STAGE, False, {}, 4),
-        PlanEntry("package", "Deliver package", PlanKind.DELIVERY, True, {}, 3),
         PlanEntry("archive", "Archive", PlanKind.DELIVERY, True, {}, 1),
+        PlanEntry("package", "Deliver package", PlanKind.DELIVERY, True, {}, 3),
         PlanEntry("cover", "Side cover", PlanKind.SIDE_TASK, False, {}, 2),
     )
 
@@ -114,8 +114,8 @@ def test_break_after_plans_side_tasks_and_delivery_disabled(
     )
     assert [(entry.key, entry.enabled) for entry in entries] == [
         ("metadata", True),
-        ("package", False),
         ("archive", False),
+        ("package", False),
         ("cover", False),
     ]
 

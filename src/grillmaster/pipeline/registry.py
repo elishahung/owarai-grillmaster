@@ -98,11 +98,11 @@ class Pipeline:
     def plan(
         self, options: RunOptions, config: AppConfig, *, archive: bool = False
     ) -> tuple[PlanEntry, ...]:
-        """Every step this run may execute, for `RunStarted`: stages, delivery,
-        the archive move (when `archive` is wired), then side tasks.
+        """Every step this run may execute, for `RunStarted`: stages, the
+        archive move (when `archive` is wired), delivery, then side tasks.
 
-        Side tasks and delivery are planned disabled on a `--break-after`
-        run, which never reaches them.
+        Side tasks, archive and delivery are planned disabled on a
+        `--break-after` run, which never reaches them.
         """
         complete = options.complete_run
         return (
@@ -110,6 +110,7 @@ class Pipeline:
                 _entry(stage, PlanKind.STAGE, config, enabled=stage.enabled(options))
                 for stage in self.stages
             ),
+            *((archive_entry(options),) if archive else ()),
             *(
                 _entry(
                     step,
@@ -119,7 +120,6 @@ class Pipeline:
                 )
                 for step in self.delivery
             ),
-            *((archive_entry(options),) if archive else ()),
             *(
                 _entry(
                     task,

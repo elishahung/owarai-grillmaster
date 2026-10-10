@@ -1,7 +1,7 @@
 """Every path inside a project directory, and nothing else.
 
-Deliverables live at the root (`video.mp4`, `poster.jpg`, `cover.png`,
-`subs/`); each stage keeps its intermediates in its own `work/NN_<stage>/`
+Deliverables live at the root (`video.mp4` with its `video.cht.srt` /
+`video.cht.ass` beside it, `poster.jpg`, `cover.png`, `subs/`); each stage keeps its intermediates in its own `work/NN_<stage>/`
 (`NN` = `StageKey.number`); side tasks and packaging get unnumbered
 `work/side/<task>/` and `work/package/`. No other module spells a project
 path: stages, packaging, the TUI and the tool manifest all ask this class.
@@ -89,13 +89,18 @@ class ProjectLayout:
 
     @property
     def cht_srt(self) -> Path:
-        """Finalized Traditional Chinese SRT."""
-        return self.subs_dir / "cht.srt"
+        """Finalized Traditional Chinese SRT, beside `video` and sharing its
+        stem, so players load it automatically."""
+        return self._beside_video("cht.srt")
 
     @property
     def cht_ass(self) -> Path:
-        """Styled Traditional Chinese ASS."""
-        return self.subs_dir / "cht.ass"
+        """Styled Traditional Chinese ASS, beside `video` like `cht_srt`."""
+        return self._beside_video("cht.ass")
+
+    def _beside_video(self, suffix: str) -> Path:
+        video = self.video
+        return video.with_name(f"{video.stem}.{suffix}")
 
     @property
     def chat_cht_json(self) -> Path:

@@ -53,7 +53,7 @@ OUTPUT = "setpts=PTS-STARTPTS,setpts=PTS/1.03,format=yuv420p,fps=29.94"
 TRIM = "trim=start=3.000:duration=10.000"
 SIDE_PLAN_LAYERS = (
     "subtitles=work/package/chat.ass,"
-    "subtitles=subs/cht.ass:force_style='MarginR=394,MarginV=24'"
+    "subtitles=video.cht.ass:force_style='MarginR=394,MarginV=24'"
 )
 
 
@@ -61,16 +61,16 @@ def side_plan(root: Path) -> BurnPlan:
     return BurnPlan(
         layers=(
             SubtitleLayer(root / "work" / "package" / "chat.ass"),
-            SubtitleLayer(root / "subs" / "cht.ass", "MarginR=394,MarginV=24"),
+            SubtitleLayer(root / "video.cht.ass", "MarginR=394,MarginV=24"),
         ),
         picture=PictureBox(0, 108, 1536, 864),
     )
 
 
 def test_dialogue_video_chain(project: Path):
-    plan = BurnPlan.dialogue(project / "subs" / "cht.ass")
+    plan = BurnPlan.dialogue(project / "video.cht.ass")
     assert package_video_chain(plan, TRIM, project) == (
-        f"{LOOK},subtitles=subs/cht.ass,{TRIM},{OUTPUT}"
+        f"{LOOK},subtitles=video.cht.ass,{TRIM},{OUTPUT}"
     )
 
 
@@ -112,7 +112,7 @@ def test_encode_args_keep_the_nvenc_recipe():
 
 
 def test_dialogue_plan_has_no_canvas(project: Path):
-    assert BurnPlan.dialogue(project / "subs" / "cht.ass").canvas_filter is None
+    assert BurnPlan.dialogue(project / "video.cht.ass").canvas_filter is None
 
 
 @pytest.mark.parametrize(
@@ -293,7 +293,7 @@ def test_burn_in_renders_parts_and_audio_then_muxes(tmp_path: Path, project: Pat
     burn_in(
         fake,
         project / "video.mp4",
-        BurnPlan.dialogue(project / "subs" / "cht.ass"),
+        BurnPlan.dialogue(project / "video.cht.ass"),
         output,
         events=sink,
     )
@@ -308,7 +308,7 @@ def test_burn_in_renders_parts_and_audio_then_muxes(tmp_path: Path, project: Pat
         assert arg_after(argv, "-i") == "video.mp4"
         assert arg_after(argv, "-map") == "0:v:0"
         assert "-an" in argv
-        assert arg_after(argv, "-vf").startswith(f"{LOOK},subtitles=subs/cht.ass,")
+        assert arg_after(argv, "-vf").startswith(f"{LOOK},subtitles=video.cht.ass,")
         assert argv[-len(PACKAGE_ENCODE_ARGS) - 1 : -1] == list(PACKAGE_ENCODE_ARGS)
     assert arg_after(audio[0], "-map") == "[a]"
     assert arg_after(audio[0], "-filter_complex") == package_audio_graph(3.0, 997.0)
@@ -342,7 +342,7 @@ def test_progress_is_capped_per_process(tmp_path: Path, project: Path):
     burn_in(
         fake,
         project / "video.mp4",
-        BurnPlan.dialogue(project / "subs" / "cht.ass"),
+        BurnPlan.dialogue(project / "video.cht.ass"),
         output,
         events=sink,
     )
@@ -362,7 +362,7 @@ def test_burn_in_rejects_an_output_that_was_not_sped_up(tmp_path: Path, project:
         burn_in(
             fake,
             project / "video.mp4",
-            BurnPlan.dialogue(project / "subs" / "cht.ass"),
+            BurnPlan.dialogue(project / "video.cht.ass"),
             output,
             events=sink,
         )
@@ -390,7 +390,7 @@ def test_burn_in_hands_one_abort_event_to_every_run(tmp_path: Path, project: Pat
     burn_in(
         fake,
         project / "video.mp4",
-        BurnPlan.dialogue(project / "subs" / "cht.ass"),
+        BurnPlan.dialogue(project / "video.cht.ass"),
         output,
         events=RecordingSink(),
     )

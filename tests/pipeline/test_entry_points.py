@@ -17,11 +17,15 @@ from grillmaster.events.types import (
     RunFinished,
     RunOutcome,
     RunStarted,
-    StepStarted,
 )
 from grillmaster.package.errors import PackageError
 from grillmaster.pipeline.registry import Pipeline
-from grillmaster.pipeline.runner import archive_to, deliver_project, run_project
+from grillmaster.pipeline.runner import (
+    ArchivedDeliveryError,
+    archive_to,
+    deliver_project,
+    run_project,
+)
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.store import load_state, save_state
 from grillmaster.stages.base import RunOptions
@@ -174,7 +178,32 @@ def test_deliver_project_runs_only_the_delivery_steps(
     assert list(layout.logs_dir.glob("run-*.log"))
 
 
-def test_a_failed_package_never_archives(
+def test_package_runs_on_the_archived_project(
+    archiving: LoadedConfig,
+    archive_root: Path,
+    journal: Journal,
+    recording_sink: RecordingSink,
+):
+    roots: list[Path] = []
+
+    def package(ctx: StageContext) -> None:
+        roots.append(ctx.layout.root)
+
+    final = run_project(
+        archiving,
+        RunOptions(source=SOURCE),
+        sinks=[recording_sink],
+        pipeline=Pipeline(
+            (fake_stage(StageKey.METADATA, journal),),
+            delivery=(fake_delivery("package", journal, action=package),),
+        ),
+    )
+
+    assert roots == [archive_root / "etc" / "epnew1"] == [final.root]
+    assert plan_keys(recording_sink.events) == ["metadata", "archive", "package"]
+
+
+def test_a_failed_package_after_the_archive_gives_the_resume_command(
     archiving: LoadedConfig,
     archive_root: Path,
     journal: Journal,
@@ -188,7 +217,7 @@ def test_a_failed_package_never_archives(
         delivery=(fake_delivery("package", journal, action=render_fails),),
     )
 
-    with pytest.raises(PackageError):
+    with pytest.raises(ArchivedDeliveryError) as caught:
         run_project(
             archiving,
             RunOptions(source=SOURCE),
@@ -196,13 +225,14 @@ def test_a_failed_package_never_archives(
             pipeline=pipeline,
         )
 
-    local = ProjectLayout.for_id(archiving.projects_root, "epnew1")
-    assert load_state(local).is_done(StageKey.METADATA)
-    assert not archive_root.exists()
-    assert not any(
-        isinstance(event, StepStarted) and event.key == "archive"
-        for event in recording_sink.events
+    archived = ProjectLayout(archive_root / "etc" / "epnew1")
+    assert isinstance(caught.value.__cause__, PackageError)
+    assert str(caught.value) == (
+        "burn-in output duration differs (the project is already archived; "
+        f'resume with: grill package "{archived.root}")'
     )
+    assert load_state(archived).is_done(StageKey.METADATA)
+    assert not ProjectLayout.for_id(archiving.projects_root, "epnew1").root.exists()
     assert recording_sink.events[-1] == RunFinished(
-        RunOutcome.FAILED, "burn-in output duration differs"
+        RunOutcome.FAILED, str(caught.value)
     )

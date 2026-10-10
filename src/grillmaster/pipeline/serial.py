@@ -18,7 +18,7 @@ from loguru import logger
 from grillmaster.events.bus import EventBus
 from grillmaster.events.types import BatchItemStarted
 from grillmaster.pipeline.registry import PIPELINE, Pipeline
-from grillmaster.pipeline.runner import run_project
+from grillmaster.pipeline.runner import ArchivedDeliveryError, run_project
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -40,7 +40,9 @@ class SerialRun:
     Stateful on purpose: after a failure, calling `run` again (the
     dashboard's retry) continues from the failed project, which is itself
     resumable, instead of restarting the chain whose earlier projects may
-    already be archived away.
+    already be archived away. A project whose packaging failed after its
+    archive move counts as done (re-running its source would start it over
+    locally): the chain continues after it and `grill package` finishes it.
     """
 
     sources: tuple[SourceId, ...]
@@ -78,11 +80,16 @@ class SerialRun:
             options = replace(self.template, source=source, parent=self.parent)
             try:
                 final = run_project(loaded, options, sinks=sinks, pipeline=pipeline)
-            except BaseException:
-                logger.error(
-                    f"Serial run stopped at {source}. Resume with the original "
-                    f"flags plus: {self.resume_command()}"
+            except BaseException as error:
+                if isinstance(error, ArchivedDeliveryError):
+                    self.parent = error.archived.root
+                    self.position += 1
+                resume = (
+                    f" Resume with the original flags plus: {self.resume_command()}"
+                    if self.position < total
+                    else ""
                 )
+                logger.error(f"Serial run stopped at {source}.{resume}")
                 raise
             self.parent = final.root
             self.position += 1

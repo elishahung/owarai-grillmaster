@@ -36,6 +36,12 @@ class StateStore:
     def state(self) -> ProjectState:
         return self._state
 
+    def relocate(self, layout: ProjectLayout) -> None:
+        """Save into `layout` from now on: the project directory moved
+        (archive), with the state already on disk there."""
+        with self._lock:
+            self._layout = layout
+
     def save(self) -> None:
         with self._lock:
             save_state(self._layout, self._state)

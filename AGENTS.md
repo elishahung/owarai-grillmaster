@@ -29,8 +29,9 @@ it left off.
 Pipeline at a glance (stage keys, in order; `work/NN_<key>/` per stage):
 `metadata → download → combine → (chat_fetch) → audio → asr → transcript →
 prepass → chunks → refine → glossary → finalize → (chat_translate)`, then
-delivery `(package)` and `(archive)`. Side tasks `(cover)` and
-`(date_research)` run beside the stages. Parentheses mark optional steps.
+`(archive)` and delivery `(package)`, which reads the archived copy. Side
+tasks `(cover)` and `(date_research)` run beside the stages. Parentheses
+mark optional steps.
 
 Commands: `grill <SOURCE> [HINT]` (= `grill run`), `grill serial`,
 `grill package`, `grill archive`, `grill reset <id> --from|--only <stage>`,

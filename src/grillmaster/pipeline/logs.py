@@ -3,8 +3,9 @@
 The text log is a loguru file sink taking every record (DEBUG and up, each
 tagged with the stage/task scope `install_log_context` puts in its `extra`);
 the JSONL file is a `JsonlSink` on the run's event bus. Both are opened on
-construction and hold their files until `close`, which the archive step
-calls before it moves the project directory.
+construction and hold their files until `close`. The archive step closes them
+before it moves the project directory and then `relocate`s them, so the run
+keeps appending to the same two files wherever the project now lives.
 """
 
 from __future__ import annotations
@@ -41,14 +42,23 @@ class ProjectLogs:
         self, events: EventBus, layout: ProjectLayout, started_at: datetime
     ) -> None:
         self._events = events
-        self._handler: int | None = logger.add(
-            layout.run_log(started_at),
+        self._started_at = started_at
+        self._handler: int | None = None
+        self._jsonl: JsonlSink | None = None
+        self.relocate(layout)
+
+    def relocate(self, layout: ProjectLayout) -> None:
+        """(Re)open this run's logs under `layout`, appending; open ones are
+        closed first."""
+        self.close()
+        self._handler = logger.add(
+            layout.run_log(self._started_at),
             level="DEBUG",
             format=_format,
             encoding="utf-8",
         )
-        self._jsonl: JsonlSink | None = JsonlSink(layout.events_log(started_at))
-        events.subscribe(self._jsonl)
+        self._jsonl = JsonlSink(layout.events_log(self._started_at))
+        self._events.subscribe(self._jsonl)
 
     def close(self) -> None:
         """Stop logging into the project; later calls do nothing."""

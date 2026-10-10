@@ -30,10 +30,10 @@ max_concurrent = 10
 # Only agy hears audio; codex and claude work from frames and subtitles.
 prepass = "agy/gemini-3.1-pro/high"      # whole-film analysis
 chunk = "agy/gemini-3.1-pro/high"        # concurrent chunk translation
-postprocess = "codex/gpt-5.6-sol/medium" # refine + glossary check
-utility = "codex/gpt-5.5/medium"         # titles, broadcast-date research
-chat = "codex/gpt-5.5/medium"            # live-chat replay; omit to use utility
-image = "codex/gpt-5.5/medium"           # cover; needs image generation (codex)
+postprocess = "codex/gpt-6.1-sol/high" # refine + glossary check
+utility = "codex/gpt-6.1-sol/medium"         # titles, broadcast-date research
+chat = "codex/gpt-6.1-sol/medium"            # live-chat replay; omit to use utility
+image = "codex/gpt-6.1-sol/medium"           # cover; needs image generation (codex)
 
 [asr]
 # ElevenLabs speech-to-text model and language hint.

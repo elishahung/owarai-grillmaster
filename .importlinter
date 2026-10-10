@@ -1,0 +1,29 @@
+[importlinter]
+root_package = grillmaster
+
+[importlinter:contract:layers]
+name = Layered architecture (design §5.1)
+type = layers
+layers =
+    (grillmaster.cli)
+    (grillmaster.tui) | (grillmaster.pipeline)
+    (grillmaster.stages)
+    (grillmaster.translate) | (grillmaster.postprocess) | (grillmaster.extras) | (grillmaster.package)
+    (grillmaster.live_chat) | (grillmaster.agent_tools)
+    (grillmaster.sources) | (grillmaster.asr) | (grillmaster.subtitles)
+    (grillmaster.agents)
+    (grillmaster.project) | (grillmaster.config)
+    (grillmaster.media) | (grillmaster.glossary)
+    grillmaster.core | grillmaster.events
+
+[importlinter:contract:domain-purity]
+# Extend source_modules as each new domain package lands.
+name = Foundation and domain modules never import project, config or legacy
+type = forbidden
+source_modules =
+    grillmaster.core
+    grillmaster.events
+forbidden_modules =
+    grillmaster.project
+    grillmaster.config
+    grillmaster.legacy

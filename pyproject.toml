@@ -12,6 +12,7 @@ dependencies = [
     "elevenlabs>=2.24.0",
     "ffmpeg-python>=0.2.0",
     "loguru>=0.7.3",
+    "mcp>=1.28.0",
     "pycryptodomex>=3.23.0",
     "pydantic>=2.12.5",
     "pydantic-settings>=2.12.0",
@@ -19,6 +20,7 @@ dependencies = [
     "rich>=14.3.1",
     "textual>=6.0.0",
     "textual-image>=0.8.0",
+    "tomlkit>=0.15.1",
     "typer>=0.21.1",
     "yt-dlp>=2026.8.19",
 ]
@@ -44,7 +46,7 @@ packages = ["src/grillmaster"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["live: calls real agent CLIs and spends subscription quota"]
-addopts = "-ra --strict-markers -m 'not live'"
+addopts = "-ra --strict-markers --import-mode=importlib -m 'not live'"
 
 [tool.poe.tasks]
 fmt = "ruff format"
@@ -54,7 +56,7 @@ types = "basedpyright"
 layers = "lint-imports"
 test = "pytest"
 # lint and types join `check` once the refactor reaches zero warnings.
-check = ["fmt-check", "test"]
+check = ["fmt-check", "layers", "test"]
 
 [tool.ruff]
 target-version = "py313"

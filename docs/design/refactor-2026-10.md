@@ -160,7 +160,9 @@ src/grillmaster/
 ├── core/
 │   ├── srt.py           # SrtBlock、parse、serialize、read_srt_file（utf-8-sig）（唯一一份）
 │   ├── timecode.py      # TimeRange；SRT/ASS 解析與格式化（唯一一份）
-│   ├── json_artifact.py # JsonArtifact[T]：load_or_none（壞檔=miss）、atomic write
+│   ├── fs.py            # atomic_write_text
+│   ├── json_artifact.py # load_model（壞檔=miss）、read_model（嚴格）、write_model
+│   ├── model_spec.py    # Backend、Effort、ModelSpec（config 與 agents 共用）
 │   ├── prompts.py       # importlib.resources 讀 .md、片段組裝
 │   ├── briefing.py      # Briefing schema（原 PrePassResult）+ render_for_prompt
 │   ├── source_id.py     # Platform enum、ID/URL 解析、source_url（原 Project.parse_source_str/.source）
@@ -419,7 +421,7 @@ work/09_chunks/0001-0119/session/
 - 一個 session（含它的所有修復回合）從開始到結束持有一個 slot；attempt 之間的等待與新 attempt 前會釋放 slot。
 - 不允許巢狀：持有 slot 的程式碼不得再呼叫 `run`/`run_many`（runner 以 contextvar 偵測並直接報錯），所以不會死鎖。
 - `agents.timeout_minutes` 是**每一回合**的上限，不是整個 session 的總和（一次 40 分鐘的 pre-pass 加三次修復要能完成）。
-- 背景 side task 可能在 chunk 階段排隊很久：`SideTaskStarted` 在派發時發出，`AgentSessionStarted` 在拿到 slot 時發出，TUI 顯示「排隊中」。side task 的 join 逾時從拿到 slot 起算，不從派發起算。
+- 背景 side task 可能在 chunk 階段排隊很久：`StepStarted(kind=side_task)` 在派發時發出，`AgentSessionStarted` 在拿到 slot 時發出，TUI 顯示「排隊中」。side task 的 join 逾時從拿到 slot 起算，不從派發起算。
 
 ### 6.8 原生 schema 的限制
 
@@ -437,17 +439,14 @@ codex `--output-schema` 走 strict 模式（所有欄位必填、每個 object �
 
 ```json
 {
-  "project_root": "...", "video": ".../video.mp4",
-  "frames_dir": ".../work/10_refine/frames",
-  "window": [0.0, null],
-  "reference_srt": ".../work/09_chunks/merged.srt",
-  "check_mode": "aligned",
-  "allowed": ["get_frames", "check_srt"],
-  "frame_max_side": 768
+  "project_root": "...",
+  "frames": { "video": ".../video.mp4", "frames_dir": ".../work/10_refine/frames",
+              "window": [0.0, null], "max_side": 768 },
+  "check_srt": { "reference_srt": ".../work/09_chunks/merged.srt" }
 }
 ```
 
-server 由環境變數 `GRILL_TOOL_SESSION=<manifest path>` 或 `--session` 參數取得 manifest，只暴露 `allowed` 中的工具。
+server 由 `--session` 參數（或環境變數 `GRILL_TOOL_SESSION`）取得 manifest；每個工具有自己的子設定，子設定為 `null` 的工具不暴露。
 
 注入方式：
 
@@ -480,8 +479,8 @@ server 由環境變數 `GRILL_TOOL_SESSION=<manifest path>` 或 `--session` 參�
 ```
 RunStarted(project, plan)          RunFinished(outcome, error?)
 BatchItemStarted(index, total, source)
-StageStarted(key)  StageCompleted(key, elapsed, result?)  StageSkipped(key, reason)  StageFailed(key, error)
-SideTaskStarted/Completed/Failed/Skipped(key, …)
+StepStarted(key, kind)  StepCompleted(key, kind, elapsed, result?)  StepSkipped(key, kind, reason)  StepFailed(key, kind, error)
+                                   # kind: stage | side_task | delivery（PlanKind）
 ProgressStarted(scope, label, total)  ProgressAdvanced(scope, n, note?)  ProgressFinished(scope)
 AgentSessionStarted(task, stage, backend, model, effort)
 AgentActivity(task, kind, summary)       # kind: thought | tool_call | tool_result | message | repair

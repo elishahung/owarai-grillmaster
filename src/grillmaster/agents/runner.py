@@ -28,7 +28,7 @@ import threading
 import time
 from collections import Counter
 from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
-from contextlib import ExitStack, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO
@@ -41,6 +41,7 @@ from grillmaster.agents.adapters.base import (
     Capability,
     McpServer,
     MediaDelivery,
+    SchemaDelivery,
     TurnDefect,
     TurnRequest,
 )
@@ -48,6 +49,7 @@ from grillmaster.agents.errors import (
     AgentCancelledError,
     AgentConfigError,
     AgentError,
+    AgentInputError,
     AgentOutputError,
     AgentQuotaError,
     AgentTransientError,
@@ -343,14 +345,16 @@ class AgentRunner:
         self, prepared: _Prepared[Any], session_dir: Path
     ) -> _SessionFiles:
         """A fresh session directory holding the files every turn reuses."""
-        task = prepared.task
-        view_file = prepared.adapter.media_delivery is MediaDelivery.VIEW_FILE
+        task, adapter = prepared.task, prepared.adapter
         message = prompt.compose_message(
             task.instructions,
             task.prompt,
             tools=task.tools,
-            view_file_images=prepared.images if view_file else (),
-            view_file_audio=prepared.audio if view_file else (),
+            images=prepared.images,
+            audio=prepared.audio,
+            view_file=adapter.media_delivery is MediaDelivery.VIEW_FILE,
+            finish_tool=prepared.schema is not None
+            and adapter.schema_delivery is SchemaDelivery.FINISH_TOOL,
         )
         if session_dir.exists():
             shutil.rmtree(session_dir)
@@ -438,7 +442,7 @@ class AgentRunner:
         task, adapter = prepared.task, prepared.adapter
         handle = adapter.start(request)
         while True:
-            final = self._consume(task.name, handle)
+            final = self._consume(task.name, handle, audio=bool(prepared.audio))
             state.session_id = final.session_id or state.session_id
             state.usage.update(final.usage)
             # The adapter's own findings come first: the output of a turn
@@ -478,22 +482,41 @@ class AgentRunner:
             task.validate(output)
         return output
 
-    def _consume(self, task_name: str, handle: SessionHandle) -> FinalOutput:
+    def _consume(
+        self, task_name: str, handle: SessionHandle, *, audio: bool
+    ) -> FinalOutput:
         """Emit the turn's activity; the newest message is held back because
-        the turn's last one is its final output, summarized by length."""
+        the turn's last one is its final output, summarized by length.
+
+        With `audio`, a message carrying the audio-unavailable marker stops
+        the turn at once (the CLI is ended) and raises `AgentInputError`."""
         held: Message | None = None
-        for event in handle.events():
-            if held is not None:
-                self._emit_event(task_name, held)
-                held = None
-            if isinstance(event, Message):
-                held = event
-            else:
-                self._emit_event(task_name, event)
+        with closing(handle.events()) as events:
+            for event in events:
+                if held is not None:
+                    self._emit_event(task_name, held)
+                    held = None
+                if audio and isinstance(event, Message):
+                    self._refuse_unheard_audio(task_name, event)
+                if isinstance(event, Message):
+                    held = event
+                else:
+                    self._emit_event(task_name, event)
         final = handle.result()
         if final.text:
             self._activity(task_name, *summarize_final(final.text))
         return final
+
+    def _refuse_unheard_audio(self, task_name: str, message: Message) -> None:
+        """Raise `AgentInputError` if `message` says the audio was not heard."""
+        reason = prompt.audio_unavailable(message.text)
+        if reason is None:
+            return
+        self._emit_event(task_name, message)
+        raise AgentInputError(
+            f"{task_name}: the model cannot hear its audio: "
+            f"{reason or '(no reason given)'}"
+        )
 
     # -- plumbing -------------------------------------------------------------
 

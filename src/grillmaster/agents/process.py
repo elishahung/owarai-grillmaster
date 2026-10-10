@@ -24,7 +24,7 @@ from typing import IO, TYPE_CHECKING, Protocol
 from grillmaster.core.process import StderrTail, release, spawn_tree, track
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from collections.abc import Callable, Generator, Mapping, Sequence
     from pathlib import Path
 
 __all__ = [
@@ -63,8 +63,9 @@ class ProcessSpec:
 class LineProcess(Protocol):
     """A running CLI whose stdout is consumed line by line."""
 
-    def lines(self) -> Iterator[str]:
-        """Stdout lines without the newline, until EOF or the timeout kill."""
+    def lines(self) -> Generator[str]:
+        """Stdout lines without the newline, until EOF or the timeout kill;
+        closing it early kills the tree."""
         ...
 
     def close_stdin(self) -> None: ...
@@ -108,7 +109,7 @@ class _PopenLineProcess:
         self._writer.start()
         self._watchdog.start()
 
-    def lines(self) -> Iterator[str]:
+    def lines(self) -> Generator[str]:
         stdout = _pipe(self._tree.leader.stdout)
         eof = False
         try:

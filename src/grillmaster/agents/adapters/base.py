@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Protocol
 from grillmaster.agents.errors import AgentTransientError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator, Mapping, Sequence
+    from collections.abc import Callable, Generator, Mapping, Sequence
     from pathlib import Path
 
     from grillmaster.agents.events import AgentEvent
@@ -45,6 +45,17 @@ class MediaDelivery(StrEnum):
     # The prompt lists absolute paths and the model opens each with its
     # `view_file` tool; the runner writes that instruction.
     VIEW_FILE = "view_file"
+
+
+class SchemaDelivery(StrEnum):
+    """How a schema-bound answer reaches the CLI's structured channel."""
+
+    # The CLI steers the model into its structured channel itself.
+    NATIVE = "native"
+    # The model must call the CLI's `finish` tool with the object as its
+    # arguments; a JSON text message is not submitted. The runner writes
+    # that instruction.
+    FINISH_TOOL = "finish_tool"
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,8 +116,10 @@ class FinalOutput:
 
 
 class SessionHandle(Protocol):
-    def events(self) -> Iterator[AgentEvent]:
-        """Normalized events as they stream; blocks until the turn ends."""
+    def events(self) -> Generator[AgentEvent]:
+        """Normalized events as they stream; blocks until the turn ends.
+        Closing it early ends a JSONL CLI's process tree (agy, codex); a
+        Claude SDK turn runs on in the background until it finishes."""
         ...
 
     def result(self) -> FinalOutput:
@@ -123,6 +136,9 @@ class AgentAdapter(Protocol):
 
     @property
     def media_delivery(self) -> MediaDelivery: ...
+
+    @property
+    def schema_delivery(self) -> SchemaDelivery: ...
 
     def preflight(
         self, spec: ModelSpec, images: Sequence[Path], audio: Sequence[Path]
@@ -144,7 +160,7 @@ class Turn(ABC):
         self._request = request
 
     @abstractmethod
-    def events(self) -> Iterator[AgentEvent]: ...
+    def events(self) -> Generator[AgentEvent]: ...
 
     @property
     @abstractmethod

@@ -65,6 +65,7 @@ from grillmaster.agents.adapters.base import (
     Capability,
     FinalOutput,
     MediaDelivery,
+    SchemaDelivery,
     Turn,
     TurnRequest,
 )
@@ -93,7 +94,13 @@ from grillmaster.core.process import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+    from collections.abc import (
+        AsyncIterator,
+        Callable,
+        Generator,
+        Iterator,
+        Sequence,
+    )
     from pathlib import Path
 
     from anyio.abc import Process
@@ -145,6 +152,7 @@ class ClaudeAdapter:
         }
     )
     media_delivery = MediaDelivery.ATTACHED
+    schema_delivery = SchemaDelivery.NATIVE
 
     def __init__(self, *, query_fn: QueryFn = query) -> None:
         self._query = query_fn
@@ -222,7 +230,7 @@ class ClaudeTurn(Turn):
         self._thread.start()
 
     @override
-    def events(self) -> Iterator[AgentEvent]:
+    def events(self) -> Generator[AgentEvent]:
         while not self._finished:
             item = self._queue.get()
             if item is self._END:

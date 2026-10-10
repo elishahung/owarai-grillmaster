@@ -20,11 +20,17 @@ from tests.agents.fakes import (
 )
 from tests.agents.fakes import make_runner as build_runner
 
-from grillmaster.agents.adapters.base import Capability, MediaDelivery, TurnDefect
+from grillmaster.agents.adapters.base import (
+    Capability,
+    MediaDelivery,
+    SchemaDelivery,
+    TurnDefect,
+)
 from grillmaster.agents.errors import (
     AgentCancelledError,
     AgentConfigError,
     AgentError,
+    AgentInputError,
     AgentOutputError,
     AgentQuotaError,
     AgentTransientError,
@@ -32,6 +38,7 @@ from grillmaster.agents.errors import (
     classify_failure,
 )
 from grillmaster.agents.events import Message, Thought, ToolCall, ToolResult
+from grillmaster.agents.prompt import AUDIO_UNAVAILABLE_MARKER
 from grillmaster.agents.runner import AgentRunner, SessionRecord
 from grillmaster.agents.task import (
     AgentJob,
@@ -515,6 +522,74 @@ def test_attached_media_are_not_listed_in_the_prompt(
     request = adapter.calls[0].request
     assert request.images == (image.resolve(),)
     assert "poster.jpg" not in request.message
+
+
+@pytest.mark.parametrize(
+    ("delivery", "output", "expected"),
+    [
+        pytest.param(
+            SchemaDelivery.FINISH_TOOL, SchemaOutput(Answer), True, id="finish"
+        ),
+        pytest.param(SchemaDelivery.NATIVE, SchemaOutput(Answer), False, id="native"),
+        pytest.param(SchemaDelivery.FINISH_TOOL, TextOutput(), False, id="no-schema"),
+    ],
+)
+def test_finish_instructions_only_for_a_schema_on_a_finish_tool_backend(
+    tmp_path: Path,
+    make_runner: Callable[..., AgentRunner],
+    delivery: SchemaDelivery,
+    output: Any,
+    expected: bool,
+):
+    adapter = FakeAdapter(
+        [Turn(final=final('{"color": "red"}', structured={"color": "red"}))],
+        schema_delivery=delivery,
+    )
+    make_runner(adapter).run(make_task(tmp_path, output))
+    assert ("【提交結果】" in adapter.calls[0].request.message) is expected
+
+
+def test_the_audio_unavailable_marker_stops_the_session(
+    tmp_path: Path,
+    make_runner: Callable[..., AgentRunner],
+    recording_sink: RecordingSink,
+):
+    audio = tmp_path / "chunk.ogg"
+    audio.write_bytes(b"x")
+    turn = Turn(
+        events=[
+            Message(f"{AUDIO_UNAVAILABLE_MARKER}: only a file name came back"),
+            Message("never read"),
+        ],
+        final=final("guessed anyway"),
+    )
+    adapter = FakeAdapter([turn])
+    task = make_task(tmp_path, TextOutput(), audio=(audio,))
+
+    with pytest.raises(AgentInputError, match="only a file name came back"):
+        make_runner(adapter).run(task)
+
+    assert turn.stopped
+    assert [call.kind for call in adapter.calls] == ["start"]
+    assert AUDIO_UNAVAILABLE_MARKER in adapter.calls[0].request.message
+    record = SessionRecord.model_validate_json(
+        (tmp_path / "refine" / "session" / "result.json").read_text(encoding="utf-8")
+    )
+    assert record.outcome is SessionOutcome.INPUT_ERROR
+    assert (
+        ActivityKind.MESSAGE,
+        f"{AUDIO_UNAVAILABLE_MARKER}: only a file name came back",
+    ) in activities(recording_sink)
+
+
+def test_the_audio_marker_means_nothing_without_audio(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    text = f"{AUDIO_UNAVAILABLE_MARKER}: quoted"
+    adapter = FakeAdapter([Turn(events=[Message(text)], final=final(text))])
+    result = make_runner(adapter).run(make_task(tmp_path, TextOutput()))
+    assert result.output == text
+    assert AUDIO_UNAVAILABLE_MARKER not in adapter.calls[0].request.message
 
 
 # --- attempts and error classification ---------------------------------------------

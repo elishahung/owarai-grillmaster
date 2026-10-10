@@ -57,6 +57,13 @@ class AgentOutputError(AgentError):
     outcome = SessionOutcome.OUTPUT_ERROR
 
 
+class AgentInputError(AgentError):
+    """The model declared an input it must perceive unusable (it cannot hear
+    the audio); the turn is stopped at once, never repaired or retried."""
+
+    outcome = SessionOutcome.INPUT_ERROR
+
+
 class AgentCancelledError(AgentError):
     """Not started, or stopped between turns: the run was aborted. Never
     retried; a re-run resumes the work."""

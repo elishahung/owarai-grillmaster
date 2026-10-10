@@ -52,6 +52,7 @@ class SessionOutcome(StrEnum):
     AUTH_ERROR = "auth_error"
     TRANSIENT_ERROR = "transient_error"
     OUTPUT_ERROR = "output_error"
+    INPUT_ERROR = "input_error"
     CANCELLED = "cancelled"
 
 

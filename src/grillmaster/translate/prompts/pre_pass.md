@@ -43,4 +43,4 @@ You DO NOT translate subtitles. You analyze the full source SRT (ASR-generated, 
 - Use the reference images as authoritative for visible people, outfits, props, {{audio:image_authority}}
 - Use Taiwan Mandarin conventions (not Mainland Simplified) in all `*_zh` fields.
 - If a character is referred to by multiple aliases in source (nickname, partial name, kana variant), list each alias under `proper_nouns` pointing to that alias's OWN same-span rendering (`"もぐら": "鼴鼠"`, never the full `"鈴木鼴鼠"`), and record the alias identity in that character's `role_note` (e.g. "常被暱稱為もぐら") so downstream workers still know who it refers to.
-- Output ONLY the JSON object. No prose, no markdown fences.
+- Your result is ONLY the JSON object. No prose, no markdown fences.

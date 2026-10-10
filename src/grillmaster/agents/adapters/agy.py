@@ -39,6 +39,7 @@ from grillmaster.agents.adapters.base import (
     Capability,
     FinalOutput,
     MediaDelivery,
+    SchemaDelivery,
     TurnDefect,
     TurnRequest,
 )
@@ -108,6 +109,7 @@ class AgyAdapter:
         }
     )
     media_delivery = MediaDelivery.VIEW_FILE
+    schema_delivery = SchemaDelivery.FINISH_TOOL
 
     def __init__(
         self,
@@ -362,7 +364,7 @@ def unheard_audio_defect(paths: Sequence[Path]) -> TurnDefect:
     return TurnDefect(
         message=(
             "你沒有用 view_file 開啟下列音訊檔，所以沒有真正聽到它們：\n"
-            f"{listed}\n請先逐一開啟聆聽，再依聽到的內容完成任務。"
+            f"{listed}\n請先在同一輪同時開啟聆聽，再依聽到的內容完成任務。"
         ),
         audio=tuple(paths),
     )

@@ -4,11 +4,25 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from grillmaster.agents.prompt import tools_section
+from grillmaster.agents.prompt import (
+    AUDIO_UNAVAILABLE_MARKER,
+    audio_unavailable,
+    tools_section,
+)
 from grillmaster.core.tool_session import FramesTool, ToolSession
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def _frames_session(tmp_path: Path, window: tuple[float, float | None]) -> ToolSession:
+    frames = FramesTool(
+        video=tmp_path / "video.mp4",
+        frames_dir=tmp_path / "frames",
+        window=window,
+        max_side=640,
+    )
+    return ToolSession(project_root=tmp_path, frames=frames, check_srt=None)
 
 
 @pytest.mark.parametrize(
@@ -26,11 +40,30 @@ def test_frames_window_uses_the_tool_description_precision(
     tmp_path: Path, window: tuple[float, float | None], expected: str
 ):
     # Same three decimals as `get_frames`' own description and its validator.
-    frames = FramesTool(
-        video=tmp_path / "video.mp4",
-        frames_dir=tmp_path / "frames",
-        window=window,
-        max_side=640,
-    )
-    session = ToolSession(project_root=tmp_path, frames=frames, check_srt=None)
-    assert tools_section(session).endswith(expected)
+    assert tools_section(_frames_session(tmp_path, window)).endswith(expected)
+
+
+def test_view_file_backends_are_told_to_open_the_returned_frames(tmp_path: Path):
+    session = _frames_session(tmp_path, (0.0, 10.0))
+    assert "view_file" in tools_section(session, view_file=True)
+    assert "view_file" not in tools_section(session)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        pytest.param(
+            f"{AUDIO_UNAVAILABLE_MARKER}: only the file name", "only the file name"
+        ),
+        pytest.param(
+            f"`{AUDIO_UNAVAILABLE_MARKER}：只有檔名`", "只有檔名", id="fullwidth"
+        ),
+        pytest.param(f"Sorry.\n{AUDIO_UNAVAILABLE_MARKER}", "", id="bare-line"),
+        pytest.param(
+            f"I will not write {AUDIO_UNAVAILABLE_MARKER} here", None, id="inline"
+        ),
+        pytest.param("I heard everything.", None, id="absent"),
+    ],
+)
+def test_audio_unavailable_reads_only_a_marker_line(text: str, expected: str | None):
+    assert audio_unavailable(text) == expected

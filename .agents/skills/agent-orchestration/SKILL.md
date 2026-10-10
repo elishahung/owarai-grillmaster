@@ -29,6 +29,11 @@ description: >-
   `domain-purity`); `ModelSpec`, `Role` and `ToolSession` live in `core/`.
 - No silent degradation: missing capability/model/input file or a non-strict
   schema raises `AgentConfigError` before any slot is taken.
+- Workspace isolation: agy and codex load every `AGENTS.md`/`GEMINI.md` and
+  `.agents/` skill from their cwd (and agy's `--add-dir`s) up to the nearest
+  `.git`. `workspace.seal_workspace_root` puts an empty `.git` file at the
+  root holding all agent workdirs and inputs (the pipeline seals
+  `projects/`), so a surrounding checkout's dev rules never reach a task.
 - A thin layer of our own over the three CLIs, not ACP or an agent framework:
   agy has no native ACP and ACP has no structured output. The event vocabulary
   borrows ACP's.
@@ -76,10 +81,14 @@ Stages check `runner.capabilities(role)` (`accepts_audio`) before adding audio.
 ## Adapters (`adapters/`, loaded lazily by `AdapterRegistry`)
 
 `base.py`: `media_delivery` (`ATTACHED`, or `VIEW_FILE`: the runner lists
-absolute paths to open), `preflight`, `start`/`resume(session_id, TurnRequest)`
-→ `SessionHandle` → `FinalOutput(session_id, text, structured, usage,
-defects)`. A resume repeats model, workdir, tools and schema with a new
-`message`; its images/audio are only a defect's resends.
+absolute paths to open in one parallel turn), `schema_delivery` (`NATIVE`, or
+`FINISH_TOOL`: the runner tells the model to submit through `finish`; agy
+otherwise prints the JSON and its own nag costs a full-context turn),
+`preflight`, `start`/`resume(session_id, TurnRequest)` → `SessionHandle` →
+`FinalOutput(session_id, text, structured, usage, defects)`. Closing
+`events()` early stops the turn (the CLI tree is killed). A resume repeats
+model, workdir, tools and schema with a new `message`; its images/audio are
+only a defect's resends.
 
 - **agy**: `--input-format stream-json --output-format stream-json -p=`, one
   text-only stdin line, stdin closed on `result`. Model id
@@ -92,13 +101,15 @@ defects)`. A resume repeats model, workdir, tools and schema with a new
   `--conversation`. `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_GENAI_API_KEY`
   are stripped so agy stays on the subscription login (its only isolation
   from user settings). Repair wording must never forbid tool calls: `finish`
-  is a tool.
+  is a tool. MCP image results reach the model only as offloaded files it
+  must `view_file` (one more turn), so the prompt says so.
 - **codex**: `codex exec --json … -`, `--ignore-user-config`, sandbox bypassed,
   `--image` on the start turn only, `--output-schema` (last `agent_message`),
   `-c mcp_servers.grill.*`, `-c tools.web_search=true` only when required.
   `exec resume <thread>` has no `--cd`: the process cwd is the workdir. No
   `--ephemeral` (resume needs the stored thread), so sessions accumulate in
-  `~/.codex/sessions`.
+  `~/.codex/sessions`. `--ignore-user-config` skips only `config.toml`: the
+  user's `~/.codex/AGENTS.md` still loads (no switch short of `CODEX_HOME`).
 - **claude**: SDK `query()` under `asyncio.run` on a per-turn thread (the only
   module allowed asyncio); `setting_sources=[]` + `strict_mcp_config=True`
   (like codex's `--ignore-user-config`: the user's own settings, MCP servers
@@ -125,7 +136,7 @@ defects)`. A resume repeats model, workdir, tools and schema with a new
 - Errors: `AgentConfigError`, `AgentQuotaError` (quota/usage-limit phrase,
   any status), `AgentAuthError` (401 + login hint), `AgentTransientError`
   (timeout, crash, no result, a bare 429/rate limit), `AgentOutputError`,
-  `AgentCancelledError`; `classify_failure`: quota phrase, then status (401
+  `AgentInputError`, `AgentCancelledError`; `classify_failure`: quota phrase, then status (401
   auth, 429 transient, other 4xx `AgentConfigError`), then whole-word auth
   markers, else transient. Claude's rejected rate-limit event and
   `billing_error` are quota too. The only retry loop is in `run`:
@@ -138,6 +149,12 @@ defects)`. A resume repeats model, workdir, tools and schema with a new
 - Events: adapters yield `Thought`/`ToolCall`/`ToolResult`/`Message`; the
   runner emits `AgentSessionStarted` (on slot), `AgentActivity` via
   `summarize` (final message by length only) and `AgentSessionFinished`.
+- Audio-unavailable protocol (runner-owned, backend-neutral, only for tasks
+  with audio): `prompt.audio_check_section` offers a
+  `GRILL_AUDIO_UNAVAILABLE: <reason>` line; a `Message` carrying it stops the
+  turn at once → `AgentInputError` (outcome `input_error`, never repaired or
+  retried; `usage` stays empty). Distinct from the agy defect for audio never
+  opened, which the adapter detects and repairs.
 
 ## MCP tools (`agent_tools/`)
 

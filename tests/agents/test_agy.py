@@ -17,6 +17,7 @@ from grillmaster.agents.adapters.agy import (
 )
 from grillmaster.agents.adapters.base import McpServer
 from grillmaster.agents.errors import AgentConfigError
+from grillmaster.agents.events import Message
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec
 
 if TYPE_CHECKING:
@@ -286,3 +287,32 @@ def test_without_finish_a_prose_answer_is_no_structured_output():
 
 def test_without_a_schema_no_structured_output_is_read_from_text():
     assert _turn_without_finish('{"color": "fresh"}', schema=False) is None
+
+
+def test_closing_the_events_early_stops_the_cli(
+    make_request: Callable[..., TurnRequest],
+):
+    lines = [
+        json.dumps({"event": "init", "conversation_id": "c1"}),
+        json.dumps(
+            {
+                "event": "step_update",
+                "step_update": {
+                    "step_index": 1,
+                    "state": "DONE",
+                    "step_type": "agent_response",
+                    "text_delta": "first",
+                },
+            }
+        ),
+        json.dumps({"event": "result", "result": {"status": "SUCCESS"}}),
+    ]
+    spawn = FakeSpawn(FakeProcess(lines))
+    events = _adapter(spawn).start(make_request(spec=PRO_HIGH)).events()
+
+    assert next(events) == Message("first")
+    events.close()
+
+    process = spawn.processes[0]
+    assert process.stopped_early
+    assert process.lines_read == 2

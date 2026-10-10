@@ -15,6 +15,7 @@ from grillmaster.agents.adapters.base import (
     Capability,
     FinalOutput,
     MediaDelivery,
+    SchemaDelivery,
     TurnDefect,
     TurnRequest,
 )
@@ -23,7 +24,7 @@ from grillmaster.agents.task import AgentTask
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec, Role
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Callable, Iterator, Sequence
+    from collections.abc import AsyncIterator, Callable, Generator, Sequence
 
     from grillmaster.agents.events import AgentEvent
     from grillmaster.agents.process import ProcessSpec
@@ -66,11 +67,17 @@ class FakeProcess:
         self.lines_read = 0
         # How many lines had been read when stdin closed; None = never.
         self.stdin_closed_after: int | None = None
+        # Stdout was closed before its end (the real process kills its tree).
+        self.stopped_early = False
 
-    def lines(self) -> Iterator[str]:
-        for line in self._lines:
-            self.lines_read += 1
-            yield line
+    def lines(self) -> Generator[str]:
+        try:
+            for line in self._lines:
+                self.lines_read += 1
+                yield line
+        except GeneratorExit:
+            self.stopped_early = True
+            raise
 
     def close_stdin(self) -> None:
         if self.stdin_closed_after is None:
@@ -163,6 +170,8 @@ class Turn:
     raw: list[str] = field(default_factory=list)
     # Called when the turn starts (e.g. to write files or block).
     on_start: Callable[[TurnRequest], None] | None = None
+    # Set when the runner closed the event stream before its end.
+    stopped: bool = False
 
 
 def final(
@@ -194,10 +203,14 @@ class FakeHandle:
         self._turn = turn
         self._request = request
 
-    def events(self) -> Iterator[AgentEvent]:
+    def events(self) -> Generator[AgentEvent]:
         for line in self._turn.raw:
             self._request.raw(line)
-        yield from self._turn.events
+        try:
+            yield from self._turn.events
+        except GeneratorExit:
+            self._turn.stopped = True
+            raise
 
     def result(self) -> FinalOutput:
         if self._turn.error is not None:
@@ -216,6 +229,7 @@ class FakeAdapter:
         backend: Backend = Backend.CODEX,
         capabilities: frozenset[Capability] | None = None,
         media_delivery: MediaDelivery = MediaDelivery.ATTACHED,
+        schema_delivery: SchemaDelivery = SchemaDelivery.NATIVE,
         script: Callable[[Call], Turn] | None = None,
         preflight_error: Exception | None = None,
     ) -> None:
@@ -224,6 +238,7 @@ class FakeAdapter:
             capabilities if capabilities is not None else frozenset(Capability)
         )
         self.media_delivery = media_delivery
+        self.schema_delivery = schema_delivery
         self._turns = list(turns or [])
         self._script = script
         self._preflight_error = preflight_error

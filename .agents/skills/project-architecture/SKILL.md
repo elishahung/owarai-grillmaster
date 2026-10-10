@@ -173,7 +173,10 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   `project_lock(projects_root, id)`: OS lock on `projects/.locks/<id>.lock`
   (outside the project, so it never blocks the archive move and also covers
   the archived copy); a second grill process on the same ID fails at once
-  with `ProjectBusyError`; a crash releases it. `naming.py`: deliverable name
+  with `ProjectBusyError`; a crash releases it. The pipeline's agent runner
+  build seals the projects root (`agents.workspace`: an empty `projects/.git`
+  that keeps this checkout's `AGENTS.md` and skills out of agent tasks); do
+  not delete it. `naming.py`: deliverable name
   `YYMMDD_<id>_<name>`, archived under `<archive>/YY/MM/` (`etc/` when
   undated), packaged flat; both destinations trimmed by
   `core.paths.fit_dir_name`; `PROJECT_INNER_PATH_RESERVE` is derived from the

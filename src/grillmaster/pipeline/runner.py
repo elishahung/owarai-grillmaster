@@ -26,6 +26,7 @@ from loguru import logger
 
 from grillmaster.agents.adapters import AdapterRegistry
 from grillmaster.agents.runner import AgentRunner
+from grillmaster.agents.workspace import seal_workspace_root
 from grillmaster.asr.client import connect_elevenlabs
 from grillmaster.events.bus import EventBus
 from grillmaster.events.context import stage_scope
@@ -221,6 +222,9 @@ def real_externals() -> Externals:
 
 
 def _agent_runner(loaded: LoadedConfig, events: EventBus) -> AgentRunner:
+    # Stage and side-task workdirs live under the projects root. An archived
+    # project (`grill package`) or a temp workdir is outside it and unsealed.
+    seal_workspace_root(loaded.projects_root)
     settings = loaded.config.agents
     return AgentRunner(
         settings.roles.specs(),

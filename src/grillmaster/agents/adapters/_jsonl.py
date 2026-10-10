@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import json
 import shutil
@@ -11,7 +12,7 @@ from grillmaster.agents.adapters.base import Turn
 from grillmaster.agents.errors import AgentConfigError
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Iterator
+    from collections.abc import Generator, Iterable
 
     from grillmaster.agents.adapters.base import FinalOutput, TurnRequest
     from grillmaster.agents.events import AgentEvent
@@ -47,22 +48,28 @@ class JsonlTurn(Turn):
         self._returncode: int | None = None
 
     @override
-    def events(self) -> Iterator[AgentEvent]:
+    def events(self) -> Generator[AgentEvent]:
         if self._returncode is not None:
             return
-        for line in self._process.lines():
-            if not line.strip():
-                continue
-            self._request.raw(line)
-            try:
-                record = json.loads(line)
-            except ValueError:
-                continue  # stray log line; kept in raw.jsonl only
-            if isinstance(record, dict):
-                yield from self._parser.feed(record)
-            if self._parser.done:
-                self._process.close_stdin()
-        self._returncode = self._process.wait()
+        # Closing `lines()` ends the CLI tree, so a caller that stops this
+        # generator early also stops the turn; `wait` then reaps it and
+        # closes its pipes either way.
+        try:
+            with contextlib.closing(self._process.lines()) as lines:
+                for line in lines:
+                    if not line.strip():
+                        continue
+                    self._request.raw(line)
+                    try:
+                        record = json.loads(line)
+                    except ValueError:
+                        continue  # stray log line; kept in raw.jsonl only
+                    if isinstance(record, dict):
+                        yield from self._parser.feed(record)
+                    if self._parser.done:
+                        self._process.close_stdin()
+        finally:
+            self._returncode = self._process.wait()
 
     @property
     @override

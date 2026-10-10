@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, cast
 import pytest
 from tests.pipeline.fakes import Journal, fake_delivery, fake_stage
 
+from grillmaster.agents.workspace import BOUNDARY_NAME
 from grillmaster.config.load import LoadedConfig
 from grillmaster.config.model import validate_config
 from grillmaster.core.source_id import Platform, SourceId
@@ -125,6 +126,18 @@ def test_run_project_without_an_archive_root_stays_in_place(
 
     assert final == ProjectLayout.for_id(loaded.projects_root, "epnew1")
     assert "archive" not in plan_keys(recording_sink.events)
+
+
+def test_a_run_seals_the_projects_root_for_agent_clis(
+    loaded: LoadedConfig, journal: Journal
+):
+    run_project(
+        loaded,
+        RunOptions(source=SOURCE),
+        sinks=[],
+        pipeline=Pipeline((fake_stage(StageKey.METADATA, journal),)),
+    )
+    assert (loaded.projects_root / BOUNDARY_NAME).is_file()
 
 
 def test_archive_to_moves_with_the_saved_state(

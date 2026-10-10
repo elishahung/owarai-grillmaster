@@ -34,4 +34,4 @@ Reporting rules:
 - When `status` is `"found"`, both `broadcast_date` and `trust` are required.
 - Report the trust tier of the adopted source honestly (`trust: "high" | "medium" | "low"`).
 - List the sources you relied on in `sources` (URL, source name, one-line evidence summary), and any dates you found but rejected in `rejected_candidates` with the reason (e.g. "BiliBili upload date, not original broadcast date").
-- Do not create or modify any files in the working directory. `project.json` and every other file are owned by the outer Python workflow. Your entire output is the final message: a single JSON object matching the schema appended below, with no surrounding prose.
+- Do not create or modify any files in the working directory. `project.json` and every other file are owned by the outer Python workflow. Your result is a single JSON object matching the schema appended below, with no surrounding prose.

@@ -45,7 +45,7 @@ The success criterion is natural, comedy-flavored Taiwanese variety subtitles th
 - **Vocal onomatopoeia:** When a block is just a speaker's raw vocalization (laughter, gasps, screams — e.g. `ハハハ`, `ああ`, `ええっ`), transliterate it into a natural Chinese counterpart that fits the moment (`哈哈哈`, `啊啊啊`, `誒`). Do NOT replace it with a descriptive label such as `(笑聲)` / `(驚呼)` — that style belongs to scene-sound blocks, not to a speaker's actual utterance.
 
 ### STRICT OUTPUT FORMAT
-- Return ONLY the structured JSON output `{"blocks": [{"index": <int>, "text": <string>}, ...]}` for your assigned range. No preamble, no summary, no markdown fences, no explanations.
+- Your result is ONLY the structured JSON object `{"blocks": [{"index": <int>, "text": <string>}, ...]}` for your assigned range. No preamble, no summary, no markdown fences, no explanations.
 - **`index` is copied verbatim from the source block.** Timecodes are not part of the output: the pipeline restores each block's timecode from its index, so a translation placed under the wrong index lands at the wrong time.
 - **One entry per input block.** Do not skip, merge, split, or reorder. Your output must have exactly as many entries as your input has blocks, each source index appearing exactly once, in source order.
 - The first entry's `index` is the exact index given to you as `from_index`; the last entry's is the exact index given to you as `to_index`.

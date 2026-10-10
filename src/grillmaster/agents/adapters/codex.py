@@ -28,6 +28,7 @@ from grillmaster.agents.adapters.base import (
     Capability,
     FinalOutput,
     MediaDelivery,
+    SchemaDelivery,
     TurnRequest,
 )
 from grillmaster.agents.errors import AgentTransientError, classify_failure
@@ -78,6 +79,7 @@ class CodexAdapter:
         }
     )
     media_delivery = MediaDelivery.ATTACHED
+    schema_delivery = SchemaDelivery.NATIVE
 
     def __init__(
         self, *, spawn: process.Spawn = process.spawn, executable: str | None = None

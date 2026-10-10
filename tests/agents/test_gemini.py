@@ -33,7 +33,12 @@ TURN = [
         {
             "type": "result",
             "status": "success",
-            "stats": {"total_tokens": 3, "input_tokens": 2, "output_tokens": 1},
+            "stats": {
+                "total_tokens": 3,
+                "input_tokens": 2,
+                "output_tokens": 1,
+                "models": {"gemini-3.8-flash": {"total_tokens": 3}},
+            },
         }
     ),
 ]
@@ -198,7 +203,17 @@ def _feed(parser: GeminiTurnParser, records: list[dict[str, Any]]) -> list[Any]:
 
 
 def _result(**stats: int) -> dict[str, Any]:
-    return {"type": "result", "status": "success", "stats": stats}
+    models = {"gemini-3.8-flash": stats}
+    return {"type": "result", "status": "success", "stats": stats | {"models": models}}
+
+
+def test_a_success_without_a_model_call_is_refused():
+    # gemini-cli 0.63 ends like this when its token check refuses the request.
+    parser = GeminiTurnParser()
+    no_call = {"type": "result", "status": "success", "stats": {"models": {}}}
+    _feed(parser, [{"type": "init", "session_id": "s1"}, no_call])
+    with pytest.raises(AgentConfigError, match="without calling the model"):
+        parser.finish(0, "")
 
 
 def test_messages_split_at_tool_calls_and_the_last_one_is_the_answer():

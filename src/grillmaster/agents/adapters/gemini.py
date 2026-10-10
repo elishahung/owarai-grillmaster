@@ -30,6 +30,12 @@ message on stdin. Facts this module is built on (gemini-cli 0.63.0):
   read because `--skip-trust` trusts the workdir); the user's own MCP
   servers stay off through `--allowed-mcp-server-names`, and their calls
   appear as `mcp_<server>_<tool>`.
+* Before a turn with media the CLI asks `countTokens` for the request size;
+  if that call fails (e.g. an unknown model: gemini-cli names previews
+  `gemini-3.1-pro-preview`), it estimates non-image parts by their base64
+  length, so a few MB of audio "exceed" the context window. The CLI then
+  ends with a `success` result whose `stats.models` is empty, without
+  calling the model or saving the session; the parser refuses that turn.
 * `--resume <session id>` continues a session stored per cwd, so the
   workdir must stay the same.
 * Paid API-key variables are removed from the environment so the CLI uses
@@ -254,12 +260,20 @@ class GeminiTurnParser:
             )
         if result.get("status") != "success":
             raise _failure(result.get("error"))
+        stats = result.get("stats")
+        if not (isinstance(stats, dict) and stats.get("models")):
+            raise AgentConfigError(
+                "gemini ended the turn without calling the model: its token "
+                "check refused the request (an unknown model name, which makes "
+                "it overestimate attached media, or a request over the context "
+                "window)"
+            )
         return FinalOutput(
             session_id=self._session_id,
             text=self._last_text,
             # `SchemaDelivery.PROMPT`: the runner reads the answer from `text`.
             structured=None,
-            usage=_usage(result.get("stats")),
+            usage=_usage(stats),
         )
 
     def _flush(self) -> Iterator[AgentEvent]:

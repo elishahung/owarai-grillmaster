@@ -123,7 +123,11 @@ only a defect's resends.
   agy and gemini share `_google.py` (key stripping, `mcpServers` entry,
   readable roots). Effort → `thinkingLevel` (`thinkingBudget` for
   `gemini-2.5*`) and the MCP server go into `<workdir>/.gemini/settings.json`
-  (rewritten every turn). Resume `--resume <id>` (sessions are per cwd). Same
+  (rewritten every turn). Model ids are gemini-cli's (`gemini-3.1-pro-preview`,
+  not agy's `gemini-3.1-pro`); with media attached, an unknown id or an
+  oversized request ends in a `success` result with empty `stats.models` (no
+  model call, no saved session), which the parser raises as `AgentConfigError`.
+  Resume `--resume <id>` (sessions are per cwd). Same
   API-key stripping as agy; the user's `~/.gemini` settings and `GEMINI.md`
   still load.
 - **codex**: `codex exec --json … -`, `--ignore-user-config`, sandbox bypassed,

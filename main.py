@@ -52,9 +52,7 @@ CoverOption = Annotated[
     bool,
     typer.Option(
         "--cover",
-        help=(
-            "Force-enable async cover image generation for this run."
-        ),
+        help=("Force-enable async cover image generation for this run."),
     ),
 ]
 DateResearchOption = Annotated[
@@ -311,9 +309,7 @@ def serial_command(
     try:
         run = SerialRun(
             sources=sources,
-            parent_project_path=(
-                Path(parent_project) if parent_project else None
-            ),
+            parent_project_path=(Path(parent_project) if parent_project else None),
             submit_kwargs=dict(
                 enable_cover=cover,
                 enable_date_research=date_research,

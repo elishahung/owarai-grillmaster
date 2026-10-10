@@ -50,16 +50,12 @@ class PackageTitlesTests(unittest.TestCase):
         return patch.object(
             package_titles,
             "run_inference",
-            return_value=package_titles.TitleSuggestions.model_validate(
-                _AGENT_TITLES
-            ),
+            return_value=package_titles.TitleSuggestions.model_validate(_AGENT_TITLES),
         )
 
     def test_existing_titles_are_reused_without_invoking_the_agent(self):
         source = self._make_source()
-        path = self._write_titles(
-            source, json.dumps(_AGENT_TITLES, ensure_ascii=False)
-        )
+        path = self._write_titles(source, json.dumps(_AGENT_TITLES, ensure_ascii=False))
 
         with self._enable(True), self._fake_inference() as inference:
             result = package_titles.ensure_titles(source)

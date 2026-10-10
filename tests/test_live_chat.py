@@ -64,7 +64,9 @@ class ParseLiveChatTests(unittest.TestCase):
                     _replay_line(5_000, _text_item("@early", {"text": "前"})),
                     _replay_line(
                         12_500,
-                        _text_item("@a", {"text": "池田 "}, emoji, {"text": "ありがとう"}),
+                        _text_item(
+                            "@a", {"text": "池田 "}, emoji, {"text": "ありがとう"}
+                        ),
                     ),
                     _replay_line(13_000, _text_item("@emoji-only", emoji)),
                     _replay_line(
@@ -78,7 +80,11 @@ class ParseLiveChatTests(unittest.TestCase):
                     ),
                     _replay_line(
                         14_000,
-                        {"liveChatMembershipItemRenderer": {"authorName": {"simpleText": "@m"}}},
+                        {
+                            "liveChatMembershipItemRenderer": {
+                                "authorName": {"simpleText": "@m"}
+                            }
+                        },
                     ),
                     _replay_line(30_000, _text_item("@late", {"text": "後"})),
                 ]
@@ -89,7 +95,10 @@ class ParseLiveChatTests(unittest.TestCase):
         log = parse_live_chat(raw, section_start=10.0, section_end=20.0)
 
         self.assertEqual(
-            [(m.id, m.seconds, m.author, m.text, m.kind, m.amount) for m in log.messages],
+            [
+                (m.id, m.seconds, m.author, m.text, m.kind, m.amount)
+                for m in log.messages
+            ],
             [
                 (0, 1.0, "@donor", "", "paid", "¥800"),
                 (1, 2.5, "@a", "池田 ありがとう", "text", None),
@@ -221,7 +230,11 @@ class RenderChatAssTests(unittest.TestCase):
         return TranslatedChatLog(
             messages=[
                 TranslatedChatMessage(
-                    id=0, seconds=1.0, author="@a", text="池田", translation="池田{\\b1}"
+                    id=0,
+                    seconds=1.0,
+                    author="@a",
+                    text="池田",
+                    translation="池田{\\b1}",
                 ),
                 TranslatedChatMessage(
                     id=1,
@@ -382,9 +395,7 @@ class LiveChatWorkflowTests(unittest.TestCase):
                 "enable_cover_generation",
                 "enable_broadcast_date_agent_fallback",
             ):
-                stack.enter_context(
-                    patch.object(workflow_api.settings, setting, False)
-                )
+                stack.enter_context(patch.object(workflow_api.settings, setting, False))
             stack.enter_context(
                 patch.object(workflow_api.settings, "archived_path", None)
             )
@@ -452,12 +463,8 @@ class LiveChatWorkflowTests(unittest.TestCase):
             patch.object(media_stage, "MediaProcessor"),
             patch.object(media_stage.settings, "enable_official_subtitles", False),
         ):
-            media_stage.process_video(
-                project, section_start=1800.0, section_end=2100.0
-            )
+            media_stage.process_video(project, section_start=1800.0, section_end=2100.0)
         project.update_section.assert_called_once_with(1800.0, 2100.0)
-
-
 
 
 if __name__ == "__main__":

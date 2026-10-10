@@ -52,9 +52,7 @@ class NormalizeOfficialSubtitleTests(unittest.TestCase):
 
     def test_single_raw_file_normalized_and_consumed(self):
         raw_path = self._write_raw()
-        self.assertTrue(
-            normalize_official_subtitle([raw_path], self.output_path)
-        )
+        self.assertTrue(normalize_official_subtitle([raw_path], self.output_path))
         self.assertFalse(raw_path.exists())
         blocks = parse_srt(self.output_path.read_text(encoding="utf-8"))
         self.assertEqual([b.index for b in blocks], [1, 2, 3])
@@ -64,9 +62,7 @@ class NormalizeOfficialSubtitleTests(unittest.TestCase):
     def test_multiple_video_parts_skipped(self):
         raw_a = self._write_raw("0.ja.srt")
         raw_b = self._write_raw("1.ja.srt")
-        self.assertFalse(
-            normalize_official_subtitle([raw_a, raw_b], self.output_path)
-        )
+        self.assertFalse(normalize_official_subtitle([raw_a, raw_b], self.output_path))
         self.assertFalse(self.output_path.exists())
         self.assertTrue(raw_a.exists())
         self.assertTrue(raw_b.exists())
@@ -75,9 +71,7 @@ class NormalizeOfficialSubtitleTests(unittest.TestCase):
         raw_variant = self._write_raw("0.ja-JP.srt")
         raw_exact = self._write_raw("0.ja.srt")
         self.assertTrue(
-            normalize_official_subtitle(
-                [raw_variant, raw_exact], self.output_path
-            )
+            normalize_official_subtitle([raw_variant, raw_exact], self.output_path)
         )
         self.assertTrue(self.output_path.exists())
         # Both variants are consumed; the exact `ja` one was the source.
@@ -156,9 +150,7 @@ class ChunkUserMessageTests(unittest.TestCase):
             glossary={},
             catchphrases=[],
             tone_notes="tone",
-            segment_summaries=[
-                SegmentSummary(from_index=1, to_index=1, summary="seg")
-            ],
+            segment_summaries=[SegmentSummary(from_index=1, to_index=1, summary="seg")],
         )
 
     def _chunk(self) -> list[SrtBlock]:

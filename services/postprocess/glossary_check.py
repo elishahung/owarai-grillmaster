@@ -31,9 +31,9 @@ from services.translate.pre_pass.schema import PrePassResult
 from ._srt_guard import parse_srt_file, validate_srt_against_source
 
 
-_PROMPT_TEMPLATE = (
-    Path(__file__).parent / "prompts" / "glossary_check.md"
-).read_text(encoding="utf-8")
+_PROMPT_TEMPLATE = (Path(__file__).parent / "prompts" / "glossary_check.md").read_text(
+    encoding="utf-8"
+)
 
 _OFFICIAL_SUBTITLE_TEMPLATE = (
     Path(__file__).parent / "prompts" / "official_subtitle_reference.md"
@@ -103,17 +103,12 @@ def _is_suspect(text: str, glossary_terms: list[str]) -> bool:
         return False
     if not glossary_terms:
         return True
-    return (
-        _SUSPECT_RE.search(_strip_exact_glossary(text, glossary_terms))
-        is not None
-    )
+    return _SUSPECT_RE.search(_strip_exact_glossary(text, glossary_terms)) is not None
 
 
 def _suspect_blocks(blocks: list[SrtBlock]) -> list[SrtBlock]:
     glossary_terms = _glossary_zh_terms()
-    return [
-        block for block in blocks if _is_suspect(block.text, glossary_terms)
-    ]
+    return [block for block in blocks if _is_suspect(block.text, glossary_terms)]
 
 
 def _render_suspect_list(blocks: list[SrtBlock]) -> str:
@@ -128,8 +123,7 @@ def _render_suspect_list(blocks: list[SrtBlock]) -> str:
 def _copy_pre_pass_raw_once(project: Project) -> bytes:
     if not project.pre_pass_path.exists():
         raise GlossaryCheckError(
-            f"pre-pass JSON missing before glossary check: "
-            f"{project.pre_pass_path}"
+            f"pre-pass JSON missing before glossary check: {project.pre_pass_path}"
         )
     original = project.pre_pass_path.read_bytes()
     if not project.pre_pass_raw_path.exists():
@@ -166,8 +160,7 @@ def glossary_check_subtitles(project: Project) -> None:
     """
     if not project.refined_srt_path.exists():
         raise GlossaryCheckError(
-            f"refined SRT missing before glossary check: "
-            f"{project.refined_srt_path}"
+            f"refined SRT missing before glossary check: {project.refined_srt_path}"
         )
 
     if project.glossary_checked_srt_path.exists():
@@ -186,9 +179,7 @@ def glossary_check_subtitles(project: Project) -> None:
     project.glossary_check_cache_dir.mkdir(parents=True, exist_ok=True)
     project.glossary_check_report_path.unlink(missing_ok=True)
     gloss_json_dst = project.glossary_check_cache_dir / FIXED_GLOSSARY_PATH.name
-    gloss_md_dst = (
-        project.glossary_check_cache_dir / _FIXED_GLOSSARY_MD_PATH.name
-    )
+    gloss_md_dst = project.glossary_check_cache_dir / _FIXED_GLOSSARY_MD_PATH.name
     copied: list[Path] = []
     try:
         shutil.copyfile(FIXED_GLOSSARY_PATH, gloss_json_dst)
@@ -212,9 +203,7 @@ def glossary_check_subtitles(project: Project) -> None:
             prompt += "\n\n" + program_instruction
         prompt += (
             "\n\nPriority suspect blocks (review these first; this is not "
-            "the full edit scope):\n"
-            + _render_suspect_list(suspects)
-            + "\n"
+            "the full edit scope):\n" + _render_suspect_list(suspects) + "\n"
         )
         spec = settings.agent_postprocess_model
         backend = Backend(spec.backend)

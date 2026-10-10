@@ -32,9 +32,7 @@ class SideTaskManager:
         progress: NoopProgressReporter | None = None,
     ) -> None:
         self.project = project
-        self.progress = (
-            progress if progress is not None else NoopProgressReporter()
-        )
+        self.progress = progress if progress is not None else NoopProgressReporter()
         self.cover_executor: ThreadPoolExecutor | None = None
         self.cover_future: Future | None = None
         self.cover_started_at: float | None = None
@@ -83,8 +81,7 @@ class SideTaskManager:
             return
 
         logger.info(
-            f"Stage: Starting async broadcast-date research for "
-            f"{self.project.id}"
+            f"Stage: Starting async broadcast-date research for {self.project.id}"
         )
         self.progress.side_task_started("date", "Broadcast-date research")
         self.date_executor = ThreadPoolExecutor(
@@ -96,9 +93,7 @@ class SideTaskManager:
         )
         self.date_future.add_done_callback(self._report_date_done)
 
-    def start_cover_if_needed(
-        self, *, enabled: bool, allow_side_tasks: bool
-    ) -> None:
+    def start_cover_if_needed(self, *, enabled: bool, allow_side_tasks: bool) -> None:
         if not enabled or not allow_side_tasks:
             self.progress.side_task_skipped("cover", "disabled")
             return
@@ -106,17 +101,13 @@ class SideTaskManager:
             self.progress.side_task_skipped("cover", "already-complete")
             return
 
-        logger.info(
-            f"Stage: Starting async cover generation for {self.project.id}"
-        )
+        logger.info(f"Stage: Starting async cover generation for {self.project.id}")
         self.progress.side_task_started("cover", "Cover generation")
         self.cover_executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="cover"
         )
         self.cover_started_at = perf_counter()
-        self.cover_future = self.cover_executor.submit(
-            generate_cover, self.project
-        )
+        self.cover_future = self.cover_executor.submit(generate_cover, self.project)
         self.cover_future.add_done_callback(self._report_cover_done)
 
     def _report_date_done(self, future: Future) -> None:
@@ -168,13 +159,9 @@ class SideTaskManager:
                 )
                 apply_date_research_result(self.project, date_result)
                 elapsed = self._elapsed_since(self.date_started_at)
-                logger.success(
-                    f"Stage complete: Broadcast-date research ({elapsed})"
-                )
+                logger.success(f"Stage complete: Broadcast-date research ({elapsed})")
             except Exception as date_error:
-                logger.warning(
-                    f"Broadcast-date research failed: {date_error}"
-                )
+                logger.warning(f"Broadcast-date research failed: {date_error}")
                 if not self._date_reported:
                     self.progress.side_task_failed("date", str(date_error))
         if self.date_executor is not None:

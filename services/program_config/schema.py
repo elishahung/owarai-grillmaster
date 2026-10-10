@@ -6,6 +6,7 @@ validates and completes the file. After changing `ProgramEntry`, regenerate it:
 
     uv run python -m services.program_config.schema
 """
+
 from __future__ import annotations
 
 import json

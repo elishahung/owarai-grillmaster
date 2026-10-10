@@ -121,15 +121,9 @@ class AssConverterTextCleaningTests(unittest.TestCase):
     def test_strips_space_around_midline_fullwidth_punct(self):
         # Refine writes two clauses as "。 "; mid-line 。→， must not leave
         # an orphaned space (Netflix TC: no space around full-width punct).
-        self.assertEqual(
-            _clean_text("竟然。 太誇張了吧。"), "竟然，太誇張了吧"
-        )
-        self.assertEqual(
-            _clean_text("好帥。 很有型耶。"), "好帥，很有型耶"
-        )
-        self.assertEqual(
-            _clean_text("真的嗎？ 太好了！"), "真的嗎？太好了！"
-        )
+        self.assertEqual(_clean_text("竟然。 太誇張了吧。"), "竟然，太誇張了吧")
+        self.assertEqual(_clean_text("好帥。 很有型耶。"), "好帥，很有型耶")
+        self.assertEqual(_clean_text("真的嗎？ 太好了！"), "真的嗎？太好了！")
         self.assertEqual(_clean_text("好 ， 壞"), "好，壞")
         self.assertEqual(
             _clean_text("第一句。 第二句。\n好， 啊"),
@@ -141,9 +135,7 @@ class AssConverterTextCleaningTests(unittest.TestCase):
         self.assertEqual(_clean_text("- 晚安"), "-晚安")
         self.assertEqual(_clean_text("-  晚安"), "-晚安")
         self.assertEqual(_clean_text("-\t晚安"), "-晚安")
-        self.assertEqual(
-            _clean_text("- 晚安\n- 這裡是大家"), "-晚安\n-這裡是大家"
-        )
+        self.assertEqual(_clean_text("- 晚安\n- 這裡是大家"), "-晚安\n-這裡是大家")
         # Leading whitespace before the dash is stripped first, then collapsed.
         self.assertEqual(_clean_text(" - 晚安"), "-晚安")
 
@@ -155,12 +147,8 @@ class AssConverterTextCleaningTests(unittest.TestCase):
 
     def test_normalizes_fullwidth_and_variant_speaker_dash(self):
         # Netflix TC TTSG requires an English (half-width) hyphen.
-        self.assertEqual(
-            _clean_text("－哎呀，各位辛苦了"), "-哎呀，各位辛苦了"
-        )
-        self.assertEqual(
-            _clean_text("－哎呀\n－那是當然"), "-哎呀\n-那是當然"
-        )
+        self.assertEqual(_clean_text("－哎呀，各位辛苦了"), "-哎呀，各位辛苦了")
+        self.assertEqual(_clean_text("－哎呀\n－那是當然"), "-哎呀\n-那是當然")
         self.assertEqual(_clean_text("－ 哎呀"), "-哎呀")
         self.assertEqual(_clean_text("— 對啊"), "-對啊")  # em dash
         self.assertEqual(_clean_text("–對啊"), "-對啊")  # en dash, no space
@@ -415,12 +403,8 @@ class LatinNameSpacingTests(unittest.TestCase):
     def test_pure_han_name_is_never_spaced(self):
         # Point 2: pure Han/kana names contain no Latin, so they are not
         # candidate units and must never get spaced (`森本 桑` regression).
-        self.assertEqual(
-            _sp("難道是森本桑？", ["森本", "Diane"]), "難道是森本桑？"
-        )
-        self.assertEqual(
-            _sp("永野以前說過", ["永野"]), "永野以前說過"
-        )
+        self.assertEqual(_sp("難道是森本桑？", ["森本", "Diane"]), "難道是森本桑？")
+        self.assertEqual(_sp("永野以前說過", ["永野"]), "永野以前說過")
 
     def test_per_line_and_second_line_start(self):
         self.assertEqual(
@@ -441,15 +425,9 @@ class LatinNameSpacingTests(unittest.TestCase):
 
     def test_repairs_internally_split_mixed_unit(self):
         # LLM wrongly split the unit; finalizer must rejoin to canonical.
-        self.assertEqual(
-            _sp("他是金屬 Bat的", ["金屬Bat"]), "他是 金屬Bat 的"
-        )
-        self.assertEqual(
-            _sp("Imadei 醬很強", ["Imadei醬"]), "Imadei醬 很強"
-        )
-        self.assertEqual(
-            _sp("他是金屬  Bat", ["金屬Bat"]), "他是 金屬Bat"
-        )
+        self.assertEqual(_sp("他是金屬 Bat的", ["金屬Bat"]), "他是 金屬Bat 的")
+        self.assertEqual(_sp("Imadei 醬很強", ["Imadei醬"]), "Imadei醬 很強")
+        self.assertEqual(_sp("他是金屬  Bat", ["金屬Bat"]), "他是 金屬Bat")
 
     def test_repairs_mangled_spaces_in_multiword_unit(self):
         self.assertEqual(
@@ -482,9 +460,7 @@ class LatinNameSpacingTests(unittest.TestCase):
     def test_does_not_merge_across_real_text(self):
         # Only whitespace is tolerated inside a unit; a real char between the
         # parts must NOT be absorbed (no false merge).
-        self.assertEqual(
-            _sp("金屬是Bat嗎", ["金屬Bat"]), "金屬是Bat嗎"
-        )
+        self.assertEqual(_sp("金屬是Bat嗎", ["金屬Bat"]), "金屬是Bat嗎")
 
 
 class LoadLatinNameUnitsTests(unittest.TestCase):
@@ -492,9 +468,7 @@ class LoadLatinNameUnitsTests(unittest.TestCase):
         base = Path(__file__).resolve().parents[1] / "tmp_test_artifacts"
         base.mkdir(parents=True, exist_ok=True)
         path = base / "tmp_prepass.json"
-        path.write_text(
-            json.dumps(obj, ensure_ascii=False), encoding="utf-8"
-        )
+        path.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
         self.addCleanup(lambda: path.unlink(missing_ok=True))
         return path
 
@@ -513,9 +487,7 @@ class LoadLatinNameUnitsTests(unittest.TestCase):
 
     def test_none_and_missing_and_garbled_return_empty(self):
         self.assertEqual(_load_latin_name_units(None), [])
-        self.assertEqual(
-            _load_latin_name_units(Path("nonexistent_xyz.json")), []
-        )
+        self.assertEqual(_load_latin_name_units(Path("nonexistent_xyz.json")), [])
         bad = self._write([])  # list, not dict → degrade safely
         self.assertEqual(_load_latin_name_units(bad), [])
 
@@ -617,9 +589,7 @@ class CuratedNameUnitsTests(unittest.TestCase):
         srt_path = tmp / "in.srt"
         fin_path = tmp / "out.finalized.srt"
         srt_path.write_text(
-            "1\n"
-            "00:00:01,000 --> 00:00:02,000\n"
-            "我推薦的是水川Katamari 桑啊。\n",
+            "1\n00:00:01,000 --> 00:00:02,000\n我推薦的是水川Katamari 桑啊。\n",
             encoding="utf-8",
         )
         finalize_and_export(
@@ -627,9 +597,7 @@ class CuratedNameUnitsTests(unittest.TestCase):
         )  # no pre_pass_path on purpose
         self.assertEqual(
             fin_path.read_text(encoding="utf-8"),
-            "1\n"
-            "00:00:01,000 --> 00:00:02,000\n"
-            "我推薦的是 水川Katamari 桑啊\n",
+            "1\n00:00:01,000 --> 00:00:02,000\n我推薦的是 水川Katamari 桑啊\n",
         )
 
 

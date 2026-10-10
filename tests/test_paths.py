@@ -49,9 +49,7 @@ class FitDirNameTests(unittest.TestCase):
         parent = "C:/deep"
         limit = len(str(Path(parent).absolute())) + 1 + len("260503_ep123") + 20
         with patch.object(paths_module, "MAX_PATH_UNITS", limit):
-            self.assertEqual(
-                self._fit(parent=parent, tail="t" * 200), "260503_ep123"
-            )
+            self.assertEqual(self._fit(parent=parent, tail="t" * 200), "260503_ep123")
 
     def test_too_deep_parent_keeps_identity_prefix(self):
         with patch.object(paths_module, "MAX_PATH_UNITS", 30):
@@ -62,9 +60,7 @@ class FitDirNameTests(unittest.TestCase):
 
     def test_empty_tail_yields_the_identity_prefix_alone(self):
         with patch.object(paths_module, "MAX_PATH_UNITS", 259):
-            self.assertEqual(
-                self._fit(parent="C:/archive", tail=""), "260503_ep123"
-            )
+            self.assertEqual(self._fit(parent="C:/archive", tail=""), "260503_ep123")
 
     def test_cjk_title_is_trimmed_within_the_component_limit(self):
         # Japanese titles measure 1 unit/char on Windows (UTF-16) but 3 on

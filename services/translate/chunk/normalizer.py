@@ -17,6 +17,4 @@ def normalize_translated_blocks(blocks: list[SrtBlock]) -> list[SrtBlock]:
 
 def _remove_empty_speaker_dash_lines(text: str) -> str:
     """Remove speaker-marker lines that contain only a dash."""
-    return "\n".join(
-        line for line in text.splitlines() if line.strip() != "-"
-    )
+    return "\n".join(line for line in text.splitlines() if line.strip() != "-")

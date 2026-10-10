@@ -571,9 +571,7 @@ class ElevenLabsSrtTests(unittest.TestCase):
         # the line-cap logic on three close speaker turns.
         srt = _convert_payload_with_options(
             payload,
-            SrtFormatOptions(
-                merge_speaker_turns_gap_s=0.5, max_lines_per_block=2
-            ),
+            SrtFormatOptions(merge_speaker_turns_gap_s=0.5, max_lines_per_block=2),
         )
 
         self.assertIn("-一番流行ってるってスパイス。", srt)
@@ -658,9 +656,7 @@ class ElevenLabsSrtTests(unittest.TestCase):
 
         srt = convert_payload_to_srt(payload)
 
-        self.assertIn(
-            "クイズ王のリベンジか、\nはたまた芸人たちが跳ね返すか。", srt
-        )
+        self.assertIn("クイズ王のリベンジか、\nはたまた芸人たちが跳ね返すか。", srt)
         # Original buggy break.
         self.assertNotIn("跳ね返す\nか。", srt)
 
@@ -673,9 +669,7 @@ class ElevenLabsSrtTests(unittest.TestCase):
 
         srt = convert_payload_to_srt(payload)
 
-        self.assertIn(
-            "そこからゆっくりズームアウトする映像を\n見せますので、", srt
-        )
+        self.assertIn("そこからゆっくりズームアウトする映像を\n見せますので、", srt)
         self.assertNotIn("見せますの\nで、", srt)
         self.assertNotIn("\nで、", srt)
 
@@ -783,9 +777,7 @@ class ElevenLabsSrtTests(unittest.TestCase):
         )
 
         # Two separate utterances → not joined into one line.
-        self.assertNotIn(
-            "これは長めの文章です。そして二つ目の長めの文章です。", srt
-        )
+        self.assertNotIn("これは長めの文章です。そして二つ目の長めの文章です。", srt)
         self.assertIn("これは長めの文章です。", srt)
         self.assertIn("そして二つ目の長めの文章です。", srt)
 

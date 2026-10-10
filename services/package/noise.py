@@ -1,4 +1,5 @@
 """Noise cut selection and cursor state for remix packaging."""
+
 from __future__ import annotations
 
 import json
@@ -69,9 +70,7 @@ def reserve_noise_cuts(
             start = 0.0
             skipped += 1
             if skipped > len(sources):
-                raise RemixPackageError(
-                    f"no usable noise source in {noise_dir}"
-                )
+                raise RemixPackageError(f"no usable noise source in {noise_dir}")
         remaining = duration_of(index) - start
         if remaining < 2 * cut_duration:
             cuts.append(
@@ -95,20 +94,16 @@ def reserve_noise_cuts(
 
     next_seconds = int(start)
     _write_noise_state(noise_dir, index, next_seconds)
-    return NoiseSelection(
-        cuts=cuts, next_index=index, next_seconds=next_seconds
-    )
+    return NoiseSelection(cuts=cuts, next_index=index, next_seconds=next_seconds)
 
 
-def _write_noise_state(
-    noise_dir: Path, next_index: int, next_seconds: int
-) -> None:
+def _write_noise_state(noise_dir: Path, next_index: int, next_seconds: int) -> None:
     """Persist the cursor for the next remix run."""
     state_path = noise_dir / NOISE_STATE_FILE_NAME
     state_path.write_text(
-        NoiseState(
-            next_index=next_index, next_seconds=next_seconds
-        ).model_dump_json(indent=2),
+        NoiseState(next_index=next_index, next_seconds=next_seconds).model_dump_json(
+            indent=2
+        ),
         encoding="utf-8",
     )
 
@@ -121,9 +116,7 @@ def _noise_sources(noise_dir: Path) -> list[Path]:
         (
             path
             for path in noise_dir.iterdir()
-            if path.is_file()
-            and path.stem.isdigit()
-            and len(path.stem) == 3
+            if path.is_file() and path.stem.isdigit() and len(path.stem) == 3
         ),
         key=lambda path: path.stem,
     )
@@ -131,9 +124,7 @@ def _noise_sources(noise_dir: Path) -> list[Path]:
         raise RemixPackageError(f"no noise sources found: {noise_dir}")
     expected_stems = [f"{index:03d}" for index in range(len(sources))]
     if [path.stem for path in sources] != expected_stems:
-        raise RemixPackageError(
-            f"noise sources must be contiguous 000..N: {noise_dir}"
-        )
+        raise RemixPackageError(f"noise sources must be contiguous 000..N: {noise_dir}")
     return sources
 
 
@@ -142,8 +133,6 @@ def _read_noise_state(noise_dir: Path) -> NoiseState:
     if not state_path.exists():
         return NoiseState()
     try:
-        return NoiseState.model_validate_json(
-            state_path.read_text(encoding="utf-8")
-        )
+        return NoiseState.model_validate_json(state_path.read_text(encoding="utf-8"))
     except (ValidationError, json.JSONDecodeError) as e:
         raise RemixPackageError(f"invalid noise state: {state_path}") from e

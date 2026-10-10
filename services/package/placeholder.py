@@ -4,6 +4,7 @@
 `state.json` cursor. Every remix deliverable takes the next clip in the
 rotation and carries it as `judge.<ext>`.
 """
+
 from __future__ import annotations
 
 import json
@@ -46,9 +47,7 @@ def copy_placeholder(package_root: Path, target_dir: Path) -> Path | None:
     if index > len(sources):
         index = 1
     source = sources[index - 1]
-    _write_placeholder_state(
-        placeholder_dir, index + 1 if index < len(sources) else 1
-    )
+    _write_placeholder_state(placeholder_dir, index + 1 if index < len(sources) else 1)
 
     target = target_dir / f"{PLACEHOLDER_OUTPUT_STEM}{source.suffix}"
     shutil.copy2(source, target)
@@ -62,16 +61,12 @@ def _placeholder_sources(placeholder_dir: Path) -> list[Path]:
         (
             path
             for path in placeholder_dir.iterdir()
-            if path.is_file()
-            and path.stem.isdigit()
-            and len(path.stem) == 3
+            if path.is_file() and path.stem.isdigit() and len(path.stem) == 3
         ),
         key=lambda path: path.stem,
     )
     if not sources:
-        raise RemixPackageError(
-            f"no placeholder clips found: {placeholder_dir}"
-        )
+        raise RemixPackageError(f"no placeholder clips found: {placeholder_dir}")
     expected_stems = [f"{index:03d}" for index in range(1, len(sources) + 1)]
     if [path.stem for path in sources] != expected_stems:
         raise RemixPackageError(
@@ -89,9 +84,7 @@ def _read_placeholder_state(placeholder_dir: Path) -> PlaceholderState:
             state_path.read_text(encoding="utf-8")
         )
     except (ValidationError, json.JSONDecodeError) as e:
-        raise RemixPackageError(
-            f"invalid placeholder state: {state_path}"
-        ) from e
+        raise RemixPackageError(f"invalid placeholder state: {state_path}") from e
 
 
 def _write_placeholder_state(placeholder_dir: Path, next_index: int) -> None:

@@ -301,9 +301,7 @@ class Project(BaseModel):
         """
         id = cls.parse_source_str(source_str)
         resolved_parent_path = (
-            Path(parent_project_path)
-            if parent_project_path is not None
-            else None
+            Path(parent_project_path) if parent_project_path is not None else None
         )
 
         logger.debug(f"Loading project: {id}")
@@ -336,9 +334,7 @@ class Project(BaseModel):
                     project.save()
                     logger.info("Translation hint updated for existing project")
             if resolved_parent_path is not None:
-                logger.warning(
-                    "Parent project is not supported for existing projects"
-                )
+                logger.warning("Parent project is not supported for existing projects")
 
             return project
         except Exception as e:
@@ -358,9 +354,7 @@ class Project(BaseModel):
         self._record_source_text(video_info.title, video_info.description)
         self.save()
 
-    def _record_source_text(
-        self, title: str | None, description: str | None
-    ) -> None:
+    def _record_source_text(self, title: str | None, description: str | None) -> None:
         self.source_metadata.title = title or None
         # Bilibili descriptions are uploader notes rather than program
         # information, so only the title is kept for that platform.
@@ -383,9 +377,7 @@ class Project(BaseModel):
         ):
             return
         try:
-            info = json.loads(
-                self.metadata_info_path.read_text(encoding="utf-8")
-            )
+            info = json.loads(self.metadata_info_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return
         title = info.get("title") if isinstance(info, dict) else None
@@ -442,13 +434,9 @@ class Project(BaseModel):
     @property
     def source_broadcast_year(self) -> int | None:
         """Original broadcast year stated by the source, if it stated one."""
-        return parse_broadcast_label_year(
-            self.source_metadata.broadcast_date_label
-        )
+        return parse_broadcast_label_year(self.source_metadata.broadcast_date_label)
 
-    def update_from_source_talents(
-        self, talents: list[SourceTalentInfo]
-    ) -> None:
+    def update_from_source_talents(self, talents: list[SourceTalentInfo]) -> None:
         """Persist source-provided talent metadata on the project."""
         self.source_metadata.talents = [
             SourceTalent(
@@ -543,12 +531,8 @@ class Project(BaseModel):
         archived_path = self.archive_dir(settings.archived_path)
 
         if not self.project_path.exists():
-            logger.error(
-                f"Project directory does not exist: {self.project_path}"
-            )
-            raise FileNotFoundError(
-                f"Project directory not found: {self.project_path}"
-            )
+            logger.error(f"Project directory does not exist: {self.project_path}")
+            raise FileNotFoundError(f"Project directory not found: {self.project_path}")
 
         # Create the YY/MM (or etc) parent directories if they don't exist
         archived_path.parent.mkdir(parents=True, exist_ok=True)
@@ -716,8 +700,7 @@ class Project(BaseModel):
             video_file
             for video_file in self.project_path.glob("*.mp4")
             if video_file.is_file()
-            and video_file.name
-            not in (VIDEO_FILE_NAME, FULL_VIDEO_FILE_NAME)
+            and video_file.name not in (VIDEO_FILE_NAME, FULL_VIDEO_FILE_NAME)
         ]
 
     @property
@@ -786,8 +769,7 @@ class Project(BaseModel):
         return [
             subtitle_file
             for subtitle_file in self.project_path.glob("*.srt")
-            if subtitle_file.is_file()
-            and not subtitle_file.name.startswith("video.")
+            if subtitle_file.is_file() and not subtitle_file.name.startswith("video.")
         ]
 
     @property
@@ -852,11 +834,7 @@ class Project(BaseModel):
         """
         if self.parent_project_path is None:
             return None
-        return (
-            self.parent_project_path
-            / PRE_PASS_CACHE_DIR_NAME
-            / PRE_PASS_FILE_NAME
-        )
+        return self.parent_project_path / PRE_PASS_CACHE_DIR_NAME / PRE_PASS_FILE_NAME
 
     def parent_pre_pass_context(self) -> str | None:
         """Read the parent project's pre_pass.json content for prompt injection.

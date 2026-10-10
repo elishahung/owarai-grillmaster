@@ -74,9 +74,7 @@ class ProjectTests(unittest.TestCase):
 
         with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
             loaded = Project.from_source_str("eplegacy1")
-            persisted = json.loads(
-                loaded.json_path.read_text(encoding="utf-8")
-            )
+            persisted = json.loads(loaded.json_path.read_text(encoding="utf-8"))
 
         self.assertIsNone(loaded.translation_hint)
         self.assertEqual(loaded.source_metadata.title, "番組")
@@ -85,9 +83,7 @@ class ProjectTests(unittest.TestCase):
 
     def test_legacy_user_hint_is_kept_while_title_is_recovered(self):
         root = self._make_temp_dir()
-        self._write_legacy_project(
-            root, "eplegacy2", "使用者提示", {"title": "番組"}
-        )
+        self._write_legacy_project(root, "eplegacy2", "使用者提示", {"title": "番組"})
 
         with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
             loaded = Project.from_source_str("eplegacy2")
@@ -121,9 +117,7 @@ class ProjectTests(unittest.TestCase):
             project.add_asr_cost(0.0)
             project.add_asr_cost(0.75)
 
-            persisted = json.loads(
-                project.json_path.read_text(encoding="utf-8")
-            )
+            persisted = json.loads(project.json_path.read_text(encoding="utf-8"))
 
         self.assertEqual(project.asr_cost, 2.0)
         self.assertEqual(persisted["asr_cost"], 2.0)
@@ -149,9 +143,7 @@ class ProjectTests(unittest.TestCase):
 
     def test_video_info_fills_title_and_description_but_not_the_hint(self):
         root = self._make_temp_dir()
-        info = YtDlpVideoInfo(
-            id="ep1", title="番組タイトル", description="企画の説明"
-        )
+        info = YtDlpVideoInfo(id="ep1", title="番組タイトル", description="企画の説明")
         with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
             project = Project(id="epinfo1", translation_hint="使用者提示")
             project.update_from_video_info(info)
@@ -182,9 +174,7 @@ class ProjectTests(unittest.TestCase):
                 ]
             )
 
-            persisted = json.loads(
-                project.json_path.read_text(encoding="utf-8")
-            )
+            persisted = json.loads(project.json_path.read_text(encoding="utf-8"))
             context = project.source_metadata_context()
 
         self.assertEqual(
@@ -210,20 +200,12 @@ class SourceProgramTests(unittest.TestCase):
         with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
             project = Project(id="epprogram1", name="demo")
             project.update_from_source_program(
-                SourceProgramInfo(
-                    series="ドキュメンタル", channel="Prime Video"
-                )
+                SourceProgramInfo(series="ドキュメンタル", channel="Prime Video")
             )
-            persisted = json.loads(
-                project.json_path.read_text(encoding="utf-8")
-            )
+            persisted = json.loads(project.json_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(
-            persisted["source_metadata"]["series"], "ドキュメンタル"
-        )
-        self.assertEqual(
-            persisted["source_metadata"]["channel"], "Prime Video"
-        )
+        self.assertEqual(persisted["source_metadata"]["series"], "ドキュメンタル")
+        self.assertEqual(persisted["source_metadata"]["channel"], "Prime Video")
 
     def test_absent_fields_keep_previously_captured_names(self):
         root = self._make_temp_dir()
@@ -232,9 +214,7 @@ class SourceProgramTests(unittest.TestCase):
             project.update_from_source_program(
                 SourceProgramInfo(series="ドキュメンタル", channel="Prime Video")
             )
-            project.update_from_source_program(
-                SourceProgramInfo(channel="テレビ東京")
-            )
+            project.update_from_source_program(SourceProgramInfo(channel="テレビ東京"))
 
         self.assertEqual(project.source_metadata.series, "ドキュメンタル")
         self.assertEqual(project.source_metadata.channel, "テレビ東京")
@@ -251,9 +231,7 @@ class ArchiveLayoutTests(unittest.TestCase):
         return path
 
     def test_archive_dir_dated_uses_yy_mm_subdirs(self):
-        project = Project(
-            id="ep123", name="demo", broadcast_date=date(2026, 5, 3)
-        )
+        project = Project(id="ep123", name="demo", broadcast_date=date(2026, 5, 3))
         archived_root = self._make_temp_dir("tmp_archive_dest")
         self.assertEqual(
             project.archive_dir(archived_root),
@@ -269,9 +247,7 @@ class ArchiveLayoutTests(unittest.TestCase):
         )
 
     def test_archive_dir_trims_long_name_to_fit_path_limit(self):
-        project = Project(
-            id="ep123", name="a" * 200, broadcast_date=date(2026, 5, 3)
-        )
+        project = Project(id="ep123", name="a" * 200, broadcast_date=date(2026, 5, 3))
         archived_root = self._make_temp_dir("tmp_archive_dest")
         parent = archived_root / "26" / "05"
         # Room for the identity prefix plus 30 characters of the title.
@@ -296,9 +272,7 @@ class ArchiveLayoutTests(unittest.TestCase):
         )
 
     def test_package_dir_drops_name_when_root_leaves_no_room(self):
-        project = Project(
-            id="ep123", name="a" * 200, broadcast_date=date(2026, 5, 3)
-        )
+        project = Project(id="ep123", name="a" * 200, broadcast_date=date(2026, 5, 3))
         package_root = self._make_temp_dir("tmp_package_dest")
         limit = (
             len(str(package_root.resolve()))
@@ -321,9 +295,7 @@ class ArchiveLayoutTests(unittest.TestCase):
 
         with (
             patch.object(project_module, "PROJECT_ROOT_NAME", str(root)),
-            patch.object(
-                project_module.settings, "archived_path", archived_root
-            ),
+            patch.object(project_module.settings, "archived_path", archived_root),
         ):
             result = project.archive()
 
@@ -333,13 +305,9 @@ class ArchiveLayoutTests(unittest.TestCase):
         return archived_root
 
     def test_archive_moves_dated_project_into_yy_mm(self):
-        project = Project(
-            id="ep123", name="demo", broadcast_date=date(2026, 5, 3)
-        )
+        project = Project(id="ep123", name="demo", broadcast_date=date(2026, 5, 3))
         archived_root = self._archive(project)
-        self.assertTrue(
-            (archived_root / "26" / "05" / "260503_ep123_demo").is_dir()
-        )
+        self.assertTrue((archived_root / "26" / "05" / "260503_ep123_demo").is_dir())
 
     def test_archive_moves_undated_project_into_etc(self):
         project = Project(id="ep123", name="demo")
@@ -347,9 +315,7 @@ class ArchiveLayoutTests(unittest.TestCase):
         self.assertTrue((archived_root / "etc" / "ep123_demo").is_dir())
 
     def test_archive_replaces_only_the_leaf_dir(self):
-        project = Project(
-            id="ep123", name="demo", broadcast_date=date(2026, 5, 3)
-        )
+        project = Project(id="ep123", name="demo", broadcast_date=date(2026, 5, 3))
         root = self._make_temp_dir("tmp_archive_projects")
         archived_root = self._make_temp_dir("tmp_archive_dest")
         project_dir = root / project.id
@@ -366,9 +332,7 @@ class ArchiveLayoutTests(unittest.TestCase):
 
         with (
             patch.object(project_module, "PROJECT_ROOT_NAME", str(root)),
-            patch.object(
-                project_module.settings, "archived_path", archived_root
-            ),
+            patch.object(project_module.settings, "archived_path", archived_root),
         ):
             result = project.archive()
 
@@ -381,9 +345,7 @@ class ArchiveLayoutTests(unittest.TestCase):
 class SourceParsingTests(unittest.TestCase):
     def test_parse_youtube_watch_url(self):
         self.assertEqual(
-            Project.parse_source_str(
-                "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-            ),
+            Project.parse_source_str("https://www.youtube.com/watch?v=dQw4w9WgXcQ"),
             "v=dQw4w9WgXcQ",
         )
 
@@ -403,25 +365,19 @@ class SourceParsingTests(unittest.TestCase):
 
     def test_parse_youtube_shorts_url(self):
         self.assertEqual(
-            Project.parse_source_str(
-                "https://www.youtube.com/shorts/abc123XYZ_-"
-            ),
+            Project.parse_source_str("https://www.youtube.com/shorts/abc123XYZ_-"),
             "v=abc123XYZ_-",
         )
 
     def test_parse_youtube_live_url(self):
         self.assertEqual(
-            Project.parse_source_str(
-                "https://www.youtube.com/live/abc123XYZ_-"
-            ),
+            Project.parse_source_str("https://www.youtube.com/live/abc123XYZ_-"),
             "v=abc123XYZ_-",
         )
 
     def test_parse_youtube_mobile_url(self):
         self.assertEqual(
-            Project.parse_source_str(
-                "https://m.youtube.com/watch?v=dQw4w9WgXcQ"
-            ),
+            Project.parse_source_str("https://m.youtube.com/watch?v=dQw4w9WgXcQ"),
             "v=dQw4w9WgXcQ",
         )
 
@@ -433,9 +389,7 @@ class SourceParsingTests(unittest.TestCase):
         )
 
     def test_youtube_source_detection(self):
-        self.assertEqual(
-            Project(id="v=dQw4w9WgXcQ").source, VideoSource.YOUTUBE
-        )
+        self.assertEqual(Project(id="v=dQw4w9WgXcQ").source, VideoSource.YOUTUBE)
 
     def test_youtube_source_url(self):
         self.assertEqual(
@@ -466,15 +420,9 @@ class SourceParsingTests(unittest.TestCase):
         )
 
     def test_existing_sources_not_regressed(self):
-        self.assertEqual(
-            Project(id="BV1ZArvBaEqL").source, VideoSource.BILIBILI
-        )
-        self.assertEqual(
-            Project(id="epknhe0jz5").source, VideoSource.TVER
-        )
-        self.assertEqual(
-            Project(id="90-979_s1_p360").source, VideoSource.ABEMA
-        )
+        self.assertEqual(Project(id="BV1ZArvBaEqL").source, VideoSource.BILIBILI)
+        self.assertEqual(Project(id="epknhe0jz5").source, VideoSource.TVER)
+        self.assertEqual(Project(id="90-979_s1_p360").source, VideoSource.ABEMA)
 
     def test_existing_local_directory_is_rejected(self):
         root = Path(tempfile.mkdtemp(prefix="source-dir-"))
@@ -502,9 +450,7 @@ class SourceParsingTests(unittest.TestCase):
         previous = Path.cwd()
         try:
             os.chdir(root)
-            self.assertEqual(
-                Project.parse_source_str("epknhe0jz5"), "epknhe0jz5"
-            )
+            self.assertEqual(Project.parse_source_str("epknhe0jz5"), "epknhe0jz5")
         finally:
             os.chdir(previous)
 

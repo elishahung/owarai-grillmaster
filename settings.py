@@ -27,9 +27,7 @@ class ModelSpec(BaseModel):
         effort = str(value).strip().lower()
         allowed = ("low", "medium", "high", "extra", "max", "ultra")
         if effort not in allowed:
-            raise ValueError(
-                "reasoning_effort must be one of: " + ", ".join(allowed)
-            )
+            raise ValueError("reasoning_effort must be one of: " + ", ".join(allowed))
         return effort
 
     def __str__(self) -> str:
@@ -55,9 +53,7 @@ def _parse_model_spec(value: object) -> object:
 # NoDecode stops pydantic-settings from JSON-decoding the env value (it would
 # otherwise treat a BaseModel field as complex), so the raw string reaches the
 # validator.
-ModelSpecField = Annotated[
-    ModelSpec, NoDecode, BeforeValidator(_parse_model_spec)
-]
+ModelSpecField = Annotated[ModelSpec, NoDecode, BeforeValidator(_parse_model_spec)]
 
 
 def _parse_optional_model_spec(value: object) -> object:

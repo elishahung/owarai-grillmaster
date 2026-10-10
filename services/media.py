@@ -57,8 +57,7 @@ def package_usable_duration(source_duration: float) -> float:
     usable = source_duration - PACKAGE_LEAD_TRIM_SECONDS
     if usable <= 0:
         raise ValueError(
-            f"video is shorter than the {PACKAGE_LEAD_TRIM_SECONDS}s "
-            "package lead trim"
+            f"video is shorter than the {PACKAGE_LEAD_TRIM_SECONDS}s package lead trim"
         )
     return usable
 
@@ -224,9 +223,7 @@ class MediaProcessor:
             AssertionError: If the input_files list is empty.
             ffmpeg.Error: If the video combination process fails.
         """
-        logger.info(
-            f"Combining {len(input_files)} video(s) into: {output_file}"
-        )
+        logger.info(f"Combining {len(input_files)} video(s) into: {output_file}")
         assert len(input_files) > 0, "No input files provided"
 
         try:
@@ -236,29 +233,19 @@ class MediaProcessor:
                     f"Single input file, renaming {only_file} to {output_file}"
                 )
                 os.rename(only_file, output_file)
-                logger.success(
-                    f"Successfully created output file: {output_file}"
-                )
+                logger.success(f"Successfully created output file: {output_file}")
                 return
 
-            logger.debug(
-                f"Creating concat file list for {len(input_files)} videos"
-            )
-            concat_path = MediaProcessor._write_concat_list(
-                sorted(input_files)
-            )
+            logger.debug(f"Creating concat file list for {len(input_files)} videos")
+            concat_path = MediaProcessor._write_concat_list(sorted(input_files))
             try:
                 logger.debug("Concatenating videos using ffmpeg")
-                ffmpeg.input(
-                    str(concat_path), format="concat", safe=0
-                ).output(
+                ffmpeg.input(str(concat_path), format="concat", safe=0).output(
                     str(output_file),
                     c="copy",
                     map=0,
                     movflags="faststart",
-                ).run(
-                    overwrite_output=True
-                )
+                ).run(overwrite_output=True)
             finally:
                 concat_path.unlink(missing_ok=True)
 
@@ -296,10 +283,7 @@ class MediaProcessor:
         """
         if start_seconds is None and end_seconds is None:
             raise ValueError("cut_video requires start_seconds or end_seconds")
-        if (
-            end_seconds is not None
-            and end_seconds <= (start_seconds or 0.0)
-        ):
+        if end_seconds is not None and end_seconds <= (start_seconds or 0.0):
             raise ValueError("end_seconds must be later than start_seconds")
 
         input_kwargs: dict = {}
@@ -419,9 +403,7 @@ class MediaProcessor:
         if part_count == 1:
             return [TimeRange(start_seconds=start, end_seconds=end)]
 
-        frame_count = int(
-            package_output_duration(usable_duration) * PACKAGE_OUTPUT_FPS
-        )
+        frame_count = int(package_output_duration(usable_duration) * PACKAGE_OUTPUT_FPS)
         source_per_frame = PACKAGE_TEMPO / PACKAGE_OUTPUT_FPS
         boundaries = [start]
         boundaries += [
@@ -460,8 +442,7 @@ class MediaProcessor:
         temp_dir = Path(tempfile.mkdtemp(prefix="grill_render_"))
         try:
             part_files = [
-                temp_dir / f"part{index:03d}.mp4"
-                for index in range(len(parts))
+                temp_dir / f"part{index:03d}.mp4" for index in range(len(parts))
             ]
             audio_file = temp_dir / "audio.m4a"
             with ThreadPoolExecutor(max_workers=len(parts) + 1) as pool:
@@ -622,11 +603,7 @@ class MediaProcessor:
             video_file=video_file,
             burn=burn,
             output_file=output_file,
-            parts=[
-                TimeRange(
-                    start_seconds=start_seconds, end_seconds=end_seconds
-                )
-            ],
+            parts=[TimeRange(start_seconds=start_seconds, end_seconds=end_seconds)],
             progress=progress,
             progress_task=progress_task,
             progress_description=progress_description,
@@ -752,16 +729,11 @@ class MediaProcessor:
         )
 
     @staticmethod
-    def _package_seek_args(
-        start_seconds: float, duration: float
-    ) -> list[str]:
+    def _package_seek_args(start_seconds: float, duration: float) -> list[str]:
         """Demuxer seek landing on the keyframe before ``start_seconds``."""
         seek_seconds = max(0.0, start_seconds - PACKAGE_SEEK_MARGIN_SECONDS)
         read_seconds = (
-            start_seconds
-            - seek_seconds
-            + duration
-            + PACKAGE_SEEK_MARGIN_SECONDS
+            start_seconds - seek_seconds + duration + PACKAGE_SEEK_MARGIN_SECONDS
         )
         return [
             "-copyts",
@@ -775,9 +747,7 @@ class MediaProcessor:
     @staticmethod
     def _package_audio_graph(start_seconds: float, duration: float) -> str:
         """Audio-only graph: trim, package filter, then the noise bed."""
-        noise_bed = MediaProcessor._noise_bed_mix(
-            package_output_duration(duration)
-        )
+        noise_bed = MediaProcessor._noise_bed_mix(package_output_duration(duration))
         return (
             f"[0:a]atrim=start={start_seconds:.3f}:duration={duration:.3f},"
             f"asetpts=PTS-STARTPTS,{MediaProcessor._PACKAGE_AUDIO_FILTER}[a0];"
@@ -847,8 +817,7 @@ class MediaProcessor:
 
         stderr_tail = "\n".join(stderr_tail_lines)
         logger.error(
-            f"ffmpeg {failure_label} failed (exit {return_code}): "
-            f"{stderr_tail}"
+            f"ffmpeg {failure_label} failed (exit {return_code}): {stderr_tail}"
         )
         raise subprocess.CalledProcessError(
             return_code,
@@ -1059,9 +1028,7 @@ class MediaProcessor:
             )
             return output_file
         except ffmpeg.Error as e:
-            stderr = (
-                e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
-            )
+            stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
             logger.error(
                 f"Failed to extract audio segment "
                 f"{start_seconds:.3f}-{end_seconds:.3f}s: {stderr}"
@@ -1083,9 +1050,7 @@ class MediaProcessor:
             return output_file
 
         output_file.parent.mkdir(parents=True, exist_ok=True)
-        logger.info(
-            f"Extracting frame at {timestamp_seconds:.3f}s to {output_file}"
-        )
+        logger.info(f"Extracting frame at {timestamp_seconds:.3f}s to {output_file}")
         scale_filter = (
             f"if(gte(iw,ih),{max_side},-2)",
             f"if(gte(iw,ih),-2,{max_side})",
@@ -1109,9 +1074,7 @@ class MediaProcessor:
             )
             return output_file
         except ffmpeg.Error as e:
-            stderr = (
-                e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
-            )
+            stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
             logger.error(
                 f"Failed to extract frame at {timestamp_seconds:.3f}s: {stderr}"
             )
@@ -1206,9 +1169,7 @@ class MediaProcessor:
             suffix=".txt", mode="w", encoding="utf-8", delete=False
         ) as temp_file:
             for input_file in input_files:
-                escaped = (
-                    str(input_file).replace("\\", "/").replace("'", "'\\''")
-                )
+                escaped = str(input_file).replace("\\", "/").replace("'", "'\\''")
                 temp_file.write(f"file '{escaped}'\n")
             return Path(temp_file.name)
 
@@ -1216,11 +1177,7 @@ class MediaProcessor:
     def _parse_timestamp(timestamp: str) -> float:
         normalized = timestamp.replace(",", ".")
         hours, minutes, seconds = normalized.split(":")
-        return (
-            int(hours) * 3600
-            + int(minutes) * 60
-            + float(seconds)
-        )
+        return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
 
     @staticmethod
     def _check_subtitles_beside(video_file: Path, burn: BurnPlan) -> None:
@@ -1300,9 +1257,7 @@ class MediaProcessor:
         "noise=c0s=4:c0f=t+u"
     )
     _PACKAGE_VIDEO_OUTPUT = (
-        f"setpts=PTS/{PACKAGE_TEMPO},"
-        "format=yuv420p,"
-        f"fps={PACKAGE_OUTPUT_FPS}"
+        f"setpts=PTS/{PACKAGE_TEMPO},format=yuv420p,fps={PACKAGE_OUTPUT_FPS}"
     )
     _PACKAGE_AUDIO_FILTER = (
         "highpass=f=50,"
@@ -1316,9 +1271,7 @@ class MediaProcessor:
         "format=yuv420p,"
         f"fps={PACKAGE_OUTPUT_FPS}"
     )
-    _NOISE_AUDIO_FILTER = (
-        "aformat=sample_rates=44100:channel_layouts=stereo"
-    )
+    _NOISE_AUDIO_FILTER = "aformat=sample_rates=44100:channel_layouts=stereo"
     _PACKAGE_ENCODE_ARGS = [
         "-c:v",
         "h264_nvenc",

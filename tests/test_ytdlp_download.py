@@ -121,12 +121,8 @@ def _captured_download_opts(progress) -> dict:
         ydl.extract_info.return_value = {"title": "t"}
         return ydl
 
-    with patch(
-        "services.ytdlp.download.yt_dlp.YoutubeDL", side_effect=fake_ydl
-    ):
-        download_video(
-            "https://example.com/v", Path("out"), progress=progress
-        )
+    with patch("services.ytdlp.download.yt_dlp.YoutubeDL", side_effect=fake_ydl):
+        download_video("https://example.com/v", Path("out"), progress=progress)
     return captured
 
 
@@ -135,9 +131,7 @@ class DownloadProgressModeTests(unittest.TestCase):
         opts = _captured_download_opts(_ScreenOwningReporter())
         self.assertTrue(opts.get("noprogress"))
         self.assertEqual(len(opts.get("progress_hooks", [])), 1)
-        self.assertIsInstance(
-            opts["progress_hooks"][0], _ReporterProgressHook
-        )
+        self.assertIsInstance(opts["progress_hooks"][0], _ReporterProgressHook)
         self.assertIn("logger", opts)
 
     def test_plain_reporter_keeps_native_renderer(self):
@@ -190,18 +184,14 @@ class AbemaAuthCacheResetTests(unittest.TestCase):
             ydl.extract_info.return_value = {"title": "t"}
             return ydl
 
-        with patch(
-            "services.ytdlp.download.yt_dlp.YoutubeDL", side_effect=factory
-        ):
+        with patch("services.ytdlp.download.yt_dlp.YoutubeDL", side_effect=factory):
             download_video(url, Path("out"))
 
     def _seed_token_cache(self):
         from yt_dlp.extractor.abematv import AbemaTVBaseIE
 
         for attr in ("_USERTOKEN", "_DEVICE_ID", "_MEDIATOKEN"):
-            self.addCleanup(
-                setattr, AbemaTVBaseIE, attr, getattr(AbemaTVBaseIE, attr)
-            )
+            self.addCleanup(setattr, AbemaTVBaseIE, attr, getattr(AbemaTVBaseIE, attr))
             setattr(AbemaTVBaseIE, attr, "stale")
         return AbemaTVBaseIE
 

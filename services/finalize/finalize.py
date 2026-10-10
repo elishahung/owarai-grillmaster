@@ -66,9 +66,7 @@ _FW_PUNCT_SPACE = re.compile(r"[ \t　]*([，、；。：！？])[ \t　]*")
 # any hyphen/dash variant incl. full-width "－" (U+FF0D), en/em dash, minus —
 # plus surrounding spaces, to a single half-width "-". A leading "--"
 # (interruption) keeps its second dash: only the first char is matched.
-_SPEAKER_DASH = re.compile(
-    r"^[ \t　]*[-‐-―−－][ \t　]*"
-)
+_SPEAKER_DASH = re.compile(r"^[ \t　]*[-‐-―−－][ \t　]*")
 _SRT_TIMECODE = re.compile(
     r"^\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*"
     r"(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*$"
@@ -78,9 +76,7 @@ _SRT_TIMECODE = re.compile(
 # by one half-width space. CJK punctuation, the middle dot (U+30FB), the
 # choonpu (U+30FC), full-width forms, ASCII punctuation and whitespace are
 # deliberately excluded so the unit hugs punctuation/line edges.
-_CJK_RE = re.compile(
-    r"[ぁ-ゖァ-ヺ㐀-䶿一-鿿豈-﫿]"
-)
+_CJK_RE = re.compile(r"[ぁ-ゖァ-ヺ㐀-䶿一-鿿豈-﫿]")
 _HAS_LATIN_RE = re.compile(r"[A-Za-z]")
 
 

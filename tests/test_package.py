@@ -29,9 +29,7 @@ class FakeProgressReporter(NoopProgressReporter):
         self.events.append(("start_stage", task_id, label, total))
         return task_id
 
-    def advance(
-        self, task_id, amount: float = 1.0, description: str | None = None
-    ):
+    def advance(self, task_id, amount: float = 1.0, description: str | None = None):
         self.events.append(("advance", task_id, amount, description))
 
     def finish(self, task_id, status: str = "done"):
@@ -70,9 +68,7 @@ class PackageTests(unittest.TestCase):
             ],
         )
 
-        segments = package_module.select_remix_segments(
-            srt, duration_seconds=100.0
-        )
+        segments = package_module.select_remix_segments(srt, duration_seconds=100.0)
 
         self.assertEqual(len(segments), 1)
         self.assertEqual(segments[0].start_seconds, 0.0)
@@ -89,9 +85,7 @@ class PackageTests(unittest.TestCase):
             ],
         )
 
-        segments = package_module.select_remix_segments(
-            srt, duration_seconds=1200.0
-        )
+        segments = package_module.select_remix_segments(srt, duration_seconds=1200.0)
 
         self.assertEqual(
             [(item.start_seconds, item.end_seconds) for item in segments],
@@ -109,9 +103,7 @@ class PackageTests(unittest.TestCase):
             ],
         )
 
-        segments = package_module.select_remix_segments(
-            srt, duration_seconds=1000.0
-        )
+        segments = package_module.select_remix_segments(srt, duration_seconds=1000.0)
 
         self.assertEqual(
             [(item.start_seconds, item.end_seconds) for item in segments],
@@ -130,9 +122,7 @@ class PackageTests(unittest.TestCase):
             ],
         )
 
-        segments = package_module.select_remix_segments(
-            srt, duration_seconds=2700.0
-        )
+        segments = package_module.select_remix_segments(srt, duration_seconds=2700.0)
 
         self.assertEqual(
             [(item.start_seconds, item.end_seconds) for item in segments],
@@ -151,9 +141,7 @@ class PackageTests(unittest.TestCase):
             ],
         )
 
-        segments = package_module.select_remix_segments(
-            srt, duration_seconds=2700.0
-        )
+        segments = package_module.select_remix_segments(srt, duration_seconds=2700.0)
 
         # The first cut snaps late to 950 s, so the second targets the middle
         # of the remaining 1750 s (1825 s), not the fixed 2/3 mark (1800 s).
@@ -242,9 +230,7 @@ class PackageTests(unittest.TestCase):
         )
 
         with self._patch_noise_durations({"000.mp4": 600.0, "001.mp4": 600.0}):
-            selection = package_module.reserve_noise_cuts(
-                noise_dir, cut_count=2
-            )
+            selection = package_module.reserve_noise_cuts(noise_dir, cut_count=2)
 
         self.assertEqual(
             [
@@ -261,9 +247,7 @@ class PackageTests(unittest.TestCase):
         noise_dir = self._make_noise_dir(root, ["000.mp4"])
 
         with self._patch_noise_durations({"000.mp4": 240.0}):
-            selection = package_module.reserve_noise_cuts(
-                noise_dir, cut_count=3
-            )
+            selection = package_module.reserve_noise_cuts(noise_dir, cut_count=3)
 
         self.assertEqual(
             [cut.duration_seconds for cut in selection.cuts],
@@ -280,12 +264,8 @@ class PackageTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        with self._patch_noise_durations(
-            {"000.webm": 220.0, "001.mp4": 600.0}
-        ):
-            selection = package_module.reserve_noise_cuts(
-                noise_dir, cut_count=2
-            )
+        with self._patch_noise_durations({"000.webm": 220.0, "001.mp4": 600.0}):
+            selection = package_module.reserve_noise_cuts(noise_dir, cut_count=2)
 
         self.assertEqual(
             [
@@ -301,12 +281,8 @@ class PackageTests(unittest.TestCase):
         root = self._make_temp_dir()
         noise_dir = self._make_noise_dir(root, ["000.mp4", "001.webm"])
 
-        with self._patch_noise_durations(
-            {"000.mp4": 100.0, "001.webm": 100.0}
-        ):
-            selection = package_module.reserve_noise_cuts(
-                noise_dir, cut_count=2
-            )
+        with self._patch_noise_durations({"000.mp4": 100.0, "001.webm": 100.0}):
+            selection = package_module.reserve_noise_cuts(noise_dir, cut_count=2)
 
         self.assertEqual(
             [
@@ -320,16 +296,12 @@ class PackageTests(unittest.TestCase):
 
     def test_reserve_noise_cuts_orders_mixed_extensions_by_index(self):
         root = self._make_temp_dir()
-        noise_dir = self._make_noise_dir(
-            root, ["001.mp4", "002.mkv", "000.webm"]
-        )
+        noise_dir = self._make_noise_dir(root, ["001.mp4", "002.mkv", "000.webm"])
 
         with self._patch_noise_durations(
             {"000.webm": 60.0, "001.mp4": 60.0, "002.mkv": 60.0}
         ):
-            selection = package_module.reserve_noise_cuts(
-                noise_dir, cut_count=3
-            )
+            selection = package_module.reserve_noise_cuts(noise_dir, cut_count=3)
 
         self.assertEqual(
             [cut.source.name for cut in selection.cuts],
@@ -347,9 +319,7 @@ class PackageTests(unittest.TestCase):
 
     def test_reserve_noise_cuts_rejects_non_contiguous_sources(self):
         root = self._make_temp_dir()
-        noise_dir = self._make_noise_dir(
-            root, ["000.mp4", "001.mp4", "003.mp4"]
-        )
+        noise_dir = self._make_noise_dir(root, ["000.mp4", "001.mp4", "003.mp4"])
 
         with self.assertRaises(package_module.RemixPackageError):
             package_module.reserve_noise_cuts(noise_dir, cut_count=1)
@@ -362,9 +332,7 @@ class PackageTests(unittest.TestCase):
         source.mkdir()
         noise_dir.mkdir(parents=True)
         for index in range(4):
-            (noise_dir / f"{index:03d}.mp4").write_text(
-                "source", encoding="utf-8"
-            )
+            (noise_dir / f"{index:03d}.mp4").write_text("source", encoding="utf-8")
         (source / "video.mp4").write_text("video", encoding="utf-8")
         (source / "video.cht.ass").write_text("ass", encoding="utf-8")
         self._write_srt(
@@ -419,9 +387,7 @@ class PackageTests(unittest.TestCase):
             '{"summary":"demo"}', encoding="utf-8"
         )
         (source / ".refine").mkdir()
-        (source / ".refine" / "report.md").write_text(
-            "refine report", encoding="utf-8"
-        )
+        (source / ".refine" / "report.md").write_text("refine report", encoding="utf-8")
         (source / ".glossary_check").mkdir()
         (source / ".glossary_check" / "report.md").write_text(
             "glossary report", encoding="utf-8"
@@ -439,9 +405,7 @@ class PackageTests(unittest.TestCase):
             package_module.package_project(project, source, package_root)
 
         target = package_root / "demo_show"
-        self.assertEqual(
-            (target / "video.mp4").read_text(encoding="utf-8"), "burned"
-        )
+        self.assertEqual((target / "video.mp4").read_text(encoding="utf-8"), "burned")
         self.assertTrue((target / "cover.png").exists())
         self.assertEqual(
             json.loads((target / "info.json").read_text(encoding="utf-8")),
@@ -506,9 +470,7 @@ class PackageTests(unittest.TestCase):
             package_module.package_project(project, source, package_root)
 
         target = package_root / "demo_show"
-        self.assertEqual(
-            (target / "video.mp4").read_text(encoding="utf-8"), "burned"
-        )
+        self.assertEqual((target / "video.mp4").read_text(encoding="utf-8"), "burned")
         self.assertFalse((target / "info.json").exists())
         self.assertFalse((target / "refine.md").exists())
         self.assertFalse((target / "glossary_check.md").exists())
@@ -614,9 +576,7 @@ class PackageTests(unittest.TestCase):
         target.mkdir(parents=True)
         noise_dir.mkdir(parents=True)
         for index in range(4):
-            (noise_dir / f"{index:03d}.mp4").write_text(
-                "source", encoding="utf-8"
-            )
+            (noise_dir / f"{index:03d}.mp4").write_text("source", encoding="utf-8")
         (source / "video.mp4").write_text("video", encoding="utf-8")
         (source / "video.cht.ass").write_text("ass", encoding="utf-8")
         self._write_srt(
@@ -695,9 +655,7 @@ class PackageTests(unittest.TestCase):
             kwargs["output_file"].write_text("remix", encoding="utf-8")
 
         with (
-            patch.object(
-                program_config, "config_path", return_value=config_file
-            ),
+            patch.object(program_config, "config_path", return_value=config_file),
             patch.object(
                 package_remix.MediaProcessor,
                 "get_media_duration",
@@ -716,9 +674,7 @@ class PackageTests(unittest.TestCase):
 
         burn_in_subtitles.assert_not_called()
         self.assertEqual(
-            (package_root / "demo_show" / "1.mp4").read_text(
-                encoding="utf-8"
-            ),
+            (package_root / "demo_show" / "1.mp4").read_text(encoding="utf-8"),
             "remix",
         )
 
@@ -742,9 +698,7 @@ class PackageTests(unittest.TestCase):
         project.source_metadata.channel = "テレビ東京"
 
         with (
-            patch.object(
-                program_config, "config_path", return_value=config_file
-            ),
+            patch.object(program_config, "config_path", return_value=config_file),
             patch.object(
                 package_remix.MediaProcessor,
                 "get_media_duration",
@@ -776,17 +730,13 @@ class PackageTests(unittest.TestCase):
             )
 
         self.assertEqual(package_project.call_args.kwargs["source_root"], project_dir)
-        self.assertEqual(
-            package_project.call_args.kwargs["package_root"], package_root
-        )
+        self.assertEqual(package_project.call_args.kwargs["package_root"], package_root)
 
     def _make_placeholder_dir(self, package_root: Path, count: int) -> Path:
         placeholder_dir = package_root / "placeholder"
         placeholder_dir.mkdir(parents=True)
         for index in range(1, count + 1):
-            (placeholder_dir / f"{index:03d}.mp4").write_text(
-                "clip", encoding="utf-8"
-            )
+            (placeholder_dir / f"{index:03d}.mp4").write_text("clip", encoding="utf-8")
         return placeholder_dir
 
     def test_copy_placeholder_takes_the_stated_index_and_advances(self):
@@ -804,9 +754,7 @@ class PackageTests(unittest.TestCase):
 
         self.assertEqual(target, target_dir / "judge.mp4")
         self.assertEqual(target.read_text(encoding="utf-8"), "tenth")
-        state = json.loads(
-            (placeholder_dir / "state.json").read_text("utf-8")
-        )
+        state = json.loads((placeholder_dir / "state.json").read_text("utf-8"))
         self.assertEqual(state, {"next_index": 11})
 
     def test_copy_placeholder_wraps_after_the_last_clip(self):
@@ -821,9 +769,7 @@ class PackageTests(unittest.TestCase):
 
         package_module.copy_placeholder(package_root, target_dir)
 
-        state = json.loads(
-            (placeholder_dir / "state.json").read_text("utf-8")
-        )
+        state = json.loads((placeholder_dir / "state.json").read_text("utf-8"))
         self.assertEqual(state, {"next_index": 1})
 
     def test_copy_placeholder_restarts_when_the_cursor_overruns(self):
@@ -840,9 +786,7 @@ class PackageTests(unittest.TestCase):
         target = package_module.copy_placeholder(package_root, target_dir)
 
         self.assertEqual(target.read_text(encoding="utf-8"), "first")
-        state = json.loads(
-            (placeholder_dir / "state.json").read_text("utf-8")
-        )
+        state = json.loads((placeholder_dir / "state.json").read_text("utf-8"))
         self.assertEqual(state, {"next_index": 2})
 
     def test_copy_placeholder_starts_at_one_without_state(self):
@@ -856,9 +800,7 @@ class PackageTests(unittest.TestCase):
         target = package_module.copy_placeholder(package_root, target_dir)
 
         self.assertEqual(target.read_text(encoding="utf-8"), "first")
-        state = json.loads(
-            (placeholder_dir / "state.json").read_text("utf-8")
-        )
+        state = json.loads((placeholder_dir / "state.json").read_text("utf-8"))
         self.assertEqual(state, {"next_index": 2})
 
     def test_copy_placeholder_skips_when_the_folder_is_absent(self):
@@ -868,9 +810,7 @@ class PackageTests(unittest.TestCase):
         target_dir.mkdir(parents=True)
         package_root.mkdir()
 
-        self.assertIsNone(
-            package_module.copy_placeholder(package_root, target_dir)
-        )
+        self.assertIsNone(package_module.copy_placeholder(package_root, target_dir))
         self.assertEqual(list(target_dir.iterdir()), [])
 
     def test_copy_placeholder_rejects_non_contiguous_clips(self):
@@ -892,9 +832,7 @@ class PackageTests(unittest.TestCase):
         source.mkdir()
         noise_dir.mkdir(parents=True)
         for index in range(2):
-            (noise_dir / f"{index:03d}.mp4").write_text(
-                "source", encoding="utf-8"
-            )
+            (noise_dir / f"{index:03d}.mp4").write_text("source", encoding="utf-8")
         placeholder_dir = self._make_placeholder_dir(package_root, 5)
         (placeholder_dir / "004.mp4").write_text("fourth", encoding="utf-8")
         (placeholder_dir / "state.json").write_text(
@@ -931,9 +869,7 @@ class PackageTests(unittest.TestCase):
 
         placeholder = package_root / "demo_show" / "judge.mp4"
         self.assertEqual(placeholder.read_text(encoding="utf-8"), "fourth")
-        state = json.loads(
-            (placeholder_dir / "state.json").read_text("utf-8")
-        )
+        state = json.loads((placeholder_dir / "state.json").read_text("utf-8"))
         self.assertEqual(state, {"next_index": 5})
 
 

@@ -132,9 +132,7 @@ def run_cli(
         except (subprocess.TimeoutExpired, OSError, ValueError):
             pass
         raise
-    return subprocess.CompletedProcess(
-        cmd, process.returncode, stdout, stderr
-    )
+    return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
 
 
 class InferenceError(RuntimeError):

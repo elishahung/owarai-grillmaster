@@ -65,9 +65,7 @@ class GlossaryCheckTests(unittest.TestCase):
         shutil.rmtree(root, ignore_errors=True)
         root.mkdir(parents=True, exist_ok=True)
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
-        patcher = patch.object(
-            project_module, "PROJECT_ROOT_NAME", str(root)
-        )
+        patcher = patch.object(project_module, "PROJECT_ROOT_NAME", str(root))
         patcher.start()
         self.addCleanup(patcher.stop)
         # Tests that write program rules must never reach the real file.
@@ -79,9 +77,7 @@ class GlossaryCheckTests(unittest.TestCase):
         project = Project(id="demo")
         project.project_path.mkdir(parents=True, exist_ok=True)
         project.pre_pass_path.parent.mkdir(parents=True, exist_ok=True)
-        project.pre_pass_path.write_text(
-            _VALID_PREPASS_JSON, encoding="utf-8"
-        )
+        project.pre_pass_path.write_text(_VALID_PREPASS_JSON, encoding="utf-8")
         return project
 
     def _write_refined(self, project: Project, content: str) -> None:
@@ -114,9 +110,7 @@ class GlossaryCheckTests(unittest.TestCase):
 
     def _valid_codex(self, project: Project):
         def _side_effect(*args, **kwargs):
-            shutil.copyfile(
-                project.refined_srt_path, project.glossary_checked_srt_path
-            )
+            shutil.copyfile(project.refined_srt_path, project.glossary_checked_srt_path)
             return "done"
 
         return _side_effect
@@ -182,9 +176,7 @@ class GlossaryCheckTests(unittest.TestCase):
 
         prompt = run_codex.call_args.kwargs["prompt"]
         self.assertIn("PROGRAM-SPECIFIC INSTRUCTIONS", prompt)
-        self.assertLess(
-            prompt.index("COMMON RULE"), prompt.index("GLOSSARY RULE")
-        )
+        self.assertLess(prompt.index("COMMON RULE"), prompt.index("GLOSSARY RULE"))
         self.assertNotIn("REFINE RULE", prompt)
 
     def test_exact_glossary_zh_token_is_skipped(self):
@@ -196,9 +188,7 @@ class GlossaryCheckTests(unittest.TestCase):
         )
 
         with (
-            patch.object(
-                gc, "load_fixed_glossary", return_value=_FAKE_GLOSSARY
-            ),
+            patch.object(gc, "load_fixed_glossary", return_value=_FAKE_GLOSSARY),
             patch.object(
                 gc, "run_inference", side_effect=self._valid_codex(project)
             ) as run_codex,
@@ -217,9 +207,7 @@ class GlossaryCheckTests(unittest.TestCase):
         )
 
         with (
-            patch.object(
-                gc, "load_fixed_glossary", return_value=_FAKE_GLOSSARY
-            ),
+            patch.object(gc, "load_fixed_glossary", return_value=_FAKE_GLOSSARY),
             patch.object(
                 gc, "run_inference", side_effect=self._valid_codex(project)
             ) as run_codex,
@@ -238,9 +226,7 @@ class GlossaryCheckTests(unittest.TestCase):
         )
 
         with (
-            patch.object(
-                gc, "load_fixed_glossary", return_value=_FAKE_GLOSSARY
-            ),
+            patch.object(gc, "load_fixed_glossary", return_value=_FAKE_GLOSSARY),
             patch.object(
                 gc, "run_inference", side_effect=self._valid_codex(project)
             ) as run_codex,
@@ -277,9 +263,7 @@ class GlossaryCheckTests(unittest.TestCase):
             '{"summary":"older backup"}', encoding="utf-8"
         )
 
-        with patch.object(
-            gc, "run_inference", side_effect=self._valid_codex(project)
-        ):
+        with patch.object(gc, "run_inference", side_effect=self._valid_codex(project)):
             gc.glossary_check_subtitles(project)
 
         self.assertEqual(
@@ -292,12 +276,8 @@ class GlossaryCheckTests(unittest.TestCase):
         self._write_refined(project, _HAN_ONLY_SRT)
 
         def _write_bad_prepass(*args, **kwargs):
-            shutil.copyfile(
-                project.refined_srt_path, project.glossary_checked_srt_path
-            )
-            project.pre_pass_path.write_text(
-                '{"summary": 123}', encoding="utf-8"
-            )
+            shutil.copyfile(project.refined_srt_path, project.glossary_checked_srt_path)
+            project.pre_pass_path.write_text('{"summary": 123}', encoding="utf-8")
             project.glossary_check_report_path.write_text(
                 "# report\n", encoding="utf-8"
             )
@@ -326,9 +306,7 @@ class GlossaryCheckTests(unittest.TestCase):
         project = self._make_project()
         self._write_refined(project, _KANA_SRT)
 
-        with patch.object(
-            gc, "run_inference", side_effect=RuntimeError("codex boom")
-        ):
+        with patch.object(gc, "run_inference", side_effect=RuntimeError("codex boom")):
             with self.assertRaises(RuntimeError):
                 gc.glossary_check_subtitles(project)
 
@@ -348,9 +326,7 @@ class GlossaryCheckTests(unittest.TestCase):
             )
             return "done"
 
-        with patch.object(
-            gc, "run_inference", side_effect=_write_bad_output
-        ):
+        with patch.object(gc, "run_inference", side_effect=_write_bad_output):
             with self.assertRaises(gc.GlossaryCheckError):
                 gc.glossary_check_subtitles(project)
 

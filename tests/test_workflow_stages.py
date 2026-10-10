@@ -52,9 +52,7 @@ class WorkflowTranslationStageTests(unittest.TestCase):
         project = self._build_project_mock()
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
             patch.object(translation_stage, "translate") as translate_mod,
             patch.object(workflow_api.settings, "archived_path", None),
             patch.object(workflow_api.settings, "package_path", None),
@@ -75,9 +73,7 @@ class WorkflowTranslationStageTests(unittest.TestCase):
         project = self._build_project_mock()
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
             patch.object(translation_stage, "translate") as translate_mod,
             patch.object(workflow_api.settings, "archived_path", None),
         ):
@@ -95,9 +91,7 @@ class WorkflowTranslationStageTests(unittest.TestCase):
         project.is_prepass_completed = False
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
             patch.object(translation_stage, "translate") as translate_mod,
         ):
             workflow_module.process_project(
@@ -140,12 +134,8 @@ class WorkflowAsrCostTests(unittest.TestCase):
         )
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
-            patch.object(
-                transcription_stage, "ElevenLabsASR"
-            ) as elevenlabs_cls,
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
+            patch.object(transcription_stage, "ElevenLabsASR") as elevenlabs_cls,
             patch.object(transcription_stage, "convert_file") as convert_file,
             patch.object(translation_stage, "translate") as translate_mod,
         ):

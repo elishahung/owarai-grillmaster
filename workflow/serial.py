@@ -59,8 +59,7 @@ class SerialRun:
             self.parent_project_path = final_path
             self.position += 1
             logger.success(
-                f"Serial {self.position}/{total} complete: {source} -> "
-                f"{final_path}"
+                f"Serial {self.position}/{total} complete: {source} -> {final_path}"
             )
         return self.parent_project_path
 

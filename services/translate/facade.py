@@ -126,9 +126,7 @@ async def _translate_chunks_async(
         try:
             official_subtitle_blocks = parse_srt(official_subtitle_text)
         except ValueError as e:
-            logger.warning(
-                f"Official subtitle reference unparsable; ignoring: {e}"
-            )
+            logger.warning(f"Official subtitle reference unparsable; ignoring: {e}")
     if official_subtitle_blocks:
         logger.info(
             f"Official subtitle reference loaded: "
@@ -136,9 +134,7 @@ async def _translate_chunks_async(
         )
 
     request.chunks_cache_dir.mkdir(parents=True, exist_ok=True)
-    has_audio = backend_supports_audio(
-        Backend(settings.agent_chunk_model.backend)
-    )
+    has_audio = backend_supports_audio(Backend(settings.agent_chunk_model.backend))
     semaphore = asyncio.Semaphore(settings.agent_concurrency)
 
     async def bounded(i: int, chunk: list[SrtBlock]):
@@ -173,9 +169,7 @@ async def _translate_chunks_async(
                 )
             except Exception as e:
                 if progress is not None:
-                    retries = (
-                        e.retries if isinstance(e, ChunkTranslationError) else 0
-                    )
+                    retries = e.retries if isinstance(e, ChunkTranslationError) else 0
                     progress.chunk_failed(i, str(e), retries=retries)
                 raise
             if progress is not None:

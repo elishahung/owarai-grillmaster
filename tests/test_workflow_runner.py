@@ -120,9 +120,7 @@ class SideTaskManagerTests(unittest.TestCase):
                 "workflow.side_tasks.research_broadcast_date",
                 return_value=result,
             ) as research,
-            patch(
-                "workflow.side_tasks.apply_date_research_result"
-            ) as apply_result,
+            patch("workflow.side_tasks.apply_date_research_result") as apply_result,
             patch(
                 "workflow.side_tasks.perf_counter",
                 side_effect=[3.0, 4.0, 4.0],

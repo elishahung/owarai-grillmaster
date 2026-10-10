@@ -44,9 +44,7 @@ def validate_chunk_structure(
         dupes = ", ".join(repr(tc) for tc in sorted(duplicate_timecodes))
         errors.append(f"Duplicate output timecodes: {dupes}")
 
-    missing = [
-        src for src in expected if src.timecode not in output_by_timecode
-    ]
+    missing = [src for src in expected if src.timecode not in output_by_timecode]
     if missing:
         errors.append(
             "Missing source block(s): "

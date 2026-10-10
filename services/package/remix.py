@@ -1,4 +1,5 @@
 """Remix package split selection and output assembly."""
+
 from __future__ import annotations
 
 import math
@@ -49,8 +50,7 @@ def package_remix(
         start_seconds=PACKAGE_LEAD_TRIM_SECONDS,
     )
     logger.info(
-        f"Remix {video_file}: {len(segments)} segment(s) "
-        f"over {duration_seconds:.3f}s"
+        f"Remix {video_file}: {len(segments)} segment(s) over {duration_seconds:.3f}s"
     )
 
     copy_placeholder(package_root, target_dir)
@@ -86,9 +86,7 @@ def package_remix(
     # Segments are independent files, and one encode never saturates the
     # card, so they render side by side against a shared progress task.
     try:
-        with ThreadPoolExecutor(
-            max_workers=PACKAGE_ENCODE_CONCURRENCY
-        ) as pool:
+        with ThreadPoolExecutor(max_workers=PACKAGE_ENCODE_CONCURRENCY) as pool:
             futures = [
                 pool.submit(
                     MediaProcessor.build_remix_output,

@@ -100,8 +100,7 @@ def enforce_schema[T: BaseModel](
         except ValueError as e:
             last_error = e
             logger.warning(
-                f"[schema] output rejected "
-                f"(attempt {attempt}/{max_retries}): {e}"
+                f"[schema] output rejected (attempt {attempt}/{max_retries}): {e}"
             )
             repair = (
                 "\n\n【修正要求】你上一次的回應未通過輸出驗證。"

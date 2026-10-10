@@ -1,4 +1,5 @@
 """Cover image selection and copy helpers for package output."""
+
 from __future__ import annotations
 
 import shutil
@@ -26,6 +27,4 @@ def copy_cover(source_root: Path, target_dir: Path) -> None:
         shutil.copy2(cover_src, target_dir / cover_name)
         logger.info(f"Copied cover: {cover_src} -> {target_dir / cover_name}")
     else:
-        logger.warning(
-            f"Package: no cover image found at {poster_cover} or {poster}"
-        )
+        logger.warning(f"Package: no cover image found at {poster_cover} or {poster}")

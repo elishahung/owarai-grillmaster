@@ -36,9 +36,7 @@ class YtDlpLoguruAdapter:
 
 
 cookies_txt_path = (
-    str(settings.cookies_txt_path.absolute())
-    if settings.cookies_txt_path
-    else None
+    str(settings.cookies_txt_path.absolute()) if settings.cookies_txt_path else None
 )
 if cookies_txt_path:
     logger.debug(f"Using cookies from: {cookies_txt_path}")

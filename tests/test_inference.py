@@ -157,9 +157,7 @@ class EnforceSchemaTests(unittest.TestCase):
         self.assertIn("JSON Schema", schema_instruction(_Demo))
 
     def test_extract_json_object_unwraps_fence(self):
-        self.assertEqual(
-            extract_json_object('```json\n{"a": 1}\n```'), '{"a": 1}'
-        )
+        self.assertEqual(extract_json_object('```json\n{"a": 1}\n```'), '{"a": 1}')
 
 
 class RunInferenceDispatchTests(unittest.TestCase):
@@ -184,9 +182,7 @@ class RunInferenceDispatchTests(unittest.TestCase):
             "run_claude_sdk_exec",
             side_effect=lambda **kw: next(outputs),
         ) as m:
-            result = run_inference(
-                backend=Backend.CLAUDE, prompt="hi", schema=_Demo
-            )
+            result = run_inference(backend=Backend.CLAUDE, prompt="hi", schema=_Demo)
         self.assertEqual(result, _Demo(a=5))
         self.assertEqual(m.call_count, 2)
         # The JSON Schema instruction rides along on the first attempt.
@@ -250,9 +246,7 @@ class RunInferenceDispatchTests(unittest.TestCase):
         # shared by every backend (no per-call / settings knob).
         from services.inference.schema_enforce import MAX_SCHEMA_RETRIES
 
-        with patch.object(
-            inf, "run_claude_sdk_exec", return_value='{"a": "bad"}'
-        ) as m:
+        with patch.object(inf, "run_claude_sdk_exec", return_value='{"a": "bad"}') as m:
             with self.assertRaises(SchemaValidationError):
                 run_inference(backend=Backend.CLAUDE, prompt="hi", schema=_Demo)
         self.assertEqual(m.call_count, MAX_SCHEMA_RETRIES)
@@ -492,14 +486,10 @@ class ExtractJsonObjectTests(unittest.TestCase):
         self.assertEqual(extract_json_object('{"a": 1}'), '{"a": 1}')
 
     def test_strips_json_fence(self):
-        self.assertEqual(
-            extract_json_object('```json\n{"a": 1}\n```'), '{"a": 1}'
-        )
+        self.assertEqual(extract_json_object('```json\n{"a": 1}\n```'), '{"a": 1}')
 
     def test_strips_bare_fence(self):
-        self.assertEqual(
-            extract_json_object('```\n{"a": 1}\n```'), '{"a": 1}'
-        )
+        self.assertEqual(extract_json_object('```\n{"a": 1}\n```'), '{"a": 1}')
 
     def test_unwraps_surrounding_prose(self):
         self.assertEqual(

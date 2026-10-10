@@ -66,9 +66,7 @@ class ArtifactCache:
             if key == "refine":
                 return self._markdown_preview(project.refine_report_path)
             if key == "glossary":
-                return self._markdown_preview(
-                    project.glossary_check_report_path
-                )
+                return self._markdown_preview(project.glossary_check_report_path)
             if key == "date":
                 return self._json_preview(project.date_research_path)
             if key == "cover":
@@ -122,9 +120,7 @@ class ArtifactCache:
             image_path=path,
         )
 
-    def _path_list_preview(
-        self, paths: list[Path]
-    ) -> ArtifactPreview | None:
+    def _path_list_preview(self, paths: list[Path]) -> ArtifactPreview | None:
         existing = [path for path in paths if path.exists()]
         if not existing:
             return None

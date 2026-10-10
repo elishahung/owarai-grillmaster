@@ -58,9 +58,7 @@ class DateResearchResult(BaseModel):
         # loop instead of accepting a half-filled "found" verdict.
         if self.status == "found":
             if self.broadcast_date is None:
-                raise ValueError(
-                    "broadcast_date is required when status is 'found'"
-                )
+                raise ValueError("broadcast_date is required when status is 'found'")
             if self.trust is None:
                 raise ValueError("trust is required when status is 'found'")
         return self
@@ -132,9 +130,7 @@ def research_broadcast_date(project: Project) -> DateResearchResult:
 
     spec = settings.agent_common_model
     backend = Backend(spec.backend)
-    logger.info(
-        f"Invoking {backend.value} for broadcast-date research: {project.id}"
-    )
+    logger.info(f"Invoking {backend.value} for broadcast-date research: {project.id}")
     prompt = _PROMPT + "\n\n" + _build_project_context(project)
     # cwd is deliberately None (throwaway temp dir): this task must not touch
     # project files, and it runs concurrently with the cover agent which
@@ -155,9 +151,7 @@ def research_broadcast_date(project: Project) -> DateResearchResult:
     return result
 
 
-def apply_date_research_result(
-    project: Project, result: DateResearchResult
-) -> None:
+def apply_date_research_result(project: Project, result: DateResearchResult) -> None:
     """Apply a research verdict to the project (main-thread only).
 
     Writes `broadcast_date` for any found date but warns when the source
@@ -166,9 +160,7 @@ def apply_date_research_result(
     """
     if result.status == "found" and result.broadcast_date is not None:
         if result.trust != "high":
-            source_names = (
-                ", ".join(s.source_name for s in result.sources) or "none"
-            )
+            source_names = ", ".join(s.source_name for s in result.sources) or "none"
             logger.warning(
                 f"Broadcast date {result.broadcast_date:%Y-%m-%d} adopted "
                 f"from {result.trust}-trust sources ({source_names}); "

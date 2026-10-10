@@ -158,9 +158,7 @@ class SrtFormatOptions:
     max_overlapping_block_duration_s: float = MAX_OVERLAPPING_BLOCK_DURATION_S
     max_utterances_per_block: int = MAX_UTTERANCES_PER_BLOCK
     max_lines_per_block: int = MAX_LINES_PER_BLOCK
-    inline_short_same_speaker_utterances: bool = (
-        INLINE_SHORT_SAME_SPEAKER_UTTERANCES
-    )
+    inline_short_same_speaker_utterances: bool = INLINE_SHORT_SAME_SPEAKER_UTTERANCES
     max_inline_short_utterance_chars: int = MAX_INLINE_SHORT_UTTERANCE_CHARS
     max_orphan_tail_chars: int = MAX_ORPHAN_TAIL_CHARS
     min_segment_duration_s: float = MIN_SEGMENT_DURATION_S
@@ -170,9 +168,7 @@ class SrtFormatOptions:
     split_on_punctuation: str = JAPANESE_HARD_PUNCTUATION
     soft_split_punctuation: str = JAPANESE_SOFT_PUNCTUATION
     dialogue_prefix: str = DIALOGUE_PREFIX
-    include_speaker_prefix_for_dialogue: bool = (
-        INCLUDE_SPEAKER_PREFIX_FOR_DIALOGUE
-    )
+    include_speaker_prefix_for_dialogue: bool = INCLUDE_SPEAKER_PREFIX_FOR_DIALOGUE
     text_join_language: str = TEXT_JOIN_LANGUAGE
     ignored_word_types: frozenset[str] = IGNORED_WORD_TYPES
 
@@ -260,9 +256,7 @@ def _extract_tokens(
             continue
         start = item.get("start")
         end = item.get("end")
-        if not isinstance(start, (int, float)) or not isinstance(
-            end, (int, float)
-        ):
+        if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
             continue
         if end < start:
             continue
@@ -435,9 +429,7 @@ def _find_best_utterance_split_index(
     return None
 
 
-def _is_short_soft_fragment(
-    tokens: list[WordToken], options: SrtFormatOptions
-) -> bool:
+def _is_short_soft_fragment(tokens: list[WordToken], options: SrtFormatOptions) -> bool:
     if not tokens or not _ends_with_soft_split_punctuation(tokens[-1].text, options):
         return False
     text = _join_token_texts(tokens, options)
@@ -516,9 +508,7 @@ def _merge_utterances_to_blocks(
 
         block = blocks[-1]
         if _can_merge_into_block(block, utterance, options):
-            same_speaker = (
-                block.utterances[-1].speaker_id == utterance.speaker_id
-            )
+            same_speaker = block.utterances[-1].speaker_id == utterance.speaker_id
             prev_ends_hard = _ends_with_split_punctuation(
                 block.utterances[-1].text, options
             )
@@ -659,9 +649,7 @@ def _can_inline_same_speaker_utterance(
     return len(combined_text) <= options.max_characters_per_line
 
 
-def _is_short_inline_utterance(
-    utterance: Utterance, options: SrtFormatOptions
-) -> bool:
+def _is_short_inline_utterance(utterance: Utterance, options: SrtFormatOptions) -> bool:
     text = utterance.text.strip()
     return (
         bool(text)
@@ -701,9 +689,7 @@ def _can_merge_into_block(
     if len(block.utterances) + 1 > options.max_utterances_per_block:
         return False
     candidate_utterances = (
-        _inline_same_speaker_utterances(
-            [*block.utterances, utterance], options
-        )
+        _inline_same_speaker_utterances([*block.utterances, utterance], options)
         if options.inline_short_same_speaker_utterances
         else [*block.utterances, utterance]
     )
@@ -722,9 +708,7 @@ def _can_merge_into_block(
     return True
 
 
-def _render_srt(
-    blocks: list[SubtitleBlock], options: SrtFormatOptions
-) -> str:
+def _render_srt(blocks: list[SubtitleBlock], options: SrtFormatOptions) -> str:
     srt_blocks: list[SrtBlock] = []
     for index, block in enumerate(blocks, start=1):
         text_lines = _render_block_text(block, options)
@@ -732,8 +716,7 @@ def _render_srt(
             SrtBlock(
                 index=index,
                 timecode=(
-                    f"{format_timecode(block.start)} --> "
-                    f"{format_timecode(block.end)}"
+                    f"{format_timecode(block.start)} --> {format_timecode(block.end)}"
                 ),
                 text="\n".join(text_lines),
             )
@@ -741,9 +724,7 @@ def _render_srt(
     return serialize_srt(srt_blocks)
 
 
-def _render_block_text(
-    block: SubtitleBlock, options: SrtFormatOptions
-) -> list[str]:
+def _render_block_text(block: SubtitleBlock, options: SrtFormatOptions) -> list[str]:
     use_dialogue = (
         options.include_speaker_prefix_for_dialogue
         and len({item.speaker_id for item in block.utterances}) > 1
@@ -753,9 +734,7 @@ def _render_block_text(
         text = utterance.text.strip()
         if not text:
             continue
-        for line in _wrap_text(
-            text, options, max_lines=options.max_lines_per_block
-        ):
+        for line in _wrap_text(text, options, max_lines=options.max_lines_per_block):
             if use_dialogue:
                 rendered.append(f"{options.dialogue_prefix}{line}")
             else:
@@ -763,9 +742,7 @@ def _render_block_text(
     return rendered
 
 
-def _rendered_line_count(
-    utterances: list[Utterance], options: SrtFormatOptions
-) -> int:
+def _rendered_line_count(utterances: list[Utterance], options: SrtFormatOptions) -> int:
     return sum(
         len(_wrap_text(utterance.text.strip(), options))
         for utterance in utterances
@@ -809,8 +786,7 @@ def _balanced_wrap(text: str, max_lines: int) -> list[str]:
     for i in range(1, n):
         score = _score_wrap_break(text, i, target)
         if score > best_score or (
-            score == best_score
-            and abs(i - target) < abs(best_index - target)
+            score == best_score and abs(i - target) < abs(best_index - target)
         ):
             best_score = score
             best_index = i
@@ -846,8 +822,7 @@ def _find_wrap_index(text: str, options: SrtFormatOptions) -> int:
     for i in range(lo, hi + 1):
         score = _score_wrap_break(text, i, midpoint)
         if score > best_score or (
-            score == best_score
-            and abs(i - midpoint) < abs(best_index - midpoint)
+            score == best_score and abs(i - midpoint) < abs(best_index - midpoint)
         ):
             best_score = score
             best_index = i
@@ -860,9 +835,7 @@ def _score_wrap_break(text: str, i: int, midpoint: float) -> float:
     score = 0.0
 
     last = line1[-1]
-    ends_clause = (
-        last in JAPANESE_HARD_PUNCTUATION or last in JAPANESE_SOFT_PUNCTUATION
-    )
+    ends_clause = last in JAPANESE_HARD_PUNCTUATION or last in JAPANESE_SOFT_PUNCTUATION
 
     # Unsafe-start penalty only when line 1 did not already terminate the
     # clause; otherwise breaking before a particle-like char is fine
@@ -903,18 +876,14 @@ def _is_ascii_alphanum(ch: str) -> bool:
     return bool(re.match(r"[A-Za-z0-9]", ch))
 
 
-def _join_token_texts(
-    tokens: list[WordToken], options: SrtFormatOptions
-) -> str:
+def _join_token_texts(tokens: list[WordToken], options: SrtFormatOptions) -> str:
     text = ""
     for token in tokens:
         text = _join_text_parts(text, token.text, options)
     return _normalize_spacing(text)
 
 
-def _join_text_parts(
-    left: str, right: str, options: SrtFormatOptions
-) -> str:
+def _join_text_parts(left: str, right: str, options: SrtFormatOptions) -> str:
     if not left:
         return right
     if not right:
@@ -950,19 +919,13 @@ def _is_unsafe_segment_start(text: str) -> bool:
     )
 
 
-def _ends_with_split_punctuation(
-    text: str, options: SrtFormatOptions
-) -> bool:
+def _ends_with_split_punctuation(text: str, options: SrtFormatOptions) -> bool:
     return bool(text and text[-1] in options.split_on_punctuation)
 
 
-def _ends_with_soft_split_punctuation(
-    text: str, options: SrtFormatOptions
-) -> bool:
+def _ends_with_soft_split_punctuation(text: str, options: SrtFormatOptions) -> bool:
     return bool(text and text[-1] in options.soft_split_punctuation)
 
 
 def _block_text_length(block: SubtitleBlock) -> int:
     return sum(len(item.text) for item in block.utterances)
-
-

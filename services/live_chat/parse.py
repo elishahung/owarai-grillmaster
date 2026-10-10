@@ -55,9 +55,7 @@ def _parse_item(item: dict, seconds: float) -> ChatMessage | None:
         text = _message_text(renderer)
         if not text:
             return None
-        return ChatMessage(
-            id=0, seconds=seconds, author=_author(renderer), text=text
-        )
+        return ChatMessage(id=0, seconds=seconds, author=_author(renderer), text=text)
     if "liveChatPaidMessageRenderer" in item:
         renderer = item["liveChatPaidMessageRenderer"]
         return ChatMessage(

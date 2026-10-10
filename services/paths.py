@@ -90,14 +90,10 @@ def fit_dir_name(
 
     room = budget - measure(keep) - measure(separator)
     trimmed = (
-        _truncate_to_units(tail, room).rstrip(_TRAILING_NAME_CHARS)
-        if room > 0
-        else ""
+        _truncate_to_units(tail, room).rstrip(_TRAILING_NAME_CHARS) if room > 0 else ""
     )
     fitted = f"{keep}{separator}{trimmed}" if trimmed else keep
-    logger.info(
-        f"Shortened directory name for {parent}: {candidate!r} -> {fitted!r}"
-    )
+    logger.info(f"Shortened directory name for {parent}: {candidate!r} -> {fitted!r}")
     return fitted
 
 

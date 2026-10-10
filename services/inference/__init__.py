@@ -149,9 +149,7 @@ def run_inference(
 
     # codex/claude fall back to their own default model; agy has none.
     if backend == Backend.AGY and not model:
-        raise InferenceError(
-            f"backend {backend.value!r} requires an explicit model"
-        )
+        raise InferenceError(f"backend {backend.value!r} requires an explicit model")
 
     if validate is not None and schema is None:
         raise InferenceError("validate= requires a schema to validate against")
@@ -181,11 +179,7 @@ def run_inference(
                     audio=None if repairing else audio,
                     cwd=cwd,
                 )
-            runner = (
-                run_codex_exec
-                if backend == Backend.CODEX
-                else run_claude_sdk_exec
-            )
+            runner = run_codex_exec if backend == Backend.CODEX else run_claude_sdk_exec
             return runner(
                 prompt=p,
                 cwd=work,

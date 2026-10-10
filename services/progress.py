@@ -61,9 +61,7 @@ class NoopProgressReporter:
     ) -> None:
         return None
 
-    def start_stage(
-        self, label: str, total: float | None = None
-    ) -> TaskID | None:
+    def start_stage(self, label: str, total: float | None = None) -> TaskID | None:
         return None
 
     def advance(
@@ -74,9 +72,7 @@ class NoopProgressReporter:
     ) -> None:
         return None
 
-    def finish(
-        self, task_id: TaskID | None, status: str = "done"
-    ) -> None:
+    def finish(self, task_id: TaskID | None, status: str = "done") -> None:
         return None
 
     @contextmanager
@@ -93,9 +89,7 @@ class NoopProgressReporter:
         """
         return None
 
-    def pipeline_started(
-        self, project: Any, plan: list[PlannedStage]
-    ) -> None:
+    def pipeline_started(self, project: Any, plan: list[PlannedStage]) -> None:
         return None
 
     def stage_started(self, key: str, label: str) -> None:
@@ -139,9 +133,7 @@ class NoopProgressReporter:
     def chunk_finished(self, index: int, retries: int) -> None:
         return None
 
-    def chunk_failed(
-        self, index: int, message: str, retries: int = 0
-    ) -> None:
+    def chunk_failed(self, index: int, message: str, retries: int = 0) -> None:
         return None
 
 
@@ -213,13 +205,9 @@ class RichProgressReporter(NoopProgressReporter):
         self._live_started = False
 
     def _get_task(self, task_id: TaskID):
-        return next(
-            task for task in self.progress.tasks if task.id == task_id
-        )
+        return next(task for task in self.progress.tasks if task.id == task_id)
 
-    def start_stage(
-        self, label: str, total: float | None = None
-    ) -> TaskID | None:
+    def start_stage(self, label: str, total: float | None = None) -> TaskID | None:
         if total is None:
             return None
         with self._lock:
@@ -244,9 +232,7 @@ class RichProgressReporter(NoopProgressReporter):
         with self._lock:
             self.progress.update(task_id, **update)
 
-    def finish(
-        self, task_id: TaskID | None, status: str = "done"
-    ) -> None:
+    def finish(self, task_id: TaskID | None, status: str = "done") -> None:
         if task_id is None:
             return
         with self._lock:
@@ -298,9 +284,7 @@ class RichProgressReporter(NoopProgressReporter):
                 f"retries={self._chunk_retries} last={index + 1}"
             )
 
-    def chunk_failed(
-        self, index: int, message: str, retries: int = 0
-    ) -> None:
+    def chunk_failed(self, index: int, message: str, retries: int = 0) -> None:
         with self._lock:
             self._chunk_active = max(0, self._chunk_active - 1)
             self._chunk_failed += 1

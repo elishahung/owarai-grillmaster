@@ -1,4 +1,5 @@
 """Package orchestration for finalized projects."""
+
 from __future__ import annotations
 
 import json
@@ -109,9 +110,7 @@ def package_project_directory(
     project_json = project_dir / PROJECT_FILE_NAME
     if not project_json.exists():
         raise FileNotFoundError(f"project.json not found: {project_json}")
-    project = Project.model_validate_json(
-        project_json.read_text(encoding="utf-8")
-    )
+    project = Project.model_validate_json(project_json.read_text(encoding="utf-8"))
     package_project(
         project=project,
         source_root=project_dir,
@@ -142,9 +141,7 @@ def copy_auxiliary_artifacts(source_root: Path, target_dir: Path) -> None:
         if not source.exists():
             continue
         shutil.copy2(source, target_dir / target_name)
-        logger.info(
-            f"Copied package artifact: {source} -> {target_dir / target_name}"
-        )
+        logger.info(f"Copied package artifact: {source} -> {target_dir / target_name}")
 
 
 def write_info(source_root: Path, target_dir: Path) -> None:
@@ -169,9 +166,7 @@ def write_info(source_root: Path, target_dir: Path) -> None:
     if not info:
         return
     target = target_dir / INFO_FILE_NAME
-    target.write_text(
-        json.dumps(info, ensure_ascii=False, indent=4), encoding="utf-8"
-    )
+    target.write_text(json.dumps(info, ensure_ascii=False, indent=4), encoding="utf-8")
     logger.info(f"Wrote package artifact: {target}")
 
 
@@ -190,9 +185,7 @@ def _read_json_object(path: Path) -> dict[str, object] | None:
     return data
 
 
-def _resolve_remix_noise_name(
-    requested: str | None, project: Project
-) -> str | None:
+def _resolve_remix_noise_name(requested: str | None, project: Project) -> str | None:
     """Pick the noise set for this deliverable, honouring `config.json`.
 
     An explicit request always wins. Otherwise a series or channel marked

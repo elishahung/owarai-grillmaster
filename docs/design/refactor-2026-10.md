@@ -265,30 +265,40 @@ grillmaster.core | grillmaster.events
 ### 6.2 核心概念
 
 ```python
-class Role(StrEnum):            # 由 grill.toml [agents.roles] 對應到 ModelSpec
-    PREPASS = "prepass"; CHUNK = "chunk"; POSTPROCESS = "postprocess"
-    UTILITY = "utility"; CHAT = "chat"; IMAGE = "image"
+class Role(StrEnum):  # 由 grill.toml [agents.roles] 對應到 ModelSpec
+    PREPASS = "prepass"
+    CHUNK = "chunk"
+    POSTPROCESS = "postprocess"
+    UTILITY = "utility"
+    CHAT = "chat"
+    IMAGE = "image"
+
 
 @dataclass(frozen=True)
 class AgentTask[T]:
-    name: str                       # "chunks/0001-0119"、"refine"：事件與 session 目錄用
+    name: str  # "chunks/0001-0119"、"refine"：事件與 session 目錄用
     role: Role
-    instructions: str               # stage prompt + 節目規則
-    prompt: str                     # 使用者內容
-    session_dir: Path               # session 紀錄位置（§6.6），由呼叫的 stage 決定
-    workdir: Path | None            # agent 的 cwd 與可寫根目錄；None = 拋棄式暫存目錄（date research、titles）
+    instructions: str  # stage prompt + 節目規則
+    prompt: str  # 使用者內容
+    session_dir: Path  # session 紀錄位置（§6.6），由呼叫的 stage 決定
+    workdir: (
+        Path | None
+    )  # agent 的 cwd 與可寫根目錄；None = 拋棄式暫存目錄（date research、titles）
     images: tuple[Path, ...] = ()
-    audio: tuple[Path, ...] = ()    # 需要 capability AUDIO_INPUT
-    tools: frozenset[ToolName] = frozenset()   # grill MCP 工具，§7
-    tool_scope: ToolScope | None = None        # 時間窗、參考 SRT 等
-    output: Output[T]               # TextOutput | SchemaOutput(model) | FilesOutput(paths)
-    validate: Callable[[T], None] | None = None   # 丟 ValidationFailure(msg)
-    max_repairs: int = 3            # resume 修復回合
-    attempts: int = 1               # 全新 session 的重試次數（暫時性錯誤）
+    audio: tuple[Path, ...] = ()  # 需要 capability AUDIO_INPUT
+    tools: frozenset[ToolName] = frozenset()  # grill MCP 工具，§7
+    tool_scope: ToolScope | None = None  # 時間窗、參考 SRT 等
+    output: Output[T]  # TextOutput | SchemaOutput(model) | FilesOutput(paths)
+    validate: Callable[[T], None] | None = None  # 丟 ValidationFailure(msg)
+    max_repairs: int = 3  # resume 修復回合
+    attempts: int = 1  # 全新 session 的重試次數（暫時性錯誤）
+
 
 class AgentRunner:
     def run(self, task: AgentTask[T]) -> AgentResult[T]: ...
-    def run_many(self, tasks: Sequence[AgentTask[T]]) -> list[AgentResult[T] | AgentError]: ...
+    def run_many(
+        self, tasks: Sequence[AgentTask[T]]
+    ) -> list[AgentResult[T] | AgentError]: ...
 ```
 
 `AgentRunner` 由 pipeline 建立一次並放進 `StageContext`，持有：role→spec 對照（由 pipeline 從 config 建好傳入，`agents` 不讀 config）、全域併發上限、EventBus。
@@ -342,14 +352,18 @@ run(task)
 class AgentAdapter(Protocol):
     backend: Backend
     capabilities: frozenset[Capability]
+
     def start(self, task, spec, mcp) -> SessionHandle: ...
     # 同一組參數再加上前一個 handle：修復回合是「同 session、同工具、同 schema、新的使用者訊息」，
     # 每家 resume 都要重新帶 cwd / MCP / schema / model 參數。
-    def resume(self, previous: SessionHandle, task, spec, mcp, prompt: str) -> SessionHandle: ...
+    def resume(
+        self, previous: SessionHandle, task, spec, mcp, prompt: str
+    ) -> SessionHandle: ...
+
 
 class SessionHandle(Protocol):
-    def events(self) -> Iterator[AgentEvent]: ...   # 串流、阻塞到結束
-    def result(self) -> FinalOutput: ...            # text、structured、session_id、usage
+    def events(self) -> Iterator[AgentEvent]: ...  # 串流、阻塞到結束
+    def result(self) -> FinalOutput: ...  # text、structured、session_id、usage
 ```
 
 | | agy | codex | claude |
@@ -502,19 +516,29 @@ chunk 專用事件（`chunk_started/finished/failed`）不再需要：chunk boar
 ```python
 @dataclass(frozen=True)
 class StageDef:
-    key: StageKey                  # StrEnum：metadata, download, combine, chat_fetch, audio, asr,
-                                   # transcript, prepass, chunks, refine, glossary, finalize, chat_translate
+    key: StageKey  # StrEnum：metadata, download, combine, chat_fetch, audio, asr,
+    # transcript, prepass, chunks, refine, glossary, finalize, chat_translate
     label: str
     weight: int
     run: Callable[[StageContext], None]
-    outputs: Callable[[ProjectLayout], Sequence[Path]]          # 宣告的成品（subs/…）；reset 與「只寫自己的東西」測試用
+    outputs: Callable[
+        [ProjectLayout], Sequence[Path]
+    ]  # 宣告的成品（subs/…）；reset 與「只寫自己的東西」測試用
     enabled: Callable[[RunOptions], bool] = always
-    on_skip: Callable[[StageContext], None] | None = None       # 例：section 參數在續跑時被忽略的警告
-    params: Callable[[AppConfig], dict[str, str]] = no_params   # TUI 顯示 + ledger 快照
+    on_skip: Callable[[StageContext], None] | None = (
+        None  # 例：section 參數在續跑時被忽略的警告
+    )
+    params: Callable[[AppConfig], dict[str, str]] = no_params  # TUI 顯示 + ledger 快照
 
-STAGES: tuple[StageDef, ...] = (...)       # 必須與 core.stage_key.StageKey 的順序一致（registry 載入時斷言）
+
+STAGES: tuple[
+    StageDef, ...
+] = ...  # 必須與 core.stage_key.StageKey 的順序一致（registry 載入時斷言）
 SIDE_TASKS: tuple[SideTaskDef, ...] = (cover, date_research)
-DELIVERY: tuple[DeliveryStepDef, ...] = (archive, package)   # 非 stage，但 label/weight 也在這裡
+DELIVERY: tuple[DeliveryStepDef, ...] = (
+    archive,
+    package,
+)  # 非 stage，但 label/weight 也在這裡
 ```
 
 `StageKey` 放在 `core/stage_key.py`，順序即執行順序；`ProjectLayout`（work 目錄編號）與遷移腳本在 registry 存在之前就能用它。
@@ -1070,7 +1094,19 @@ lint/types 從 report-only 轉成強制並清到零、清掉理由不明的 `noq
 | agy 全域 MCP 註冊（S2 路線 b）讓使用者平常的 agy 也看到 grill 工具 | 只在路線 a 失敗時採用；無 session 時 server 不暴露工具 |
 | MCP 子行程在 Windows 上殘留 | 子行程由 agent CLI 管理；`grill doctor` 列出殘留 `grillmaster.agent_tools` 行程 |
 
-Spike 結果：（待填）
+### Spike 結果（2026-10-10）
+
+| ID | 結果 | 對設計的影響 |
+|---|---|---|
+| S1 | ✅ agy 1.3.2 非 TTY 下 `-p --output-format stream-json` 輸出正常（`init` / `step_update` / `result`，`result.structured_output`）。`--input-format stream-json` 需搭配 `-p=`（空 prompt），stdin 訊息形狀 `{"event":"user","message":{"content":"…"}}`，**只支援 text 區塊**。agy 不會自動把文字裡的 `@path` 圖片附上，模型會改用 `view_file` 開啟。`--model gemini-3.1-pro-high` 這種 id 形式可用 | 移除 pty、`pywinpty`、ANSI 清理與答案標記；prompt 經 stdin；圖片與音訊一律列絕對路徑並要求 `view_file` 開啟 |
+| S2 | ✅ agy 讀工作目錄的 `.agents/mcp_config.json`（`{"mcpServers":{name:{command,args}}}`），工具呼叫在事件中是 `call_mcp_tool`；agy 的環境變數會傳給 MCP 子行程 | agy 採路線 (a)：在 agent 工作目錄寫 `.agents/mcp_config.json`，session manifest 以 `--session` 參數傳 |
+| S3 | ✅ agy、codex 都把 MCP image content 交給模型（答對顏色）。Claude 無法驗證（見下） | `get_frames` 直接回傳 image content |
+| S4 | ✅ agy `--json-schema`、codex `--output-schema` 皆接受含 nested object array 的 strict schema，輸出位於 `structured_output` / 最後一則 `agent_message` | 依設計 |
+| S5 | ✅ agy `--conversation <id>`（同 id 續接、記得前文）、codex `exec resume <thread_id>`（重帶 `-c mcp_servers.*` 與 `--output-schema`，記得前文） | 依設計 |
+| S6 | ✅ agy 事件流有 `view_file` 對音檔絕對路徑的 `DONE` step | 聽音驗證改用事件流，不再讀 agy 內部 transcript |
+| S7 | ✅ 目前 yt-dlp 不需 patch 即可抓 Bilibili 1080p | 刪除 monkey-patch |
+| S8 | ✅ agy 六份、codex 兩份原始事件已錄製為 fixture | 契約測試 |
+| — | ❌ Claude：本機 Claude Code 未登入（OAuth 過期），S2–S5 無法 live 驗證。codex 的 MCP server **不會**繼承父行程環境變數 | Claude adapter 依 SDK 型別實作，fixture 由 SDK 型別合成；登入後跑 `pytest -m live` 驗證。session manifest 一律用 `--session` 參數傳，不用環境變數 |
 
 ---
 

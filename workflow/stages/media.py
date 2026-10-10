@@ -94,16 +94,11 @@ def process_video(
                 section_end=section_end,
             )
         except Exception as subtitle_error:
-            logger.warning(
-                "Official subtitle normalization failed: "
-                f"{subtitle_error}"
-            )
+            logger.warning(f"Official subtitle normalization failed: {subtitle_error}")
 
 
 def warn_section_ignored() -> None:
-    logger.warning(
-        "Video already processed; --start/--to are ignored on resume"
-    )
+    logger.warning("Video already processed; --start/--to are ignored on resume")
 
 
 def extract_audio(project: Project) -> None:

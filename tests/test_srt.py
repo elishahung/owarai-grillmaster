@@ -55,19 +55,13 @@ class ParseSrtTests(unittest.TestCase):
         self.assertEqual(blocks[0].text, "hello")
 
     def test_preserves_multiline_text(self):
-        text = (
-            "1\n00:00:01,000 --> 00:00:02,000\nline one\nline two\n"
-        )
+        text = "1\n00:00:01,000 --> 00:00:02,000\nline one\nline two\n"
         blocks = parse_srt(text)
         self.assertEqual(blocks[0].text, "line one\nline two")
 
     def test_skips_blocks_with_fewer_than_two_lines(self):
         # Lone "noise" lines between proper blocks are skipped silently.
-        text = (
-            "stray\n"
-            "\n"
-            "1\n00:00:01,000 --> 00:00:02,000\nhello\n"
-        )
+        text = "stray\n\n1\n00:00:01,000 --> 00:00:02,000\nhello\n"
         blocks = parse_srt(text)
         self.assertEqual(len(blocks), 1)
 
@@ -133,24 +127,14 @@ class FormatTimecodeTests(unittest.TestCase):
 
 class TimecodeLineRegexTests(unittest.TestCase):
     def test_matches_canonical_form(self):
-        self.assertIsNotNone(
-            TIMECODE_LINE_REGEX.match(
-                "00:00:01,000 --> 00:00:02,000"
-            )
-        )
+        self.assertIsNotNone(TIMECODE_LINE_REGEX.match("00:00:01,000 --> 00:00:02,000"))
 
     def test_matches_dot_milliseconds_separator(self):
         # Some producers use "." instead of "," before ms.
-        self.assertIsNotNone(
-            TIMECODE_LINE_REGEX.match(
-                "00:00:01.000 --> 00:00:02.000"
-            )
-        )
+        self.assertIsNotNone(TIMECODE_LINE_REGEX.match("00:00:01.000 --> 00:00:02.000"))
 
     def test_rejects_unpadded_fields(self):
-        self.assertIsNone(
-            TIMECODE_LINE_REGEX.match("0:00:01,000 --> 0:00:02,000")
-        )
+        self.assertIsNone(TIMECODE_LINE_REGEX.match("0:00:01,000 --> 0:00:02,000"))
 
 
 if __name__ == "__main__":

@@ -101,8 +101,7 @@ def read_source_program_info(info_json_path: Path) -> SourceProgramInfo:
         logger.warning(f"Failed to read source info JSON {info_json_path}: {e}")
         return SourceProgramInfo()
     logger.info(
-        f"Source program info: series={program.series!r} "
-        f"channel={program.channel!r}"
+        f"Source program info: series={program.series!r} channel={program.channel!r}"
     )
     return program
 
@@ -159,9 +158,7 @@ def _parse_tver_talents_response(data: dict) -> list[TVerTalent]:
     return talents
 
 
-def _parse_abema_casts_response(
-    data: dict, episode_id: str
-) -> list[AbemaTalent]:
+def _parse_abema_casts_response(data: dict, episode_id: str) -> list[AbemaTalent]:
     """Parse ABEMA program API credit casts into normalized talent records."""
     raw_casts = data.get("credit", {}).get("casts")
     if not isinstance(raw_casts, list):
@@ -213,10 +210,7 @@ def get_tver_episode_talents(episode_id: str) -> list[TVerTalent]:
     It is treated as best-effort metadata: failures are logged and return an
     empty list so metadata fetching does not block the main workflow.
     """
-    url = (
-        "https://contents-api.tver.jp/contents/api/v1/episodes/"
-        f"{episode_id}/talents"
-    )
+    url = f"https://contents-api.tver.jp/contents/api/v1/episodes/{episode_id}/talents"
     request = Request(url, headers=_TVER_WEB_HEADERS, method="GET")
     try:
         logger.info(f"Fetching TVer talents for episode: {episode_id}")
@@ -381,9 +375,7 @@ def get_abema_episode_broadcast_at(episode_id: str) -> int | None:
         AttributeError,
         json.JSONDecodeError,
     ) as e:
-        logger.warning(
-            f"Failed to fetch ABEMA broadcastAt for {episode_id}: {e}"
-        )
+        logger.warning(f"Failed to fetch ABEMA broadcastAt for {episode_id}: {e}")
         return None
 
 

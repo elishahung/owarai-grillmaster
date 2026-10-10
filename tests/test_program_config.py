@@ -82,9 +82,7 @@ class ProgramConfigTests(unittest.TestCase):
 
         register_program(series="ドキュメンタル", channel=None)
 
-        self.assertEqual(
-            self.config_file.read_text(encoding="utf-8"), "{not json"
-        )
+        self.assertEqual(self.config_file.read_text(encoding="utf-8"), "{not json")
         self.assertEqual(
             load_program_rules(series="ドキュメンタル", channel=None),
             program_config.ProgramRules(),
@@ -128,21 +126,15 @@ class ProgramConfigTests(unittest.TestCase):
         )
 
         self.assertTrue(load_program_rules(series="show", channel=None).remix)
-        self.assertTrue(
-            load_program_rules(series=None, channel="station").remix
-        )
+        self.assertTrue(load_program_rules(series=None, channel="station").remix)
 
     def test_listed_without_remix_or_unlisted_does_not_force_remix(self):
         self._write_config(
             {"series": {"show": {}}, "channel": {"station": {"remix": False}}}
         )
 
-        self.assertFalse(
-            load_program_rules(series="show", channel="station").remix
-        )
-        self.assertFalse(
-            load_program_rules(series="other", channel="elsewhere").remix
-        )
+        self.assertFalse(load_program_rules(series="show", channel="station").remix)
+        self.assertFalse(load_program_rules(series="other", channel="elsewhere").remix)
 
     def test_broken_entry_does_not_disable_other_entries(self):
         self._write_config(
@@ -220,9 +212,7 @@ class ProgramConfigTests(unittest.TestCase):
         self.assertEqual(rules.instructions("refine"), ["always"])
 
     def test_common_alone_applies_to_every_step(self):
-        self._write_config(
-            {"series": {"show": {"instruction": {"common": "always"}}}}
-        )
+        self._write_config({"series": {"show": {"instruction": {"common": "always"}}}})
         rules = load_program_rules(series="show", channel=None)
 
         for step in ("pre_pass", "translate", "refine", "glossary_check"):
@@ -237,14 +227,12 @@ class ProgramConfigTests(unittest.TestCase):
         )
 
         self.assertIsNone(
-            load_program_rules(
-                series="show", channel="station"
-            ).render_instruction("pre_pass")
-        )
-        self.assertIsNone(
-            load_program_rules(series=None, channel=None).render_instruction(
+            load_program_rules(series="show", channel="station").render_instruction(
                 "pre_pass"
             )
+        )
+        self.assertIsNone(
+            load_program_rules(series=None, channel=None).render_instruction("pre_pass")
         )
 
 
@@ -284,9 +272,7 @@ class ConfigSchemaTests(unittest.TestCase):
         example = json.loads(example_path.read_text(encoding="utf-8"))
 
         self.assertEqual(example["$schema"], f"./{REPO_SCHEMA_PATH.name}")
-        self.assertLessEqual(
-            set(example), set(config_json_schema()["properties"])
-        )
+        self.assertLessEqual(set(example), set(config_json_schema()["properties"]))
         for section in ("series", "channel"):
             for entry in example[section].values():
                 program_config.ProgramEntry.model_validate(entry)

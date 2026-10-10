@@ -8,6 +8,7 @@ an empty entry for a program it has just seen; opting a series or channel into
 remix packaging or giving it extra model instructions is a manual edit of that
 entry.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,9 +42,7 @@ INSTRUCTION_KEY_DOCS: dict[InstructionKey, str] = {
     ),
     "translate": "Concurrent chunk translation into Traditional Chinese.",
     "refine": "Agent polish of the translated subtitles.",
-    "glossary_check": (
-        "Agent terminology/fact check against the fixed glossary."
-    ),
+    "glossary_check": ("Agent terminology/fact check against the fixed glossary."),
 }
 
 # pydantic drops the Literal key constraint from a dict's JSON schema, so the
@@ -106,9 +105,7 @@ class ProgramRules:
         if not texts:
             return None
         logger.info(f"Program instructions for {step}: {len(texts)} block(s)")
-        return _INSTRUCTION_TEMPLATE.replace(
-            "{instructions}", "\n\n".join(texts)
-        )
+        return _INSTRUCTION_TEMPLATE.replace("{instructions}", "\n\n".join(texts))
 
 
 def config_path() -> Path:
@@ -116,9 +113,7 @@ def config_path() -> Path:
     return Path(CONFIG_FILE_NAME)
 
 
-def load_program_rules(
-    *, series: str | None, channel: str | None
-) -> ProgramRules:
+def load_program_rules(*, series: str | None, channel: str | None) -> ProgramRules:
     """Merge the channel then series entries for a program.
 
     Each entry is validated on its own: a broken entry is skipped with a
@@ -196,9 +191,7 @@ def _read_document(path: Path) -> dict[str, Any]:
     if not path.exists():
         legacy = path.with_name(_LEGACY_FILE_NAME)
         if legacy.exists():
-            logger.warning(
-                f"{legacy} is no longer read; rename it to {path.name}"
-            )
+            logger.warning(f"{legacy} is no longer read; rename it to {path.name}")
         return {}
     try:
         # utf-8-sig: the file is hand-edited, and Windows editors add a BOM.

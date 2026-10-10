@@ -30,9 +30,7 @@ def validate_srt_against_source(source: Path, candidate: Path) -> list[str]:
             f"block count differs: source={len(src_blocks)} refined={len(cand_blocks)}"
         )
 
-    for position, (left, right) in enumerate(
-        zip(src_blocks, cand_blocks), start=1
-    ):
+    for position, (left, right) in enumerate(zip(src_blocks, cand_blocks), start=1):
         if left.index != right.index:
             errors.append(
                 f"position {position}: index changed {left.index} -> {right.index}"

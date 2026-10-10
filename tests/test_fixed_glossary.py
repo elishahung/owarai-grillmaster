@@ -41,9 +41,7 @@ class LoadFixedGlossaryTests(unittest.TestCase):
     def _load(self, obj):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "g.json"
-            p.write_text(
-                json.dumps(obj, ensure_ascii=False), encoding="utf-8"
-            )
+            p.write_text(json.dumps(obj, ensure_ascii=False), encoding="utf-8")
             return load_fixed_glossary(path=p)
 
     def test_bad_top_level_type_raises(self):
@@ -135,15 +133,11 @@ class FormatFixedGlossaryBlockTests(unittest.TestCase):
         self.assertIn("完整參照表", out)
 
     def test_empty_section_omitted(self):
-        only_others = format_fixed_glossary_block(
-            G(others=((["ボケ"], "裝傻"),))
-        )
+        only_others = format_fixed_glossary_block(G(others=((["ボケ"], "裝傻"),)))
         self.assertNotIn("〔藝人/組合〕", only_others)
         self.assertIn("〔節目/單元/品牌/術語〕", only_others)
 
-        only_talents = format_fixed_glossary_block(
-            G(U(None, [(["ヤス"], "Yasu")]))
-        )
+        only_talents = format_fixed_glossary_block(G(U(None, [(["ヤス"], "Yasu")])))
         self.assertIn("〔藝人/組合〕", only_talents)
         self.assertNotIn("〔節目/單元/品牌/術語〕", only_talents)
 

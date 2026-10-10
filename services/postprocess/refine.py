@@ -16,9 +16,7 @@ from ._srt_guard import (
 )
 
 
-_PROMPT = (Path(__file__).parent / "prompts" / "refine.md").read_text(
-    encoding="utf-8"
-)
+_PROMPT = (Path(__file__).parent / "prompts" / "refine.md").read_text(encoding="utf-8")
 
 
 class RefinementValidationError(RuntimeError):
@@ -39,8 +37,7 @@ def refine_subtitles(project: Project) -> None:
         # failed validation), so the file is that attempt's half-written
         # output — discard it and refine again.
         logger.warning(
-            f"Discarding refined SRT from an unfinished run: "
-            f"{project.refined_srt_path}"
+            f"Discarding refined SRT from an unfinished run: {project.refined_srt_path}"
         )
         project.refined_srt_path.unlink()
 
@@ -48,9 +45,7 @@ def refine_subtitles(project: Project) -> None:
 
     spec = settings.agent_postprocess_model
     backend = Backend(spec.backend)
-    logger.info(
-        f"Invoking {backend.value} for subtitle refinement: {project.id}"
-    )
+    logger.info(f"Invoking {backend.value} for subtitle refinement: {project.id}")
     # The on-demand frame tool's stage-specific wrapper writes into
     # `.refine/extra_frames`; window = the whole video.
     prompt = _PROMPT
@@ -71,21 +66,17 @@ def refine_subtitles(project: Project) -> None:
             f"agent did not produce refined SRT: {project.refined_srt_path}"
         )
 
-    errors = _validate_refined_srt(
-        project.translated_path, project.refined_srt_path
-    )
+    errors = _validate_refined_srt(project.translated_path, project.refined_srt_path)
     if errors:
         raise RefinementValidationError(
             "refined SRT failed structural validation:\n" + "\n".join(errors)
         )
 
     logger.info(
-        f"Refined SRT validated: "
-        f"{len(_parse_srt(project.refined_srt_path))} blocks"
+        f"Refined SRT validated: {len(_parse_srt(project.refined_srt_path))} blocks"
     )
 
     if not project.refine_report_path.exists():
         logger.warning(
-            f"Refinement report missing (expected at "
-            f"{project.refine_report_path})"
+            f"Refinement report missing (expected at {project.refine_report_path})"
         )

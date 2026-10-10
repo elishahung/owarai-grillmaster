@@ -23,9 +23,7 @@ def fetch_metadata(project: Project) -> None:
             project.update_from_source_talents(talents)
         broadcast_date_label = get_tver_broadcast_date_label(project.id)
         if broadcast_date_label:
-            project.update_from_source_broadcast_date_label(
-                broadcast_date_label
-            )
+            project.update_from_source_broadcast_date_label(broadcast_date_label)
     if project.source == VideoSource.ABEMA:
         talents = get_abema_episode_talents(project.id)
         if talents:

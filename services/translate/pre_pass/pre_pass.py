@@ -176,9 +176,7 @@ def run_pre_pass(
             logger.info(f"[pre-pass] Reusing existing {pre_pass_path}")
             return result
         except (OSError, ValueError) as e:
-            logger.warning(
-                f"[pre-pass] Existing pre_pass unusable ({e}); re-running"
-            )
+            logger.warning(f"[pre-pass] Existing pre_pass unusable ({e}); re-running")
 
     spec = settings.agent_prepass_model
     backend = Backend(spec.backend)
@@ -192,9 +190,7 @@ def run_pre_pass(
         max_side=settings.video_frame_max_side,
         extract_audio=has_audio,
     )
-    frame_timestamps = [
-        frame.timestamp_seconds for frame in pre_pass_assets.frames
-    ]
+    frame_timestamps = [frame.timestamp_seconds for frame in pre_pass_assets.frames]
     fixed_glossary = load_fixed_glossary()
     boundaries = _chunk_boundaries(chunks)
     user_message = _build_user_message(
@@ -232,8 +228,7 @@ def run_pre_pass(
     )
 
     logger.info(
-        f"[pre-pass] Fixed glossary injected: "
-        f"{len(fixed_glossary.entries())} entries"
+        f"[pre-pass] Fixed glossary injected: {len(fixed_glossary.entries())} entries"
     )
     if parent_pre_pass_context:
         logger.info("[pre-pass] Parent pre-pass context injected")

@@ -11,9 +11,7 @@ from settings import settings
 from services.inference import Backend, run_inference
 
 
-_PROMPT = (Path(__file__).parent / "prompts" / "cover.md").read_text(
-    encoding="utf-8"
-)
+_PROMPT = (Path(__file__).parent / "prompts" / "cover.md").read_text(encoding="utf-8")
 
 
 class CoverFileMissingError(RuntimeError):

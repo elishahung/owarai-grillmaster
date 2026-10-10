@@ -37,14 +37,10 @@ _PROMPTS_DIR = Path(__file__).parent / "prompts"
 # Both passes share the glossary check's name-form rules.
 _NAME_FORM = (_PROMPTS_DIR / "name_form.md").read_text(encoding="utf-8")
 _PROMPT = (
-    (_PROMPTS_DIR / "translate.md").read_text(encoding="utf-8")
-    + "\n"
-    + _NAME_FORM
+    (_PROMPTS_DIR / "translate.md").read_text(encoding="utf-8") + "\n" + _NAME_FORM
 )
 _POLISH_PROMPT = (
-    (_PROMPTS_DIR / "polish.md").read_text(encoding="utf-8")
-    + "\n"
-    + _NAME_FORM
+    (_PROMPTS_DIR / "polish.md").read_text(encoding="utf-8") + "\n" + _NAME_FORM
 )
 
 # Upper bound on messages per model call; `plan_batches` balances below it.
@@ -105,9 +101,7 @@ def needs_translation(text: str) -> bool:
     and never reach the model.
     """
     return any(
-        low <= ord(char) <= high
-        for char in text
-        for low, high in _JAPANESE_RANGES
+        low <= ord(char) <= high for char in text for low, high in _JAPANESE_RANGES
     )
 
 
@@ -161,9 +155,7 @@ def translate_live_chat(
     )
     with ThreadPoolExecutor(max_workers=settings.agent_concurrency) as pool:
         futures = {
-            pool.submit(
-                _translate_batch, index, batch, log, context, inputs
-            ): index
+            pool.submit(_translate_batch, index, batch, log, context, inputs): index
             for index, batch in enumerate(batches, start=1)
         }
         for future in as_completed(futures):
@@ -187,9 +179,7 @@ def translate_live_chat(
 
     if translations:
         polish = _polish(log, translations, context, inputs)
-        translations.update(
-            (line.id, line.text) for line in polish.corrections
-        )
+        translations.update((line.id, line.text) for line in polish.corrections)
 
     translated = TranslatedChatLog(
         messages=[
@@ -220,9 +210,7 @@ class _SharedContext:
         )
         return cls(
             briefing=(
-                "## Program briefing (pre_pass.json)\n\n```json\n"
-                + pre_pass
-                + "\n```"
+                "## Program briefing (pre_pass.json)\n\n```json\n" + pre_pass + "\n```"
             ),
             subtitles=_paired_subtitles(
                 inputs.source_srt_path, inputs.finalized_srt_path
@@ -320,9 +308,7 @@ def _infer_cached[T: BaseModel](
     """
     if cache_path.exists():
         try:
-            cached = schema.model_validate_json(
-                cache_path.read_text(encoding="utf-8")
-            )
+            cached = schema.model_validate_json(cache_path.read_text(encoding="utf-8"))
         except (ValueError, OSError) as error:
             logger.warning(f"Ignoring unreadable cache ({cache_path}): {error}")
         else:

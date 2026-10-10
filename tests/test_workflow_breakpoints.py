@@ -67,12 +67,8 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project = self._build_project_mock()
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
-            patch.object(
-                transcription_stage, "ElevenLabsASR"
-            ) as elevenlabs_cls,
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
+            patch.object(transcription_stage, "ElevenLabsASR") as elevenlabs_cls,
             patch.object(transcription_stage, "convert_file") as convert_file,
             patch.object(translation_stage, "translate") as translate_mod,
         ):
@@ -104,12 +100,8 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.is_asr_completed = True
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
-            patch.object(
-                transcription_stage, "ElevenLabsASR"
-            ) as elevenlabs_cls,
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
+            patch.object(transcription_stage, "ElevenLabsASR") as elevenlabs_cls,
             patch.object(transcription_stage, "convert_file") as convert_file,
             patch.object(translation_stage, "translate") as translate_mod,
         ):
@@ -133,9 +125,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.video_path = root / "video.mp4"
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
             patch.object(media_stage, "MediaProcessor") as media_cls,
         ):
             workflow_module.process_project(
@@ -165,9 +155,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.video_path = root / "video.mp4"
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
             patch.object(media_stage, "MediaProcessor") as media_cls,
         ):
             workflow_module.process_project(
@@ -192,9 +180,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.video_path = root / "video.mp4"
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
             patch.object(media_stage, "MediaProcessor") as media_cls,
         ):
             workflow_module.process_project(
@@ -216,21 +202,16 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.pre_pass_path = Path("projects/demo/.pre_pass/pre_pass.json")
         project.pre_pass_cache_dir = Path("projects/demo/.pre_pass")
         project.chunks_cache_dir = Path("projects/demo/.chunks")
-        project.official_subtitle_path = Path(
-            "projects/demo/video.official.ja.srt"
-        )
+        project.official_subtitle_path = Path("projects/demo/video.official.ja.srt")
         project.source_metadata = SourceMetadata()
         project.program_rules.return_value = ProgramRules()
         project.source_metadata_context.return_value = None
         project.parent_pre_pass_context.return_value = None
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
             patch.object(translation_stage, "translate") as translate_mod,
         ):
-
             workflow_module.process_project(
                 "demo",
                 break_after=workflow_module.ProgressStage.PREPASS_COMPLETED,
@@ -247,9 +228,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
         progress = NoopProgressReporter()
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
             patch.object(workflow_api, "deliver_project") as deliver_project,
         ):
             final_path = workflow_module.process_project(
@@ -272,12 +251,8 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.is_srt_refined = False
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
-            patch.object(
-                postprocess_stage, "refine_project_subtitles"
-            ) as refine,
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
+            patch.object(postprocess_stage, "refine_project_subtitles") as refine,
             patch.object(workflow_api, "deliver_project"),
         ):
             workflow_module.process_project("demo")
@@ -292,9 +267,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
         project.is_glossary_checked = False
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
             patch.object(
                 postprocess_stage, "glossary_check_project_subtitles"
             ) as glossary_check,
@@ -351,16 +324,12 @@ class WorkflowBreakpointTests(unittest.TestCase):
             )
             loaded = Project.from_source_str(project_id)
 
-        get_video_info.assert_called_once_with(
-            f"https://tver.jp/episodes/{project_id}"
-        )
+        get_video_info.assert_called_once_with(f"https://tver.jp/episodes/{project_id}")
         get_tver_episode_talents.assert_called_once_with(project_id)
         get_tver_broadcast_date_label.assert_called_once_with(project_id)
         resolve_broadcast_date.assert_called_once()
         self.assertEqual(
-            resolve_broadcast_date.call_args.kwargs[
-                "tver_broadcast_date_label"
-            ],
+            resolve_broadcast_date.call_args.kwargs["tver_broadcast_date_label"],
             "7月8日(水)放送分",
         )
         self.assertEqual(
@@ -372,9 +341,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
             "山内　健司",
         )
         self.assertEqual(loaded.broadcast_date, date(2026, 7, 8))
-        self.assertEqual(
-            loaded.deliverable_name, f"260708_{project_id}_{loaded.name}"
-        )
+        self.assertEqual(loaded.deliverable_name, f"260708_{project_id}_{loaded.name}")
 
     def test_metadata_stage_fetches_abema_talents(self):
         root = self._make_temp_dir()
@@ -434,9 +401,7 @@ class WorkflowBreakpointTests(unittest.TestCase):
             "渡部健（アンジャッシュ）",
         )
         self.assertIsNone(loaded.broadcast_date)
-        self.assertEqual(
-            loaded.deliverable_name, f"{project_id}_{loaded.name}"
-        )
+        self.assertEqual(loaded.deliverable_name, f"{project_id}_{loaded.name}")
 
 
 if __name__ == "__main__":

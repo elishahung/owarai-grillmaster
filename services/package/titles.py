@@ -6,6 +6,7 @@ which returns three candidate titles with a one-line rationale each. The
 result is cached in the source project as `.titles/titles.json` (delete the
 file to force a re-run) and copied into the package directory.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -22,9 +23,7 @@ from project import (
 from services.inference import Backend, run_inference
 from settings import settings
 
-_PROMPT = (Path(__file__).parent / "prompts" / "titles.md").read_text(
-    encoding="utf-8"
-)
+_PROMPT = (Path(__file__).parent / "prompts" / "titles.md").read_text(encoding="utf-8")
 
 # Fixed count — the deliverable always offers exactly three alternatives.
 TITLE_COUNT = 3
@@ -64,13 +63,9 @@ def load_titles(source_root: Path) -> TitleSuggestions | None:
     if not path.exists():
         return None
     try:
-        return TitleSuggestions.model_validate_json(
-            path.read_text(encoding="utf-8")
-        )
+        return TitleSuggestions.model_validate_json(path.read_text(encoding="utf-8"))
     except (ValueError, OSError) as error:
-        logger.warning(
-            f"Ignoring unreadable title suggestions ({path}): {error}"
-        )
+        logger.warning(f"Ignoring unreadable title suggestions ({path}): {error}")
         return None
 
 
@@ -84,9 +79,7 @@ def generate_titles(source_root: Path) -> TitleSuggestions:
 
     spec = settings.agent_common_model
     backend = Backend(spec.backend)
-    logger.info(
-        f"Invoking {backend.value} for title suggestions: {source_root}"
-    )
+    logger.info(f"Invoking {backend.value} for title suggestions: {source_root}")
     prompt = (
         _PROMPT
         + "\n\n## pre_pass.json\n\n```json\n"
@@ -122,15 +115,12 @@ def ensure_titles(source_root: Path) -> Path | None:
     path = titles_path(source_root)
     if load_titles(source_root) is not None:
         logger.info(
-            f"Title suggestions already exist, skipping agent invocation: "
-            f"{path}"
+            f"Title suggestions already exist, skipping agent invocation: {path}"
         )
         return path
 
     if not settings.enable_package_title_suggestion:
-        logger.info(
-            "Package title suggestion disabled; packaging without titles.json"
-        )
+        logger.info("Package title suggestion disabled; packaging without titles.json")
         return None
 
     try:

@@ -25,9 +25,7 @@ class DateFromEpochTests(unittest.TestCase):
 
     def test_jst_wall_clock_date(self):
         # 2026-05-03 14:00 UTC = 2026-05-03 23:00 JST (same date)
-        self.assertEqual(
-            date_from_epoch(1777816800, JST), date(2026, 5, 3)
-        )
+        self.assertEqual(date_from_epoch(1777816800, JST), date(2026, 5, 3))
 
     def test_timezone_shifts_date_across_midnight(self):
         # 2026-05-03 16:30 UTC = 2026-05-04 01:30 JST but 2026-05-04 00:30 CST
@@ -89,14 +87,10 @@ class ResolveTverBroadcastDateTests(unittest.TestCase):
     def test_year_only_archive_label_returns_none(self):
         # Archive re-upload: the availability start is years off the on-air
         # date, so the deterministic resolver must yield to agent research.
-        self.assertIsNone(
-            resolve_tver_broadcast_date("2018年放送", self._START_AT)
-        )
+        self.assertIsNone(resolve_tver_broadcast_date("2018年放送", self._START_AT))
 
     def test_year_and_month_without_day_returns_none(self):
-        self.assertIsNone(
-            resolve_tver_broadcast_date("2018年8月放送", self._START_AT)
-        )
+        self.assertIsNone(resolve_tver_broadcast_date("2018年8月放送", self._START_AT))
 
     def test_invalid_full_date_label_falls_back(self):
         self.assertIsNone(

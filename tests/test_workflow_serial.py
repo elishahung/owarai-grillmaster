@@ -53,9 +53,7 @@ class SerialRunTests(unittest.TestCase):
 
     def test_failure_stops_the_chain_and_a_rerun_resumes_there(self):
         run = SerialRun(sources=["BV1", "BV2", "BV3"])
-        submit_project = MagicMock(
-            side_effect=[Path("a/ep1"), RuntimeError("boom")]
-        )
+        submit_project = MagicMock(side_effect=[Path("a/ep1"), RuntimeError("boom")])
 
         with patch.object(serial, "submit_project", submit_project):
             with self.assertRaises(RuntimeError):

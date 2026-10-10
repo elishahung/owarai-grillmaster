@@ -8,9 +8,7 @@ from services.elevenlabs import ElevenLabsASR, convert_file
 
 def run_asr(project: Project) -> None:
     asr = ElevenLabsASR()
-    transcription_result = asr.transcribe_to_file(
-        project.audio_path, project.asr_path
-    )
+    transcription_result = asr.transcribe_to_file(project.audio_path, project.asr_path)
     project.add_asr_cost(transcription_result.total_cost)
     logger.info(
         f"Stage ASR cost: ${transcription_result.total_cost:.4f} "

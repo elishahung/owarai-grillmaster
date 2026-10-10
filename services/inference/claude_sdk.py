@@ -202,19 +202,13 @@ def run_claude_sdk_exec(
                 f"Claude rate limit hit: {rate_limit['text']}"
             ) from exc
         if result_error:
-            raise ClaudeSDKExecError(
-                _result_error_text(result_error)
-            ) from exc
-        raise ClaudeSDKExecError(
-            f"claude-agent-sdk query failed: {exc}"
-        ) from exc
+            raise ClaudeSDKExecError(_result_error_text(result_error)) from exc
+        raise ClaudeSDKExecError(f"claude-agent-sdk query failed: {exc}") from exc
 
     # Defensive: should a CLI version end the stream cleanly on a 429 rather than
     # exiting non-zero, surface the limit instead of an empty final message.
     if rate_limit:
-        raise ClaudeSDKRateLimitError(
-            f"Claude rate limit hit: {rate_limit['text']}"
-        )
+        raise ClaudeSDKRateLimitError(f"Claude rate limit hit: {rate_limit['text']}")
     if result_error:
         raise ClaudeSDKExecError(_result_error_text(result_error))
 
@@ -258,9 +252,7 @@ def _rate_limit_text(info) -> str:
 
     parts = [f"{info.rate_limit_type or 'rate'} limit reached"]
     if info.resets_at:
-        when = datetime.fromtimestamp(info.resets_at).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        when = datetime.fromtimestamp(info.resets_at).strftime("%Y-%m-%d %H:%M:%S")
         parts.append(f"resets at {when}")
     return "; ".join(parts)
 

@@ -53,9 +53,7 @@ def run_process_ui(
     threads: list[threading.Thread] = []
 
     def _start_attempt() -> None:
-        thread = threading.Thread(
-            target=_worker, name="pipeline", daemon=True
-        )
+        thread = threading.Thread(target=_worker, name="pipeline", daemon=True)
         threads.append(thread)
         thread.start()
 

@@ -30,9 +30,7 @@ class ExtractFramesTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as d,
-            patch.object(
-                MediaProcessor, "extract_video_frame", side_effect=_fake
-            ),
+            patch.object(MediaProcessor, "extract_video_frame", side_effect=_fake),
         ):
             paths = MediaProcessor.extract_frames_at(
                 input_file=Path("v.mp4"),
@@ -53,9 +51,7 @@ class ExtractFramesTests(unittest.TestCase):
 
         with (
             tempfile.TemporaryDirectory() as d,
-            patch.object(
-                MediaProcessor, "extract_video_frame", side_effect=_fake
-            ),
+            patch.object(MediaProcessor, "extract_video_frame", side_effect=_fake),
         ):
             paths = MediaProcessor.extract_frames_at(
                 input_file=Path("v.mp4"),
@@ -142,9 +138,7 @@ class FrameToolInstructionTests(unittest.TestCase):
         text = build_glossary_check_frame_tool_instruction(Path("projects/x"))
         # No duration probe: the window runs to the end of the video.
         self.assertIn("0.000s to the end of the video", text)
-        self.assertIn(
-            str(FRAME_TOOL_SCRIPTS[FrameToolStage.GLOSSARY_CHECK]), text
-        )
+        self.assertIn(str(FRAME_TOOL_SCRIPTS[FrameToolStage.GLOSSARY_CHECK]), text)
         self.assertIn("terminology", text)
         self.assertIn("pre_pass.json", text)
 
@@ -182,9 +176,7 @@ class GetFramesCliTests(unittest.TestCase):
                 ]
 
             with (
-                patch.object(
-                    MediaProcessor, "get_media_duration", return_value=100.0
-                ),
+                patch.object(MediaProcessor, "get_media_duration", return_value=100.0),
                 patch.object(
                     MediaProcessor,
                     "extract_frames_at",
@@ -200,7 +192,7 @@ class GetFramesCliTests(unittest.TestCase):
                         str(project_dir),
                         "--times",
                         "1,2,2,120",
-                    ]
+                    ],
                 )
 
             self.assertEqual(code, 0)
@@ -229,9 +221,7 @@ class GetFramesCliTests(unittest.TestCase):
                 ]
 
             with (
-                patch.object(
-                    MediaProcessor, "get_media_duration", return_value=100.0
-                ),
+                patch.object(MediaProcessor, "get_media_duration", return_value=100.0),
                 patch.object(
                     MediaProcessor,
                     "extract_frames_at",
@@ -271,9 +261,7 @@ class GetFramesCliTests(unittest.TestCase):
                 ]
 
             with (
-                patch.object(
-                    MediaProcessor, "get_media_duration", return_value=100.0
-                ),
+                patch.object(MediaProcessor, "get_media_duration", return_value=100.0),
                 patch.object(
                     MediaProcessor,
                     "extract_frames_at",

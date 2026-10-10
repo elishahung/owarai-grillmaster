@@ -14,9 +14,7 @@ def _plan() -> list[PlannedStage]:
         PlannedStage(key="metadata", label="Fetching metadata"),
         PlannedStage(key="download", label="Downloading video"),
         PlannedStage(key="chunks", label="Translating subtitles"),
-        PlannedStage(
-            key="refine", label="Refining subtitles", enabled=False
-        ),
+        PlannedStage(key="refine", label="Refining subtitles", enabled=False),
         PlannedStage(key="finalize", label="Finalizing subtitles"),
         PlannedStage(key="date", label="Date research", kind="side_task"),
         PlannedStage(key="cover", label="Cover generation", kind="side_task"),
@@ -43,12 +41,8 @@ class PipelineStateTests(unittest.TestCase):
                 "cover",
             ],
         )
-        self.assertIs(
-            self.state.get("refine").state, ItemState.DISABLED
-        )
-        self.assertIs(
-            self.state.get("metadata").state, ItemState.PENDING
-        )
+        self.assertIs(self.state.get("refine").state, ItemState.DISABLED)
+        self.assertIs(self.state.get("metadata").state, ItemState.PENDING)
 
     def test_stage_lifecycle(self):
         self.reporter.stage_skipped("metadata", "already-complete")
@@ -146,9 +140,7 @@ class PipelineStateTests(unittest.TestCase):
         self.assertIsNone(self.state.current_stage_key)
         # A rerun rebuilds the items via pipeline_started.
         self.reporter.pipeline_started(MagicMock(asr_cost=0.0), _plan())
-        self.assertIs(
-            self.state.get("metadata").state, ItemState.PENDING
-        )
+        self.assertIs(self.state.get("metadata").state, ItemState.PENDING)
 
     def test_batch_keeps_running_until_the_last_project_completes(self):
         started_at = self.state.started_at
@@ -185,9 +177,7 @@ class PipelineStateTests(unittest.TestCase):
             def side_log():
                 logger.warning("cover line")
 
-            thread = threading.Thread(
-                target=side_log, name="date-research_0"
-            )
+            thread = threading.Thread(target=side_log, name="date-research_0")
             thread.start()
             thread.join()
         finally:

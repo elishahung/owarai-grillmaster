@@ -164,7 +164,11 @@ def summarize(
                 for text in walk_strings(base):
                     if keyword_hit(text, keywords):
                         summary["prompt_mentions"].append(
-                            {"line": line_no, "source": "session_meta", "snippet": short(text, 350)}
+                            {
+                                "line": line_no,
+                                "source": "session_meta",
+                                "snippet": short(text, 350),
+                            }
                         )
 
         elif record_type == "turn_context":
@@ -178,9 +182,13 @@ def summarize(
             }
 
         elif record_type == "event_msg":
-            message = payload.get("message") or payload.get("msg") or payload.get("text")
+            message = (
+                payload.get("message") or payload.get("msg") or payload.get("text")
+            )
             if isinstance(message, str) and message:
-                summary["event_messages"].append({"line": line_no, "message": short(message, 300)})
+                summary["event_messages"].append(
+                    {"line": line_no, "message": short(message, 300)}
+                )
 
         elif record_type == "response_item":
             payload_type = payload.get("type")
@@ -189,11 +197,20 @@ def summarize(
                 text = text_from_content(payload.get("content"))
                 if include_messages and text:
                     summary["messages"].append(
-                        {"line": line_no, "role": role, "phase": payload.get("phase"), "snippet": short(text, 700)}
+                        {
+                            "line": line_no,
+                            "role": role,
+                            "phase": payload.get("phase"),
+                            "snippet": short(text, 700),
+                        }
                     )
                 if include_prompts and role == "user" and keyword_hit(text, keywords):
                     summary["prompt_mentions"].append(
-                        {"line": line_no, "source": "user_message", "snippet": short(text, 500)}
+                        {
+                            "line": line_no,
+                            "source": "user_message",
+                            "snippet": short(text, 500),
+                        }
                     )
                 if role == "assistant" and text.strip():
                     stripped = text.strip()

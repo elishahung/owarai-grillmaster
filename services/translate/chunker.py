@@ -37,10 +37,7 @@ def split_into_chunks(
         current_chars += block.char_count
         # Close the chunk when it reaches target, unless this is the last chunk
         # (in which case we absorb the rest).
-        if (
-            current_chars >= target_per_chunk
-            and len(chunks) < num_chunks - 1
-        ):
+        if current_chars >= target_per_chunk and len(chunks) < num_chunks - 1:
             chunks.append(current)
             current = []
             current_chars = 0

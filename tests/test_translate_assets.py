@@ -57,17 +57,12 @@ class TranslateAssetsTests(unittest.TestCase):
 
         self.assertEqual(
             [frame.timestamp_seconds for frame in assets.frames],
-            [
-                round(slot * 44 / 39) * 90 + 0.2
-                for slot in range(40)
-            ],
+            [round(slot * 44 / 39) * 90 + 0.2 for slot in range(40)],
         )
         self.assertEqual(extract_frame.call_count, 40)
         self.assertEqual(assets.audio, audio_path)
         self.assertTrue(assets.manifest_path.exists())
-        manifest = json.loads(
-            assets.manifest_path.read_text(encoding="utf-8")
-        )
+        manifest = json.loads(assets.manifest_path.read_text(encoding="utf-8"))
         self.assertEqual(manifest["interval_seconds"], 60)
         self.assertEqual(manifest["min_frames"], 20)
         self.assertEqual(manifest["max_frames"], 40)
@@ -92,9 +87,7 @@ class TranslateAssetsTests(unittest.TestCase):
                 "services.translate.assets.MediaProcessor.get_media_duration",
                 return_value=255.0,
             ),
-            patch(
-                "services.translate.assets.MediaProcessor.extract_video_frame"
-            ),
+            patch("services.translate.assets.MediaProcessor.extract_video_frame"),
         ):
             assets = prepare_pre_pass_media_assets(
                 video_path=root / "video.mp4",
@@ -128,9 +121,7 @@ class TranslateAssetsTests(unittest.TestCase):
                 "services.translate.assets.MediaProcessor.get_media_duration",
                 return_value=45.0,
             ),
-            patch(
-                "services.translate.assets.MediaProcessor.extract_video_frame"
-            ),
+            patch("services.translate.assets.MediaProcessor.extract_video_frame"),
         ):
             assets = prepare_pre_pass_media_assets(
                 video_path=root / "video.mp4",
@@ -165,9 +156,7 @@ class TranslateAssetsTests(unittest.TestCase):
                 "services.translate.assets.MediaProcessor.get_media_duration",
                 return_value=190.1,
             ),
-            patch(
-                "services.translate.assets.MediaProcessor.extract_video_frame"
-            ),
+            patch("services.translate.assets.MediaProcessor.extract_video_frame"),
         ):
             assets = prepare_pre_pass_media_assets(
                 video_path=root / "video.mp4",
@@ -217,17 +206,14 @@ class TranslateAssetsTests(unittest.TestCase):
         audio_path = root / "audio.ogg"
 
         with (
-            patch(
-                "services.translate.assets.MediaProcessor.extract_audio_segment"
-            ),
-            patch(
-                "services.translate.assets.MediaProcessor.extract_video_frame"
-            ),
+            patch("services.translate.assets.MediaProcessor.extract_audio_segment"),
+            patch("services.translate.assets.MediaProcessor.extract_video_frame"),
         ):
             assets = prepare_chunk_media_assets(
                 video_path=video_path,
                 audio_path=audio_path,
-                cache_root=root / "chunks",                chunk=chunk,
+                cache_root=root / "chunks",
+                chunk=chunk,
                 chunk_index=1,
                 total_chunks=2,
                 interval_seconds=30,
@@ -249,9 +235,7 @@ class TranslateAssetsTests(unittest.TestCase):
                 285.2,
             ],
         )
-        manifest = json.loads(
-            assets.manifest_path.read_text(encoding="utf-8")
-        )
+        manifest = json.loads(assets.manifest_path.read_text(encoding="utf-8"))
         self.assertEqual(manifest["interval_seconds"], 30)
         self.assertEqual(manifest["max_side"], 768)
         self.assertEqual(manifest["audio"], str(assets.audio))
@@ -280,17 +264,14 @@ class TranslateAssetsTests(unittest.TestCase):
         audio_path = root / "audio.ogg"
 
         with (
-            patch(
-                "services.translate.assets.MediaProcessor.extract_audio_segment"
-            ),
-            patch(
-                "services.translate.assets.MediaProcessor.extract_video_frame"
-            ),
+            patch("services.translate.assets.MediaProcessor.extract_audio_segment"),
+            patch("services.translate.assets.MediaProcessor.extract_video_frame"),
         ):
             assets = prepare_chunk_media_assets(
                 video_path=video_path,
                 audio_path=audio_path,
-                cache_root=root / "chunks",                chunk=chunk,
+                cache_root=root / "chunks",
+                chunk=chunk,
                 chunk_index=0,
                 total_chunks=2,
                 interval_seconds=30,
@@ -301,9 +282,7 @@ class TranslateAssetsTests(unittest.TestCase):
             [frame.timestamp_seconds for frame in assets.frames],
             [0.2, 120.2, 299.2],
         )
-        manifest = json.loads(
-            assets.manifest_path.read_text(encoding="utf-8")
-        )
+        manifest = json.loads(assets.manifest_path.read_text(encoding="utf-8"))
         self.assertEqual(manifest["interval_seconds"], 30)
 
     def test_first_chunk_frame_follows_srt_start(self):
@@ -328,14 +307,13 @@ class TranslateAssetsTests(unittest.TestCase):
             patch(
                 "services.translate.assets.MediaProcessor.extract_audio_segment"
             ) as extract_audio,
-            patch(
-                "services.translate.assets.MediaProcessor.extract_video_frame"
-            ),
+            patch("services.translate.assets.MediaProcessor.extract_video_frame"),
         ):
             assets = prepare_chunk_media_assets(
                 video_path=video_path,
                 audio_path=audio_path,
-                cache_root=root / "chunks",                chunk=chunk,
+                cache_root=root / "chunks",
+                chunk=chunk,
                 chunk_index=0,
                 total_chunks=3,
                 interval_seconds=60,
@@ -347,9 +325,7 @@ class TranslateAssetsTests(unittest.TestCase):
             [0.7],
         )
         # The audio segment starts at the chunk's first SRT start.
-        self.assertEqual(
-            extract_audio.call_args.kwargs["start_seconds"], 0.5
-        )
+        self.assertEqual(extract_audio.call_args.kwargs["start_seconds"], 0.5)
 
     def test_chunk_frame_timestamp_clamps_to_range_end(self):
         chunk = [
@@ -365,17 +341,14 @@ class TranslateAssetsTests(unittest.TestCase):
         audio_path = root / "audio.ogg"
 
         with (
-            patch(
-                "services.translate.assets.MediaProcessor.extract_audio_segment"
-            ),
-            patch(
-                "services.translate.assets.MediaProcessor.extract_video_frame"
-            ),
+            patch("services.translate.assets.MediaProcessor.extract_audio_segment"),
+            patch("services.translate.assets.MediaProcessor.extract_video_frame"),
         ):
             assets = prepare_chunk_media_assets(
                 video_path=video_path,
                 audio_path=audio_path,
-                cache_root=root / "chunks",                chunk=chunk,
+                cache_root=root / "chunks",
+                chunk=chunk,
                 chunk_index=0,
                 total_chunks=3,
                 interval_seconds=30,
@@ -402,7 +375,8 @@ class TranslateAssetsTests(unittest.TestCase):
             prepare_chunk_media_assets(
                 video_path=root / "video.mp4",
                 audio_path=root / "audio.ogg",
-                cache_root=root / "chunks",                chunk=chunk,
+                cache_root=root / "chunks",
+                chunk=chunk,
                 chunk_index=0,
                 total_chunks=1,
                 interval_seconds=0,

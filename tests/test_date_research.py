@@ -119,9 +119,7 @@ class DateResearchTests(unittest.TestCase):
         with patch.object(project_module, "PROJECT_ROOT_NAME", str(root)):
             project = Project(id="ep123", name="demo")
             project.artifacts_dir.mkdir(parents=True, exist_ok=True)
-            project.date_research_path.write_text(
-                "{ truncated", encoding="utf-8"
-            )
+            project.date_research_path.write_text("{ truncated", encoding="utf-8")
             with patch(
                 "services.postprocess.date_research.run_inference",
                 return_value=DateResearchResult.model_validate_json(
@@ -188,18 +186,14 @@ class DateResearchTests(unittest.TestCase):
                 research_broadcast_date(project)
 
             prompt = mock_inference.call_args.kwargs["prompt"]
-            self.assertIn(
-                "Platform-stated original broadcast year: 2018", prompt
-            )
+            self.assertIn("Platform-stated original broadcast year: 2018", prompt)
             self.assertIn("2018年放送", prompt)
 
 
 class DateResearchResultSchemaTests(unittest.TestCase):
     def test_found_without_date_is_rejected(self):
         with self.assertRaises(ValidationError):
-            DateResearchResult.model_validate(
-                {"status": "found", "trust": "high"}
-            )
+            DateResearchResult.model_validate({"status": "found", "trust": "high"})
 
     def test_found_without_trust_is_rejected(self):
         with self.assertRaises(ValidationError):
@@ -221,9 +215,7 @@ class ApplyDateResearchResultTests(unittest.TestCase):
         shutil.rmtree(root, ignore_errors=True)
         root.mkdir(parents=True, exist_ok=True)
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
-        patcher = patch.object(
-            project_module, "PROJECT_ROOT_NAME", str(root)
-        )
+        patcher = patch.object(project_module, "PROJECT_ROOT_NAME", str(root))
         patcher.start()
         self.addCleanup(patcher.stop)
         project = Project(id="ep123", name="demo")
@@ -244,9 +236,7 @@ class ApplyDateResearchResultTests(unittest.TestCase):
 
     def test_found_low_trust_still_sets_date_with_warning(self):
         project = self._make_project()
-        result = DateResearchResult.model_validate_json(
-            _found_result_json(trust="low")
-        )
+        result = DateResearchResult.model_validate_json(_found_result_json(trust="low"))
 
         apply_date_research_result(project, result)
 
@@ -255,9 +245,7 @@ class ApplyDateResearchResultTests(unittest.TestCase):
 
     def test_unknown_marks_researched_without_date(self):
         project = self._make_project()
-        result = DateResearchResult.model_validate_json(
-            _unknown_result_json()
-        )
+        result = DateResearchResult.model_validate_json(_unknown_result_json())
 
         apply_date_research_result(project, result)
 
@@ -299,9 +287,7 @@ class WorkflowDateResearchGateTests(unittest.TestCase):
                 "research_broadcast_date",
                 return_value=found,
             ) as research,
-            patch.object(
-                side_tasks, "apply_date_research_result"
-            ) as apply_result,
+            patch.object(side_tasks, "apply_date_research_result") as apply_result,
             patch.object(workflow_api.settings, "archived_path", None),
             patch.object(workflow_api.settings, "package_path", None),
             patch.object(
@@ -309,13 +295,9 @@ class WorkflowDateResearchGateTests(unittest.TestCase):
                 "enable_broadcast_date_agent_fallback",
                 False,
             ),
-            patch.object(
-                workflow_api.settings, "enable_cover_generation", False
-            ),
+            patch.object(workflow_api.settings, "enable_cover_generation", False),
         ):
-            workflow_module.process_project(
-                "demo", enable_date_research=enabled
-            )
+            workflow_module.process_project("demo", enable_date_research=enabled)
         return load_cached, research, apply_result, found
 
     def test_enabled_and_undated_dispatches_agent_and_applies(self):
@@ -333,9 +315,7 @@ class WorkflowDateResearchGateTests(unittest.TestCase):
     def test_already_dated_skips_everything(self):
         project = self._build_completed_project_mock()
         project.broadcast_date = date(2026, 2, 4)
-        load_cached, research, apply_result, _ = self._run(
-            project, enabled=True
-        )
+        load_cached, research, apply_result, _ = self._run(project, enabled=True)
         load_cached.assert_not_called()
         research.assert_not_called()
         apply_result.assert_not_called()
@@ -343,9 +323,7 @@ class WorkflowDateResearchGateTests(unittest.TestCase):
     def test_already_researched_skips_everything(self):
         project = self._build_completed_project_mock()
         project.is_broadcast_date_researched = True
-        load_cached, research, apply_result, _ = self._run(
-            project, enabled=True
-        )
+        load_cached, research, apply_result, _ = self._run(project, enabled=True)
         load_cached.assert_not_called()
         research.assert_not_called()
         apply_result.assert_not_called()
@@ -353,9 +331,7 @@ class WorkflowDateResearchGateTests(unittest.TestCase):
     def test_cached_verdict_applied_even_when_disabled(self):
         project = self._build_completed_project_mock()
         cached = DateResearchResult.model_validate_json(_found_result_json())
-        _, research, apply_result, _ = self._run(
-            project, enabled=False, cached=cached
-        )
+        _, research, apply_result, _ = self._run(project, enabled=False, cached=cached)
         research.assert_not_called()
         apply_result.assert_called_once_with(project, cached)
 
@@ -382,9 +358,7 @@ class WorkflowDateResearchGateTests(unittest.TestCase):
                 return_value=found,
             ) as research,
             patch.object(side_tasks, "generate_cover") as generate_cover,
-            patch.object(
-                side_tasks, "apply_date_research_result"
-            ) as apply_result,
+            patch.object(side_tasks, "apply_date_research_result") as apply_result,
             patch.object(
                 media_stage,
                 "process_video",
@@ -395,9 +369,7 @@ class WorkflowDateResearchGateTests(unittest.TestCase):
                 "enable_broadcast_date_agent_fallback",
                 False,
             ),
-            patch.object(
-                workflow_api.settings, "enable_cover_generation", False
-            ),
+            patch.object(workflow_api.settings, "enable_cover_generation", False),
         ):
             with self.assertRaisesRegex(RuntimeError, "video failed"):
                 workflow_module.process_project(

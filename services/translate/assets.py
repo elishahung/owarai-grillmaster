@@ -98,9 +98,7 @@ def prepare_pre_pass_media_assets(
         ),
         encoding="utf-8",
     )
-    return PrePassMediaAssets(
-        audio=audio, frames=frames, manifest_path=manifest_path
-    )
+    return PrePassMediaAssets(audio=audio, frames=frames, manifest_path=manifest_path)
 
 
 def prepare_chunk_media_assets(
@@ -204,9 +202,7 @@ def _chunk_srt_start_frame_timestamps(
     selected_blocks = _evenly_select_blocks(chunk, frame_count)
     timestamps = []
     for block in selected_blocks:
-        block_start = MediaProcessor.parse_timecode_line(
-            block.timecode
-        ).start_seconds
+        block_start = MediaProcessor.parse_timecode_line(block.timecode).start_seconds
         timestamp = min(
             max(
                 block_start + FRAME_START_OFFSET_SECONDS,
@@ -229,9 +225,7 @@ def _pre_pass_srt_start_frame_timestamps(
     if not blocks or video_end_seconds <= 0:
         return []
 
-    last_block_range = MediaProcessor.parse_timecode_line(
-        blocks[-1].timecode
-    )
+    last_block_range = MediaProcessor.parse_timecode_line(blocks[-1].timecode)
     srt_duration = max(0.0, last_block_range.end_seconds)
     frame_budget = int(srt_duration // interval_seconds)
     frame_count = min(
@@ -242,9 +236,7 @@ def _pre_pass_srt_start_frame_timestamps(
     selected_blocks = _evenly_select_blocks(blocks, frame_count)
     timestamps = []
     for block in selected_blocks:
-        block_start = MediaProcessor.parse_timecode_line(
-            block.timecode
-        ).start_seconds
+        block_start = MediaProcessor.parse_timecode_line(block.timecode).start_seconds
         timestamp = min(
             max(block_start + FRAME_START_OFFSET_SECONDS, 0.0),
             video_end_seconds,
@@ -253,9 +245,7 @@ def _pre_pass_srt_start_frame_timestamps(
     return timestamps
 
 
-def _evenly_select_blocks(
-    blocks: list[SrtBlock], count: int
-) -> list[SrtBlock]:
+def _evenly_select_blocks(blocks: list[SrtBlock], count: int) -> list[SrtBlock]:
     if count <= 0:
         return []
     if count >= len(blocks):
@@ -264,10 +254,7 @@ def _evenly_select_blocks(
         return [blocks[0]]
 
     last_index = len(blocks) - 1
-    return [
-        blocks[round(slot * last_index / (count - 1))]
-        for slot in range(count)
-    ]
+    return [blocks[round(slot * last_index / (count - 1))] for slot in range(count)]
 
 
 def _build_frame_asset(
@@ -287,9 +274,7 @@ def _build_frame_asset(
             max_side=max_side,
         )
     except Exception as e:
-        logger.warning(
-            f"Skipping frame at {timestamp_seconds:.3f}s: {e}"
-        )
+        logger.warning(f"Skipping frame at {timestamp_seconds:.3f}s: {e}")
         return None
     return FrameSpec(
         timestamp_seconds=timestamp_seconds,

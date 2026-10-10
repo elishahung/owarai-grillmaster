@@ -58,9 +58,7 @@ class ChunkDispatchTests(unittest.IsolatedAsyncioTestCase):
             glossary={},
             catchphrases=[],
             tone_notes="tone",
-            segment_summaries=[
-                SegmentSummary(from_index=1, to_index=1, summary="seg")
-            ],
+            segment_summaries=[SegmentSummary(from_index=1, to_index=1, summary="seg")],
         )
 
     def _patch_backend(self, backend: str):
@@ -76,12 +74,8 @@ class ChunkDispatchTests(unittest.IsolatedAsyncioTestCase):
     async def test_agy_gets_audio_frames_and_frame_tool(self):
         assets = self._assets(self._make_temp_dir())
         self._patch_backend("agy")
-        with patch.object(
-            cw, "run_inference", return_value=_TRANSLATED
-        ) as mock_inf:
-            result = await translate_chunk(
-                assets, _CHUNK, 0, 1, self._pre_pass()
-            )
+        with patch.object(cw, "run_inference", return_value=_TRANSLATED) as mock_inf:
+            result = await translate_chunk(assets, _CHUNK, 0, 1, self._pre_pass())
 
         self.assertEqual(result.blocks[0].text, "translated")
         kwargs = mock_inf.call_args.kwargs
@@ -99,9 +93,7 @@ class ChunkDispatchTests(unittest.IsolatedAsyncioTestCase):
         # (claude), so the worker attaches none and drops the audio claims.
         assets = self._assets(self._make_temp_dir(), audio=False)
         self._patch_backend("claude")
-        with patch.object(
-            cw, "run_inference", return_value=_TRANSLATED
-        ) as mock_inf:
+        with patch.object(cw, "run_inference", return_value=_TRANSLATED) as mock_inf:
             await translate_chunk(assets, _CHUNK, 0, 1, self._pre_pass())
 
         kwargs = mock_inf.call_args.kwargs
@@ -121,13 +113,10 @@ class ChunkDispatchTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(return_value=_TRANSLATED),
             ) as mock_fix,
         ):
-            result = await translate_chunk(
-                assets, _CHUNK, 0, 1, self._pre_pass()
-            )
+            result = await translate_chunk(assets, _CHUNK, 0, 1, self._pre_pass())
 
         mock_fix.assert_awaited_once()
         self.assertEqual(result.blocks[0].text, "translated")
-
 
     async def test_quota_error_fails_the_chunk_without_retrying(self):
         assets = self._assets(self._make_temp_dir())
@@ -151,15 +140,14 @@ class ChunkDispatchTests(unittest.IsolatedAsyncioTestCase):
             ) as mock_inf,
             patch.object(cw.asyncio, "sleep", new=AsyncMock()) as mock_sleep,
         ):
-            result = await translate_chunk(
-                assets, _CHUNK, 0, 1, self._pre_pass()
-            )
+            result = await translate_chunk(assets, _CHUNK, 0, 1, self._pre_pass())
         self.assertEqual(mock_inf.call_count, 3)
         self.assertEqual(result.retries, 2)
         self.assertEqual(
             [c.args[0] for c in mock_sleep.await_args_list],
             [cw._RETRY_DELAY_SECONDS] * 2,
         )
+
 
 if __name__ == "__main__":
     unittest.main()

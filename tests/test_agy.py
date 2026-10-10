@@ -56,10 +56,7 @@ class ResolveAgyModelTests(unittest.TestCase):
 
 class CleanTerminalOutputTests(unittest.TestCase):
     def test_strips_ansi_and_carriage_returns_and_spinner(self):
-        raw = (
-            "\x1b[2J\x1b[1;1Hloading ⠋\rHello\x1b[0m World\r\n"
-            "final line ╭──╮"
-        )
+        raw = "\x1b[2J\x1b[1;1Hloading ⠋\rHello\x1b[0m World\r\nfinal line ╭──╮"
         cleaned = clean_terminal_output(raw)
         self.assertIn("Hello World", cleaned)
         # The pre-\r repaint ("loading") is dropped.
@@ -138,7 +135,9 @@ class RunAgyTests(unittest.TestCase):
         self.assertNotIn("the full prompt", argv)
         # The bootstrap references INPUT.md via agy's native @<path> token.
         bootstrap = argv[2]
-        self.assertIn(f"@{Path(captured['cwd']) / agy_mod._PROMPT_FILE_NAME}", bootstrap)
+        self.assertIn(
+            f"@{Path(captured['cwd']) / agy_mod._PROMPT_FILE_NAME}", bootstrap
+        )
 
     def test_images_attached_as_at_tokens(self):
         self._patch_which()
@@ -200,9 +199,7 @@ class RunAgyTests(unittest.TestCase):
             patch.object(agy_mod, "_AGY_BRAIN_DIR", brain),
             patch.object(agy_mod, "_run_under_pty", side_effect=fake_pty),
         ):
-            captured["result"] = run_agy(
-                "p", model="gemini-3.8-flash", audio=[track]
-            )
+            captured["result"] = run_agy("p", model="gemini-3.8-flash", audio=[track])
         return captured
 
     def test_audio_read_in_place_and_opened_via_view_file(self):
@@ -246,9 +243,7 @@ class RunAgyTests(unittest.TestCase):
     def test_missing_audio_raises(self):
         self._patch_which()
         with self.assertRaises(AgyError):
-            run_agy(
-                "p", model="gemini-3.8-flash", audio=[Path("does_not_exist.ogg")]
-            )
+            run_agy("p", model="gemini-3.8-flash", audio=[Path("does_not_exist.ogg")])
 
     def test_scrubs_paid_api_keys_from_env(self):
         self._patch_which()

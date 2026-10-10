@@ -16,9 +16,7 @@ from services.media import (
 class FindAudioGapsTests(unittest.TestCase):
     def _gaps(self, stdout: str):
         completed = MagicMock(stdout=stdout)
-        with patch(
-            "services.media.subprocess.run", return_value=completed
-        ) as run:
+        with patch("services.media.subprocess.run", return_value=completed) as run:
             gaps = MediaProcessor.find_audio_gaps(Path("in.mp4"))
         self.assertIn("a:0", run.call_args.args[0])
         return gaps
@@ -28,8 +26,7 @@ class FindAudioGapsTests(unittest.TestCase):
 
     def test_reports_each_jump_past_the_tolerance(self):
         gaps = self._gaps(
-            "141.758000\n141.781000\n150.140000\n150.163000\n"
-            "N/A\n200.000000\n"
+            "141.758000\n141.781000\n150.140000\n150.163000\nN/A\n200.000000\n"
         )
 
         self.assertEqual(
@@ -45,13 +42,9 @@ class CutVideoTests(unittest.TestCase):
     def _run_cut(self, **kwargs) -> tuple[dict, dict]:
         with patch("services.media.ffmpeg") as ffmpeg_mock:
             ffmpeg_mock.input.return_value = MagicMock()
-            MediaProcessor.cut_video(
-                Path("in.mp4"), Path("out.mp4"), **kwargs
-            )
+            MediaProcessor.cut_video(Path("in.mp4"), Path("out.mp4"), **kwargs)
             input_kwargs = ffmpeg_mock.input.call_args.kwargs
-            output_kwargs = (
-                ffmpeg_mock.input.return_value.output.call_args.kwargs
-            )
+            output_kwargs = ffmpeg_mock.input.return_value.output.call_args.kwargs
         return input_kwargs, output_kwargs
 
     def test_both_bounds_seek_and_duration(self):
@@ -88,9 +81,7 @@ class CutVideoTests(unittest.TestCase):
 
 class MediaProcessorTests(unittest.TestCase):
     def test_parse_timecode_line(self):
-        result = MediaProcessor.parse_timecode_line(
-            "00:01:02,500 --> 00:01:05,250"
-        )
+        result = MediaProcessor.parse_timecode_line("00:01:02,500 --> 00:01:05,250")
         self.assertEqual(result.start_seconds, 62.5)
         self.assertEqual(result.end_seconds, 65.25)
 
@@ -149,22 +140,15 @@ class BurnInPartsTests(unittest.TestCase):
         # add up to the frame count a single pass produces.
         parts = MediaProcessor.burn_in_parts(7200.0)
         for part in parts[:-1]:
-            frames = (
-                package_output_duration(part.duration_seconds)
-                * PACKAGE_OUTPUT_FPS
-            )
+            frames = package_output_duration(part.duration_seconds) * PACKAGE_OUTPUT_FPS
             self.assertAlmostEqual(frames, round(frames), places=6)
-        total = sum(
-            package_output_duration(part.duration_seconds)
-            for part in parts
-        )
+        total = sum(package_output_duration(part.duration_seconds) for part in parts)
         self.assertAlmostEqual(total, package_output_duration(7200.0))
         self.assertAlmostEqual(
             PACKAGE_TEMPO / PACKAGE_OUTPUT_FPS,
             (parts[0].duration_seconds)
             / round(
-                package_output_duration(parts[0].duration_seconds)
-                * PACKAGE_OUTPUT_FPS
+                package_output_duration(parts[0].duration_seconds) * PACKAGE_OUTPUT_FPS
             ),
         )
 

@@ -31,9 +31,7 @@ class GeminiNormalizerTests(unittest.TestCase):
 
         self.assertEqual(normalized[0].text, "")
         self.assertEqual(normalized[0].index, 416)
-        self.assertEqual(
-            normalized[0].timecode, "00:18:17,320 --> 00:18:17,860"
-        )
+        self.assertEqual(normalized[0].timecode, "00:18:17,320 --> 00:18:17,860")
 
     def test_keeps_dash_lines_with_translated_content(self):
         blocks = [

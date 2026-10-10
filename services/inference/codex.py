@@ -61,9 +61,7 @@ def run_codex_exec(
     """
     executable = shutil.which("codex")
     if executable is None:
-        raise CodexNotInstalledError(
-            "Codex executable not found on PATH: 'codex'"
-        )
+        raise CodexNotInstalledError("Codex executable not found on PATH: 'codex'")
 
     abs_cwd = cwd.resolve()
     effective_timeout = default_timeout_secs()
@@ -117,17 +115,13 @@ def run_codex_exec(
             ) from exc
 
         if result.returncode != 0:
-            stderr_tail = "\n".join(
-                (result.stderr or "").strip().splitlines()[-20:]
-            )
+            stderr_tail = "\n".join((result.stderr or "").strip().splitlines()[-20:])
             raise CodexInvocationError(
                 f"codex exec exited with code {result.returncode}: {stderr_tail}"
             )
 
         if capture_path.exists() and capture_path.stat().st_size > 0:
-            final_message = capture_path.read_text(
-                encoding="utf-8", errors="replace"
-            )
+            final_message = capture_path.read_text(encoding="utf-8", errors="replace")
         else:
             final_message = result.stdout or ""
         # The final message is logged centrally by `run_inference` (one site for

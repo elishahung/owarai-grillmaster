@@ -92,8 +92,14 @@ SCROLL_MS = 150
 FADE_IN_MS = 150
 
 AVATAR_COLORS = (
-    "4C8BF5", "E8453C", "F9AB00", "34A853",
-    "AB47BC", "00ACC1", "FF7043", "8D6E63",
+    "4C8BF5",
+    "E8453C",
+    "F9AB00",
+    "34A853",
+    "AB47BC",
+    "00ACC1",
+    "FF7043",
+    "8D6E63",
 )
 
 _SCROLL_CS = math.ceil(SCROLL_MS / 10)
@@ -133,10 +139,7 @@ class _Panel:
         # Messages scroll out at the panel's own edge, not at the padded
         # content box: the padding only sets where the newest message
         # rests. Only rows that reach above the edge carry it.
-        return (
-            f"\\clip({self.left},{self.top},"
-            f"{self.left + self.width},{self.bottom})"
-        )
+        return f"\\clip({self.left},{self.top},{self.left + self.width},{self.bottom})"
 
 
 @dataclass(frozen=True)
@@ -229,9 +232,7 @@ class _Item:
         self.paid = message.kind == "paid"
         amount = message.amount or ""
         # The amount follows the name after two spaces.
-        amount_width = (
-            _text_width(f"  {amount}", NAME_FONT_SIZE) if amount else 0
-        )
+        amount_width = _text_width(f"  {amount}", NAME_FONT_SIZE) if amount else 0
         # Model output may carry line breaks; a raw newline would split the
         # Dialogue line, so every user/model string is laid out as one line.
         name = _truncate(
@@ -247,20 +248,13 @@ class _Item:
         digest = hashlib.md5(message.author.encode("utf-8")).hexdigest()
         color = AVATAR_COLORS[int(digest, 16) % len(AVATAR_COLORS)]
         self.avatar = f"\\p1\\c&H{_bgr(color)}&}}{_AVATAR_SHAPE}"
-        self.initial = "}" + _escape(
-            (message.author.lstrip("@")[:1] or "?").upper()
-        )
+        self.initial = "}" + _escape((message.author.lstrip("@")[:1] or "?").upper())
         text = "}" + _escape(name)
         if amount:
-            text += (
-                f"  {{\\b1\\c&H{_bgr(PAID_AMOUNT_COLOR)}&}}"
-                f"{_escape(amount)}"
-            )
+            text += f"  {{\\b1\\c&H{_bgr(PAID_AMOUNT_COLOR)}&}}{_escape(amount)}"
         if body_lines:
             # The Chat style is the body text style.
-            text += "\\N{\\rChat}" + "\\N".join(
-                _escape(line) for line in body_lines
-            )
+            text += "\\N{\\rChat}" + "\\N".join(_escape(line) for line in body_lines)
         self.text = text
         self.highlight = (
             f"\\p1\\c&H{_bgr(PAID_COLOR)}&\\1a&H{PAID_ALPHA}&}}"
@@ -361,9 +355,7 @@ def _write_document(
             # A row that ends its slide above the edge lives only for the
             # slide, not the whole state.
             row_end = (
-                min(end, start + _SCROLL_CS)
-                if top + item.height <= panel.top
-                else end
+                min(end, start + _SCROLL_CS) if top + item.height <= panel.top else end
             )
             _write_item(
                 out,
@@ -398,8 +390,7 @@ def _write_item(
         else:
             place = f"\\an{align}\\move({x},{y + shift},{x},{y},0,{SCROLL_MS})"
         out.write(
-            f"Dialogue: {layer},{timing},{style},,0,0,0,,"
-            f"{{{place}{clip}{content}\n"
+            f"Dialogue: {layer},{timing},{style},,0,0,0,,{{{place}{clip}{content}\n"
         )
 
     if item.paid:
@@ -486,9 +477,7 @@ def _single_line(text: str) -> str:
 
 def _escape(text: str) -> str:
     """Neutralize ASS override syntax inside user text."""
-    return (
-        text.replace("\\", "＼").replace("{", "｛").replace("}", "｝")
-    )
+    return text.replace("\\", "＼").replace("{", "｛").replace("}", "｝")
 
 
 def _bgr(rgb: str) -> str:

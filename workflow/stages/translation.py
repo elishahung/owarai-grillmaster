@@ -37,9 +37,7 @@ def run_pre_pass(project: Project) -> None:
     translate.run_pre_pass(make_translation_request(project, "pre_pass"))
 
 
-def translate_chunks(
-    project: Project, progress: NoopProgressReporter
-) -> None:
+def translate_chunks(project: Project, progress: NoopProgressReporter) -> None:
     translate.translate_chunks(
         make_translation_request(project, "translate"), progress=progress
     )

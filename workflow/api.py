@@ -50,8 +50,7 @@ class WorkflowOptions:
     @property
     def do_date_research(self) -> bool:
         return (
-            self.enable_date_research
-            or settings.enable_broadcast_date_agent_fallback
+            self.enable_date_research or settings.enable_broadcast_date_agent_fallback
         )
 
     @property
@@ -121,9 +120,7 @@ def process_project(
     full run, otherwise its working directory under ``projects/``.
     """
     progress_context = (
-        create_progress_reporter()
-        if progress is None
-        else nullcontext(progress)
+        create_progress_reporter() if progress is None else nullcontext(progress)
     )
     with progress_context as active_progress:
         try:
@@ -165,9 +162,7 @@ def _stage_specs(options: WorkflowOptions) -> dict[str, StageSpec]:
             complete_message="Metadata fetched",
             skipped_message="Metadata already fetched",
             params={
-                "official_cc": (
-                    "on" if settings.enable_official_subtitles else "off"
-                ),
+                "official_cc": ("on" if settings.enable_official_subtitles else "off"),
             },
         ),
         "download": StageSpec(
@@ -184,9 +179,7 @@ def _stage_specs(options: WorkflowOptions) -> dict[str, StageSpec]:
             start_message="Combining video segments",
             complete_message="Video processed",
             skipped_message="Video already processed",
-            on_skip=(
-                media.warn_section_ignored if options.has_section else None
-            ),
+            on_skip=(media.warn_section_ignored if options.has_section else None),
             params=combine_params,
         ),
         "chat_fetch": StageSpec(
@@ -232,9 +225,7 @@ def _stage_specs(options: WorkflowOptions) -> dict[str, StageSpec]:
             skipped_message="Pre-pass already completed",
             params={
                 "model": str(settings.agent_prepass_model),
-                "frame_interval": (
-                    f"{settings.prepass_frame_interval_seconds}s"
-                ),
+                "frame_interval": (f"{settings.prepass_frame_interval_seconds}s"),
             },
         ),
         "chunks": StageSpec(
@@ -303,9 +294,7 @@ def _build_plan(
         if settings.archived_path is not None:
             plan.append(PlannedStage(key="archive", label="Archiving project"))
         if settings.package_path is not None:
-            plan.append(
-                PlannedStage(key="package", label="Packaging deliverable")
-            )
+            plan.append(PlannedStage(key="package", label="Packaging deliverable"))
     plan.append(
         PlannedStage(
             key="date",

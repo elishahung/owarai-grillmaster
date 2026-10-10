@@ -37,9 +37,7 @@ def _scripted_state(tmp: Path) -> tuple[PipelineState, TuiProgressReporter]:
             PlannedStage(key="download", label="Downloading video"),
             PlannedStage(key="chunks", label="Translating subtitles"),
             PlannedStage(key="finalize", label="Finalizing subtitles"),
-            PlannedStage(
-                key="cover", label="Cover generation", kind="side_task"
-            ),
+            PlannedStage(key="cover", label="Cover generation", kind="side_task"),
         ],
     )
     reporter.stage_skipped("metadata", "already-complete")
@@ -60,16 +58,12 @@ class GrillMasterAppTests(unittest.IsolatedAsyncioTestCase):
             async with app.run_test(size=(120, 40)) as pilot:
                 await pilot.pause()
                 # Follow mode tracks the running chunks stage.
-                self.assertEqual(
-                    state.items[app.selection].key, "chunks"
-                )
+                self.assertEqual(state.items[app.selection].key, "chunks")
 
                 # Arrow keys move the selection and disable follow.
                 await pilot.press("down")
                 self.assertFalse(app.follow)
-                self.assertEqual(
-                    state.items[app.selection].key, "finalize"
-                )
+                self.assertEqual(state.items[app.selection].key, "finalize")
                 await pilot.press("up")
                 self.assertEqual(state.items[app.selection].key, "chunks")
 
@@ -95,9 +89,7 @@ class GrillMasterAppTests(unittest.IsolatedAsyncioTestCase):
                     await pilot.press("c")
             copied = copy.call_args.args[0].splitlines()
             self.assertEqual(copied[0], "# Translating subtitles")
-            self.assertEqual(
-                copied[1:], [f"chunk line {i}" for i in range(30)]
-            )
+            self.assertEqual(copied[1:], [f"chunk line {i}" for i in range(30)])
 
     async def test_copy_log_reports_a_clipboard_failure(self):
         import tempfile

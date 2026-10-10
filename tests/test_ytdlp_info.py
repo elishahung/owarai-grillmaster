@@ -73,9 +73,7 @@ class YtDlpInfoTests(unittest.TestCase):
 
 
 class TverBroadcastDateLabelTests(unittest.TestCase):
-    _SESSION = {
-        "result": {"platform_uid": "uid", "platform_token": "token"}
-    }
+    _SESSION = {"result": {"platform_uid": "uid", "platform_token": "token"}}
 
     def _episode(self, label) -> dict:
         return {"result": {"episode": {"content": {"broadcastDateLabel": label}}}}
@@ -112,9 +110,7 @@ class TverBroadcastDateLabelTests(unittest.TestCase):
             self.assertIsNone(get_tver_broadcast_date_label("epdemo1"))
 
     def test_network_error_returns_none(self):
-        with patch.object(
-            info_module, "urlopen", side_effect=URLError("boom")
-        ):
+        with patch.object(info_module, "urlopen", side_effect=URLError("boom")):
             self.assertIsNone(get_tver_broadcast_date_label("epdemo1"))
 
 
@@ -143,9 +139,7 @@ class AbemaBroadcastEpochTests(unittest.TestCase):
             "_get_abema_api_json",
             return_value={"slot": {"startAt": 1783346400}},
         ):
-            self.assertEqual(
-                get_abema_slot_start_at("DGzv6KEKhRHpe3"), 1783346400
-            )
+            self.assertEqual(get_abema_slot_start_at("DGzv6KEKhRHpe3"), 1783346400)
 
     def test_slot_start_at_null_slot_returns_none(self):
         with patch.object(
@@ -201,9 +195,7 @@ class SourceProgramInfoTests(unittest.TestCase):
         self.assertEqual(program.channel, "Prime Video")
 
     def test_blank_and_non_string_fields_are_absent(self):
-        info_json = self._write_info_json(
-            json.dumps({"series": "   ", "channel": 42})
-        )
+        info_json = self._write_info_json(json.dumps({"series": "   ", "channel": 42}))
         program = read_source_program_info(info_json)
         self.assertIsNone(program.series)
         self.assertIsNone(program.channel)

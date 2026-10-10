@@ -73,9 +73,7 @@ class PrePassSegmentCoverageTests(unittest.TestCase):
             boundaries=[(1, 115), (116, 233)],
             frame_timestamps=[],
         )
-        self.assertLess(
-            message.index("完整來源 SRT"), message.index("Chunk 邊界")
-        )
+        self.assertLess(message.index("完整來源 SRT"), message.index("Chunk 邊界"))
         self.assertIn("必須剛好輸出 2 筆", message)
 
     def test_title_description_and_hint_are_separate_sections(self):
@@ -112,12 +110,8 @@ class RunPrePassDispatchTests(unittest.TestCase):
             manifest_path=tmp / "assets.json",
         )
         for p in [
-            patch.object(
-                pp, "prepare_pre_pass_media_assets", return_value=assets
-            ),
-            patch.object(
-                pp, "load_fixed_glossary", return_value=FixedGlossary()
-            ),
+            patch.object(pp, "prepare_pre_pass_media_assets", return_value=assets),
+            patch.object(pp, "load_fixed_glossary", return_value=FixedGlossary()),
             patch.object(
                 pp.settings,
                 "agent_prepass_model",
@@ -150,9 +144,7 @@ class RunPrePassDispatchTests(unittest.TestCase):
     def test_agy_dispatch_writes_manifest(self):
         tmp = self._temp_dir()
         self._common_patches(tmp, backend="agy")
-        with patch.object(
-            pp, "run_inference", return_value=self._result()
-        ) as mock_inf:
+        with patch.object(pp, "run_inference", return_value=self._result()) as mock_inf:
             result = self._run(tmp)
 
         self.assertEqual(result.summary, "s")
@@ -184,9 +176,7 @@ class RunPrePassDispatchTests(unittest.TestCase):
     def test_validator_rejects_incomplete_segment_coverage(self):
         tmp = self._temp_dir()
         self._common_patches(tmp, backend="agy")
-        with patch.object(
-            pp, "run_inference", return_value=self._result()
-        ) as mock_inf:
+        with patch.object(pp, "run_inference", return_value=self._result()) as mock_inf:
             self._run(tmp)
 
         # _run supplies one chunk covering index 1..1; the stub response has no
@@ -200,16 +190,12 @@ class RunPrePassDispatchTests(unittest.TestCase):
         tmp = self._temp_dir()
         # claude: prepare_pre_pass_media_assets returns no audio.
         self._common_patches(tmp, backend="claude", audio=False)
-        with patch.object(
-            pp, "run_inference", return_value=self._result()
-        ) as mock_inf:
+        with patch.object(pp, "run_inference", return_value=self._result()) as mock_inf:
             self._run(tmp)
 
         self.assertIsNone(mock_inf.call_args.kwargs["audio"])
         # The instruction is rendered without audio claims.
-        self.assertNotIn(
-            "Full Source Audio", mock_inf.call_args.kwargs["prompt"]
-        )
+        self.assertNotIn("Full Source Audio", mock_inf.call_args.kwargs["prompt"])
 
     def test_failure_propagates_without_writing_pre_pass(self):
         tmp = self._temp_dir()

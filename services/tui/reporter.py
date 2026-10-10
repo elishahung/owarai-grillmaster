@@ -66,15 +66,11 @@ class TuiProgressReporter(NoopProgressReporter):
     def _log_sink(self, message: Any) -> None:
         record = message.record
         owner = owner_key_for_thread_name(record["thread"].name)
-        self.state.append_log(
-            owner, record["level"].name, str(message).rstrip("\n")
-        )
+        self.state.append_log(owner, record["level"].name, str(message).rstrip("\n"))
 
     # ---------- legacy bar protocol ----------
 
-    def start_stage(
-        self, label: str, total: float | None = None
-    ) -> TaskID | None:
+    def start_stage(self, label: str, total: float | None = None) -> TaskID | None:
         if total is None:
             return None
         return self.state.start_bar(self._owner_key(), label, total)
@@ -102,9 +98,7 @@ class TuiProgressReporter(NoopProgressReporter):
     def batch_item_started(self, index: int, total: int, source: str) -> None:
         self.state.on_batch_item_started(index, total, source)
 
-    def pipeline_started(
-        self, project: Any, plan: list[PlannedStage]
-    ) -> None:
+    def pipeline_started(self, project: Any, plan: list[PlannedStage]) -> None:
         self.state.on_pipeline_started(project, plan)
 
     def stage_started(self, key: str, label: str) -> None:
@@ -148,7 +142,5 @@ class TuiProgressReporter(NoopProgressReporter):
     def chunk_finished(self, index: int, retries: int) -> None:
         self.state.on_chunk_finished(index, retries)
 
-    def chunk_failed(
-        self, index: int, message: str, retries: int = 0
-    ) -> None:
+    def chunk_failed(self, index: int, message: str, retries: int = 0) -> None:
         self.state.on_chunk_failed(index, message, retries)

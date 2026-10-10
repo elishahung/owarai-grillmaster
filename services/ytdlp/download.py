@@ -66,11 +66,7 @@ class _ReporterProgressHook:
             if now - self._last_update < self._MIN_UPDATE_INTERVAL:
                 return
             self._last_update = now
-            total = (
-                event.get("total_bytes")
-                or event.get("total_bytes_estimate")
-                or 0
-            )
+            total = event.get("total_bytes") or event.get("total_bytes_estimate") or 0
             downloaded = event.get("downloaded_bytes") or 0
             if total <= 0:
                 return
@@ -120,9 +116,7 @@ class _JpegThumbnailFixupPP(PostProcessor):
             with open(filepath, "rb") as f:
                 if f.read(3) != b"\xff\xd8\xff":
                     continue
-            self.to_screen(
-                f'Correcting thumbnail "{filepath}" extension to jpg'
-            )
+            self.to_screen(f'Correcting thumbnail "{filepath}" extension to jpg')
             jpg_filepath = replace_extension(filepath, "jpg")
             os.replace(filepath, jpg_filepath)
             thumbnail["filepath"] = jpg_filepath
@@ -281,9 +275,7 @@ def _run_download(
 
         # Safely get title for logging
         video_title = (
-            info_dict.get("title", "Unknown Title")
-            if info_dict
-            else "Unknown"
+            info_dict.get("title", "Unknown Title") if info_dict else "Unknown"
         )
 
     logger.success(f"Successfully downloaded: {video_title}")

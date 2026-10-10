@@ -127,21 +127,15 @@ class ChunkBoard:
 
     @property
     def done(self) -> int:
-        return sum(
-            1 for c in self.cells.values() if c.state is ChunkState.DONE
-        )
+        return sum(1 for c in self.cells.values() if c.state is ChunkState.DONE)
 
     @property
     def failed(self) -> int:
-        return sum(
-            1 for c in self.cells.values() if c.state is ChunkState.FAILED
-        )
+        return sum(1 for c in self.cells.values() if c.state is ChunkState.FAILED)
 
     @property
     def active(self) -> list[ChunkCell]:
-        return [
-            c for c in self.cells.values() if c.state is ChunkState.ACTIVE
-        ]
+        return [c for c in self.cells.values() if c.state is ChunkState.ACTIVE]
 
 
 class PipelineState:
@@ -153,9 +147,7 @@ class PipelineState:
         self.items: list[ItemView] = []
         self._by_key: dict[str, ItemView] = {}
         # Lines logged before any stage runs (project load etc.).
-        self.pipeline_log: deque[tuple[str, str]] = deque(
-            maxlen=LOG_LINES_PER_ITEM
-        )
+        self.pipeline_log: deque[tuple[str, str]] = deque(maxlen=LOG_LINES_PER_ITEM)
         self.chunks = ChunkBoard()
         self.started_at = monotonic()
         self.finished_at: float | None = None
@@ -208,9 +200,7 @@ class PipelineState:
 
     # ---------- lifecycle mutations ----------
 
-    def on_pipeline_started(
-        self, project: Any, plan: list[PlannedStage]
-    ) -> None:
+    def on_pipeline_started(self, project: Any, plan: list[PlannedStage]) -> None:
         with self.lock:
             self.project = project
             self.items = [
@@ -220,11 +210,7 @@ class PipelineState:
                     params=dict(entry.params),
                     kind=entry.kind,
                     enabled=entry.enabled,
-                    state=(
-                        ItemState.PENDING
-                        if entry.enabled
-                        else ItemState.DISABLED
-                    ),
+                    state=(ItemState.PENDING if entry.enabled else ItemState.DISABLED),
                 )
                 for entry in plan
             ]
@@ -234,9 +220,7 @@ class PipelineState:
         # Events can arrive for keys absent from the plan (defensive).
         item = self._by_key.get(key)
         if item is None:
-            item = ItemView(
-                key=key, label=label, params={}, kind=kind, enabled=True
-            )
+            item = ItemView(key=key, label=label, params={}, kind=kind, enabled=True)
             self.items.append(item)
             self._by_key[key] = item
         return item
@@ -268,9 +252,7 @@ class PipelineState:
             if item is None:
                 return
             item.state = (
-                ItemState.CACHED
-                if reason == "already-complete"
-                else ItemState.DISABLED
+                ItemState.CACHED if reason == "already-complete" else ItemState.DISABLED
             )
 
     def on_side_task_started(self, key: str, label: str) -> None:
@@ -323,9 +305,7 @@ class PipelineState:
         self.chunks = ChunkBoard()
         self.current_stage_key = None
 
-    def on_batch_item_started(
-        self, index: int, total: int, source: str
-    ) -> None:
+    def on_batch_item_started(self, index: int, total: int, source: str) -> None:
         """Roll the dashboard over to the next project of a serial run.
 
         The wall clock keeps running across the whole batch; items are
@@ -334,9 +314,7 @@ class PipelineState:
         with self.lock:
             self.batch = (index, total)
             self._reset_run_state()
-            self.pipeline_log.append(
-                ("INFO", f"Serial {index}/{total}: {source}")
-            )
+            self.pipeline_log.append(("INFO", f"Serial {index}/{total}: {source}"))
 
     def on_pipeline_completed(self) -> None:
         with self.lock:
@@ -365,9 +343,7 @@ class PipelineState:
 
     # ---------- sub-task bars ----------
 
-    def start_bar(
-        self, owner_key: str | None, label: str, total: float
-    ) -> TaskID:
+    def start_bar(self, owner_key: str | None, label: str, total: float) -> TaskID:
         with self.lock:
             task_id = TaskID(self._next_task_id)
             self._next_task_id += 1
@@ -444,9 +420,7 @@ class PipelineState:
 
     # ---------- logs ----------
 
-    def append_log(
-        self, owner_key: str | None, level: str, text: str
-    ) -> None:
+    def append_log(self, owner_key: str | None, level: str, text: str) -> None:
         with self.lock:
             item = self._owner_item(owner_key)
             target = item.log if item is not None else self.pipeline_log

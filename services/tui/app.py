@@ -79,9 +79,7 @@ def put_on_clipboard(text: str) -> None:
     clip.exe wants UTF-8 with no BOM: a BOM arrives as a literal
     character in the pasted text.
     """
-    subprocess.run(
-        CLIPBOARD_COMMAND, input=text.encode("utf-8"), check=True
-    )
+    subprocess.run(CLIPBOARD_COMMAND, input=text.encode("utf-8"), check=True)
 
 
 def fmt_clock(seconds: float) -> str:
@@ -121,8 +119,11 @@ class GrillMasterApp(App):
         Binding("j", "select_next", "Next stage", show=False),
         Binding("pageup", "detail_scroll(-1)", "Scroll detail", priority=True),
         Binding(
-            "pagedown", "detail_scroll(1)", "Scroll detail",
-            priority=True, show=False,
+            "pagedown",
+            "detail_scroll(1)",
+            "Scroll detail",
+            priority=True,
+            show=False,
         ),
         Binding("ctrl+c", "quit_or_abort", "Quit", show=False, priority=True),
     ]
@@ -187,9 +188,7 @@ class GrillMasterApp(App):
 
     def action_retry(self) -> None:
         if not (self.state.finished and self.state.failed):
-            self.notify(
-                "Retry is available after a failure.", severity="information"
-            )
+            self.notify("Retry is available after a failure.", severity="information")
             return
         if self.on_retry is None or not self.on_retry():
             return
@@ -260,9 +259,7 @@ class GrillMasterApp(App):
         self.notify(f"Copied {len(lines)} log lines to the clipboard.")
 
     def _reset_detail_scroll(self) -> None:
-        self.query_one("#detail-scroll", VerticalScroll).scroll_home(
-            animate=False
-        )
+        self.query_one("#detail-scroll", VerticalScroll).scroll_home(animate=False)
 
     # ---------- tick / selection ----------
 
@@ -327,11 +324,7 @@ class GrillMasterApp(App):
             title.append("  ·  serial ", "grey58")
             title.append(f"{state.batch[0]}/{state.batch[1]}", "bold yellow1")
         stages = [i for i in state.items if i.kind == "stage"]
-        done = sum(
-            1
-            for i in stages
-            if i.state in (ItemState.DONE, ItemState.CACHED)
-        )
+        done = sum(1 for i in stages if i.state in (ItemState.DONE, ItemState.CACHED))
         active = sum(1 for i in stages if i.state is not ItemState.DISABLED)
         if state.failed:
             status = Text("FAILED", "bold red")
@@ -340,9 +333,7 @@ class GrillMasterApp(App):
         else:
             status = Text("RUNNING", "bold cyan")
         follow = (
-            Text("follow", "green")
-            if self.follow
-            else Text("follow off", "grey42")
+            Text("follow", "green") if self.follow else Text("follow off", "grey42")
         )
         line = Table.grid(padding=(0, 2))
         line.add_column()
@@ -377,13 +368,9 @@ class GrillMasterApp(App):
         if item.state is ItemState.RUNNING:
             if item.key == "chunks" and self.state.chunks.total > 0:
                 board = self.state.chunks
-                text.append(
-                    f"  {board.done}/{board.total}", style="yellow1"
-                )
+                text.append(f"  {board.done}/{board.total}", style="yellow1")
             else:
-                text.append(
-                    f"  {fmt_clock(item.live_elapsed())}", style="yellow1"
-                )
+                text.append(f"  {fmt_clock(item.live_elapsed())}", style="yellow1")
         elif item.state is ItemState.DONE:
             text.append(f"  {fmt_clock(item.elapsed)}", style="grey58")
         elif item.state is ItemState.CACHED:
@@ -434,18 +421,14 @@ class GrillMasterApp(App):
                     )
                 )
             else:
-                body.append(
-                    Text("✔ already complete (previous run)", style="cyan")
-                )
+                body.append(Text("✔ already complete (previous run)", style="cyan"))
             if item.key == "chunks" and state.chunks.total > 0:
                 body.append(Text())
                 body += self._render_chunk_board()
             if item.result:
                 body += [
                     Text(),
-                    Text.assemble(
-                        ("result  ", "grey58"), (item.result, "bold")
-                    ),
+                    Text.assemble(("result  ", "grey58"), (item.result, "bold")),
                 ]
             preview = self.artifacts.preview(state.project, item.key)
             if preview is not None:
@@ -495,16 +478,10 @@ class GrillMasterApp(App):
                 bar(task_bar.fraction, width=40),
                 Text(f"{task_bar.fraction * 100:3.0f}%"),
             )
-            body.append(
-                Text(task_bar.description or task_bar.label, style="grey58")
-            )
+            body.append(Text(task_bar.description or task_bar.label, style="grey58"))
             body.append(row)
         body.append(Text())
-        body.append(
-            Text(
-                f"{fmt_clock(item.live_elapsed())} elapsed", style="grey58"
-            )
-        )
+        body.append(Text(f"{fmt_clock(item.live_elapsed())} elapsed", style="grey58"))
         return body
 
     def _render_chunk_board(self) -> list:
@@ -610,7 +587,7 @@ class GrillMasterApp(App):
             widget.clear()
             self._log_key = key
             self._log_count = 0
-        for level, text in lines[self._log_count:]:
+        for level, text in lines[self._log_count :]:
             style = LOG_LEVEL_STYLE.get(level, "")
             widget.write(Text(text, style=style))
         self._log_count = len(lines)
@@ -620,9 +597,7 @@ class GrillMasterApp(App):
     def _sidebar_line(self, index: int) -> int:
         """Content line of a sidebar row: 2 header lines, +3 before side tasks."""
         with self.state.lock:
-            n_stages = sum(
-                1 for item in self.state.items if item.kind == "stage"
-            )
+            n_stages = sum(1 for item in self.state.items if item.kind == "stage")
         if index < n_stages:
             return 2 + index
         return 2 + n_stages + 3 + (index - n_stages)
@@ -660,9 +635,7 @@ class GrillMasterApp(App):
         existing = self.query("#cover-image")
         if show and not existing:
             try:
-                widget = self._image_cls(
-                    str(preview.image_path), id="cover-image"
-                )
+                widget = self._image_cls(str(preview.image_path), id="cover-image")
             except Exception:
                 # File vanished between the exists() check and PIL opening
                 # it (archive runs concurrently) — skip the inline render.

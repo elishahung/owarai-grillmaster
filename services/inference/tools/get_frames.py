@@ -100,7 +100,9 @@ def main_for_stage(stage: FrameToolStage, argv: list[str] | None = None) -> int:
         help="Project directory containing video.mp4.",
     )
     parser.add_argument(
-        "--times", required=True, type=str,
+        "--times",
+        required=True,
+        type=str,
         help='Comma-separated timestamps in seconds, e.g. "62.5,70,77".',
     )
     args = parser.parse_args(argv)

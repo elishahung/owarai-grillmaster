@@ -17,9 +17,7 @@ from .get_frames import FrameToolStage
 _TOOL_DIR = Path(__file__).parent
 FRAME_TOOL_SCRIPT: Path = (_TOOL_DIR / "get_frames.py").resolve()
 FRAME_TOOL_SCRIPTS: dict[FrameToolStage, Path] = {
-    FrameToolStage.PRE_PASS: (
-        _TOOL_DIR / "get_frames_for_pre_pass.py"
-    ).resolve(),
+    FrameToolStage.PRE_PASS: (_TOOL_DIR / "get_frames_for_pre_pass.py").resolve(),
     FrameToolStage.CHUNK: (_TOOL_DIR / "get_frames_for_chunk.py").resolve(),
     FrameToolStage.REFINE: (_TOOL_DIR / "get_frames_for_refine.py").resolve(),
     FrameToolStage.GLOSSARY_CHECK: (

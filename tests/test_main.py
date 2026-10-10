@@ -16,9 +16,7 @@ class MainCliTests(unittest.TestCase):
 
     def test_process_uses_dashboard_on_interactive_terminal(self):
         with (
-            patch.object(
-                main_module, "_is_interactive_terminal", return_value=True
-            ),
+            patch.object(main_module, "_is_interactive_terminal", return_value=True),
             patch("services.tui.run_process_ui", return_value=0) as run_ui,
             patch.object(main_module, "submit_project") as submit_project,
         ):
@@ -31,18 +29,12 @@ class MainCliTests(unittest.TestCase):
             pipeline = run_ui.call_args.args[0]
             reporter = object()
             pipeline(reporter)
-            self.assertIs(
-                submit_project.call_args.kwargs["progress"], reporter
-            )
-            self.assertEqual(
-                submit_project.call_args.kwargs["source_str"], "demo"
-            )
+            self.assertIs(submit_project.call_args.kwargs["progress"], reporter)
+            self.assertEqual(submit_project.call_args.kwargs["source_str"], "demo")
 
     def test_process_falls_back_to_plain_logs_without_terminal(self):
         with (
-            patch.object(
-                main_module, "_is_interactive_terminal", return_value=False
-            ),
+            patch.object(main_module, "_is_interactive_terminal", return_value=False),
             patch("services.tui.run_process_ui") as run_ui,
             patch.object(main_module, "submit_project") as submit_project,
         ):
@@ -55,15 +47,20 @@ class MainCliTests(unittest.TestCase):
 
     def test_serial_drives_serial_run_under_dashboard(self):
         with (
-            patch.object(
-                main_module, "_is_interactive_terminal", return_value=True
-            ),
+            patch.object(main_module, "_is_interactive_terminal", return_value=True),
             patch("services.tui.run_process_ui", return_value=0) as run_ui,
             patch.object(main_module, "SerialRun") as serial_run_cls,
         ):
             main_module.main(
-                ["serial", "BV1", "BV2", "--cover", "--remix",
-                 "--parent-project", "archived/ep0"]
+                [
+                    "serial",
+                    "BV1",
+                    "BV2",
+                    "--cover",
+                    "--remix",
+                    "--parent-project",
+                    "archived/ep0",
+                ]
             )
 
         serial_run_cls.assert_called_once_with(
@@ -81,9 +78,7 @@ class MainCliTests(unittest.TestCase):
 
     def test_serial_runs_plainly_without_terminal(self):
         with (
-            patch.object(
-                main_module, "_is_interactive_terminal", return_value=False
-            ),
+            patch.object(main_module, "_is_interactive_terminal", return_value=False),
             patch("services.tui.run_process_ui") as run_ui,
             patch.object(main_module, "SerialRun") as serial_run_cls,
         ):
@@ -94,9 +89,7 @@ class MainCliTests(unittest.TestCase):
 
     def test_serial_rejects_invalid_sources_before_running(self):
         with (
-            patch.object(
-                main_module, "_is_interactive_terminal", return_value=False
-            ),
+            patch.object(main_module, "_is_interactive_terminal", return_value=False),
             patch.object(main_module, "_run_pipeline") as run_pipeline,
         ):
             # main() runs typer with standalone_mode=False, which turns the
@@ -121,9 +114,7 @@ class MainCliTests(unittest.TestCase):
                 main_module, "package_project_directory"
             ) as package_project_directory,
         ):
-            create_progress_reporter.return_value.__enter__.return_value = (
-                progress
-            )
+            create_progress_reporter.return_value.__enter__.return_value = progress
             main_module.main(
                 ["package", str(project_dir), "--remix", "sleep", "--skip-chat"]
             )
@@ -141,12 +132,8 @@ class MainCliTests(unittest.TestCase):
             main_module.main(["BV123", "--remix", "sleep"])
 
         submit_project.assert_called_once()
-        self.assertEqual(
-            submit_project.call_args.kwargs["source_str"], "BV123"
-        )
-        self.assertEqual(
-            submit_project.call_args.kwargs["remix_noise_name"], "sleep"
-        )
+        self.assertEqual(submit_project.call_args.kwargs["source_str"], "BV123")
+        self.assertEqual(submit_project.call_args.kwargs["remix_noise_name"], "sleep")
 
     def test_chat_layout_option_reaches_submit(self):
         with patch.object(main_module, "submit_project") as submit_project:
@@ -171,17 +158,13 @@ class MainCliTests(unittest.TestCase):
         with patch.object(main_module, "submit_project") as submit_project:
             main_module.main(["BV123", "--remix"])
 
-        self.assertEqual(
-            submit_project.call_args.kwargs["remix_noise_name"], "default"
-        )
+        self.assertEqual(submit_project.call_args.kwargs["remix_noise_name"], "default")
 
     def test_valueless_remix_before_another_flag(self):
         with patch.object(main_module, "submit_project") as submit_project:
             main_module.main(["BV123", "--remix", "--cover"])
 
-        self.assertEqual(
-            submit_project.call_args.kwargs["remix_noise_name"], "default"
-        )
+        self.assertEqual(submit_project.call_args.kwargs["remix_noise_name"], "default")
 
     def test_package_command_accepts_valueless_remix(self):
         root = self._make_temp_dir()
@@ -189,9 +172,7 @@ class MainCliTests(unittest.TestCase):
         project_dir.mkdir()
 
         with (
-            patch.object(
-                main_module.settings, "package_path", root / "package"
-            ),
+            patch.object(main_module.settings, "package_path", root / "package"),
             patch.object(
                 main_module, "package_project_directory"
             ) as package_project_directory,
@@ -208,12 +189,8 @@ class MainCliTests(unittest.TestCase):
             main_module.main(["BV123", "--start", "1:30", "--to", "10:00"])
 
         submit_project.assert_called_once()
-        self.assertEqual(
-            submit_project.call_args.kwargs["section_start"], 90.0
-        )
-        self.assertEqual(
-            submit_project.call_args.kwargs["section_end"], 600.0
-        )
+        self.assertEqual(submit_project.call_args.kwargs["section_start"], 90.0)
+        self.assertEqual(submit_project.call_args.kwargs["section_end"], 600.0)
 
     def test_section_flags_default_to_none(self):
         with patch.object(main_module, "submit_project") as submit_project:
@@ -228,9 +205,7 @@ class MainCliTests(unittest.TestCase):
             main_module.main(["BV123", "--start", "90"])
 
         submit_project.assert_called_once()
-        self.assertEqual(
-            submit_project.call_args.kwargs["section_start"], 90.0
-        )
+        self.assertEqual(submit_project.call_args.kwargs["section_start"], 90.0)
         self.assertIsNone(submit_project.call_args.kwargs["section_end"])
 
     def test_invalid_section_time_fails(self):

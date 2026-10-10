@@ -67,14 +67,10 @@ def _parse_mapping_block(obj: object, ctx: str) -> FixedGlossaryEntry | None:
         or not jp
         or not all(isinstance(a, str) and a for a in jp)
     ):
-        logger.warning(
-            f"[fixed-glossary] Skipping {ctx} with bad 'jp' field: {obj!r}"
-        )
+        logger.warning(f"[fixed-glossary] Skipping {ctx} with bad 'jp' field: {obj!r}")
         return None
     if not isinstance(zh, str) or not zh:
-        logger.warning(
-            f"[fixed-glossary] Skipping {ctx} with bad 'zh' field: {obj!r}"
-        )
+        logger.warning(f"[fixed-glossary] Skipping {ctx} with bad 'zh' field: {obj!r}")
         return None
     return (list(jp), zh)
 
@@ -86,9 +82,7 @@ def _parse_talent_unit(obj: object, idx: int) -> TalentUnit | None:
     a unit with zero valid members is dropped entirely.
     """
     if not isinstance(obj, dict):
-        logger.warning(
-            f"[fixed-glossary] Skipping non-object talents[{idx}]: {obj!r}"
-        )
+        logger.warning(f"[fixed-glossary] Skipping non-object talents[{idx}]: {obj!r}")
         return None
     group: FixedGlossaryEntry | None = None
     if obj.get("group") is not None:

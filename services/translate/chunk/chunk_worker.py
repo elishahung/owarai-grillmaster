@@ -115,10 +115,7 @@ def _build_user_message(
             f"- {frame.timestamp_seconds:.3f}s"
             + (
                 " (chunk 首幀)"
-                if abs(
-                    frame.timestamp_seconds
-                    - media_assets.time_range.start_seconds
-                )
+                if abs(frame.timestamp_seconds - media_assets.time_range.start_seconds)
                 < 1e-6
                 else ""
             )
@@ -134,9 +131,7 @@ def _build_user_message(
     official_section = (
         (
             "【官方CC字幕參照（僅涵蓋部分口說台詞，時間軸為近似參考）】\n"
-            "---\n"
-            + "\n\n".join(block.raw for block in official_slice)
-            + "\n\n"
+            "---\n" + "\n\n".join(block.raw for block in official_slice) + "\n\n"
         )
         if official_slice
         else ""
@@ -216,9 +211,7 @@ async def translate_chunk(
     to_index = chunk[-1].index
     spec = settings.agent_chunk_model
     backend = Backend(spec.backend)
-    instruction = build_chunk_instruction(
-        has_audio=media_assets.audio is not None
-    )
+    instruction = build_chunk_instruction(has_audio=media_assets.audio is not None)
     if program_instruction:
         instruction += "\n\n" + program_instruction
     instruction += "\n\n" + build_chunk_frame_tool_instruction(
@@ -237,9 +230,7 @@ async def translate_chunk(
             raw_text = raw_path.read_text(encoding="utf-8")
             logger.info(f"{prefix} Raw cache hit: {raw_path.name}")
         except OSError as e:
-            logger.warning(
-                f"{prefix} Raw cache read failed ({e}); re-translating"
-            )
+            logger.warning(f"{prefix} Raw cache read failed ({e}); re-translating")
 
     if raw_text is None:
         max_retries = settings.chunk_max_retries
@@ -291,40 +282,30 @@ async def translate_chunk(
             raw_path.write_text(raw_text, encoding="utf-8")
             _write_chunk_manifest(media_assets, raw_path)
         except OSError as e:
-            logger.warning(
-                f"{prefix} Failed to write raw cache {raw_path.name}: {e}"
-            )
+            logger.warning(f"{prefix} Failed to write raw cache {raw_path.name}: {e}")
 
-    fixed_path = _fixed_cache_path(
-        media_assets.response_dir, from_index, to_index
-    )
+    fixed_path = _fixed_cache_path(media_assets.response_dir, from_index, to_index)
     if fixed_path.exists():
         try:
             fixed_text = fixed_path.read_text(encoding="utf-8")
             blocks = validate_chunk_structure(chunk, fixed_text)
             logger.info(
-                f"{prefix} Fixed cache hit: {len(blocks)} blocks from "
-                f"{fixed_path.name}"
+                f"{prefix} Fixed cache hit: {len(blocks)} blocks from {fixed_path.name}"
             )
             return ChunkTranslationResult(blocks=blocks, retries=retries)
         except (OSError, ValueError) as e:
-            logger.warning(
-                f"{prefix} Fixed cache unusable ({e}); re-running fix"
-            )
+            logger.warning(f"{prefix} Fixed cache unusable ({e}); re-running fix")
 
     try:
         blocks = validate_chunk_structure(chunk, raw_text)
     except ValueError as validation_error:
         error_str = str(validation_error)
     else:
-        logger.success(
-            f"{prefix} Completed {len(blocks)} blocks (retries={retries})"
-        )
+        logger.success(f"{prefix} Completed {len(blocks)} blocks (retries={retries})")
         return ChunkTranslationResult(blocks=blocks, retries=retries)
 
     logger.warning(
-        f"{prefix} Raw output failed validation: {error_str}. "
-        f"Running agent fix layer."
+        f"{prefix} Raw output failed validation: {error_str}. Running agent fix layer."
     )
     workspace_dir = (
         media_assets.response_dir / f"chunk_{from_index:04d}-{to_index:04d}_fix"
@@ -353,11 +334,7 @@ async def translate_chunk(
         fixed_path.write_text(fixed_text, encoding="utf-8")
         _write_chunk_manifest(media_assets, raw_path, fixed_path=fixed_path)
     except OSError as e:
-        logger.warning(
-            f"{prefix} Failed to write fixed cache {fixed_path.name}: {e}"
-        )
+        logger.warning(f"{prefix} Failed to write fixed cache {fixed_path.name}: {e}")
 
-    logger.success(
-        f"{prefix} Fix succeeded; {len(blocks)} blocks (retries={retries})"
-    )
+    logger.success(f"{prefix} Fix succeeded; {len(blocks)} blocks (retries={retries})")
     return ChunkTranslationResult(blocks=blocks, retries=retries)

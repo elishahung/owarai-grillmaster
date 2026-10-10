@@ -54,9 +54,7 @@ class FakeProgressReporter(NoopProgressReporter):
         self.events.append(("start_stage", task_id, label, total))
         return task_id
 
-    def advance(
-        self, task_id, amount: float = 1.0, description: str | None = None
-    ):
+    def advance(self, task_id, amount: float = 1.0, description: str | None = None):
         self.events.append(("advance", task_id, amount, description))
 
     def finish(self, task_id, status: str = "done"):
@@ -75,12 +73,8 @@ class FakeProgressReporter(NoopProgressReporter):
 
         return SuspendContext()
 
-    def chunk_started(
-        self, index: int, total: int, from_index: int, to_index: int
-    ):
-        self.events.append(
-            ("chunk_started", index, total, from_index, to_index)
-        )
+    def chunk_started(self, index: int, total: int, from_index: int, to_index: int):
+        self.events.append(("chunk_started", index, total, from_index, to_index))
 
     def chunk_finished(self, index: int, retries: int):
         self.events.append(("chunk_finished", index, retries))
@@ -89,9 +83,7 @@ class FakeProgressReporter(NoopProgressReporter):
         self.events.append(("chunk_failed", index, message, retries))
 
     def pipeline_started(self, project, plan):
-        self.events.append(
-            ("pipeline_started", [entry.key for entry in plan])
-        )
+        self.events.append(("pipeline_started", [entry.key for entry in plan]))
 
     def stage_started(self, key: str, label: str):
         self.events.append(("stage_started", key))
@@ -162,17 +154,13 @@ class WorkflowProgressTests(unittest.TestCase):
         progress = FakeProgressReporter()
 
         with (
-            patch.object(
-                workflow_api.Project, "from_source_str", return_value=project
-            ),
+            patch.object(workflow_api.Project, "from_source_str", return_value=project),
             patch.object(translation_stage, "translate") as translate_mod,
             patch.object(workflow_api.settings, "archived_path", None),
             patch.object(workflow_api.settings, "package_path", None),
             # Pin the side-task toggles so the expected event list does
             # not depend on the local .env.
-            patch.object(
-                workflow_api.settings, "enable_cover_generation", False
-            ),
+            patch.object(workflow_api.settings, "enable_cover_generation", False),
             patch.object(
                 workflow_api.settings,
                 "enable_broadcast_date_agent_fallback",
@@ -253,9 +241,7 @@ class ChunkProgressTests(unittest.TestCase):
             segment_summaries=[],
         )
         pre_pass_path = root / "pre_pass.json"
-        pre_pass_path.write_text(
-            pre_pass.model_dump_json(), encoding="utf-8"
-        )
+        pre_pass_path.write_text(pre_pass.model_dump_json(), encoding="utf-8")
         request = TranslationRequest(
             srt_path=srt_path,
             video_path=root / "video.mp4",
@@ -362,10 +348,7 @@ class ChunkProgressTests(unittest.TestCase):
                 asyncio.run(_translate_chunks_async(request, progress))
 
         self.assertIn("1/2 chunks failed", str(ctx.exception))
-        self.assertIn(
-            ("chunk_failed", 1, "failed", 2), progress.events
-        )
-
+        self.assertIn(("chunk_failed", 1, "failed", 2), progress.events)
 
     def test_reports_media_preparation_failure(self):
         request, blocks = self._make_request()
@@ -387,6 +370,7 @@ class ChunkProgressTests(unittest.TestCase):
         failed = [e for e in progress.events if e[0] == "chunk_failed"]
         self.assertEqual(len(failed), 2)
         self.assertEqual(failed[0][2], "ffmpeg failed")
+
 
 def package_render_commands(popen):
     """Split a package render's ffmpeg calls into (video parts, audio, mux)."""
@@ -461,7 +445,9 @@ class MediaProgressTests(unittest.TestCase):
                 "get_media_duration",
                 side_effect=[source_duration, expected_duration],
             ),
-            patch("services.media.subprocess.Popen", return_value=FakeProcess()) as popen,
+            patch(
+                "services.media.subprocess.Popen", return_value=FakeProcess()
+            ) as popen,
         ):
             MediaProcessor.burn_in_subtitles(
                 video, BurnPlan.dialogue(subtitle), output, progress=progress
@@ -553,7 +539,9 @@ class MediaProgressTests(unittest.TestCase):
                 side_effect=lambda *a, **k: FakeProcess(),
             ) as popen,
         ):
-            MediaProcessor.burn_in_subtitles(video, BurnPlan.dialogue(subtitle), root / "out.mp4")
+            MediaProcessor.burn_in_subtitles(
+                video, BurnPlan.dialogue(subtitle), root / "out.mp4"
+            )
 
         commands = [call.args[0] for call in popen.call_args_list]
         parts = [cmd for cmd in commands if "-an" in cmd]
@@ -623,7 +611,9 @@ class MediaProgressTests(unittest.TestCase):
             patch("services.media.subprocess.Popen") as popen,
         ):
             with self.assertRaisesRegex(ValueError, "lead trim"):
-                MediaProcessor.burn_in_subtitles(video, BurnPlan.dialogue(subtitle), output)
+                MediaProcessor.burn_in_subtitles(
+                    video, BurnPlan.dialogue(subtitle), output
+                )
 
         popen.assert_not_called()
 
@@ -687,7 +677,9 @@ class MediaProgressTests(unittest.TestCase):
             patch("services.media.subprocess.Popen", return_value=FakeProcess()),
         ):
             with self.assertRaisesRegex(ValueError, "differs from expected"):
-                MediaProcessor.burn_in_subtitles(video, BurnPlan.dialogue(subtitle), output)
+                MediaProcessor.burn_in_subtitles(
+                    video, BurnPlan.dialogue(subtitle), output
+                )
 
     def test_remix_segment_reports_progress_to_existing_task(self):
         root = Path(tempfile.mkdtemp(prefix="remix-progress-test-"))
@@ -758,7 +750,9 @@ class MediaProgressTests(unittest.TestCase):
             def wait(self):
                 return 0
 
-        with patch("services.media.subprocess.Popen", return_value=FakeProcess()) as popen:
+        with patch(
+            "services.media.subprocess.Popen", return_value=FakeProcess()
+        ) as popen:
             MediaProcessor.encode_subtitled_segment(
                 video,
                 BurnPlan.dialogue(subtitle),
@@ -821,9 +815,7 @@ class MediaProgressTests(unittest.TestCase):
 
         # Video and audio seek identically, or they would drift apart.
         cmd, audio = run_segment(100.0, 160.0)
-        self.assertEqual(
-            audio[audio.index("-ss") + 1], cmd[cmd.index("-ss") + 1]
-        )
+        self.assertEqual(audio[audio.index("-ss") + 1], cmd[cmd.index("-ss") + 1])
         # The seek must precede the input and keep source timestamps, or the
         # absolute trim bounds and the subtitle lookup would both shift.
         self.assertLess(cmd.index("-ss"), cmd.index("-i"))
@@ -923,9 +915,7 @@ class MediaProgressTests(unittest.TestCase):
             def wait(self):
                 return 1
 
-        with patch(
-            "services.media.subprocess.Popen", return_value=FakeProcess()
-        ):
+        with patch("services.media.subprocess.Popen", return_value=FakeProcess()):
             with self.assertRaises(subprocess.CalledProcessError):
                 MediaProcessor.encode_noise_segment(
                     cut=NoiseCut(
@@ -975,9 +965,7 @@ class MediaProgressTests(unittest.TestCase):
         output = root / "out.mp4"
         for path in (video, subtitle, noise):
             path.write_text("media", encoding="utf-8")
-        head = NoiseCut(
-            source=noise, start_seconds=0.0, duration_seconds=60.0
-        )
+        head = NoiseCut(source=noise, start_seconds=0.0, duration_seconds=60.0)
         progress = FakeProgressReporter()
 
         def fake_encode(**kwargs):
@@ -1022,17 +1010,13 @@ class MediaProgressTests(unittest.TestCase):
 class RichProgressReporterTests(unittest.TestCase):
     def test_completed_chunk_task_does_not_render_during_next_stage(self):
         with open("NUL", "w", encoding="utf-8") as sink:
-            reporter = RichProgressReporter(
-                Console(force_terminal=False, file=sink)
-            )
+            reporter = RichProgressReporter(Console(force_terminal=False, file=sink))
             with reporter:
                 reporter.chunk_started(0, 1, 1, 10)
                 reporter.chunk_finished(0, retries=0)
                 self.assertEqual(list(reporter.progress.tasks), [])
 
-                task_id = reporter.start_stage(
-                    "Burning subtitles", total=1.0
-                )
+                task_id = reporter.start_stage("Burning subtitles", total=1.0)
                 self.assertEqual(len(list(reporter.progress.tasks)), 1)
                 reporter.finish(task_id)
                 self.assertEqual(list(reporter.progress.tasks), [])

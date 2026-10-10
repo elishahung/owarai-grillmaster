@@ -1,7 +1,9 @@
-"""Pipeline stage keys. Declaration order is execution order.
+"""Pipeline stage and side-task keys.
 
-The 1-based `number` also numbers each stage's work directory (owned by
-`project.layout`), so reordering members is a project-layout change.
+`StageKey` declaration order is execution order. The 1-based `number` also
+numbers each stage's work directory (owned by `project.layout`), so
+reordering members is a project-layout change. Side tasks run outside that
+order and get unnumbered directories.
 """
 
 from __future__ import annotations
@@ -31,3 +33,8 @@ class StageKey(StrEnum):
 
 
 _NUMBERS = {key: position for position, key in enumerate(StageKey, start=1)}
+
+
+class SideTaskKey(StrEnum):
+    COVER = "cover"
+    DATE_RESEARCH = "date_research"

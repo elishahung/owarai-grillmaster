@@ -27,3 +27,21 @@ forbidden_modules =
     grillmaster.project
     grillmaster.config
     grillmaster.legacy
+
+[importlinter:contract:project-foundation]
+name = project builds on core alone (design §5.1)
+type = forbidden
+source_modules =
+    grillmaster.project
+forbidden_modules =
+    grillmaster.events
+    grillmaster.legacy
+
+[importlinter:contract:config-foundation]
+name = config builds on core alone (design §5.1)
+type = forbidden
+source_modules =
+    grillmaster.config
+forbidden_modules =
+    grillmaster.events
+    grillmaster.legacy

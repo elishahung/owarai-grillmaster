@@ -1,0 +1,95 @@
+#:schema ./grill.schema.json
+# Owarai GrillMaster settings. Copy to grill.toml (git-ignored) in the root
+# directory you run `grill` from: projects/ and .env live next to it, and
+# relative paths below resolve against it. Without one above the working
+# directory, `grill` falls back to $GRILL_HOME/grill.toml.
+# API keys (ELEVENLABS_API_KEY) go in .env, never here.
+# Unknown keys are errors, so a typo fails loudly at startup.
+
+[paths]
+# Finished projects move here after delivery; omit to keep them in projects/.
+archive = 'V:\show\grilled'
+# Deliverable root: one folder per project (burned-in video, cover, titles).
+# Media pools for remix noise and inserts live in <package>/pools/<name>/.
+package = 'C:\Users\me\Videos\grilled'
+# cookies.txt passed to yt-dlp; omit when no site needs a login.
+cookies = "cookies.txt"
+
+[agents]
+# Wall-clock limit in minutes for one agent session.
+timeout_minutes = 40
+# Agent processes running at once across fan-out stages (chunks, chat).
+max_concurrent = 5
+
+[agents.roles]
+# Each role is "backend/model[/effort]".
+# backend: agy | codex | claude (all subscription agents).
+# effort: low | medium | high | extra | max | ultra (default high).
+# Only agy hears audio; codex and claude work from frames and subtitles.
+prepass = "agy/gemini-3.1-pro/high"      # whole-film analysis
+chunk = "agy/gemini-3.1-pro/high"        # concurrent chunk translation
+postprocess = "codex/gpt-5.6-sol/medium" # refine + glossary check
+utility = "codex/gpt-5.5/medium"         # titles, broadcast-date research
+chat = "codex/gpt-5.5/medium"            # live-chat replay; omit to use utility
+image = "codex/gpt-5.5/medium"           # cover; needs image generation (codex)
+
+[asr]
+# ElevenLabs speech-to-text model and language hint.
+model = "scribe_v2"
+language = "jpn"
+
+[translate]
+# Target source characters per translation chunk (~5 min of a variety show).
+chunk_char_limit = 6000
+# Fresh agent sessions per chunk when a session fails transiently.
+chunk_attempts = 3
+# Seconds of video per sampled frame in the pre-pass and in each chunk.
+prepass_frame_interval_s = 60
+chunk_frame_interval_s = 30
+# Longest side in pixels of sampled frames (also the agent frame tool).
+frame_max_side = 768
+
+[features]
+# Fetch platform closed captions (TVer, Abema, ...) as translation ground truth.
+official_subtitles = true
+# Generate a stylized cover image while the pipeline runs.
+cover = false
+# Research the broadcast date with a web-searching agent when metadata has none.
+date_research = false
+# Suggest Traditional Chinese titles at package time when none exist yet.
+title_suggestion = false
+
+[package]
+# Noise pool (<package>/pools/<name>/) for a bare --remix or a remix program.
+remix_pool = "default"
+
+# Each [[package.inserts]] copies the next file of a pool into the
+# deliverable as <output>.<ext>. A missing pool fails the package.
+# An insert that some program lists under `inserts` applies only to those
+# programs; an insert no program lists applies to every deliverable.
+[[package.inserts]]
+pool = "judge"     # <package>/pools/judge/001.*, 002.*, ...
+output = "judge"   # copied as judge.<ext>; programs reference this name
+when = "remix"     # "remix": remix deliverables only; "always": every one
+
+# Per-program rules, keyed by the source series name or the channel
+# (station / uploader). A program matches its channel entry and its series
+# entry; channel applies first, then series. Downloading a new program
+# appends an empty entry here for you to fill in.
+[programs.series."水曜日のダウンタウン"]
+# Package as remix with package.remix_pool even without --remix.
+remix = true
+# Outputs of [[package.inserts]] enabled for this program.
+inserts = ["judge"]
+
+# Extra model instructions. `common` goes to every stage, ahead of the
+# stage's own text; stages: prepass, chunks, refine, glossary.
+[programs.series."水曜日のダウンタウン".instruction]
+common = "Each segment opens with a 説 (hypothesis) title card; keep 説 as 「說」 and render the title cards consistently."
+prepass = "List every 説 title card in proper_nouns with its exact on-screen wording."
+chunks = "The studio panel's commentary is overlaid on VTR footage; keep the panel's quips short."
+refine = "Keep the narrator's deadpan tone; do not add exclamation marks to narration."
+glossary = "Panelist names follow fixed_glossary even when the on-screen caption abbreviates them."
+
+[programs.channel."日テレ"]
+remix = true

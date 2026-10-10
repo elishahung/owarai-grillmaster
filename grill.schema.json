@@ -1,0 +1,446 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "AgentRoles": {
+      "additionalProperties": false,
+      "description": "Model per agent role, as backend/model[/effort]; all but chat are required.",
+      "properties": {
+        "prepass": {
+          "description": "Whole-film pre-pass analysis.",
+          "pattern": "^(agy|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "title": "Prepass",
+          "type": "string"
+        },
+        "chunk": {
+          "description": "Concurrent chunk translation.",
+          "pattern": "^(agy|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "title": "Chunk",
+          "type": "string"
+        },
+        "postprocess": {
+          "description": "Refine and glossary check.",
+          "pattern": "^(agy|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "title": "Postprocess",
+          "type": "string"
+        },
+        "utility": {
+          "description": "Lightweight agents: titles, broadcast-date research.",
+          "pattern": "^(agy|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "title": "Utility",
+          "type": "string"
+        },
+        "chat": {
+          "anyOf": [
+            {
+              "description": "backend/model[/effort]; effort defaults to high.",
+              "pattern": "^(agy|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Live-chat replay translation; omitted means utility.",
+          "title": "Chat"
+        },
+        "image": {
+          "description": "Cover generation; the backend must support image generation.",
+          "pattern": "^(agy|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "title": "Image",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prepass",
+        "chunk",
+        "postprocess",
+        "utility",
+        "image"
+      ],
+      "title": "AgentRoles",
+      "type": "object"
+    },
+    "AgentsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "timeout_minutes": {
+          "default": 40,
+          "description": "Wall-clock limit for a single agent session.",
+          "minimum": 1,
+          "title": "Timeout Minutes",
+          "type": "integer"
+        },
+        "max_concurrent": {
+          "default": 5,
+          "description": "Agent processes running at once across fan-out stages (chunks, chat batches).",
+          "minimum": 1,
+          "title": "Max Concurrent",
+          "type": "integer"
+        },
+        "roles": {
+          "$ref": "#/$defs/AgentRoles"
+        }
+      },
+      "required": [
+        "roles"
+      ],
+      "title": "AgentsConfig",
+      "type": "object"
+    },
+    "AsrConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "default": "scribe_v2",
+          "description": "ElevenLabs speech-to-text model.",
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "language": {
+          "default": "jpn",
+          "description": "Language code hint for ElevenLabs.",
+          "minLength": 1,
+          "title": "Language",
+          "type": "string"
+        }
+      },
+      "title": "AsrConfig",
+      "type": "object"
+    },
+    "FeaturesConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "official_subtitles": {
+          "default": true,
+          "description": "Fetch platform closed captions as ground truth for translation.",
+          "title": "Official Subtitles",
+          "type": "boolean"
+        },
+        "cover": {
+          "default": false,
+          "description": "Generate a stylized cover image (side task).",
+          "title": "Cover",
+          "type": "boolean"
+        },
+        "date_research": {
+          "default": false,
+          "description": "Research the broadcast date with a web-searching agent when metadata has none.",
+          "title": "Date Research",
+          "type": "boolean"
+        },
+        "title_suggestion": {
+          "default": false,
+          "description": "Suggest Traditional Chinese titles at package time when none exist yet.",
+          "title": "Title Suggestion",
+          "type": "boolean"
+        }
+      },
+      "title": "FeaturesConfig",
+      "type": "object"
+    },
+    "InsertRule": {
+      "additionalProperties": false,
+      "description": "Copy the next file of a media pool into the deliverable.",
+      "properties": {
+        "pool": {
+          "description": "Pool folder under <package>/pools/.",
+          "minLength": 1,
+          "pattern": "^[^\\\\/:*?\"<>|]+$",
+          "title": "Pool",
+          "type": "string"
+        },
+        "output": {
+          "description": "Output file stem in the deliverable; programs reference inserts by it.",
+          "minLength": 1,
+          "pattern": "^[^\\\\/:*?\"<>|]+$",
+          "title": "Output",
+          "type": "string"
+        },
+        "when": {
+          "default": "remix",
+          "description": "Copy only for remix deliverables, or for every deliverable.",
+          "enum": [
+            "remix",
+            "always"
+          ],
+          "title": "When",
+          "type": "string"
+        }
+      },
+      "required": [
+        "pool",
+        "output"
+      ],
+      "title": "InsertRule",
+      "type": "object"
+    },
+    "PackageConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "remix_pool": {
+          "default": "default",
+          "description": "Noise pool under <package>/pools/ used by a bare --remix or a remix program.",
+          "minLength": 1,
+          "pattern": "^[^\\\\/:*?\"<>|]+$",
+          "title": "Remix Pool",
+          "type": "string"
+        },
+        "inserts": {
+          "description": "Pool files copied into deliverables. An insert some program lists applies only to the programs listing it; the rest apply to all.",
+          "items": {
+            "$ref": "#/$defs/InsertRule"
+          },
+          "title": "Inserts",
+          "type": "array"
+        }
+      },
+      "title": "PackageConfig",
+      "type": "object"
+    },
+    "PathsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "archive": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Finished projects move here after delivery; unset keeps them in projects/.",
+          "title": "Archive"
+        },
+        "package": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Deliverable root: burned-in video, cover and titles per project; also holds pools/.",
+          "title": "Package"
+        },
+        "cookies": {
+          "anyOf": [
+            {
+              "format": "path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "cookies.txt handed to yt-dlp for downloads.",
+          "title": "Cookies"
+        }
+      },
+      "title": "PathsConfig",
+      "type": "object"
+    },
+    "ProgramInstruction": {
+      "additionalProperties": false,
+      "description": "Extra model instructions for one program, keyed by stage.",
+      "properties": {
+        "common": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Added to every stage below, ahead of that stage's own text.",
+          "title": "Common"
+        },
+        "prepass": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Whole-film analysis: cast, proper nouns, glossary, catchphrases, segment summaries.",
+          "title": "Prepass"
+        },
+        "chunks": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Concurrent chunk translation into Traditional Chinese.",
+          "title": "Chunks"
+        },
+        "refine": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Agent polish of the translated subtitles.",
+          "title": "Refine"
+        },
+        "glossary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Agent terminology/fact check against the fixed glossary.",
+          "title": "Glossary"
+        }
+      },
+      "title": "ProgramInstruction",
+      "type": "object"
+    },
+    "ProgramRule": {
+      "additionalProperties": false,
+      "description": "Rules for one series or channel name.",
+      "properties": {
+        "remix": {
+          "default": false,
+          "description": "Package as remix with package.remix_pool even without --remix.",
+          "title": "Remix",
+          "type": "boolean"
+        },
+        "inserts": {
+          "description": "Outputs of [[package.inserts]] enabled for this program.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Inserts",
+          "type": "array"
+        },
+        "instruction": {
+          "$ref": "#/$defs/ProgramInstruction",
+          "description": "Extra model instructions for this program."
+        }
+      },
+      "title": "ProgramRule",
+      "type": "object"
+    },
+    "ProgramsConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "series": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ProgramRule"
+          },
+          "description": "Rules keyed by the source program (series) name.",
+          "title": "Series",
+          "type": "object"
+        },
+        "channel": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ProgramRule"
+          },
+          "description": "Rules keyed by the broadcast station or uploader channel.",
+          "title": "Channel",
+          "type": "object"
+        }
+      },
+      "title": "ProgramsConfig",
+      "type": "object"
+    },
+    "TranslateConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "chunk_char_limit": {
+          "default": 6000,
+          "description": "Target source characters per translation chunk (~5 min of a variety show).",
+          "minimum": 1,
+          "title": "Chunk Char Limit",
+          "type": "integer"
+        },
+        "chunk_attempts": {
+          "default": 3,
+          "description": "Fresh agent sessions per chunk on transient failures.",
+          "minimum": 1,
+          "title": "Chunk Attempts",
+          "type": "integer"
+        },
+        "prepass_frame_interval_s": {
+          "default": 60,
+          "description": "Seconds of video per pre-pass frame.",
+          "minimum": 1,
+          "title": "Prepass Frame Interval S",
+          "type": "integer"
+        },
+        "chunk_frame_interval_s": {
+          "default": 30,
+          "description": "Seconds of video per chunk-translation frame.",
+          "minimum": 1,
+          "title": "Chunk Frame Interval S",
+          "type": "integer"
+        },
+        "frame_max_side": {
+          "default": 768,
+          "description": "Longest side in pixels of sampled frames (pre-pass, chunks, frame tool).",
+          "minimum": 1,
+          "title": "Frame Max Side",
+          "type": "integer"
+        }
+      },
+      "title": "TranslateConfig",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Owarai GrillMaster settings and per-program rules.",
+  "properties": {
+    "paths": {
+      "$ref": "#/$defs/PathsConfig"
+    },
+    "agents": {
+      "$ref": "#/$defs/AgentsConfig"
+    },
+    "asr": {
+      "$ref": "#/$defs/AsrConfig"
+    },
+    "translate": {
+      "$ref": "#/$defs/TranslateConfig"
+    },
+    "features": {
+      "$ref": "#/$defs/FeaturesConfig"
+    },
+    "package": {
+      "$ref": "#/$defs/PackageConfig"
+    },
+    "programs": {
+      "$ref": "#/$defs/ProgramsConfig"
+    }
+  },
+  "required": [
+    "agents"
+  ],
+  "title": "GrillMaster grill.toml",
+  "type": "object"
+}

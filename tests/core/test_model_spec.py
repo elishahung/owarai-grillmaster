@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from grillmaster.core.model_spec import DEFAULT_EFFORT, Backend, Effort, ModelSpec
+from grillmaster.core.model_spec import DEFAULT_EFFORT, Backend, Effort, ModelSpec, Role
 
 
 def test_backend_model_and_effort():
@@ -11,35 +11,21 @@ def test_backend_model_and_effort():
     )
 
 
-@pytest.mark.parametrize("text", ["agy/gemini-3.1-pro", "agy/gemini-3.1-pro/"])
-def test_missing_effort_defaults_to_high(text: str):
-    spec = ModelSpec.parse(text)
+def test_missing_effort_defaults_to_high():
+    spec = ModelSpec.parse("agy/gemini-3.1-pro")
     assert spec == ModelSpec(Backend.AGY, "gemini-3.1-pro", Effort.HIGH)
     assert DEFAULT_EFFORT is Effort.HIGH
-
-
-def test_whitespace_is_trimmed():
-    assert ModelSpec.parse("  codex / gpt-5.5 / medium  ") == ModelSpec(
-        Backend.CODEX, "gpt-5.5", Effort.MEDIUM
-    )
-
-
-@pytest.mark.parametrize(
-    ("text", "effort"),
-    [
-        ("codex/gpt-5.5/EXTRA", Effort.EXTRA),
-        ("claude/claude-opus-4-8/Max", Effort.MAX),
-        ("codex/gpt-5.6-sol/ULTRA", Effort.ULTRA),
-    ],
-)
-def test_effort_is_case_insensitive(text: str, effort: Effort):
-    assert ModelSpec.parse(text).effort is effort
 
 
 @pytest.mark.parametrize(
     ("text", "match"),
     [
         ("codex/gpt-5.5/xhigh", "Unknown effort"),
+        ("codex/gpt-5.5/HIGH", "Unknown effort"),
+        ("codex/gpt-5.5/", "backend/model"),
+        (" codex/gpt-5.5", "Unknown backend"),
+        ("codex/gpt-5.5/ medium", "Unknown effort"),
+        ("codex/ gpt-5.5", "Invalid model name"),
         ("gpt-5.5", "backend/model"),
         ("codex/gpt-5.5/medium/high", "backend/model"),
         ("/gpt-5.5", "backend/model"),
@@ -64,7 +50,18 @@ def test_str_always_prints_the_effort():
     )
 
 
-@pytest.mark.parametrize("model", ["", "a/b"])
+@pytest.mark.parametrize("model", ["", "a/b", " m", "a b"])
 def test_constructor_rejects_unusable_model_names(model: str):
     with pytest.raises(ValueError, match="Invalid model name"):
         ModelSpec(Backend.AGY, model, Effort.HIGH)
+
+
+def test_role_values_match_grill_toml_keys():
+    assert [str(role) for role in Role] == [
+        "prepass",
+        "chunk",
+        "postprocess",
+        "utility",
+        "chat",
+        "image",
+    ]

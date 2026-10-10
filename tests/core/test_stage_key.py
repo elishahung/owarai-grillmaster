@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from grillmaster.core.stage_key import StageKey
+from grillmaster.core.stage_key import SideTaskKey, StageKey
 
 
 def test_declaration_order_is_execution_order():
@@ -30,3 +30,7 @@ def test_numbers_are_execution_positions():
 def test_keys_are_plain_strings():
     assert StageKey("chunks") is StageKey.CHUNKS
     assert f"{StageKey.REFINE}" == "refine"
+
+
+def test_side_task_keys():
+    assert [key.value for key in SideTaskKey] == ["cover", "date_research"]

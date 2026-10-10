@@ -219,6 +219,7 @@ __marimo__/
 projects/
 cookies.txt
 /config.json
+/grill.toml
 _test*
 
 # platform

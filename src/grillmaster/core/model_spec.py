@@ -2,11 +2,13 @@
 
 Lives in core because both `config` (parses it from `grill.toml`) and
 `agents` (resolves adapters from it) need it, and `agents` may not import
-`config`. Each adapter maps `Effort` onto its own CLI vocabulary.
+`config`. Each adapter maps `Effort` onto its own CLI vocabulary. `Role` is
+the key `grill.toml` `[agents.roles]` maps onto a `ModelSpec`.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 
@@ -15,6 +17,17 @@ class Backend(StrEnum):
     AGY = "agy"
     CODEX = "codex"
     CLAUDE = "claude"
+
+
+class Role(StrEnum):
+    """What an agent call is for; each role resolves to one `ModelSpec`."""
+
+    PREPASS = "prepass"
+    CHUNK = "chunk"
+    POSTPROCESS = "postprocess"
+    UTILITY = "utility"  # titles, date research
+    CHAT = "chat"  # live-chat translation
+    IMAGE = "image"  # cover generation; needs image-generation capability
 
 
 class Effort(StrEnum):
@@ -29,6 +42,9 @@ class Effort(StrEnum):
 # Applied by `parse` when the spec string names no effort.
 DEFAULT_EFFORT = Effort.HIGH
 
+# A model name is one path segment without whitespace.
+MODEL_NAME_PATTERN = r"[^/\s]+"
+
 
 @dataclass(frozen=True, slots=True)
 class ModelSpec:
@@ -37,20 +53,21 @@ class ModelSpec:
     effort: Effort
 
     def __post_init__(self) -> None:
-        if not self.model or "/" in self.model:
+        if not re.fullmatch(MODEL_NAME_PATTERN, self.model):
             raise ValueError(f"Invalid model name: {self.model!r}")
 
     @classmethod
     def parse(cls, text: str) -> ModelSpec:
-        """Parse `backend/model` or `backend/model/effort`.
+        """Parse `backend/model` or `backend/model/effort`, written exactly.
 
-        Whitespace around segments is ignored, the effort is case-insensitive,
-        and a missing or empty effort becomes `DEFAULT_EFFORT`.
+        No whitespace, lowercase effort; a spec without one gets `DEFAULT_EFFORT`.
         """
-        match [part.strip() for part in text.split("/")]:
+        match text.split("/"):
             case [backend_text, model] if backend_text and model:
-                effort_text = ""
-            case [backend_text, model, effort_text] if backend_text and model:
+                effort_text = None
+            case [backend_text, model, effort_text] if (
+                backend_text and model and effort_text
+            ):
                 pass
             case _:
                 raise ValueError(
@@ -65,7 +82,7 @@ class ModelSpec:
                 f"expected one of: {', '.join(Backend)}"
             ) from None
         try:
-            effort = Effort(effort_text.lower()) if effort_text else DEFAULT_EFFORT
+            effort = DEFAULT_EFFORT if effort_text is None else Effort(effort_text)
         except ValueError:
             raise ValueError(
                 f"Unknown effort {effort_text!r} in {text!r}; "

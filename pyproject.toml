@@ -55,6 +55,7 @@ lint = "ruff check"
 types = "basedpyright"
 layers = "lint-imports"
 test = "pytest"
+schema = "python -m grillmaster.config.schema ${POE_ROOT}/grill.schema.json"
 # lint and types join `check` once the refactor reaches zero warnings.
 check = ["fmt-check", "layers", "test"]
 

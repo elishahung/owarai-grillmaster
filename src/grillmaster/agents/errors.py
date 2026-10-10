@@ -105,7 +105,8 @@ _AUTH_RE = _phrases(
     "authentication",
     "login required",
 )
-_STATUS_RE = re.compile(r'"status"\s*:\s*(\d{3})')
+# OpenAI/Anthropic bodies say `"status": 400`, Google's `"code": 400`.
+_STATUS_RE = re.compile(r'"(?:status|code)"\s*:\s*(\d{3})(?!\d)')
 
 
 def classify_failure(
@@ -116,7 +117,7 @@ def classify_failure(
     Phrases match as whole words ("retries exhausted" and "4291" are not
     quota). A quota phrase (quota, usage limit, resource exhausted) is a
     quota error whatever the status. Otherwise an HTTP status (given, or
-    embedded in the message as `"status": 400`) decides: 401 is auth, 429 a
+    embedded in the message as `"status": 400` or `"code": 400`) decides: 401 is auth, 429 a
     short-lived rate limit (transient), any other 4xx a bad request such as
     an unknown model, so retrying cannot help. Without a status, auth
     phrases decide; rate-limit wording and anything else count as transient.

@@ -1,4 +1,4 @@
-"""Antigravity CLI (`agy`): the subscription Gemini backend, the only one that hears audio.
+"""Antigravity CLI (`agy`): a subscription Gemini backend that hears audio.
 
 One turn is `agy … -p= --input-format stream-json --output-format
 stream-json` with the user message as one stdin JSON line. Facts this
@@ -21,25 +21,30 @@ module is built on (agy 1.3.2):
 * MCP servers come from `<workdir>/.agents/mcp_config.json`; their calls
   appear as the `call_mcp_tool` tool.
 * Paid API-key variables are removed from the environment so agy always
-  uses the subscription login.
+  uses the subscription login (`ANTIGRAVITY_API_KEY`, agy's own key, stays).
 """
 
 from __future__ import annotations
 
 import json
-import os
-import re
 import threading
 import time
 from typing import TYPE_CHECKING, Any
 
 from grillmaster.agents import process
+from grillmaster.agents.adapters._google import (
+    mcp_servers,
+    path_key,
+    readable_roots,
+    subscription_env,
+)
 from grillmaster.agents.adapters._jsonl import JsonlTurn, resolve_cli
 from grillmaster.agents.adapters.base import (
     Capability,
     FinalOutput,
     MediaDelivery,
     SchemaDelivery,
+    ToolImageDelivery,
     TurnDefect,
     TurnRequest,
 )
@@ -55,6 +60,7 @@ from grillmaster.agents.events import (
     ToolResult,
     normalize_usage,
 )
+from grillmaster.agents.schema import json_object_answer
 from grillmaster.core.fs import atomic_write_text
 from grillmaster.core.model_spec import Backend, Effort
 
@@ -74,9 +80,6 @@ _EFFORT_SUFFIX = {
     Effort.MAX: "high",
     Effort.ULTRA: "high",
 }
-# Metered keys agy might prefer over the cached subscription login.
-# ANTIGRAVITY_API_KEY stays: it is agy's own key.
-API_KEY_ENV_VARS = ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_API_KEY")
 MCP_CONFIG_RELPATH = (".agents", "mcp_config.json")
 _MODELS_TIMEOUT_S = 120.0
 # How long a failed `agy models` probe answers for the tasks after it.
@@ -85,8 +88,6 @@ _LOGIN_HINT = "run `agy` once interactively to sign in"
 _FINISH_TOOL = "finish"
 _MCP_TOOL = "call_mcp_tool"
 _VIEW_FILE_TOOL = "view_file"
-# One whole-message ``` / ```json fence around the answer.
-_JSON_FENCE_RE = re.compile(r"\A```(?:json)?[ \t]*\n(.*)\n```\Z", re.DOTALL)
 _USAGE_NAMES = {
     "input_tokens": "input_tokens",
     "output_tokens": "output_tokens",
@@ -101,14 +102,14 @@ class AgyAdapter:
         {
             Capability.AUDIO_INPUT,
             Capability.IMAGE_INPUT,
-            Capability.NATIVE_SCHEMA,
+            Capability.SCHEMA_OUTPUT,
             Capability.RESUME,
             Capability.MCP,
-            Capability.MCP_IMAGE_RESULT,
             Capability.WEB_SEARCH,
         }
     )
     media_delivery = MediaDelivery.VIEW_FILE
+    tool_image_delivery = ToolImageDelivery.VIEW_FILE
     schema_delivery = SchemaDelivery.FINISH_TOOL
 
     def __init__(
@@ -164,7 +165,7 @@ class AgyAdapter:
         ]
         if request.schema_path is not None:
             argv += ["--json-schema", str(request.schema_path)]
-        for root in _readable_roots(request):
+        for root in readable_roots(request):
             argv += ["--add-dir", str(root)]
         if conversation is not None:
             argv += ["--conversation", conversation]
@@ -184,7 +185,7 @@ class AgyAdapter:
             argv=argv,
             cwd=request.workdir,
             timeout_s=request.timeout_s,
-            env=scrubbed_env(),
+            env=subscription_env(),
             stdin=stdin + "\n",
             keep_stdin_open=True,
         )
@@ -211,7 +212,7 @@ class AgyAdapter:
             argv=[resolve_cli("agy", self._executable), "models"],
             cwd=None,
             timeout_s=_MODELS_TIMEOUT_S,
-            env=scrubbed_env(),
+            env=subscription_env(),
         )
         try:
             result = process.run_text(spec, spawn_fn=self._spawn)
@@ -231,13 +232,6 @@ def parse_model_list(text: str) -> list[str]:
         for line in text.splitlines()
         if "\t" in line and line.split("\t", 1)[0].strip()
     ]
-
-
-def scrubbed_env() -> dict[str, str]:
-    env = dict(os.environ)
-    for key in API_KEY_ENV_VARS:
-        env.pop(key, None)
-    return env
 
 
 class AgyTurnParser:
@@ -282,7 +276,7 @@ class AgyTurnParser:
             message = str(result.get("error") or f"agy turn failed: {result}")
             raise classify_failure(message, login_hint=_LOGIN_HINT)
         unheard = tuple(
-            path for path in self._audio if _path_key(str(path)) not in self._viewed
+            path for path in self._audio if path_key(str(path)) not in self._viewed
         )
         return FinalOutput(
             session_id=str(result.get("conversation_id") or self._session_id),
@@ -337,25 +331,12 @@ class AgyTurnParser:
             name = str(params.get("ToolName") or name)
             params = params.get("Arguments") or {}
         elif name == _VIEW_FILE_TOOL and done and "AbsolutePath" in params:
-            self._viewed.add(_path_key(str(params["AbsolutePath"])))
+            self._viewed.add(path_key(str(params["AbsolutePath"])))
         if index not in self._announced:
             self._announced.add(index)
             yield ToolCall(name, params)
         if done:
             yield ToolResult(name)
-
-
-def json_object_answer(text: str) -> dict[str, Any] | None:
-    """`text` (inside at most one ``` / ```json fence) as a JSON object, or
-    `None`; whether it fits the schema is the output model's call."""
-    stripped = text.strip()
-    if fenced := _JSON_FENCE_RE.match(stripped):
-        stripped = fenced.group(1)
-    try:
-        value = json.loads(stripped)
-    except ValueError:
-        return None
-    return value if isinstance(value, dict) else None
 
 
 def unheard_audio_defect(paths: Sequence[Path]) -> TurnDefect:
@@ -370,31 +351,11 @@ def unheard_audio_defect(paths: Sequence[Path]) -> TurnDefect:
     )
 
 
-def _readable_roots(request: TurnRequest) -> list[Path]:
-    roots = [
-        request.workdir,
-        *request.add_dirs,
-        *(path.parent for path in (*request.images, *request.audio)),
-    ]
-    unique: dict[str, Path] = {}
-    for root in roots:
-        unique.setdefault(_path_key(str(root)), root)
-    return list(unique.values())
-
-
 def _write_mcp_config(request: TurnRequest) -> None:
     path = request.workdir.joinpath(*MCP_CONFIG_RELPATH)
     if request.mcp is None:
         # A config left by an earlier session with tools must not leak in.
         path.unlink(missing_ok=True)
         return
-    config = {
-        "mcpServers": {
-            "grill": {"command": request.mcp.command, "args": list(request.mcp.args)}
-        }
-    }
+    config = {"mcpServers": mcp_servers(request.mcp)}
     atomic_write_text(path, json.dumps(config, indent=2))
-
-
-def _path_key(path: str) -> str:
-    return os.path.normcase(os.path.normpath(path))

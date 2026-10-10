@@ -2,8 +2,8 @@
 name: agent-orchestration
 description: >-
   The agent layer `src/grillmaster/agents/` (AgentTask/AgentJob, AgentRunner,
-  strict schema, repair loop, errors, events, `process.py`, agy/codex/claude
-  adapters) and the MCP tool server `src/grillmaster/agent_tools/`
+  strict schema, repair loop, errors, events, `process.py`,
+  agy/gemini/codex/claude adapters) and the MCP tool server `src/grillmaster/agent_tools/`
   (`get_frames`, `check_srt`, `core/tool_session.py`). Read this before
   touching either package, adding a backend, capability or tool, or changing
   prompts, media, schema, repair, retries, concurrency or session records.
@@ -29,12 +29,12 @@ description: >-
   `domain-purity`); `ModelSpec`, `Role` and `ToolSession` live in `core/`.
 - No silent degradation: missing capability/model/input file or a non-strict
   schema raises `AgentConfigError` before any slot is taken.
-- Workspace isolation: agy and codex load every `AGENTS.md`/`GEMINI.md` and
-  `.agents/` skill from their cwd (and agy's `--add-dir`s) up to the nearest
-  `.git`. `workspace.seal_workspace_root` puts an empty `.git` file at the
+- Workspace isolation: agy, gemini and codex load every `AGENTS.md`/`GEMINI.md`
+  and `.agents/` skill from their cwd (and agy's `--add-dir`s) up to the
+  nearest `.git`. `workspace.seal_workspace_root` puts an empty `.git` file at the
   root holding all agent workdirs and inputs (the pipeline seals
   `projects/`), so a surrounding checkout's dev rules never reach a task.
-- A thin layer of our own over the three CLIs, not ACP or an agent framework:
+- A thin layer of our own over the four CLIs, not ACP or an agent framework:
   agy has no native ACP and ACP has no structured output. The event vocabulary
   borrows ACP's.
 
@@ -45,7 +45,7 @@ description: >-
   `workdir` (cwd and writable root; `None` = temp dir; concurrent tasks may not
   share one), `output`, `images`, `audio`, `tools`, `add_dirs`, `validate`
   (raises `ValidationFailure`), `requires`, `max_repairs=3`, `attempts=1`.
-- Outputs: `TextOutput`, `SchemaOutput(model)` (native structured channel),
+- Outputs: `TextOutput`, `SchemaOutput(model)` (see `schema_delivery`),
   `FilesOutput(required, optional)` (both deleted before each attempt). A
   failed parse is a `ValidationFailure`, i.e. a repair round.
 - `run(task) -> AgentResult` or a classified `AgentError`. Fan-out uses
@@ -70,21 +70,28 @@ of one grill process (concurrent processes each get their own);
 `timeout_minutes` bounds each turn (process watchdog; `asyncio.timeout` for
 Claude), not the session.
 
-All adapters declare IMAGE_INPUT, NATIVE_SCHEMA, RESUME, MCP, MCP_IMAGE_RESULT,
-WEB_SEARCH; only agy has AUDIO_INPUT, only codex IMAGE_GENERATION. Required =
+All adapters declare IMAGE_INPUT, SCHEMA_OUTPUT, RESUME, MCP, WEB_SEARCH; agy
+and gemini have AUDIO_INPUT, only codex IMAGE_GENERATION. Required =
 `task.requires` (what inputs cannot imply: IMAGE_GENERATION for cover,
-WEB_SEARCH for prepass/titles/date research) + derived: schema→NATIVE_SCHEMA,
+WEB_SEARCH for prepass/titles/date research) + derived: schema→SCHEMA_OUTPUT,
 `max_repairs > 0`→RESUME, images→IMAGE_INPUT, audio→AUDIO_INPUT, tools→MCP,
-frames tool→MCP_IMAGE_RESULT.
+frames tool on a `NEXT_MESSAGE` backend→RESUME + IMAGE_INPUT.
 Stages check `runner.capabilities(role)` (`accepts_audio`) before adding audio.
 
 ## Adapters (`adapters/`, loaded lazily by `AdapterRegistry`)
 
 `base.py`: `media_delivery` (`ATTACHED`, or `VIEW_FILE`: the runner lists
-absolute paths to open in one parallel turn), `schema_delivery` (`NATIVE`, or
-`FINISH_TOOL`: the runner tells the model to submit through `finish`; agy
-otherwise prints the JSON and its own nag costs a full-context turn),
-`preflight`, `start`/`resume(session_id, TurnRequest)` → `SessionHandle` →
+absolute paths to open in one parallel turn), `tool_image_delivery` (frames
+tool images: `INLINE`, `VIEW_FILE`, or `NEXT_MESSAGE`: the runner writes
+`tools.json` with `frames.pending_frames` = `<session>/frames_pending.txt`,
+`get_frames` returns text and appends paths there (`core.tool_session`
+`leave_`/`take_pending_frames`), and the runner resumes with
+`prompt.frames_message()` + those images; not a repair, at most
+`MAX_FRAME_TURNS`, counted as `frame_turns` in `result.json`), `schema_delivery` (`NATIVE`; `FINISH_TOOL`: the runner
+tells the model to submit through `finish`, agy otherwise prints the JSON and
+its own nag costs a full-context turn; `PROMPT`: the runner states the schema
+and reads the answer from `FinalOutput.text` with
+`schema.json_object_answer(lead_in=True)`), `preflight`, `start`/`resume(session_id, TurnRequest)` → `SessionHandle` →
 `FinalOutput(session_id, text, structured, usage, defects)`. Closing
 `events()` early stops the turn (the CLI tree is killed). A resume repeats
 model, workdir, tools and schema with a new `message`; its images/audio are
@@ -103,6 +110,22 @@ only a defect's resends.
   from user settings). Repair wording must never forbid tool calls: `finish`
   is a tool. MCP image results reach the model only as offloaded files it
   must `view_file` (one more turn), so the prompt says so.
+- **gemini** (gemini-cli; Code Assist login, needs `GOOGLE_CLOUD_PROJECT`):
+  `--output-format stream-json --skip-trust --approval-mode yolo
+  --allowed-mcp-server-names grill --prompt=`, message on stdin. Input media
+  go as quoted `@"<abs path>"` lines appended to the message plus
+  `--include-directories` (the token cost of agy's `view_file` turns is the
+  reason this backend exists); `preflight` refuses files over 20 MB. The CLI
+  parses every `@` (files, subagents, MCP resources; respacing the text once
+  a file attaches), so the message's own `@` are sent as U+FF20. Image tool results are broken through Code Assist (400 on
+  3.5/3.8-flash, garbled text after the image on 3.1-pro/flash-lite, the
+  nested format drops the image), hence `NEXT_MESSAGE`; `SchemaDelivery.PROMPT`.
+  agy and gemini share `_google.py` (key stripping, `mcpServers` entry,
+  readable roots). Effort → `thinkingLevel` (`thinkingBudget` for
+  `gemini-2.5*`) and the MCP server go into `<workdir>/.gemini/settings.json`
+  (rewritten every turn). Resume `--resume <id>` (sessions are per cwd). Same
+  API-key stripping as agy; the user's `~/.gemini` settings and `GEMINI.md`
+  still load.
 - **codex**: `codex exec --json … -`, `--ignore-user-config`, sandbox bypassed,
   `--image` on the start turn only, `--output-schema` (last `agent_message`),
   `-c mcp_servers.grill.*`, `-c tools.web_search=true` only when required.
@@ -126,8 +149,9 @@ only a defect's resends.
   (verbatim CLI stream; encoded SDK messages for Claude), `result.json`
   (`SessionRecord`); agy adds `agy.log`. Normalized events go only to the
   project's `logs/events-<ts>.jsonl`, as `AgentActivity` summaries.
-- One global slot is held from the first turn through every repair. Adapter
-  defects first, then parse + `validate`; a failure resumes the same session
+- One global slot is held from the first turn through every repair. Pending
+  frames (`NEXT_MESSAGE`) first, then adapter defects, then parse +
+  `validate`; a failure resumes the same session
   with only `prompt.repair_message(...)`, so the agent keeps its context
   (heard audio, fetched frames) and the prompt is not resent. Exhausted
   repairs → `AgentOutputError`. Nested `run`/`run_jobs` inside a slot is
@@ -163,7 +187,8 @@ The runner launches, by module name (`agents` never imports `agent_tools`),
 <session_dir>/tools.json` (argv: codex MCP servers do not inherit env). Only
 tools with a sub-config in `ToolSession` exist; a bad manifest exits 2.
 `get_frames(times)`: ≤20 timestamps inside the window, saved to `frames_dir`,
-returned as MCP image content. `check_srt(path)`: skeleton check of an
+returned as MCP image content (with `pending_frames`: text only, paths appended
+to that file). `check_srt(path)`: skeleton check of an
 absolute path against `reference_srt` → `VALID` / `INVALID` + problems.
 `agents/prompt.py` lists the tools (with the window); stages add guidance via
 `core.prompts.frames_guidance`. A new tool = config in `core/tool_session.py`
@@ -176,4 +201,6 @@ line in `agents/prompt.py`.
 replays real recordings in `tests/fixtures/agents/<backend>/`. `test_live.py`
 is `live`-marked (deselected by default; spends quota); after a CLI upgrade
 `scripts/record_agent_fixture.py [backend...]` reruns it to re-record the
-`live_start`/`live_resume` fixtures (the other recordings are hand-captured).
+per-turn fixtures named in `fakes.LIVE_TURNS` (gemini adds `live_frames`; the
+other recordings are hand-captured). `live_tool_server.py` honours
+`pending_frames` like the real tool.

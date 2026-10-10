@@ -25,9 +25,11 @@ max_concurrent = 10
 
 [agents.roles]
 # Each role is "backend/model[/effort]".
-# backend: agy | codex | claude (all subscription agents).
+# backend: agy | gemini | codex | claude (all subscription agents).
 # effort: low | medium | high | extra | max | ultra (default high).
-# Only agy hears audio; codex and claude work from frames and subtitles.
+# agy and gemini hear audio; codex and claude work from frames and subtitles.
+# gemini attaches media with @ (fewer turns than agy's view_file) and needs
+# GOOGLE_CLOUD_PROJECT for its Code Assist login, e.g. gemini/gemini-3.8-flash/high.
 prepass = "agy/gemini-3.1-pro/high"      # whole-film analysis
 chunk = "agy/gemini-3.1-pro/high"        # concurrent chunk translation
 postprocess = "codex/gpt-6.1-sol/high" # refine + glossary check

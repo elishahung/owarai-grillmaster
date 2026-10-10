@@ -5,7 +5,11 @@ from typing import Any
 import pytest
 from pydantic import BaseModel, Field
 
-from grillmaster.agents.schema import StrictSchemaError, strict_json_schema
+from grillmaster.agents.schema import (
+    StrictSchemaError,
+    json_object_answer,
+    strict_json_schema,
+)
 from grillmaster.core.briefing import Briefing
 
 
@@ -87,3 +91,35 @@ def test_recursive_models_are_rejected():
     Node.model_rebuild()
     with pytest.raises(StrictSchemaError, match="recursive"):
         strict_json_schema(Node)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('{"a": 1}', {"a": 1}),
+        ('```json\n{"a": 1}\n```\n', {"a": 1}),
+        ('```\n{"a": 1}\n```', {"a": 1}),
+        ('Here it is:\n```json\n{"a": 1}\n```', None),
+        ("```json\n[1, 2]\n```", None),
+        ("blue", None),
+        ("", None),
+    ],
+)
+def test_json_object_answer_strips_one_fence(text: str, expected: object):
+    assert json_object_answer(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('AN```json\n{"a": 1}\n```', {"a": 1}),
+        ('Here it is:\n```json\n{"a": 1}\n```\n', {"a": 1}),
+        ('Draft:\n```json\n{"a": 0}\n``````json\n{"a": 1}\n```', {"a": 1}),
+        ('{"a": 1}', {"a": 1}),
+        ('```json\n{"a": 1}\n```\nDone.', None),
+    ],
+)
+def test_json_object_answer_with_lead_in_ignores_text_before_the_fence(
+    text: str, expected: object
+):
+    assert json_object_answer(text, lead_in=True) == expected

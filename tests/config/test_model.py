@@ -64,7 +64,7 @@ def test_every_role_but_chat_is_required(roles: dict[str, str], role: str):
 @pytest.mark.parametrize(
     ("spec", "match"),
     [
-        ("gemini/x", "Unknown backend"),
+        ("openai/x", "Unknown backend"),
         ("agy/x/xhigh", "Unknown effort"),
         ("agy/x/HIGH", "Unknown effort"),
         (3, "string"),
@@ -86,7 +86,7 @@ def test_bad_model_specs_fail(roles: dict[str, str], spec: object, match: str):
         " agy/m",
         "agy/a b",
         "agy/m/high/x",
-        "gemini/m",
+        "openai/m",
     ],
 )
 def test_schema_pattern_accepts_exactly_what_parses(spec: str):

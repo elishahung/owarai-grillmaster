@@ -7,25 +7,25 @@
       "properties": {
         "prepass": {
           "description": "Whole-film pre-pass analysis.",
-          "pattern": "^(agy|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
           "title": "Prepass",
           "type": "string"
         },
         "chunk": {
           "description": "Concurrent chunk translation.",
-          "pattern": "^(agy|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
           "title": "Chunk",
           "type": "string"
         },
         "postprocess": {
           "description": "Refine and glossary check.",
-          "pattern": "^(agy|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
           "title": "Postprocess",
           "type": "string"
         },
         "utility": {
           "description": "Lightweight agents: titles, broadcast-date research.",
-          "pattern": "^(agy|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
           "title": "Utility",
           "type": "string"
         },
@@ -33,7 +33,7 @@
           "anyOf": [
             {
               "description": "backend/model[/effort]; effort defaults to high.",
-              "pattern": "^(agy|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+              "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
               "type": "string"
             },
             {
@@ -46,7 +46,7 @@
         },
         "image": {
           "description": "Cover generation; the backend must support image generation.",
-          "pattern": "^(agy|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
           "title": "Image",
           "type": "string"
         }

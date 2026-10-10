@@ -1,7 +1,7 @@
 """Keep agent CLIs from loading the customizations of a checkout around their
 workspace.
 
-agy and codex walk up from each workspace directory to the nearest folder
+agy, gemini and codex walk up from each workspace directory to the nearest folder
 holding a `.git` entry and load every `AGENTS.md`, `GEMINI.md` and
 `.agents/` skill on the way. Agent workdirs under a source checkout (the
 default projects root sits next to `grill.toml`) would hand that

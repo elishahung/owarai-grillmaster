@@ -2,13 +2,17 @@
 
 codex `--output-schema` runs OpenAI strict mode: every property is required,
 every object sets `additionalProperties: false`, and free-key maps do not
-exist. agy additionally wants an object at the root. Agent output models are
+exist. agy additionally wants an object at the root, and gemini, which has
+no schema flag, gets the same schema in its prompt. Agent output models are
 designed to fit (optional fields are `T | None` and still required), and
 pydantic stays the authoritative validator; this only shapes the first round.
+`json_object_answer` reads a schema answer the model wrote as text instead.
 """
 
 from __future__ import annotations
 
+import json
+import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -19,6 +23,32 @@ type JsonSchema = dict[str, Any]
 # Annotation-only keywords: no constraint lost, and strict mode rejects some.
 _DROPPED_KEYS = frozenset({"title", "default", "examples"})
 _REF_PREFIX = "#/$defs/"
+# One whole-message ``` / ```json fence around the answer.
+_WHOLE_FENCE_RE = re.compile(r"\A```(?:json)?[ \t]*\n(.*)\n```\Z", re.DOTALL)
+# A ``` / ```json fenced block.
+_FENCE_RE = re.compile(r"```(?:json)?[ \t]*\n(.*?)\n```", re.DOTALL)
+
+
+def json_object_answer(text: str, *, lead_in: bool = False) -> dict[str, Any] | None:
+    """`text` (inside at most one ``` / ```json fence) as a JSON object, or
+    `None`; whether it fits the schema is the output model's call. With
+    `lead_in`, the fenced block that closes the message is the answer, and
+    whatever precedes it (stray tokens, leaked reasoning) is ignored."""
+    stripped = text.strip()
+    if fenced := _WHOLE_FENCE_RE.match(stripped):
+        stripped = fenced.group(1)
+    elif lead_in and (
+        closing := next(
+            (m for m in _FENCE_RE.finditer(stripped) if m.end() == len(stripped)),
+            None,
+        )
+    ):
+        stripped = closing.group(1)
+    try:
+        value = json.loads(stripped)
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
 
 
 class StrictSchemaError(ValueError):

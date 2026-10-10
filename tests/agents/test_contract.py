@@ -1,19 +1,21 @@
 """Adapter contract: recorded CLI streams replayed through each adapter.
 
 The fixtures under `tests/fixtures/agents/` are real recordings (agy 1.3.2,
-codex-cli 0.160.0, Claude Code via claude-agent-sdk 0.2.135). Re-record them
+gemini-cli 0.63.0, codex-cli 0.160.0, Claude Code via claude-agent-sdk
+0.2.135). Re-record them
 with `scripts/record_agent_fixture.py` after a CLI upgrade.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
 from tests.agents.fakes import (
+    LIVE_TURNS,
     SPECS,
     FakeProcess,
     FakeQuery,
@@ -23,8 +25,10 @@ from tests.agents.fakes import (
 )
 
 from grillmaster.agents.adapters.agy import AgyAdapter
+from grillmaster.agents.adapters.base import SchemaDelivery
 from grillmaster.agents.adapters.claude import ClaudeAdapter
 from grillmaster.agents.adapters.codex import CodexAdapter
+from grillmaster.agents.adapters.gemini import GeminiAdapter
 from grillmaster.agents.errors import (
     AgentConfigError,
     AgentError,
@@ -32,6 +36,7 @@ from grillmaster.agents.errors import (
     AgentTransientError,
 )
 from grillmaster.agents.events import Message, ToolCall, ToolResult
+from grillmaster.agents.schema import json_object_answer
 from grillmaster.core.model_spec import Backend
 
 if TYPE_CHECKING:
@@ -85,13 +90,16 @@ def replay(
     else:
         recorded = lines if lines is not None else fixture_lines(backend, fixture or "")
         spawn = FakeSpawn(FakeProcess(recorded, timed_out=timed_out, **process))
-        adapter: AgentAdapter = (
-            AgyAdapter(
-                spawn=spawn, executable="agy", list_models=lambda: [AGY_MODEL_ID]
-            )
-            if backend is Backend.AGY
-            else CodexAdapter(spawn=spawn, executable="codex")
-        )
+        adapter: AgentAdapter
+        match backend:
+            case Backend.AGY:
+                adapter = AgyAdapter(
+                    spawn=spawn, executable="agy", list_models=lambda: [AGY_MODEL_ID]
+                )
+            case Backend.GEMINI:
+                adapter = GeminiAdapter(spawn=spawn, executable="gemini")
+            case _:
+                adapter = CodexAdapter(spawn=spawn, executable="codex")
         run = Replay(adapter, spawn=spawn)
     handle = (
         run.adapter.start(request)
@@ -152,6 +160,25 @@ CASES = [
         structured={"answer": "BLUE", "items": [{"source": "a", "target": "b"}]},
         schema=True,
         resume="8e461142-3acb-43f3-8ecb-26a4491006e5",
+    ),
+    # The frames tool returns text only; the turn ends with a note.
+    Case(
+        Backend.GEMINI,
+        "live_start",
+        "addef1aa-b716-42de-8d3d-a6c4d8ce77ff",
+        tools=("get_frames",),
+        schema=True,
+    ),
+    # The answer arrives as three json-fenced deltas, joined into `text`
+    # (`SchemaDelivery.PROMPT`: the runner parses it).
+    Case(
+        Backend.GEMINI,
+        "live_frames",
+        "addef1aa-b716-42de-8d3d-a6c4d8ce77ff",
+        tools=(),
+        schema=True,
+        resume="addef1aa-b716-42de-8d3d-a6c4d8ce77ff",
+        text='```json\n{\n  "color": "green",\n  "word": "hello"\n}\n```',
     ),
     Case(
         Backend.CODEX,
@@ -274,6 +301,36 @@ def test_codex_unsupported_model_is_a_config_error(
     assert "not supported" in str(run.error)
 
 
+def test_gemini_unknown_model_is_a_config_error(
+    make_request: Callable[..., TurnRequest],
+):
+    request = make_request(spec=SPECS[Backend.GEMINI])
+    run = replay(Backend.GEMINI, request, fixture="error_model", returncode=1)
+    assert isinstance(run.error, AgentConfigError)
+    assert "Requested entity was not found" in str(run.error)
+
+
+def test_gemini_bad_request_is_a_config_error(
+    make_request: Callable[..., TurnRequest],
+):
+    # An MCP image result on gemini-3.8-flash: HTTP 400 as `"code": 400`.
+    request = make_request(spec=SPECS[Backend.GEMINI])
+    run = replay(Backend.GEMINI, request, fixture="error_tool_image", returncode=144)
+    assert isinstance(run.error, AgentConfigError)
+    assert "model turn" in str(run.error)
+
+
+def test_gemini_missing_cloud_project_is_a_config_error(
+    make_request: Callable[..., TurnRequest],
+):
+    stderr = (
+        "ProjectIdRequiredError: This account requires setting the GOOGLE_CLOUD_PROJECT"
+    )
+    request = make_request(spec=SPECS[Backend.GEMINI])
+    run = replay(Backend.GEMINI, request, lines=[], returncode=1, stderr=stderr)
+    assert isinstance(run.error, AgentConfigError)
+
+
 def test_codex_recoverable_stream_errors_do_not_fail_a_completed_turn(
     make_request: Callable[..., TurnRequest],
 ):
@@ -299,6 +356,13 @@ def _quota_stream(backend: Backend) -> dict[str, Any]:
             ),
         ]
         return {"lines": lines}
+    if backend is Backend.GEMINI:
+        error = {"type": "unknown", "message": "[API Error: RESOURCE_EXHAUSTED]"}
+        lines = [
+            '{"type":"init","session_id":"s1","model":"gemini-3.8-flash"}',
+            json.dumps({"type": "result", "status": "error", "error": error}),
+        ]
+        return {"lines": lines, "returncode": 1}
     if backend is Backend.CODEX:
         message = '{"type":"error","status":429,"error":{"message":"usage limit"}}'
         lines = [
@@ -323,7 +387,7 @@ def test_quota_failures_are_classified(
     assert isinstance(run.error, AgentQuotaError)
 
 
-@pytest.mark.parametrize("backend", [Backend.AGY, Backend.CODEX])
+@pytest.mark.parametrize("backend", [Backend.AGY, Backend.GEMINI, Backend.CODEX])
 def test_cli_exit_without_a_result_is_transient(
     backend: Backend, make_request: Callable[..., TurnRequest]
 ):
@@ -380,30 +444,40 @@ def test_agy_audio_all_heard_has_no_defects(make_request: Callable[..., TurnRequ
 # --- the live recordings (scripts/record_agent_fixture.py) ------------------------
 
 
+def _replay_live(
+    backend: Backend, make_request: Callable[..., TurnRequest]
+) -> list[FinalOutput]:
+    """Every turn of the live recording, each resuming the previous one, with
+    a `PROMPT` backend's answer parsed from its text as the runner does."""
+    finals: list[FinalOutput] = []
+    for name in LIVE_TURNS[backend]:
+        request = make_request(spec=SPECS[backend], schema=SCHEMA)
+        resume = finals[-1].session_id if finals else None
+        run = replay(backend, request, fixture=name, resume=resume)
+        final = run.final
+        assert final is not None, name
+        if name == "live_start":
+            calls = [event for event in run.events if isinstance(event, ToolCall)]
+            assert ToolCall("get_frames", {"times": [1]}) in calls
+        if run.adapter.schema_delivery is SchemaDelivery.PROMPT:
+            answer = json_object_answer(final.text, lead_in=True)
+            final = replace(final, structured=answer)
+        finals.append(final)
+    return finals
+
+
 @pytest.mark.parametrize("backend", list(Backend))
-def test_live_recording_start_turn(
+def test_live_recording_answers_after_seeing_the_frame(
     backend: Backend, make_request: Callable[..., TurnRequest]
 ):
-    request = make_request(spec=SPECS[backend], schema=SCHEMA)
-    run = replay(backend, request, fixture="live_start")
-    assert run.final is not None
-    assert run.final.structured == {"color": "green", "word": "hello"}
-    calls = [event for event in run.events if isinstance(event, ToolCall)]
-    assert ToolCall("get_frames", {"times": [1]}) in calls
+    *_, answer, _ = _replay_live(backend, make_request)
+    assert answer.structured == {"color": "green", "word": "hello"}
 
 
 @pytest.mark.parametrize("backend", list(Backend))
 def test_live_recording_resume_turn(
     backend: Backend, make_request: Callable[..., TurnRequest]
 ):
-    start = replay(
-        backend,
-        make_request(spec=SPECS[backend], schema=SCHEMA),
-        fixture="live_start",
-    )
-    assert start.final is not None
-    request = make_request(spec=SPECS[backend], schema=SCHEMA, message="fix")
-    run = replay(backend, request, fixture="live_resume", resume=start.final.session_id)
-    assert run.final is not None
-    assert run.final.session_id == start.final.session_id
-    assert run.final.structured == {"color": "green", "word": "HELLO"}
+    start, *_, repaired = _replay_live(backend, make_request)
+    assert repaired.session_id == start.session_id
+    assert repaired.structured == {"color": "green", "word": "HELLO"}

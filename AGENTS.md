@@ -48,8 +48,9 @@ order, and domain packages never import `project` or `config` — only
 - **Python 3.13+**, managed with **`uv`** + a local **`.venv`**; `uv sync`
   installs the package editable with the `dev` group (pytest, ruff,
   basedpyright, import-linter, poe).
-- **FFmpeg** on `PATH`; the agent CLIs (`agy`, `codex`; Claude runs through the
-  SDK) logged in on their subscriptions. Only ElevenLabs ASR is metered.
+- **FFmpeg** on `PATH`; the agent CLIs (`agy`, `gemini`, `codex`; Claude runs
+  through the SDK) logged in on their subscriptions (`gemini` also needs
+  `GOOGLE_CLOUD_PROJECT`). Only ElevenLabs ASR is metered.
 - Config: `grill.toml` (see `grill.example.toml`, schema `grill.schema.json`);
   `.env` holds secrets only (`ELEVENLABS_API_KEY`).
 

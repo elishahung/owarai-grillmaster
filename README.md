@@ -35,7 +35,7 @@
 
 ## 安裝
 
-需要 Python 3.13+、FFmpeg（加入 PATH）、uv，以及登入好的 agent CLI（`agy`、`codex`；Claude 走內建的 SDK）
+需要 Python 3.13+、FFmpeg（加入 PATH）、uv，以及登入好的 agent CLI（`agy`、`gemini`、`codex`；Claude 走內建的 SDK；`gemini` 的 Code Assist 登入需要環境變數 `GOOGLE_CLOUD_PROJECT`）
 
 ```bash
 uv sync
@@ -98,7 +98,7 @@ archive = 'NAS:\video\ai'          # stage 完成後的歸檔位置（打包前�
 package = 'NAS:\video\package'     # 燒錄字幕後的成品位置
 
 [agents.roles]                      # 各角色模型，格式為 backend/model[/effort]
-prepass = "agy/gemini-3.1-pro/high"  # backend：agy、claude、codex（皆為訂閱制；只有 agy 能聽音檔）
+prepass = "agy/gemini-3.1-pro/high"  # backend：agy、gemini、claude、codex（皆為訂閱制；agy 與 gemini 能聽音檔）
 chunk = "agy/gemini-3.1-pro/high"
 postprocess = "codex/gpt-6.1-sol/high"
 utility = "codex/gpt-6.1-sol/medium"

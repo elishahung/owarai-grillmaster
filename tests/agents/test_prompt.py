@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from grillmaster.agents.adapters.base import ToolImageDelivery
 from grillmaster.agents.prompt import (
     AUDIO_UNAVAILABLE_MARKER,
     audio_unavailable,
@@ -43,10 +44,19 @@ def test_frames_window_uses_the_tool_description_precision(
     assert tools_section(_frames_session(tmp_path, window)).endswith(expected)
 
 
-def test_view_file_backends_are_told_to_open_the_returned_frames(tmp_path: Path):
+@pytest.mark.parametrize(
+    ("delivery", "expected"),
+    [
+        (ToolImageDelivery.INLINE, "直接以圖片回傳"),
+        (ToolImageDelivery.VIEW_FILE, "view_file"),
+        (ToolImageDelivery.NEXT_MESSAGE, "附在下一則訊息"),
+    ],
+)
+def test_the_frames_line_says_how_the_images_arrive(
+    tmp_path: Path, delivery: ToolImageDelivery, expected: str
+):
     session = _frames_session(tmp_path, (0.0, 10.0))
-    assert "view_file" in tools_section(session, view_file=True)
-    assert "view_file" not in tools_section(session)
+    assert expected in tools_section(session, delivery)
 
 
 @pytest.mark.parametrize(

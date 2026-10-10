@@ -1,9 +1,10 @@
 """Live checks against the real agent CLIs (`pytest -m live`; spends quota).
 
-One task per backend covers the native schema, an MCP tool returning an
-image, and a repair round that resumes the session. With
-`GRILL_RECORD_FIXTURES=1` (see `scripts/record_agent_fixture.py`) the raw
-streams are saved as `tests/fixtures/agents/<backend>/live_{start,resume}.jsonl`.
+One task per backend covers the schema answer, an MCP tool yielding an
+image (returned, or attached to the next message), and a repair round that
+resumes the session. With `GRILL_RECORD_FIXTURES=1` (see
+`scripts/record_agent_fixture.py`) the raw streams are saved per turn as
+`tests/fixtures/agents/<backend>/<name>.jsonl`, named by `LIVE_TURNS`.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from pydantic import BaseModel
-from tests.agents.fakes import FIXTURES, SPECS
+from tests.agents.fakes import FIXTURES, LIVE_TURNS, SPECS
 
 from grillmaster.agents.adapters import AdapterRegistry
 from grillmaster.agents.errors import ValidationFailure
@@ -36,6 +37,7 @@ TOOL_SERVER = (sys.executable, str(Path(__file__).with_name("live_tool_server.py
 # A record that opens each turn's stream, per backend.
 TURN_MARKERS = {
     Backend.AGY: ('"event"', '"init"'),
+    Backend.GEMINI: ('"type"', '"init"'),
     Backend.CODEX: ('"type"', '"thread.started"'),
     Backend.CLAUDE: ('"SystemMessage"', '"init"'),
 }
@@ -111,6 +113,7 @@ def _record(backend: Backend, raw: Path) -> None:
             turns.append([])
         turns[-1].append(line)
     target = FIXTURES / backend
-    for name, lines in zip(("live_start", "live_resume"), turns, strict=False):
+    target.mkdir(exist_ok=True)
+    for name, lines in zip(LIVE_TURNS[backend], turns, strict=True):
         json.loads(lines[0])  # fail loudly on a garbled recording
         (target / f"{name}.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")

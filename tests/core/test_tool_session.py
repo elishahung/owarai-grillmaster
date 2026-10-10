@@ -56,7 +56,13 @@ def test_manifest_matches_the_documented_shape(tmp_path: Path):
     ).write(path)
     data = json.loads(path.read_text(encoding="utf-8"))
     assert set(data) == {"project_root", "frames", "check_srt"}
-    assert set(data["frames"]) == {"video", "frames_dir", "window", "max_side"}
+    assert set(data["frames"]) == {
+        "video",
+        "frames_dir",
+        "window",
+        "max_side",
+        "pending_frames",
+    }
     assert data["frames"]["window"] == [12.5, 99.0]
     assert data["check_srt"] is None
 

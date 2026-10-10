@@ -2,7 +2,9 @@
 
 Frames are also kept under the manifest's `frames_dir` for auditing; the
 text item lists each timestamp with its file path, so a backend that drops
-image results can still open the files itself.
+image results can still open the files itself. With the manifest's
+`pending_frames` the images are not returned at all: their paths go to that
+file for the runner to attach to the next message.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.fastmcp.utilities.types import Image
 from mcp.types import ImageContent, TextContent
 
+from grillmaster.core.tool_session import leave_pending_frames
 from grillmaster.media import probe
 from grillmaster.media.errors import MediaError
 from grillmaster.media.frames import extract_frames
@@ -24,6 +27,12 @@ if TYPE_CHECKING:
     from grillmaster.media.ffmpeg import FfmpegRunner
 
 MAX_FRAMES_PER_CALL = 20
+# The reply's tail when the frames are left for the next message.
+PENDING_NOTE = (
+    "The images are not in this result: they are attached to the next "
+    "message. End this turn now with a short note and continue once they "
+    "arrive."
+)
 
 
 class FrameGrabber:
@@ -37,9 +46,14 @@ class FrameGrabber:
         """Tool description with this session's window and limit."""
         start, end = self._config.window
         end_text = "the end of the video (exclusive)" if end is None else f"{end:.3f}s"
+        delivery = (
+            "attach them to your next message"
+            if self._config.pending_frames is not None
+            else "return them as images"
+        )
         return (
             "Extract still frames from the video at the given timestamps "
-            "(seconds) and return them as images. Use it to read on-screen "
+            f"(seconds) and {delivery}. Use it to read on-screen "
             "text or check who is speaking. "
             f"Timestamps must lie between {start:.3f}s and {end_text}; "
             f"at most {MAX_FRAMES_PER_CALL} per call."
@@ -60,6 +74,10 @@ class FrameGrabber:
         listing = "\n".join(
             f"{time:.3f}s: {path}" for time, path in zip(timestamps, paths, strict=True)
         )
+        if (pending := self._config.pending_frames) is not None:
+            leave_pending_frames(pending, paths)
+            text = f"{len(paths)} frame(s) extracted:\n{listing}\n{PENDING_NOTE}"
+            return [TextContent(type="text", text=text)]
         header = TextContent(
             type="text",
             text=f"{len(paths)} frame(s), images follow in this order:\n{listing}",

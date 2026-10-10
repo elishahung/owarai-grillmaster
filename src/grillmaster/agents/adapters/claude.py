@@ -66,6 +66,7 @@ from grillmaster.agents.adapters.base import (
     FinalOutput,
     MediaDelivery,
     SchemaDelivery,
+    ToolImageDelivery,
     Turn,
     TurnRequest,
 )
@@ -144,14 +145,14 @@ class ClaudeAdapter:
     capabilities = frozenset(
         {
             Capability.IMAGE_INPUT,
-            Capability.NATIVE_SCHEMA,
+            Capability.SCHEMA_OUTPUT,
             Capability.RESUME,
             Capability.MCP,
-            Capability.MCP_IMAGE_RESULT,
             Capability.WEB_SEARCH,
         }
     )
     media_delivery = MediaDelivery.ATTACHED
+    tool_image_delivery = ToolImageDelivery.INLINE
     schema_delivery = SchemaDelivery.NATIVE
 
     def __init__(self, *, query_fn: QueryFn = query) -> None:

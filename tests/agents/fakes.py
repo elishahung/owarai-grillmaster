@@ -16,6 +16,7 @@ from grillmaster.agents.adapters.base import (
     FinalOutput,
     MediaDelivery,
     SchemaDelivery,
+    ToolImageDelivery,
     TurnDefect,
     TurnRequest,
 )
@@ -36,8 +37,17 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "agents"
 # replayed recordings were made with them.
 SPECS = {
     Backend.AGY: ModelSpec(Backend.AGY, "gemini-3.8-flash", Effort.LOW),
+    Backend.GEMINI: ModelSpec(Backend.GEMINI, "gemini-3.8-flash", Effort.LOW),
     Backend.CODEX: ModelSpec(Backend.CODEX, "gpt-6-astra", Effort.LOW),
     Backend.CLAUDE: ModelSpec(Backend.CLAUDE, "claude-haiku-5-5", Effort.LOW),
+}
+
+
+# The turns of each backend's live recording (`test_live.py`): the start
+# turn, any turn that delivers frames (`ToolImageDelivery.NEXT_MESSAGE`),
+# then the repair turn.
+LIVE_TURNS = dict.fromkeys(Backend, ("live_start", "live_resume")) | {
+    Backend.GEMINI: ("live_start", "live_frames", "live_resume")
 }
 
 
@@ -229,6 +239,7 @@ class FakeAdapter:
         backend: Backend = Backend.CODEX,
         capabilities: frozenset[Capability] | None = None,
         media_delivery: MediaDelivery = MediaDelivery.ATTACHED,
+        tool_image_delivery: ToolImageDelivery = ToolImageDelivery.INLINE,
         schema_delivery: SchemaDelivery = SchemaDelivery.NATIVE,
         script: Callable[[Call], Turn] | None = None,
         preflight_error: Exception | None = None,
@@ -238,6 +249,7 @@ class FakeAdapter:
             capabilities if capabilities is not None else frozenset(Capability)
         )
         self.media_delivery = media_delivery
+        self.tool_image_delivery = tool_image_delivery
         self.schema_delivery = schema_delivery
         self._turns = list(turns or [])
         self._script = script

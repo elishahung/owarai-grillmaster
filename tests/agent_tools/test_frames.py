@@ -13,6 +13,8 @@ from grillmaster.agent_tools.frames import MAX_FRAMES_PER_CALL, FrameGrabber
 from grillmaster.media.errors import MediaError
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from tests.fakes import FakeFfmpeg
 
     from grillmaster.core.tool_session import FramesTool
@@ -38,6 +40,25 @@ def test_returns_a_listing_then_one_image_per_frame(
         assert base64.b64decode(image.data) == FAKE_JPEG
     assert first.exists()
     assert second.exists()
+
+
+def test_pending_frames_are_left_for_the_next_message_instead_of_returned(
+    frames_config: FramesTool, fake_ffmpeg: FakeFfmpeg, tmp_path: Path
+):
+    pending = tmp_path / "frames_pending.txt"
+    config = frames_config.model_copy(update={"pending_frames": pending})
+    grabber = FrameGrabber(config, fake_ffmpeg)
+    assert "attach them to your next message" in grabber.describe()
+
+    (note,) = grabber.get_frames([12.5])
+    (again,) = grabber.get_frames([42.0])
+    assert isinstance(note, TextContent)
+    assert isinstance(again, TextContent)
+    assert "next message" in note.text
+    assert pending.read_text(encoding="utf-8").splitlines() == [
+        str(config.frames_dir / "frame_000012.500_768.jpg"),
+        str(config.frames_dir / "frame_000042.000_768.jpg"),
+    ]
 
 
 def test_duration_is_probed_once(grabber: FrameGrabber, fake_ffmpeg: FakeFfmpeg):

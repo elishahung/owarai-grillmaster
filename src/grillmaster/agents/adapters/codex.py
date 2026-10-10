@@ -29,6 +29,7 @@ from grillmaster.agents.adapters.base import (
     FinalOutput,
     MediaDelivery,
     SchemaDelivery,
+    ToolImageDelivery,
     TurnRequest,
 )
 from grillmaster.agents.errors import AgentTransientError, classify_failure
@@ -71,14 +72,14 @@ class CodexAdapter:
         {
             Capability.IMAGE_INPUT,
             Capability.IMAGE_GENERATION,
-            Capability.NATIVE_SCHEMA,
+            Capability.SCHEMA_OUTPUT,
             Capability.RESUME,
             Capability.MCP,
-            Capability.MCP_IMAGE_RESULT,
             Capability.WEB_SEARCH,
         }
     )
     media_delivery = MediaDelivery.ATTACHED
+    tool_image_delivery = ToolImageDelivery.INLINE
     schema_delivery = SchemaDelivery.NATIVE
 
     def __init__(

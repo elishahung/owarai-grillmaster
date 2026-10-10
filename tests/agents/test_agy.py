@@ -7,12 +7,11 @@ from typing import TYPE_CHECKING
 import pytest
 from tests.agents.fakes import FakeProcess, FakeSpawn, fixture_lines
 
+from grillmaster.agents.adapters._google import API_KEY_ENV_VARS
 from grillmaster.agents.adapters.agy import (
-    API_KEY_ENV_VARS,
     PROBE_FAILURE_TTL_S,
     AgyAdapter,
     AgyTurnParser,
-    json_object_answer,
     parse_model_list,
 )
 from grillmaster.agents.adapters.base import McpServer
@@ -229,22 +228,6 @@ def test_mcp_server_goes_into_the_workspace_config(
     }
     _run(adapter, make_request(spec=PRO_HIGH))
     assert not config_path.exists()
-
-
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        ('{"a": 1}', {"a": 1}),
-        ('```json\n{"a": 1}\n```\n', {"a": 1}),
-        ('```\n{"a": 1}\n```', {"a": 1}),
-        ('Here it is:\n```json\n{"a": 1}\n```', None),
-        ("```json\n[1, 2]\n```", None),
-        ("blue", None),
-        ("", None),
-    ],
-)
-def test_json_object_answer_strips_one_fence(text: str, expected: object):
-    assert json_object_answer(text) == expected
 
 
 def _turn_without_finish(answer: str, *, schema: bool) -> object:

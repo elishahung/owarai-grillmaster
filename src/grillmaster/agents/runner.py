@@ -40,8 +40,8 @@ from grillmaster.agents import prompt
 from grillmaster.agents.adapters.base import (
     Capability,
     McpServer,
-    MediaDelivery,
     SchemaDelivery,
+    ToolImageDelivery,
     TurnDefect,
     TurnRequest,
 )
@@ -61,7 +61,11 @@ from grillmaster.agents.events import (
     summarize,
     summarize_final,
 )
-from grillmaster.agents.schema import StrictSchemaError, strict_json_schema
+from grillmaster.agents.schema import (
+    StrictSchemaError,
+    json_object_answer,
+    strict_json_schema,
+)
 from grillmaster.agents.task import (
     AgentResult,
     FilesOutput,
@@ -72,6 +76,7 @@ from grillmaster.core.fs import atomic_write_text
 from grillmaster.core.json_artifact import write_model
 from grillmaster.core.paths import attempt_path
 from grillmaster.core.process import ABORT, ProcessAbortedError
+from grillmaster.core.tool_session import take_pending_frames
 from grillmaster.events.context import current_stage, task_scope
 from grillmaster.events.types import (
     ActivityKind,
@@ -106,6 +111,11 @@ TOOLS_FILE = "tools.json"
 SCHEMA_FILE = "schema.json"
 RAW_FILE = "raw.jsonl"
 RESULT_FILE = "result.json"
+# Frames the tool server saved for the next message (`ToolImageDelivery.NEXT_MESSAGE`).
+PENDING_FRAMES_FILE = "frames_pending.txt"
+# Turns of one session that may end asking for frames; a model that keeps
+# asking is stuck, not still reading.
+MAX_FRAME_TURNS = 8
 
 # Set while the current context holds a slot; a nested `run` would wait for
 # a slot its own caller holds.
@@ -125,6 +135,8 @@ class SessionRecord(BaseModel):
     effort: str
     outcome: SessionOutcome
     repairs: int
+    # Turns that delivered requested frames (`ToolImageDelivery.NEXT_MESSAGE`).
+    frame_turns: int
     elapsed_s: float
     usage: dict[str, int]
     error: str | None
@@ -156,6 +168,7 @@ class _SessionFiles:
 class _SessionState:
     session_id: str | None = None
     repairs: int = 0
+    frame_turns: int = 0
     # Summed over the session's turns.
     usage: Counter[str] = field(default_factory=Counter)
 
@@ -315,7 +328,7 @@ class AgentRunner:
                 f"{task.name}: no model configured for role {task.role}"
             )
         adapter = self._adapters(spec.backend)
-        requires = _required_capabilities(task)
+        requires = _required_capabilities(task, adapter.tool_image_delivery)
         missing = sorted(requires - adapter.capabilities)
         if missing:
             raise AgentConfigError(
@@ -346,24 +359,34 @@ class AgentRunner:
     ) -> _SessionFiles:
         """A fresh session directory holding the files every turn reuses."""
         task, adapter = prepared.task, prepared.adapter
+        tools = task.tools
+        if (
+            tools is not None
+            and tools.frames is not None
+            and adapter.tool_image_delivery is ToolImageDelivery.NEXT_MESSAGE
+        ):
+            pending = session_dir / PENDING_FRAMES_FILE
+            frames = tools.frames.model_copy(update={"pending_frames": pending})
+            tools = tools.model_copy(update={"frames": frames})
         message = prompt.compose_message(
             task.instructions,
             task.prompt,
-            tools=task.tools,
+            tools=tools,
             images=prepared.images,
             audio=prepared.audio,
-            view_file=adapter.media_delivery is MediaDelivery.VIEW_FILE,
-            finish_tool=prepared.schema is not None
-            and adapter.schema_delivery is SchemaDelivery.FINISH_TOOL,
+            media_delivery=adapter.media_delivery,
+            tool_images=adapter.tool_image_delivery,
+            schema=prepared.schema,
+            schema_delivery=adapter.schema_delivery,
         )
         if session_dir.exists():
             shutil.rmtree(session_dir)
         session_dir.mkdir(parents=True)
         atomic_write_text(session_dir / PROMPT_FILE, message + "\n")
         mcp = None
-        if task.tools is not None:
+        if tools is not None:
             manifest = session_dir / TOOLS_FILE
-            task.tools.write(manifest)
+            tools.write(manifest)
             command, *args = self._tool_server
             mcp = McpServer(command, (*args, "--session", str(manifest)))
         schema_path = None
@@ -439,18 +462,39 @@ class AgentRunner:
         workdir: Path,
         state: _SessionState,
     ) -> T:
+        """Turns until an accepted output. A turn that asked for frames
+        (`ToolImageDelivery.NEXT_MESSAGE`) is answered with them, not judged:
+        it was told to end with a note while waiting (which a `TextOutput`
+        would accept), and its output was written before the model saw them.
+        Otherwise a defect or a failed validation is answered with a repair
+        round."""
         task, adapter = prepared.task, prepared.adapter
+        pending_frames = request.session_dir / PENDING_FRAMES_FILE
         handle = adapter.start(request)
         while True:
             final = self._consume(task.name, handle, audio=bool(prepared.audio))
             state.session_id = final.session_id or state.session_id
             state.usage.update(final.usage)
+            if frames := take_pending_frames(pending_frames):
+                if state.frame_turns >= MAX_FRAME_TURNS:
+                    raise AgentOutputError(
+                        f"{task.name}: still asking for frames after "
+                        f"{state.frame_turns} frame turn(s)"
+                    )
+                self._check_resumable(task.name, final, "a frames turn")
+                state.frame_turns += 1
+                summary = f"get_frames: {len(frames)} frame(s) attached"
+                self._activity(task.name, ActivityKind.TOOL_RESULT, summary)
+                message = prompt.frames_message()
+                turn = replace(request, message=message, images=frames, audio=())
+                handle = adapter.resume(final.session_id, turn)
+                continue
             # The adapter's own findings come first: the output of a turn
             # that skipped its inputs is not worth judging.
             defect = _merge_defects(final.defects) if final.defects else None
             if defect is None:
                 try:
-                    return self._accept(task, final, workdir)
+                    return self._accept(prepared, final, workdir)
                 except ValidationFailure as failure:
                     defect = TurnDefect(str(failure))
             if state.repairs >= task.max_repairs:
@@ -458,12 +502,7 @@ class AgentRunner:
                     f"{task.name}: output still invalid after "
                     f"{state.repairs} repair round(s): {defect.message}"
                 )
-            if not final.session_id:
-                raise AgentTransientError(
-                    f"{task.name}: no session id to resume for a repair"
-                )
-            if self._abort.is_set():
-                raise self._cancelled(task.name, "a repair")
+            self._check_resumable(task.name, final, "a repair")
             state.repairs += 1
             self._activity(task.name, ActivityKind.REPAIR, first_line(defect.message))
             handle = adapter.resume(
@@ -476,7 +515,28 @@ class AgentRunner:
                 ),
             )
 
-    def _accept[T](self, task: AgentTask[T], final: FinalOutput, workdir: Path) -> T:
+    def _check_resumable(self, task_name: str, final: FinalOutput, step: str) -> None:
+        """Raise unless the session can take `step`, another turn."""
+        if not final.session_id:
+            raise AgentTransientError(
+                f"{task_name}: no session id to resume for {step}"
+            )
+        if self._abort.is_set():
+            raise self._cancelled(task_name, step)
+
+    def _accept[T](
+        self, prepared: _Prepared[T], final: FinalOutput, workdir: Path
+    ) -> T:
+        task = prepared.task
+        if (
+            prepared.schema is not None
+            and prepared.adapter.schema_delivery is SchemaDelivery.PROMPT
+        ):
+            # The other half of `prompt.answer_schema_section`. A model may
+            # write prose or leaked reasoning before the closing json block;
+            # a repair round for that would resend the whole session.
+            answer = json_object_answer(final.text, lead_in=True)
+            final = replace(final, structured=answer)
         output = task.output.parse(final, workdir)
         if task.validate is not None:
             task.validate(output)
@@ -606,6 +666,7 @@ class AgentRunner:
                 effort=str(spec.effort),
                 outcome=outcome,
                 repairs=state.repairs,
+                frame_turns=state.frame_turns,
                 elapsed_s=round(elapsed, 3),
                 usage=usage,
                 error=None if error is None else f"{type(error).__name__}: {error}",
@@ -630,11 +691,14 @@ class AgentRunner:
         self._events.emit(AgentActivity(task=task_name, kind=kind, summary=summary))
 
 
-def _required_capabilities(task: AgentTask[Any]) -> frozenset[Capability]:
-    """What the task declares plus what its inputs and output imply."""
+def _required_capabilities(
+    task: AgentTask[Any], tool_images: ToolImageDelivery
+) -> frozenset[Capability]:
+    """What the task declares plus what its inputs and output imply, and,
+    for frames attached to the next message, a resumed turn with images."""
     required = set(task.requires)
     if isinstance(task.output, SchemaOutput):
-        required.add(Capability.NATIVE_SCHEMA)
+        required.add(Capability.SCHEMA_OUTPUT)
     if task.max_repairs > 0:
         required.add(Capability.RESUME)
     if task.images:
@@ -643,8 +707,11 @@ def _required_capabilities(task: AgentTask[Any]) -> frozenset[Capability]:
         required.add(Capability.AUDIO_INPUT)
     if task.tools is not None:
         required.add(Capability.MCP)
-        if task.tools.frames is not None:
-            required.add(Capability.MCP_IMAGE_RESULT)
+        if (
+            task.tools.frames is not None
+            and tool_images is ToolImageDelivery.NEXT_MESSAGE
+        ):
+            required |= {Capability.RESUME, Capability.IMAGE_INPUT}
     return frozenset(required)
 
 

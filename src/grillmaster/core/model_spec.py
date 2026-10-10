@@ -15,6 +15,7 @@ from enum import StrEnum
 
 class Backend(StrEnum):
     AGY = "agy"
+    GEMINI = "gemini"
     CODEX = "codex"
     CLAUDE = "claude"
 

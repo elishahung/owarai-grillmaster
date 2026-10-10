@@ -44,7 +44,7 @@ class TextOutput(OutputSpec[str]):
 
 @dataclass(frozen=True, slots=True)
 class SchemaOutput[M: BaseModel](OutputSpec[M]):
-    """A `model` instance from the backend's native structured output."""
+    """A `model` instance from the backend's schema answer (`FinalOutput.structured`)."""
 
     model: type[M]
 
@@ -52,8 +52,8 @@ class SchemaOutput[M: BaseModel](OutputSpec[M]):
     def parse(self, final: FinalOutput, workdir: Path) -> M:
         if final.structured is None:
             raise ValidationFailure(
-                "沒有收到結構化輸出：請依要求的 JSON schema，"
-                "透過結構化輸出回傳完整的最終結果。"
+                "沒有收到 JSON 結果：請依要求的 JSON schema 與提交方式，"
+                "回傳完整的最終結果。"
             )
         try:
             return self.model.model_validate(final.structured)

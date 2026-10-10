@@ -40,6 +40,10 @@ from grillmaster.events.types import SessionOutcome
             None,
             AgentConfigError,
         ),
+        # Google's error bodies carry the status as `code`.
+        ('[{"error": {"code": 400, "message": "bad"}}]', None, AgentConfigError),
+        # A longer number is no HTTP status.
+        ('{"error": {"code": 40001, "message": "bad"}}', None, AgentTransientError),
         ("stream disconnected", None, AgentTransientError),
         ("overloaded", 529, AgentTransientError),
         # Whole words only: these merely contain a marker.

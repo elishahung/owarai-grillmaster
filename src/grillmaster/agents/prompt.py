@@ -1,23 +1,33 @@
 """Prompt sections the runner adds around a stage's own text.
 
 Stages write what to do; this module adds how to reach the grill tools,
-how to open media on backends that need `view_file`, how to submit a
-schema answer on backends that take it through a `finish` tool, the
+how to open media on backends that need `view_file`, the message that
+delivers requested frames on backends whose tool results cannot carry
+images, how to submit a
+schema answer on backends that take it through a `finish` tool or as the
+final message, the
 audio-unavailable protocol, and the repair-round message. Detailed limits
 stay in each MCP tool's own description.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from typing import TYPE_CHECKING
 
+from grillmaster.agents.adapters.base import (
+    MediaDelivery,
+    SchemaDelivery,
+    ToolImageDelivery,
+)
 from grillmaster.core.prompts import join_sections
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
+    from grillmaster.agents.schema import JsonSchema
     from grillmaster.core.tool_session import ToolSession
 
 # The line a model writes when it cannot hear its audio (`audio_check_section`).
@@ -37,37 +47,59 @@ def compose_message(
     tools: ToolSession | None,
     images: Sequence[Path] = (),
     audio: Sequence[Path] = (),
-    view_file: bool = False,
-    finish_tool: bool = False,
+    media_delivery: MediaDelivery = MediaDelivery.ATTACHED,
+    tool_images: ToolImageDelivery = ToolImageDelivery.INLINE,
+    schema: JsonSchema | None = None,
+    schema_delivery: SchemaDelivery = SchemaDelivery.NATIVE,
 ) -> str:
-    """The single user message every backend receives.
+    """The single user message every backend receives, shaped by how the
+    backend takes input media, frames-tool images and a schema answer.
 
-    `view_file`: the model opens media (inputs and tool images) itself with
-    `view_file`, so input paths are listed. `finish_tool`: the schema answer
-    is submitted through the CLI's `finish` tool. Audio inputs bring the
-    audio-unavailable protocol.
+    `VIEW_FILE` media: the model opens them itself, so their paths are
+    listed. A `schema` on a `FINISH_TOOL` backend is submitted through the
+    CLI's `finish` tool; on a `PROMPT` backend the message states it. Audio
+    inputs bring the audio-unavailable protocol.
     """
+    submit = None
+    if schema is not None:
+        match schema_delivery:
+            case SchemaDelivery.FINISH_TOOL:
+                submit = finish_section()
+            case SchemaDelivery.PROMPT:
+                submit = answer_schema_section(schema)
+            case SchemaDelivery.NATIVE:
+                pass
+    view_file = media_delivery is MediaDelivery.VIEW_FILE
     return join_sections(
         instructions,
         prompt,
-        tools_section(tools, view_file=view_file) if tools is not None else None,
+        tools_section(tools, tool_images) if tools is not None else None,
         view_file_section(images, audio) if view_file else None,
         audio_check_section() if audio else None,
-        finish_section() if finish_tool else None,
+        submit,
     )
 
 
-def tools_section(tools: ToolSession, *, view_file: bool = False) -> str:
+def tools_section(
+    tools: ToolSession, tool_images: ToolImageDelivery = ToolImageDelivery.INLINE
+) -> str:
     lines: list[str] = []
     if tools.frames is not None:
         start, end = tools.frames.window
         until = f"{end:.3f} 秒" if end is not None else "影片結尾"
-        returned = (
-            "回傳畫面的圖片檔路徑；要看到畫面，須在下一輪用 view_file "
-            "同時開啟全部回傳的路徑"
-            if view_file
-            else "直接以圖片回傳"
-        )
+        match tool_images:
+            case ToolImageDelivery.INLINE:
+                returned = "直接以圖片回傳"
+            case ToolImageDelivery.VIEW_FILE:
+                returned = (
+                    "回傳畫面的圖片檔路徑；要看到畫面，須在下一輪用 view_file "
+                    "同時開啟全部回傳的路徑"
+                )
+            case ToolImageDelivery.NEXT_MESSAGE:
+                returned = (
+                    "畫面不在工具結果裡，而是附在下一則訊息；"
+                    "呼叫後就簡短說明並結束這一輪，收到畫面再繼續"
+                )
         lines.append(
             f"- `get_frames(times)`：擷取影片指定秒數的畫面，{returned}"
             f"（時間需介於 {start:.3f} 秒與{until}之間）。"
@@ -130,6 +162,23 @@ def finish_section() -> str:
         "只有 finish 的參數算是提交；不要把 JSON 寫成文字訊息，"
         "也不要在呼叫 finish 之前先把結果貼出來。"
     )
+
+
+def answer_schema_section(schema: JsonSchema) -> str:
+    """How a schema answer is submitted on a backend without a structured
+    channel: the final message is the JSON object itself."""
+    return (
+        "【提交結果】\n"
+        "完成後，最後一則訊息只輸出一個符合下列 JSON Schema 的 JSON 物件，"
+        "前後不要加任何說明文字（可以包在一個 ```json 區塊裡）：\n"
+        f"```json\n{json.dumps(schema, ensure_ascii=False)}\n```"
+    )
+
+
+def frames_message() -> str:
+    """The whole user message that delivers frames the model asked for
+    (`ToolImageDelivery.NEXT_MESSAGE`); the backend attaches the images."""
+    return "【畫面】你用 get_frames 要求的畫面已附在這則訊息，請據此繼續完成任務。"
 
 
 def repair_message(failure: str) -> str:

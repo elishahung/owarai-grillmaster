@@ -12,11 +12,15 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import model_validator
 
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.models import FrozenModel
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 SESSION_ENV_VAR = "GRILL_TOOL_SESSION"
 
@@ -27,13 +31,19 @@ class ToolName(StrEnum):
 
 
 class FramesTool(FrozenModel):
-    """`get_frames`: stills from `video`, cached under `frames_dir`."""
+    """`get_frames`: stills from `video`, cached under `frames_dir`.
+
+    With `pending_frames` (set by the agent runner for a backend whose tool
+    results cannot carry images) the tool returns text only and appends each
+    frame's path to that file, one per line; the runner attaches them to the
+    session's next message."""
 
     video: Path
     frames_dir: Path
     # Seconds; `None` as the end means "to the end of the video".
     window: tuple[float, float | None]
     max_side: int
+    pending_frames: Path | None = None
 
     @model_validator(mode="after")
     def _check_ranges(self) -> FramesTool:
@@ -43,6 +53,22 @@ class FramesTool(FrozenModel):
         if self.max_side <= 0:
             raise ValueError(f"max_side must be positive: {self.max_side}")
         return self
+
+
+def leave_pending_frames(path: Path, frames: Iterable[Path]) -> None:
+    """Add `frames` to the pending list at `path` (`FramesTool.pending_frames`)."""
+    with path.open("a", encoding="utf-8") as handle:
+        handle.writelines(f"{frame}\n" for frame in frames)
+
+
+def take_pending_frames(path: Path) -> tuple[Path, ...]:
+    """The frames pending at `path`, once each; the list is removed so a
+    frame is delivered once. Empty when nothing is pending."""
+    if not path.is_file():
+        return ()
+    lines = path.read_text(encoding="utf-8").splitlines()
+    path.unlink()
+    return tuple(dict.fromkeys(Path(line) for line in lines if line.strip()))
 
 
 class SrtCheckTool(FrozenModel):

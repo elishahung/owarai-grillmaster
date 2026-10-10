@@ -29,11 +29,10 @@ class Capability(StrEnum):
     AUDIO_INPUT = "audio_input"
     IMAGE_INPUT = "image_input"
     IMAGE_GENERATION = "image_generation"
-    NATIVE_SCHEMA = "native_schema"
+    # A schema-bound JSON answer (see `SchemaDelivery` for how).
+    SCHEMA_OUTPUT = "schema_output"
     RESUME = "resume"
     MCP = "mcp"
-    # Image content returned by an MCP tool reaches the model.
-    MCP_IMAGE_RESULT = "mcp_image_result"
     WEB_SEARCH = "web_search"
 
 
@@ -47,8 +46,21 @@ class MediaDelivery(StrEnum):
     VIEW_FILE = "view_file"
 
 
+class ToolImageDelivery(StrEnum):
+    """How images from the frames tool reach the model."""
+
+    # The tool result carries them.
+    INLINE = "inline"
+    # The CLI offloads them to files the model must open with `view_file`
+    # in another turn; the runner writes that instruction.
+    VIEW_FILE = "view_file"
+    # The CLI cannot take image tool results: the tool returns text only,
+    # and the runner attaches the frames to the session's next message.
+    NEXT_MESSAGE = "next_message"
+
+
 class SchemaDelivery(StrEnum):
-    """How a schema-bound answer reaches the CLI's structured channel."""
+    """How a schema-bound answer is produced."""
 
     # The CLI steers the model into its structured channel itself.
     NATIVE = "native"
@@ -56,6 +68,10 @@ class SchemaDelivery(StrEnum):
     # arguments; a JSON text message is not submitted. The runner writes
     # that instruction.
     FINISH_TOOL = "finish_tool"
+    # The CLI has no structured channel: the runner states the schema in the
+    # message, and the adapter reads the JSON object the model writes as
+    # its final message.
+    PROMPT = "prompt"
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,8 +123,8 @@ class FinalOutput:
     session_id: str
     # The final assistant message.
     text: str
-    # The native structured-output channel's JSON value; `None` when the
-    # turn produced none (no schema, or the model skipped the channel).
+    # The schema-bound JSON value; `None` when the turn produced none (no
+    # schema, or the model skipped the channel).
     structured: object | None
     # Normalized token counts (see `events.normalize_usage`).
     usage: Mapping[str, int] = field(default_factory=dict)
@@ -136,6 +152,9 @@ class AgentAdapter(Protocol):
 
     @property
     def media_delivery(self) -> MediaDelivery: ...
+
+    @property
+    def tool_image_delivery(self) -> ToolImageDelivery: ...
 
     @property
     def schema_delivery(self) -> SchemaDelivery: ...

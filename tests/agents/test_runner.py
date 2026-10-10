@@ -19,11 +19,13 @@ from tests.agents.fakes import (
     make_task,
 )
 from tests.agents.fakes import make_runner as build_runner
+from tests.fakes import frames_tool
 
 from grillmaster.agents.adapters.base import (
     Capability,
     MediaDelivery,
     SchemaDelivery,
+    ToolImageDelivery,
     TurnDefect,
 )
 from grillmaster.agents.errors import (
@@ -39,7 +41,7 @@ from grillmaster.agents.errors import (
 )
 from grillmaster.agents.events import Message, Thought, ToolCall, ToolResult
 from grillmaster.agents.prompt import AUDIO_UNAVAILABLE_MARKER
-from grillmaster.agents.runner import AgentRunner, SessionRecord
+from grillmaster.agents.runner import MAX_FRAME_TURNS, AgentRunner, SessionRecord
 from grillmaster.agents.task import (
     AgentJob,
     AgentResult,
@@ -50,7 +52,11 @@ from grillmaster.agents.task import (
 )
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec, Role
 from grillmaster.core.process import ABORT, ProcessAbortedError, kill_all
-from grillmaster.core.tool_session import FramesTool, ToolSession
+from grillmaster.core.tool_session import (
+    FramesTool,
+    ToolSession,
+    leave_pending_frames,
+)
 from grillmaster.events.context import stage_scope
 from grillmaster.events.types import (
     ActivityKind,
@@ -64,6 +70,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from tests.fakes import RecordingSink
+
+    from grillmaster.agents.adapters.base import TurnRequest
 
 SPEC = RUNNER_SPEC
 
@@ -255,10 +263,9 @@ def test_without_workdir_a_temp_dir_is_used_and_removed(
     [
         (Capability.AUDIO_INPUT, {"audio": ("a.ogg",)}),
         (Capability.IMAGE_INPUT, {"images": ("a.png",)}),
-        (Capability.NATIVE_SCHEMA, {"output": SchemaOutput(Answer)}),
+        (Capability.SCHEMA_OUTPUT, {"output": SchemaOutput(Answer)}),
         (Capability.RESUME, {}),
         (Capability.MCP, {"tools": "frames"}),
-        (Capability.MCP_IMAGE_RESULT, {"tools": "frames"}),
         (Capability.IMAGE_GENERATION, {"requires": {Capability.IMAGE_GENERATION}}),
         (Capability.WEB_SEARCH, {"requires": {Capability.WEB_SEARCH}}),
     ],
@@ -276,16 +283,7 @@ def test_missing_capability_fails_before_any_session(
             path.write_bytes(b"x")
             overrides[key] = (path,)
     if overrides.get("tools") == "frames":
-        overrides["tools"] = ToolSession(
-            project_root=tmp_path,
-            frames=FramesTool(
-                video=tmp_path / "v.mp4",
-                frames_dir=tmp_path / "f",
-                window=(0.0, None),
-                max_side=768,
-            ),
-            check_srt=None,
-        )
+        overrides["tools"] = _frames_tools(tmp_path)
     overrides.setdefault("output", TextOutput())
     if "requires" in overrides:
         overrides["requires"] = frozenset(overrides["requires"])
@@ -294,6 +292,21 @@ def test_missing_capability_fails_before_any_session(
         make_runner(adapter).run(make_task(tmp_path, **overrides))
     assert adapter.calls == []
     assert recording_sink.events == []
+
+
+@pytest.mark.parametrize("missing", [Capability.RESUME, Capability.IMAGE_INPUT])
+def test_frames_for_the_next_message_need_a_resumed_turn_with_images(
+    missing: Capability, tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    adapter = FakeAdapter(
+        capabilities=frozenset(Capability) - {missing},
+        tool_image_delivery=ToolImageDelivery.NEXT_MESSAGE,
+    )
+    task = make_task(
+        tmp_path, TextOutput(), tools=_frames_tools(tmp_path), max_repairs=0
+    )
+    with pytest.raises(AgentConfigError, match=str(missing)):
+        make_runner(adapter).run(task)
 
 
 def test_preflight_failure_happens_before_any_session(
@@ -407,7 +420,7 @@ def test_missing_structured_output_is_repaired(
     )
     result = make_runner(adapter).run(make_task(tmp_path, SchemaOutput(Answer)))
     assert result.output.color == "red"
-    assert "結構化輸出" in adapter.calls[1].request.message
+    assert "沒有收到 JSON 結果" in adapter.calls[1].request.message
 
 
 def test_repairs_exhausted_is_an_output_error_without_a_new_session(
@@ -524,29 +537,141 @@ def test_attached_media_are_not_listed_in_the_prompt(
     assert "poster.jpg" not in request.message
 
 
+def _frames_tools(tmp_path: Path) -> ToolSession:
+    return ToolSession(
+        project_root=tmp_path, frames=frames_tool(tmp_path), check_srt=None
+    )
+
+
+def _ask_for_frames(*frames: Path) -> Callable[[TurnRequest], None]:
+    """A turn hook playing the tool server: it leaves `frames` pending."""
+
+    def leave(request: TurnRequest) -> None:
+        manifest = ToolSession.load(request.session_dir / "tools.json")
+        assert manifest.frames is not None
+        assert manifest.frames.pending_frames is not None
+        leave_pending_frames(manifest.frames.pending_frames, frames)
+
+    return leave
+
+
+def test_requested_frames_come_with_the_next_message_without_a_repair(
+    tmp_path: Path,
+    make_runner: Callable[..., AgentRunner],
+    recording_sink: RecordingSink,
+):
+    frame = tmp_path / "frames" / "f1.jpg"
+    adapter = FakeAdapter(
+        [
+            Turn(final=final("waiting for frames"), on_start=_ask_for_frames(frame)),
+            Turn(final=final("seen")),
+        ],
+        tool_image_delivery=ToolImageDelivery.NEXT_MESSAGE,
+    )
+    task = make_task(tmp_path, TextOutput(), tools=_frames_tools(tmp_path))
+    result = make_runner(adapter).run(task)
+
+    assert (result.output, result.repairs) == ("seen", 0)
+    start, frames_turn = adapter.calls
+    assert "附在下一則訊息" in start.request.message
+    assert frames_turn.kind == "resume"
+    assert frames_turn.request.images == (frame,)
+    assert frames_turn.request.message.startswith("【畫面】")
+    assert not (tmp_path / "refine" / "session" / "frames_pending.txt").exists()
+    assert (ActivityKind.TOOL_RESULT, "get_frames: 1 frame(s) attached") in activities(
+        recording_sink
+    )
+
+
+def test_frame_turns_are_recorded_in_the_session_record(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    frame = tmp_path / "frames" / "f1.jpg"
+    adapter = FakeAdapter(
+        [
+            Turn(final=final("waiting"), on_start=_ask_for_frames(frame)),
+            Turn(final=final("seen")),
+        ],
+        tool_image_delivery=ToolImageDelivery.NEXT_MESSAGE,
+    )
+    task = make_task(tmp_path, TextOutput(), tools=_frames_tools(tmp_path))
+    make_runner(adapter).run(task)
+    record = SessionRecord.model_validate_json(
+        (tmp_path / "refine" / "session" / "result.json").read_text(encoding="utf-8")
+    )
+    assert (record.frame_turns, record.repairs) == (1, 0)
+
+
+def test_inline_tool_images_leave_the_manifest_untouched(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    tools = _frames_tools(tmp_path)
+    adapter = FakeAdapter([Turn(final=final())])
+    make_runner(adapter).run(make_task(tmp_path, TextOutput(), tools=tools))
+    manifest = ToolSession.load(tmp_path / "refine" / "session" / "tools.json")
+    assert manifest == tools
+
+
+def test_a_model_that_keeps_asking_for_frames_fails(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    frame = tmp_path / "frames" / "f1.jpg"
+
+    def script(_call: Call) -> Turn:
+        return Turn(final=final("more"), on_start=_ask_for_frames(frame))
+
+    adapter = FakeAdapter(
+        script=script, tool_image_delivery=ToolImageDelivery.NEXT_MESSAGE
+    )
+    task = make_task(tmp_path, TextOutput(), tools=_frames_tools(tmp_path))
+    with pytest.raises(AgentOutputError, match="still asking for frames"):
+        make_runner(adapter).run(task)
+    assert len(adapter.calls) == MAX_FRAME_TURNS + 1
+
+
 @pytest.mark.parametrize(
     ("delivery", "output", "expected"),
     [
         pytest.param(
-            SchemaDelivery.FINISH_TOOL, SchemaOutput(Answer), True, id="finish"
+            SchemaDelivery.FINISH_TOOL, SchemaOutput(Answer), "finish", id="finish"
         ),
-        pytest.param(SchemaDelivery.NATIVE, SchemaOutput(Answer), False, id="native"),
-        pytest.param(SchemaDelivery.FINISH_TOOL, TextOutput(), False, id="no-schema"),
+        pytest.param(
+            SchemaDelivery.PROMPT, SchemaOutput(Answer), "schema", id="prompt"
+        ),
+        pytest.param(SchemaDelivery.NATIVE, SchemaOutput(Answer), None, id="native"),
+        pytest.param(SchemaDelivery.FINISH_TOOL, TextOutput(), None, id="no-schema"),
+        pytest.param(SchemaDelivery.PROMPT, TextOutput(), None, id="no-schema-prompt"),
     ],
 )
-def test_finish_instructions_only_for_a_schema_on_a_finish_tool_backend(
+def test_submit_instructions_follow_the_schema_delivery(
     tmp_path: Path,
     make_runner: Callable[..., AgentRunner],
     delivery: SchemaDelivery,
     output: Any,
-    expected: bool,
+    expected: str | None,
 ):
     adapter = FakeAdapter(
         [Turn(final=final('{"color": "red"}', structured={"color": "red"}))],
         schema_delivery=delivery,
     )
     make_runner(adapter).run(make_task(tmp_path, output))
-    assert ("【提交結果】" in adapter.calls[0].request.message) is expected
+    message = adapter.calls[0].request.message
+    assert ("【提交結果】" in message) is (expected is not None)
+    assert ("finish 工具" in message) is (expected == "finish")
+    assert ("JSON Schema" in message) is (expected == "schema")
+    if expected == "schema":
+        assert '"color"' in message
+
+
+def test_a_prompt_backend_answer_is_read_from_its_final_message(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    text = 'Looked at it.\n```json\n{"color": "red"}\n```'
+    adapter = FakeAdapter(
+        [Turn(final=final(text))], schema_delivery=SchemaDelivery.PROMPT
+    )
+    result = make_runner(adapter).run(make_task(tmp_path, SchemaOutput(Answer)))
+    assert result.output == Answer(color="red")
 
 
 def test_the_audio_unavailable_marker_stops_the_session(

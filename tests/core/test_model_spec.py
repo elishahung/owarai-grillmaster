@@ -30,7 +30,7 @@ def test_missing_effort_defaults_to_high():
         ("codex/gpt-5.5/medium/high", "backend/model"),
         ("/gpt-5.5", "backend/model"),
         ("codex/", "backend/model"),
-        ("gemini/gemini-3.1-pro", "Unknown backend"),
+        ("openai/gpt-x", "Unknown backend"),
     ],
 )
 def test_invalid_specs_raise(text: str, match: str):

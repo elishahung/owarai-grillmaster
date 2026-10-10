@@ -23,6 +23,10 @@ def load_adapter(backend: Backend) -> AgentAdapter:
             from grillmaster.agents.adapters.agy import AgyAdapter
 
             return AgyAdapter()
+        case Backend.GEMINI:
+            from grillmaster.agents.adapters.gemini import GeminiAdapter
+
+            return GeminiAdapter()
         case Backend.CODEX:
             from grillmaster.agents.adapters.codex import CodexAdapter
 

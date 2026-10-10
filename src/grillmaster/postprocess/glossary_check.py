@@ -22,7 +22,6 @@ from __future__ import annotations
 import re
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -32,16 +31,24 @@ from grillmaster.agents.task import AgentTask, FilesOutput
 from grillmaster.core.briefing import Briefing
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.model_spec import Role
-from grillmaster.core.prompts import join_sections, render_program_instruction
-from grillmaster.postprocess._shared import (
-    check_skeleton,
-    frames_prompt,
-    read_reference,
+from grillmaster.core.prompts import (
+    frames_guidance,
+    join_sections,
+    load_prompt,
+    render_program_instruction,
     render_template,
+)
+from grillmaster.postprocess._shared import (
+    PROMPTS,
+    check_skeleton,
+    read_reference,
+    workdir_name,
 )
 from grillmaster.postprocess.errors import PostprocessError
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from grillmaster.agents.runner import AgentRunner
     from grillmaster.core.srt import SrtBlock
     from grillmaster.core.tool_session import ToolSession
@@ -66,9 +73,9 @@ NO_SUSPECTS = "No priority Latin/kana suspect blocks were detected."
 class GlossaryInputs:
     """Everything the glossary-check agent reads and writes.
 
-    `briefing` is the pre-pass briefing (read-only). The agent's three
-    outputs (`output_srt`, `report`, `briefing_candidate`) sit in one
-    directory, which becomes its workdir; `corrected_briefing` is where an
+    `briefing` is the pre-pass briefing (read-only). `workdir` is the
+    agent's cwd; its three outputs (`output_srt`, `report`,
+    `briefing_candidate`) lie inside it. `corrected_briefing` is where an
     accepted correction is promoted to. `fixed_glossary_path` and
     `fixed_glossary_guide_path` are the sources copied into the workdir.
     """
@@ -81,25 +88,13 @@ class GlossaryInputs:
     fixed_glossary: FixedGlossary
     fixed_glossary_path: Path
     fixed_glossary_guide_path: Path
+    workdir: Path
     output_srt: Path
     report: Path
     briefing_candidate: Path
     corrected_briefing: Path
     # The program's configured glossary text; empty when none.
     program_instruction: str = ""
-
-    def __post_init__(self) -> None:
-        if {self.report.parent, self.briefing_candidate.parent} != {
-            self.output_srt.parent
-        }:
-            raise ValueError(
-                "glossary outputs must share one directory: "
-                f"{self.output_srt}, {self.report}, {self.briefing_candidate}"
-            )
-
-    @property
-    def workdir(self) -> Path:
-        return self.output_srt.parent
 
     @property
     def glossary_copies(self) -> tuple[Path, Path]:
@@ -243,23 +238,23 @@ def build_glossary_task(
 
     instructions = join_sections(
         render_template(
+            PROMPTS,
             "glossary_check.md",
-            {
-                "refined_srt": str(inputs.refined_srt),
-                "ja_srt": str(inputs.ja_srt),
-                "briefing": str(inputs.briefing),
-                "fixed_glossary": str(glossary_copy),
-                "fixed_glossary_guide": str(guide_copy),
-                "output_srt": inputs.output_srt.name,
-                "output_srt_path": str(inputs.output_srt),
-                "report": inputs.report.name,
-                "briefing_out": inputs.briefing_candidate.name,
-            },
+            refined_srt=str(inputs.refined_srt),
+            ja_srt=str(inputs.ja_srt),
+            briefing=str(inputs.briefing),
+            fixed_glossary=str(glossary_copy),
+            fixed_glossary_guide=str(guide_copy),
+            output_srt=workdir_name(inputs.output_srt, inputs.workdir),
+            output_srt_path=str(inputs.output_srt),
+            report=workdir_name(inputs.report, inputs.workdir),
+            briefing_out=workdir_name(inputs.briefing_candidate, inputs.workdir),
         ),
         (
             render_template(
+                PROMPTS,
                 "official_subtitle_reference.md",
-                {"official_srt": str(inputs.official_srt)},
+                official_srt=str(inputs.official_srt),
             )
             if inputs.official_srt is not None
             else None
@@ -268,9 +263,9 @@ def build_glossary_task(
     )
     prompt = join_sections(
         render_template(
-            "glossary_suspects.md", {"suspects": render_suspect_list(suspects)}
+            PROMPTS, "glossary_suspects.md", suspects=render_suspect_list(suspects)
         ),
-        frames_prompt("glossary_frames.md"),
+        frames_guidance(load_prompt(PROMPTS, "glossary_frames.md")),
     )
     return AgentTask(
         name=TASK_NAME,
@@ -280,10 +275,10 @@ def build_glossary_task(
         session_dir=session_dir,
         workdir=inputs.workdir,
         output=FilesOutput(
-            (Path(inputs.output_srt.name),),
+            (inputs.output_srt.relative_to(inputs.workdir),),
             optional=(
-                Path(inputs.report.name),
-                Path(inputs.briefing_candidate.name),
+                inputs.report.relative_to(inputs.workdir),
+                inputs.briefing_candidate.relative_to(inputs.workdir),
             ),
         ),
         tools=tools,

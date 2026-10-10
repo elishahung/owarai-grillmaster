@@ -10,8 +10,8 @@ from tests.fakes import FakeSpeechToText
 from grillmaster.asr.client import (
     PRICE_PER_HOUR_USD,
     AsrOptions,
-    ElevenLabsAsr,
     ensure_transcription,
+    transcribe,
     transcription_cost,
 )
 from grillmaster.asr.errors import AsrError
@@ -42,11 +42,8 @@ def test_sends_the_audio_with_word_timings_and_diarization(tmp_path: Path, audio
     api = FakeSpeechToText(response)
     output = tmp_path / "asr" / "asr.json"
 
-    cost = ElevenLabsAsr(OPTIONS, "secret-key", connect=api.connect).transcribe(
-        audio, output
-    )
+    cost = transcribe(api, OPTIONS, audio, output)
 
-    assert api.api_keys == ["secret-key"]
     assert api.calls == [
         {
             "model_id": "scribe_v2",
@@ -66,7 +63,7 @@ def test_writes_the_sdk_model_without_none_fields(tmp_path: Path, audio: Path):
     api = FakeSpeechToText(SdkResponse(text="こんにちは", words=[]))
     output = tmp_path / "asr.json"
 
-    ElevenLabsAsr(OPTIONS, "key", connect=api.connect).transcribe(audio, output)
+    transcribe(api, OPTIONS, audio, output)
 
     assert json.loads(output.read_text(encoding="utf-8")) == {
         "text": "こんにちは",
@@ -74,43 +71,23 @@ def test_writes_the_sdk_model_without_none_fields(tmp_path: Path, audio: Path):
     }
 
 
-def test_rejects_a_non_object_response(tmp_path: Path, audio: Path):
-    api = FakeSpeechToText(["not", "an", "object"])
-    output = tmp_path / "asr.json"
-
-    with pytest.raises(AsrError, match="Unexpected ElevenLabs STT response"):
-        ElevenLabsAsr(OPTIONS, "key", connect=api.connect).transcribe(audio, output)
-    assert not output.exists()
-
-
 def test_missing_audio_fails_before_the_request(tmp_path: Path):
     api = FakeSpeechToText({})
 
     with pytest.raises(AsrError, match="Audio file not found"):
-        ElevenLabsAsr(OPTIONS, "key", connect=api.connect).transcribe(
-            tmp_path / "missing.ogg", tmp_path / "asr.json"
-        )
+        transcribe(api, OPTIONS, tmp_path / "missing.ogg", tmp_path / "asr.json")
     assert api.calls == []
-
-
-def test_empty_api_key_is_refused_without_connecting():
-    api = FakeSpeechToText({})
-
-    with pytest.raises(AsrError, match="ELEVENLABS_API_KEY"):
-        ElevenLabsAsr(OPTIONS, "", connect=api.connect)
-    assert api.api_keys == []
 
 
 def test_ensure_transcription_requests_on_a_miss(tmp_path: Path, audio: Path):
     api = FakeSpeechToText({"text": "", "words": [], "audio_duration_secs": 3600})
     output = tmp_path / "asr.json"
 
-    cost = ensure_transcription(
-        audio, output, options=OPTIONS, api_key="k", connect=api.connect
-    )
+    cost = ensure_transcription(lambda: api.connect("k"), OPTIONS, audio, output)
 
     assert cost is not None
     assert cost.total_usd == pytest.approx(PRICE_PER_HOUR_USD)
+    assert api.api_keys == ["k"]
     assert output.is_file()
 
 
@@ -120,9 +97,7 @@ def test_an_existing_response_is_never_paid_for_again(tmp_path: Path, audio: Pat
     output = tmp_path / "asr.json"
     output.write_text("{ truncated", encoding="utf-8")
 
-    cost = ensure_transcription(
-        audio, output, options=OPTIONS, api_key="k", connect=api.connect
-    )
+    cost = ensure_transcription(lambda: api.connect("k"), OPTIONS, audio, output)
 
     assert cost is None
     assert api.api_keys == []

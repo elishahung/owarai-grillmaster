@@ -95,13 +95,10 @@ def test_every_stage_has_a_numbered_work_dir():
     ]
 
 
-def test_session_dirs_number_retries_and_label_shared_parents():
+def test_session_dirs_label_shared_parents():
     parent = Path("work/09_chunks/0001-0119")
     assert session_dir(parent) == parent / "session"
-    assert session_dir(parent, attempt=2) == parent / "session.2"
-    assert session_dir(parent, label="polish", attempt=3) == parent / "session_polish.3"
-    with pytest.raises(ValueError, match="1-based"):
-        session_dir(parent, attempt=0)
+    assert session_dir(parent, label="polish") == parent / "session_polish"
 
 
 def test_log_names_carry_the_run_start():

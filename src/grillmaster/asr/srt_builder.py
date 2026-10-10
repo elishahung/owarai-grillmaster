@@ -55,133 +55,63 @@ JAPANESE_UNSAFE_SEGMENT_STARTS = {
     "ます",
 }
 
-
-# ---------------------------------------------------------------------
-# Source-SRT formatting parameters.
-#
-# These are intentionally hard-coded module constants rather than
-# user-tunable settings — they're fine-tuned over time against real
-# ASR output, not configuration knobs the pipeline user should touch.
-# Tests and tuning experiments pass alternative values through the
-# `options` argument of `build_srt_blocks`.
-# ---------------------------------------------------------------------
-
-MAX_CHARACTERS_PER_LINE = 24
-MAX_SEGMENT_CHARS = 44
-MAX_SEGMENT_DURATION_S = 0.0  # 0 disables duration-based splitting
-SEGMENT_ON_SILENCE_LONGER_THAN_S = 0.7
-MERGE_SPEAKER_TURNS_GAP_S = 0.05
+# Fixed formatting rules (the tunable knobs are `SrtFormatOptions`).
 MERGE_SAME_SPEAKER_GAP_S = 0.25
-MERGE_OVERLAPPING_BLOCKS = True
 MAX_OVERLAPPING_BLOCK_DURATION_S = 8.0
 MAX_UTTERANCES_PER_BLOCK = 5
-MAX_LINES_PER_BLOCK = 2
-INLINE_SHORT_SAME_SPEAKER_UTTERANCES = True
 MAX_INLINE_SHORT_UTTERANCE_CHARS = 8
 MAX_ORPHAN_TAIL_CHARS = 8
 MIN_SEGMENT_DURATION_S = 0.35
 DRAG_FILLER_MIN_DURATION_S = 0.6
-SUBTITLE_HOLD_AFTER_END_S = 0.5
-MIN_INTER_SUBTITLE_GAP_S = 0.08
 DIALOGUE_PREFIX = "-"
-INCLUDE_SPEAKER_PREFIX_FOR_DIALOGUE = True
-TEXT_JOIN_LANGUAGE = "ja"
-IGNORED_WORD_TYPES: frozenset[str] = frozenset({"audio_event"})
+IGNORED_WORD_TYPES = frozenset({"audio_event"})
 
 # Wrap scoring: a line this short (or shorter) after a break is penalized.
 _VERY_SHORT_WRAP_LINE = 3
 _SHORT_WRAP_LINE = 6
 
 
-# ---------------------------------------------------------------------
-# Tuning notes — empirical rationale for non-obvious values above.
-# Re-validate against representative ASR JSON if you change either.
-# ---------------------------------------------------------------------
-#
-# MAX_SEGMENT_CHARS = 44  (was 48)
-#   With max=48 (= 2*24 = exactly two lines), utterances can grow a few
-#   chars past the cap when the segmenter absorbs a trailing punctuation
-#   token (e.g. accumulator hits 47, next token is `。`, splitting before
-#   `。` is forbidden so the period attaches and we end at 49). The wrap
-#   then renders the over-cap utterance in 3 lines.
-#   Test sweep across 3 ASR files (≈1900 blocks total) showed: 48 → 10
-#   3-line blocks (test3 only); 44 → 4; 42 → 4 (no further gain). Cap=44
-#   leaves enough head-room for trailing punctuation and eliminates 6 of
-#   10 cases without splitting any clean 2-line utterances. Remaining 4
-#   are utterances ≥49 chars with no internal punctuation, intrinsic to
-#   rapid variety-show speech.
-#
-# MERGE_SPEAKER_TURNS_GAP_S = 0.05  (was 0.45)
-#   Cross-speaker gap distribution across 308 transitions in 3 ASR files
-#   is roughly flat between 0.01 and 0.10 with a density peak in
-#   [0.05, 0.10) and another in [0.45, ∞). The original 0.45 swept up the
-#   entire flat region plus part of the long tail, merging unrelated
-#   narration into dialog blocks.
-#   Qualitative review of marginal merges per band:
-#     0.01→0.03  every sample is clear back-and-forth dialog (ideal)
-#     0.03→0.05  Q&A and reactions (ideal)
-#     0.05→0.08  mostly dialog reactions; mixing in narration adjacency
-#     0.08→0.10  ~half are co-narration that shouldn't have merged
-#   Response-cue ratio (B utterance starts with はい/いや/なるほど/etc.)
-#   peaks at 0.05 (≈28%, vs 25-26% at 0.08-0.10). 0.05 captures rapid
-#   turn-taking while excluding the narration-glue band.
-#   0.01 is too aggressive — rejects ~25ms quick-fire dialog like
-#   "だからそれもそういうこと → でもかっけ方".
-#
-# Both values can be overridden per-test via SrtFormatOptions; production
-# uses the constants.
-#
-# Hold time 0.5 s (SUBTITLE_HOLD_AFTER_END_S), minimum gap 0.08 s
-# (MIN_INTER_SUBTITLE_GAP_S):
-#   ASR end times match the exact speech end, but a viewer's eye needs
-#   a beat to finish reading after the talker stops. The Netflix Timed
-#   Text Style Guide (Japanese) sets the minimum on-screen hold at
-#   0.5 s; the BBC and EBU give similar guidance ("≥0.4 s after speech
-#   ends" is the common practitioner rule). 0.5 is the comfortable
-#   default; 0.3-0.4 would feel tighter for rapid variety-show banter
-#   if needed.
-#   The 0.08 s minimum gap to the next block (≈2 frames at 25 fps) is
-#   the EBU/Netflix "≤2 frames OR ≥500 ms — nothing in between" rule:
-#   the perceptual flicker zone is the awkward 80-500 ms window, so we
-#   either butt blocks tightly (gap ≈ 80 ms) or leave a clear hold
-#   (gap ≥ 500 ms when the next block is far away). Tight back-to-back
-#   blocks (`next.start ≈ previous.end`) get no extension — the cap
-#   sits below the existing end and the no-shrink rule keeps them as
-#   the segmenter laid them out.
-# ---------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class SrtFormatOptions:
-    """Formatting controls; production always uses the defaults.
+    """The tunable formatting knobs; production always uses the defaults.
 
-    Defaults read from the module-level constants above so that tests
-    can override individual fields without drifting from production
-    values."""
+    They are fine-tuned against real ASR output, not user settings; tests
+    and tuning experiments override single fields. Re-validate against
+    representative ASR JSON before changing a default. Rationale:
 
-    max_characters_per_line: int = MAX_CHARACTERS_PER_LINE
-    max_segment_chars: int = MAX_SEGMENT_CHARS
-    max_segment_duration_s: float = MAX_SEGMENT_DURATION_S
-    segment_on_silence_longer_than_s: float = SEGMENT_ON_SILENCE_LONGER_THAN_S
-    merge_speaker_turns_gap_s: float = MERGE_SPEAKER_TURNS_GAP_S
-    merge_same_speaker_gap_s: float = MERGE_SAME_SPEAKER_GAP_S
-    merge_overlapping_blocks: bool = MERGE_OVERLAPPING_BLOCKS
-    max_overlapping_block_duration_s: float = MAX_OVERLAPPING_BLOCK_DURATION_S
-    max_utterances_per_block: int = MAX_UTTERANCES_PER_BLOCK
-    max_lines_per_block: int = MAX_LINES_PER_BLOCK
-    inline_short_same_speaker_utterances: bool = INLINE_SHORT_SAME_SPEAKER_UTTERANCES
-    max_inline_short_utterance_chars: int = MAX_INLINE_SHORT_UTTERANCE_CHARS
-    max_orphan_tail_chars: int = MAX_ORPHAN_TAIL_CHARS
-    min_segment_duration_s: float = MIN_SEGMENT_DURATION_S
-    drag_filler_min_duration_s: float = DRAG_FILLER_MIN_DURATION_S
-    subtitle_hold_after_end_s: float = SUBTITLE_HOLD_AFTER_END_S
-    min_inter_subtitle_gap_s: float = MIN_INTER_SUBTITLE_GAP_S
-    split_on_punctuation: str = JAPANESE_HARD_PUNCTUATION
-    soft_split_punctuation: str = JAPANESE_SOFT_PUNCTUATION
-    dialogue_prefix: str = DIALOGUE_PREFIX
-    include_speaker_prefix_for_dialogue: bool = INCLUDE_SPEAKER_PREFIX_FOR_DIALOGUE
-    text_join_language: str = TEXT_JOIN_LANGUAGE
-    ignored_word_types: frozenset[str] = IGNORED_WORD_TYPES
+    - `max_segment_chars = 44` (was 48): at 48 (exactly two 24-char lines)
+      an utterance can grow past the cap when the segmenter absorbs a
+      trailing punctuation token (splitting before `。` is forbidden), and
+      the wrap then renders it in 3 lines. A sweep over 3 ASR files (~1900
+      blocks): 48 -> 10 three-line blocks, 44 -> 4, 42 -> 4. The remaining
+      4 are >=49-char utterances without internal punctuation, intrinsic to
+      rapid variety-show speech.
+    - `merge_speaker_turns_gap_s = 0.05` (was 0.45): cross-speaker gaps over
+      308 transitions are roughly flat in 0.01-0.10 s, with density peaks in
+      [0.05, 0.10) and [0.45, inf); 0.45 merged unrelated narration into
+      dialogue. Marginal merges per band: 0.01-0.05 clear back-and-forth and
+      Q&A; 0.05-0.08 mostly reactions, some narration; 0.08-0.10 about half
+      co-narration. The response-cue ratio (the second utterance starts with
+      はい/いや/なるほど...) peaks at 0.05 (~28%). 0.01 rejects ~25 ms
+      quick-fire dialogue.
+    - `subtitle_hold_after_end_s = 0.5`: ASR end times match the exact
+      speech end, but the eye needs a beat to finish reading; the Netflix
+      Japanese guide sets a 0.5 s minimum hold (BBC/EBU: ~0.4 s).
+    - `min_inter_subtitle_gap_s = 0.08` (~2 frames at 25 fps): the EBU/
+      Netflix "<=2 frames or >=500 ms" rule. Blocks either butt tightly or
+      keep a clear hold; back-to-back blocks get no extension, since the cap
+      sits below their end and a hold never shrinks an end.
+    """
+
+    max_characters_per_line: int = 24
+    max_segment_chars: int = 44
+    # 0 disables duration-based splitting.
+    max_segment_duration_s: float = 0.0
+    segment_on_silence_longer_than_s: float = 0.7
+    merge_speaker_turns_gap_s: float = 0.05
+    max_lines_per_block: int = 2
+    subtitle_hold_after_end_s: float = 0.5
+    min_inter_subtitle_gap_s: float = 0.08
 
 
 @dataclass(frozen=True)
@@ -218,32 +148,30 @@ def build_srt_blocks(
     Production passes no `options`; overrides are for tests and tuning
     experiments. Raises `AsrError` when the response has no timed words.
     """
-    tokens = _extract_tokens(payload, options)
+    tokens = _extract_tokens(payload)
     if not tokens:
         raise AsrError("ElevenLabs ASR JSON does not contain timed words")
 
     utterances = _build_utterances(tokens, options)
     blocks = _merge_utterances_to_blocks(utterances, options)
-    if options.merge_overlapping_blocks:
-        blocks = _merge_overlapping_blocks(blocks, options)
-    if options.inline_short_same_speaker_utterances:
-        for block in blocks:
-            if len(block.utterances) > 1:
-                block.utterances = _inline_same_speaker_utterances(
-                    block.utterances, options
-                )
-    _resolve_block_overlaps(blocks, options)
+    blocks = _merge_overlapping_blocks(blocks, options)
+    for block in blocks:
+        if len(block.utterances) > 1:
+            block.utterances = _inline_same_speaker_utterances(
+                block.utterances, options
+            )
+    _resolve_block_overlaps(blocks)
     _extend_subtitle_hold_times(blocks, options)
     return _render_srt(blocks, options)
 
 
-def _extract_tokens(payload: AsrPayload, options: SrtFormatOptions) -> list[WordToken]:
+def _extract_tokens(payload: AsrPayload) -> list[WordToken]:
     tokens: list[WordToken] = []
     for item in word_items(payload):
         if not isinstance(item, dict):
             continue
         word_type = item.get("type")
-        if word_type in options.ignored_word_types:
+        if word_type in IGNORED_WORD_TYPES:
             continue
         text = str(item.get("text") or "")
         if not text:
@@ -298,82 +226,94 @@ def _build_utterances(
 ) -> list[Utterance]:
     utterances: list[Utterance] = []
     current: list[WordToken] = []
+    # `current`'s texts joined, kept up to date per token instead of
+    # re-joining the whole utterance for every candidate token.
+    joined = ""
 
     for index, token in enumerate(tokens):
         if not current:
             current.append(token)
+            joined = token.text
             continue
 
         split_index = _choose_utterance_split_index(
-            current, token, tokens, index, options
+            current, joined, token, tokens=tokens, token_index=index, options=options
         )
         if split_index is not None:
-            utterances.append(_tokens_to_utterance(current[:split_index], options))
+            utterances.append(_tokens_to_utterance(current[:split_index]))
             current = [*current[split_index:], token]
+            joined = _join_raw(current)
         elif _should_start_new_utterance(
             current,
-            current[-1],
+            joined,
             token,
             tokens=tokens,
             token_index=index,
             options=options,
         ):
-            utterances.append(_tokens_to_utterance(current, options))
+            utterances.append(_tokens_to_utterance(current))
             current = [token]
+            joined = token.text
         else:
             current.append(token)
+            joined = _join_text_parts(joined, token.text)
 
     if current:
-        utterances.append(_tokens_to_utterance(current, options))
+        utterances.append(_tokens_to_utterance(current))
 
     return [utterance for utterance in utterances if utterance.text]
 
 
 def _should_start_new_utterance(
     current: list[WordToken],
-    previous: WordToken,
+    joined: str,
     token: WordToken,
     *,
     tokens: list[WordToken],
     token_index: int,
     options: SrtFormatOptions,
 ) -> bool:
+    """`joined` is `_join_raw(current)`."""
+    previous = current[-1]
     if token.speaker_id != previous.speaker_id:
         return True
     unsafe_start = _is_unsafe_segment_start(token.text)
     if (
         token.start - previous.end > options.segment_on_silence_longer_than_s
         and not unsafe_start
-        and not _is_short_soft_fragment(current, options)
-        and not _would_create_short_orphan_tail(tokens, token_index, options)
-        and not _is_dragged_single_kana(current, options)
+        and not _is_short_soft_fragment(current)
+        and not _would_create_short_orphan_tail(tokens, token_index)
+        and not _is_dragged_single_kana(current)
     ):
         return True
 
-    text = _join_token_texts(current, options)
-    if _ends_with_split_punctuation(previous.text, options):
+    text = _normalize_spacing(joined)
+    if _ends_with_split_punctuation(previous.text):
         return True
     return (
-        _ends_with_soft_split_punctuation(previous.text, options)
+        _ends_with_soft_split_punctuation(previous.text)
         and len(text) >= options.max_characters_per_line
     )
 
 
 def _choose_utterance_split_index(
     current: list[WordToken],
+    joined: str,
     token: WordToken,
+    *,
     tokens: list[WordToken],
     token_index: int,
     options: SrtFormatOptions,
 ) -> int | None:
+    """`joined` is `_join_raw(current)`."""
     if token.speaker_id != current[-1].speaker_id:
         return None
 
     unsafe_start = _is_unsafe_segment_start(token.text)
-    if unsafe_start or _would_create_short_orphan_tail(tokens, token_index, options):
+    if unsafe_start or _would_create_short_orphan_tail(tokens, token_index):
         return None
 
-    prospective_text = _join_token_texts([*current, token], options)
+    prospective_text = _normalize_spacing(_join_text_parts(joined, token.text))
     prospective_duration = token.end - current[0].start
     exceeds_duration = (
         options.max_segment_duration_s > 0
@@ -385,13 +325,11 @@ def _choose_utterance_split_index(
     if not exceeds_limit:
         return None
 
-    split_index = _find_best_utterance_split_index(current, options)
+    split_index = _find_best_utterance_split_index(current)
     return split_index if split_index is not None else len(current)
 
 
-def _find_best_utterance_split_index(
-    tokens: list[WordToken], options: SrtFormatOptions
-) -> int | None:
+def _find_best_utterance_split_index(tokens: list[WordToken]) -> int | None:
     # Walk every index from the end so that a punctuation at the
     # very last token is also considered — splitting at len(tokens)
     # emits the whole accumulated phrase and starts the next
@@ -399,27 +337,25 @@ def _find_best_utterance_split_index(
     for index in range(len(tokens) - 1, -1, -1):
         token = tokens[index]
         if not (
-            _ends_with_split_punctuation(token.text, options)
-            or _ends_with_soft_split_punctuation(token.text, options)
+            _ends_with_split_punctuation(token.text)
+            or _ends_with_soft_split_punctuation(token.text)
         ):
             continue
 
         split_index = index + 1
-        if _join_token_texts(tokens[:split_index], options):
+        if _join_token_texts(tokens[:split_index]):
             return split_index
     return None
 
 
-def _is_short_soft_fragment(tokens: list[WordToken], options: SrtFormatOptions) -> bool:
-    if not tokens or not _ends_with_soft_split_punctuation(tokens[-1].text, options):
+def _is_short_soft_fragment(tokens: list[WordToken]) -> bool:
+    if not tokens or not _ends_with_soft_split_punctuation(tokens[-1].text):
         return False
-    text = _join_token_texts(tokens, options)
-    return len(text) <= options.max_orphan_tail_chars
+    text = _join_token_texts(tokens)
+    return len(text) <= MAX_ORPHAN_TAIL_CHARS
 
 
-def _is_dragged_single_kana(
-    current: list[WordToken], options: SrtFormatOptions
-) -> bool:
+def _is_dragged_single_kana(current: list[WordToken]) -> bool:
     """Current is a single drawn-out kana (e.g. `さ`, `そ`, `あ` held
     for ≥ DRAG_FILLER_MIN_DURATION_S). Splitting would strand it as
     its own utterance; instead it should attach to the next phrase."""
@@ -429,13 +365,11 @@ def _is_dragged_single_kana(
     if len(text) != 1 or text in NO_SPACE_BEFORE:
         return False
     duration = current[0].end - current[0].start
-    return duration >= options.drag_filler_min_duration_s
+    return duration >= DRAG_FILLER_MIN_DURATION_S
 
 
-def _would_create_short_orphan_tail(
-    tokens: list[WordToken], start_index: int, options: SrtFormatOptions
-) -> bool:
-    if start_index >= len(tokens) or options.max_orphan_tail_chars <= 0:
+def _would_create_short_orphan_tail(tokens: list[WordToken], start_index: int) -> bool:
+    if start_index >= len(tokens):
         return False
 
     speaker_id = tokens[start_index].speaker_id
@@ -447,27 +381,25 @@ def _would_create_short_orphan_tail(
             break
         tail.append(token)
         raw_len += len(token.text)
-        if raw_len > options.max_orphan_tail_chars:
+        if raw_len > MAX_ORPHAN_TAIL_CHARS:
             return False
-        if _ends_with_split_punctuation(token.text, options):
+        if _ends_with_split_punctuation(token.text):
             break
 
-    if not tail or not _ends_with_split_punctuation(tail[-1].text, options):
+    if not tail or not _ends_with_split_punctuation(tail[-1].text):
         return False
-    text = _join_token_texts(tail, options)
-    return len(text) <= options.max_orphan_tail_chars
+    text = _join_token_texts(tail)
+    return len(text) <= MAX_ORPHAN_TAIL_CHARS
 
 
-def _tokens_to_utterance(
-    tokens: list[WordToken], options: SrtFormatOptions
-) -> Utterance:
+def _tokens_to_utterance(tokens: list[WordToken]) -> Utterance:
     start = tokens[0].start
-    end = max(tokens[-1].end, start + options.min_segment_duration_s)
+    end = max(tokens[-1].end, start + MIN_SEGMENT_DURATION_S)
     return Utterance(
         speaker_id=tokens[0].speaker_id,
         start=start,
         end=end,
-        text=_join_token_texts(tokens, options).strip(),
+        text=_join_token_texts(tokens).strip(),
     )
 
 
@@ -490,14 +422,10 @@ def _merge_utterances_to_blocks(
         block = blocks[-1]
         if _can_merge_into_block(block, utterance, options):
             same_speaker = block.utterances[-1].speaker_id == utterance.speaker_id
-            prev_ends_hard = _ends_with_split_punctuation(
-                block.utterances[-1].text, options
-            )
+            prev_ends_hard = _ends_with_split_punctuation(block.utterances[-1].text)
             if same_speaker and not prev_ends_hard:
                 block.utterances[-1].text = _join_text_parts(
-                    block.utterances[-1].text,
-                    utterance.text,
-                    options,
+                    block.utterances[-1].text, utterance.text
                 )
                 block.utterances[-1].end = utterance.end
             else:
@@ -530,9 +458,9 @@ def _merge_overlapping_blocks(
         merged_duration = max(previous.end, block.end) - previous.start
         if (
             block.start < previous.end
-            and merged_duration <= options.max_overlapping_block_duration_s
+            and merged_duration <= MAX_OVERLAPPING_BLOCK_DURATION_S
             and len(previous.utterances) + len(block.utterances)
-            <= options.max_utterances_per_block
+            <= MAX_UTTERANCES_PER_BLOCK
             and _rendered_line_count(
                 _inline_same_speaker_utterances(
                     [*previous.utterances, *block.utterances], options
@@ -548,22 +476,20 @@ def _merge_overlapping_blocks(
     return merged
 
 
-def _resolve_block_overlaps(
-    blocks: list[SubtitleBlock], options: SrtFormatOptions
-) -> None:
+def _resolve_block_overlaps(blocks: list[SubtitleBlock]) -> None:
     for index in range(1, len(blocks)):
         previous = blocks[index - 1]
         current = blocks[index]
         if previous.end <= current.start:
             continue
 
-        if current.start - previous.start >= options.min_segment_duration_s:
+        if current.start - previous.start >= MIN_SEGMENT_DURATION_S:
             previous.end = current.start
             continue
 
         current.start = previous.end
         if current.end <= current.start:
-            current.end = current.start + options.min_segment_duration_s
+            current.end = current.start + MIN_SEGMENT_DURATION_S
 
 
 def _extend_subtitle_hold_times(
@@ -617,24 +543,21 @@ def _can_inline_same_speaker_utterance(
 ) -> bool:
     if left.speaker_id != right.speaker_id:
         return False
-    if not (
-        _is_short_inline_utterance(left, options)
-        and _is_short_inline_utterance(right, options)
-    ):
+    if not (_is_short_inline_utterance(left) and _is_short_inline_utterance(right)):
         return False
     gap = max(0.0, right.start - left.end)
-    if gap > options.merge_same_speaker_gap_s:
+    if gap > MERGE_SAME_SPEAKER_GAP_S:
         return False
     combined_text = f"{left.text} {right.text}"
     return len(combined_text) <= options.max_characters_per_line
 
 
-def _is_short_inline_utterance(utterance: Utterance, options: SrtFormatOptions) -> bool:
+def _is_short_inline_utterance(utterance: Utterance) -> bool:
     text = utterance.text.strip()
     return (
         bool(text)
-        and len(text) <= options.max_inline_short_utterance_chars
-        and _ends_with_split_punctuation(text, options)
+        and len(text) <= MAX_INLINE_SHORT_UTTERANCE_CHARS
+        and _ends_with_split_punctuation(text)
     )
 
 
@@ -649,29 +572,22 @@ def _can_merge_into_block(
     # space (e.g. 「いいんすか？ それ。」).
     if (
         same_speaker
-        and _ends_with_split_punctuation(block.utterances[-1].text, options)
-        and not (
-            options.inline_short_same_speaker_utterances
-            and _can_inline_same_speaker_utterance(
-                block.utterances[-1], utterance, options
-            )
+        and _ends_with_split_punctuation(block.utterances[-1].text)
+        and not _can_inline_same_speaker_utterance(
+            block.utterances[-1], utterance, options
         )
     ):
         return False
     max_gap = (
-        options.merge_same_speaker_gap_s
-        if same_speaker
-        else options.merge_speaker_turns_gap_s
+        MERGE_SAME_SPEAKER_GAP_S if same_speaker else options.merge_speaker_turns_gap_s
     )
     gap = max(gap, 0)
     if gap > max_gap:
         return False
-    if len(block.utterances) + 1 > options.max_utterances_per_block:
+    if len(block.utterances) + 1 > MAX_UTTERANCES_PER_BLOCK:
         return False
-    candidate_utterances = (
-        _inline_same_speaker_utterances([*block.utterances, utterance], options)
-        if options.inline_short_same_speaker_utterances
-        else [*block.utterances, utterance]
+    candidate_utterances = _inline_same_speaker_utterances(
+        [*block.utterances, utterance], options
     )
     if (
         _rendered_line_count(candidate_utterances, options)
@@ -700,10 +616,7 @@ def _render_srt(
 
 
 def _render_block_text(block: SubtitleBlock, options: SrtFormatOptions) -> list[str]:
-    use_dialogue = (
-        options.include_speaker_prefix_for_dialogue
-        and len({item.speaker_id for item in block.utterances}) > 1
-    )
+    use_dialogue = len({item.speaker_id for item in block.utterances}) > 1
     rendered: list[str] = []
     for utterance in block.utterances:
         text = utterance.text.strip()
@@ -711,7 +624,7 @@ def _render_block_text(block: SubtitleBlock, options: SrtFormatOptions) -> list[
             continue
         for line in _wrap_text(text, options, max_lines=options.max_lines_per_block):
             if use_dialogue:
-                rendered.append(f"{options.dialogue_prefix}{line}")
+                rendered.append(f"{DIALOGUE_PREFIX}{line}")
             else:
                 rendered.append(line)
     return rendered
@@ -729,13 +642,13 @@ def _wrap_text(
     text: str, options: SrtFormatOptions, *, max_lines: int | None = None
 ) -> list[str]:
     max_chars = options.max_characters_per_line
-    if max_chars <= 0 or len(text) <= max_chars:
+    if len(text) <= max_chars:
         return [text]
 
     lines: list[str] = []
     remaining = text
     while len(remaining) > max_chars:
-        split_at = _find_wrap_index(remaining, options)
+        split_at = _find_wrap_index(remaining, max_chars)
         lines.append(remaining[:split_at].strip())
         remaining = remaining[split_at:].strip()
     if remaining:
@@ -773,8 +686,7 @@ def _balanced_wrap(text: str, max_lines: int) -> list[str]:
     return [head, *_balanced_wrap(tail, max_lines - 1)]
 
 
-def _find_wrap_index(text: str, options: SrtFormatOptions) -> int:
-    max_chars = options.max_characters_per_line
+def _find_wrap_index(text: str, max_chars: int) -> int:
     n = len(text)
     hi = min(max_chars, n - 1)
     # When the utterance fits in two lines (n <= 2 * max_chars) keep
@@ -843,28 +755,32 @@ def _line_wrap_unsafe_start(line2: str) -> bool:
 
 
 def _is_ascii_alphanum(ch: str) -> bool:
-    return bool(re.match(r"[A-Za-z0-9]", ch))
+    return ch.isascii() and ch.isalnum()
 
 
-def _join_token_texts(tokens: list[WordToken], options: SrtFormatOptions) -> str:
+def _join_token_texts(tokens: list[WordToken]) -> str:
+    return _normalize_spacing(_join_raw(tokens))
+
+
+def _join_raw(tokens: list[WordToken]) -> str:
+    """The token texts joined, before spacing is normalized."""
     text = ""
     for token in tokens:
-        text = _join_text_parts(text, token.text, options)
-    return _normalize_spacing(text)
+        text = _join_text_parts(text, token.text)
+    return text
 
 
-def _join_text_parts(left: str, right: str, options: SrtFormatOptions) -> str:
+def _join_text_parts(left: str, right: str) -> str:
+    """Japanese joining: no space, except between two ASCII alphanumerics."""
     if not left:
         return right
     if not right:
         return left
-    if options.text_join_language == "ja":
-        if right[0] in NO_SPACE_BEFORE or left[-1] in NO_SPACE_AFTER:
-            return left + right
-        if _needs_ascii_space(left[-1], right[0]):
-            return left + " " + right
+    if right[0] in NO_SPACE_BEFORE or left[-1] in NO_SPACE_AFTER:
         return left + right
-    return left + " " + right
+    if _is_ascii_alphanum(left[-1]) and _is_ascii_alphanum(right[0]):
+        return left + " " + right
+    return left + right
 
 
 def _normalize_spacing(text: str) -> str:
@@ -872,10 +788,6 @@ def _normalize_spacing(text: str) -> str:
     text = re.sub(r"\s+([。、，,.！？?!：:；;）)\]」』】》〉])", r"\1", text)
     text = re.sub(r"([（(\[「『【《〈])\s+", r"\1", text)
     return text.strip()
-
-
-def _needs_ascii_space(left: str, right: str) -> bool:
-    return bool(re.match(r"[A-Za-z0-9]", left) and re.match(r"[A-Za-z0-9]", right))
 
 
 def _is_unsafe_segment_start(text: str) -> bool:
@@ -889,12 +801,12 @@ def _is_unsafe_segment_start(text: str) -> bool:
     )
 
 
-def _ends_with_split_punctuation(text: str, options: SrtFormatOptions) -> bool:
-    return bool(text and text[-1] in options.split_on_punctuation)
+def _ends_with_split_punctuation(text: str) -> bool:
+    return bool(text and text[-1] in JAPANESE_HARD_PUNCTUATION)
 
 
-def _ends_with_soft_split_punctuation(text: str, options: SrtFormatOptions) -> bool:
-    return bool(text and text[-1] in options.soft_split_punctuation)
+def _ends_with_soft_split_punctuation(text: str) -> bool:
+    return bool(text and text[-1] in JAPANESE_SOFT_PUNCTUATION)
 
 
 def _block_text_length(block: SubtitleBlock) -> int:

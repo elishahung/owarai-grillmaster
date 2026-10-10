@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import sys
 from typing import TYPE_CHECKING, Any
 
 import pytest
 from claude_agent_sdk import (
+    ClaudeAgentOptions,
     CLINotFoundError,
     RateLimitEvent,
     ResultMessage,
@@ -17,6 +19,8 @@ from tests.agents.fakes import FakeQuery, claude_messages
 from grillmaster.agents.adapters.base import McpServer
 from grillmaster.agents.adapters.claude import (
     ClaudeAdapter,
+    CliProcess,
+    RegisteredTransport,
     build_options,
     encode_message,
     tool_name,
@@ -28,6 +32,7 @@ from grillmaster.agents.errors import (
     AgentTransientError,
 )
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec
+from grillmaster.core.process import LIVE_PROCESSES
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
@@ -103,6 +108,36 @@ def test_resume_passes_the_session_and_only_the_message(
     assert call["prompt"] == "fix it"
     assert call["options"].resume == "sess-9"
     assert final.session_id == "22bfb9d2-29d6-4b36-aa20-fc7e004877fb"
+
+
+def test_each_turn_spawns_the_cli_through_a_registered_transport(
+    make_request: Callable[..., TurnRequest],
+):
+    query = FakeQuery(claude_messages("resume"))
+    ClaudeAdapter(query_fn=query).start(make_request(spec=SPEC)).result()
+    assert isinstance(query.calls[0]["transport"], RegisteredTransport)
+
+
+def test_registered_transport_holds_its_child_in_live_processes(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # A real spawn through the SDK's own `connect`: Python stands in for the
+    # CLI and exits at once on the CLI flags, which is enough to see the pid.
+    monkeypatch.setenv("CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK", "1")
+    options = ClaudeAgentOptions(cli_path=sys.executable, stderr=lambda _line: None)
+    transport = RegisteredTransport(prompt="hi", options=options)
+    seen: list[list[int]] = []
+
+    async def spawn_and_close() -> None:
+        await transport.connect()
+        seen.append([p.pid for p in LIVE_PROCESSES.live() if isinstance(p, CliProcess)])
+        await transport.close()
+
+    before = LIVE_PROCESSES.live()
+    asyncio.run(spawn_and_close())  # noqa: TID251
+    [pids] = seen
+    assert len(pids) == 1
+    assert LIVE_PROCESSES.live() == before
 
 
 def test_images_travel_as_base64_blocks(

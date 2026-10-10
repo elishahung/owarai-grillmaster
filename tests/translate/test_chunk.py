@@ -79,11 +79,6 @@ def test_rebuild_restores_source_timecodes_and_order(chunk: Chunk) -> None:
     ]
 
 
-def test_rebuild_refuses_a_mismatched_translation(chunk: Chunk) -> None:
-    with pytest.raises(ValueError, match="缺少 index：3"):
-        rebuild_blocks(chunk, _translation((1, "一"), (2, "二")))
-
-
 @pytest.mark.parametrize(
     ("text", "cleaned"),
     [

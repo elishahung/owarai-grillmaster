@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from grillmaster.core.timecode import TimeRange
-from grillmaster.events.types import ProgressAdvanced, ProgressFinished, ProgressStarted
+from grillmaster.events.progress import track
 from grillmaster.media import probe
 from grillmaster.media.ffmpeg import ffmpeg
 from grillmaster.media.video import concat_copy
@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
 
     from grillmaster.events.bus import EventSink
+    from grillmaster.events.progress import Advance
     from grillmaster.live_chat.render import PictureBox
     from grillmaster.media.ffmpeg import FfmpegRunner
 
@@ -305,15 +306,14 @@ class RenderProgress:
     ffmpeg's absolute output time into advances on the shared bar.
     """
 
-    def __init__(self, events: EventSink, scope: str) -> None:
-        self._events = events
-        self.scope = scope
+    def __init__(self, advance: Advance) -> None:
+        self._advance = advance
         self._lock = threading.Lock()
 
     def advance(self, seconds: float, note: str | None) -> None:
         if seconds > 0:
             with self._lock:
-                self._events.emit(ProgressAdvanced(self.scope, seconds, note))
+                self._advance(seconds, note)
 
     def track(self, duration: float, note: str | None = None) -> ProcessProgress:
         return ProcessProgress(self, duration, note)
@@ -343,12 +343,10 @@ class ProcessProgress:
 def render_progress(
     events: EventSink, scope: str, label: str, total: float
 ) -> Iterator[RenderProgress]:
-    """A bar `scope` of `total` seconds, finished however the body ends."""
-    events.emit(ProgressStarted(scope, label, total))
-    try:
-        yield RenderProgress(events, scope)
-    finally:
-        events.emit(ProgressFinished(scope))
+    """A bar `scope` of `total` seconds, finished when the body returns
+    (`events.progress.track`)."""
+    with track(events, scope, label, total) as advance:
+        yield RenderProgress(advance)
 
 
 def run_tracked(

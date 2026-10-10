@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast, override
 
+from pydantic import BaseModel, ConfigDict
+
 from grillmaster.agents.adapters import load_adapter
 from grillmaster.agents.adapters.base import Capability
 from grillmaster.agents.errors import AgentOutputError, ValidationFailure
@@ -119,16 +121,28 @@ class RecordingSink(Recorder["Event"]):
         return self.items
 
 
+class SttResponse(BaseModel):
+    """Stands in for the SDK's pydantic response model: any fields, dumped
+    back as given (`None` fields dropped, like the SDK's)."""
+
+    model_config = ConfigDict(extra="allow")
+
+
 class FakeSpeechToText:
     """An ElevenLabs `SpeechToText` returning `response`; also its factory.
 
     Pass `fake.connect` as the `SpeechToTextFactory`: it records each API key
     it is handed. Each `convert` records its keyword arguments, with the
-    uploaded file's bytes under `file`.
+    uploaded file's bytes under `file`. A mapping response is wrapped in an
+    `SttResponse`.
     """
 
-    def __init__(self, response: object) -> None:
-        self.response = response
+    def __init__(self, response: BaseModel | Mapping[str, object]) -> None:
+        self.response = (
+            response
+            if isinstance(response, BaseModel)
+            else SttResponse.model_validate(response)
+        )
         self.api_keys: list[str] = []
         self.calls: list[dict[str, object]] = []
 
@@ -144,7 +158,7 @@ class FakeSpeechToText:
         language_code: str,
         timestamps_granularity: str,
         diarize: bool,
-    ) -> object:
+    ) -> BaseModel:
         self.calls.append(
             {
                 "model_id": model_id,

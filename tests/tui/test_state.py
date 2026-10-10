@@ -362,6 +362,37 @@ def test_chunk_board_is_derived_from_chunk_sessions(run_state: PipelineState):
     assert run_state.chunk_cells("refine") == []
 
 
+def test_chunk_progress_counts_cache_hits_without_cells(run_state: PipelineState):
+    run_state.apply(StepStarted("chunks", STAGE))
+    run_state.apply(ProgressStarted("chunks", "chunks", 5), stage="chunks")
+    # Three chunks come from their cache: progress, but no session.
+    for _ in range(3):
+        run_state.apply(ProgressAdvanced("chunks"), stage="chunks")
+    run_state.apply(_session_started("chunks/0161-0200"))
+    run_state.apply(AgentSessionFinished("chunks/0161-0200", SessionOutcome.OK, 1.0, 0))
+    run_state.apply(ProgressAdvanced("chunks"), stage="chunks")
+    run_state.apply(_session_started("chunks/0201-0240"))
+
+    stats = run_state.chunk_stats("chunks")
+    assert (stats.total, stats.done, stats.active) == (5, 4, 1)
+    assert len(run_state.chunk_cells("chunks")) == 2
+    assert run_state.step_progress(_step(run_state, "chunks")) == pytest.approx(4 / 5)
+
+    # A failed batch leaves its bar open: the board keeps the real count.
+    run_state.apply(StepFailed("chunks", STAGE, "quota spent"))
+    stats = run_state.chunk_stats("chunks")
+    assert (stats.total, stats.done) == (5, 4)
+
+
+def test_an_all_cached_chunk_stage_still_has_a_board(run_state: PipelineState):
+    run_state.apply(StepStarted("chunks", STAGE))
+    run_state.apply(ProgressStarted("chunks", "chunks", 2), stage="chunks")
+    run_state.apply(ProgressAdvanced("chunks", 2), stage="chunks")
+    assert run_state.chunk_cells("chunks") == []
+    stats = run_state.chunk_stats("chunks")
+    assert (stats.total, stats.done) == (2, 2)
+
+
 # -- logs --------------------------------------------------------------------------
 
 

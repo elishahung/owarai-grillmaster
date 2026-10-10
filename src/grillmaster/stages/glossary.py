@@ -41,6 +41,7 @@ def _run(ctx: StageContext) -> None:
         fixed_glossary=load_fixed_glossary(),
         fixed_glossary_path=FIXED_GLOSSARY_PATH,
         fixed_glossary_guide_path=FIXED_GLOSSARY_GUIDE_PATH,
+        workdir=ctx.workdir,
         output_srt=layout.glossary_checked_srt,
         report=layout.glossary_report,
         briefing_candidate=layout.glossary_briefing_candidate,

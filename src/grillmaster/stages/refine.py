@@ -32,6 +32,7 @@ def _run(ctx: StageContext) -> None:
         briefing=layout.effective_briefing(),
         prepass_frames_dir=layout.prepass_frames_dir,
         chunks_dir=layout.work_dir(StageKey.CHUNKS),
+        workdir=ctx.workdir,
         output_srt=layout.refined_srt,
         report=layout.refine_report,
         program_instruction=program_rules(ctx).instruction_text(StageKey.REFINE),

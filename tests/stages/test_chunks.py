@@ -9,6 +9,12 @@ from grillmaster.agents.errors import AgentQuotaError
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.srt import SrtBlock, read_srt_file, write_srt_file
 from grillmaster.core.stage_key import StageKey
+from grillmaster.events.progress import CHUNK_PROGRESS_SCOPE
+from grillmaster.events.types import (
+    ProgressAdvanced,
+    ProgressFinished,
+    ProgressStarted,
+)
 from grillmaster.media.errors import MediaError
 from grillmaster.stages import chunks
 from grillmaster.stages.base import MissingArtifactError
@@ -18,11 +24,14 @@ from grillmaster.translate.errors import TranslateError
 
 if TYPE_CHECKING:
     import threading
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
+    from tests.fakes import RecordingSink
     from tests.stages.conftest import MakeContext
 
+    from grillmaster.agents.task import AgentTask
+    from grillmaster.events.types import Event
     from grillmaster.media.ffmpeg import ProgressCallback
     from grillmaster.project.layout import ProjectLayout
 
@@ -157,6 +166,72 @@ def test_cached_translation_skips_the_agent_and_media(
     assert not [argv for argv in fake_ffmpeg.calls if first_dir in argv[-1]]
     merged = read_srt_file(layout.merged_srt)
     assert [block.text for block in merged[:3]] == ["快取 1", "快取 2", "譯 3"]
+
+
+def _chunk_progress(sink: RecordingSink) -> list[Event]:
+    return [
+        event
+        for event in sink.events
+        if isinstance(event, ProgressStarted | ProgressAdvanced | ProgressFinished)
+        and event.scope == CHUNK_PROGRESS_SCOPE
+    ]
+
+
+def test_progress_counts_every_chunk_with_cache_hits_first(
+    make_context: MakeContext,
+    layout: ProjectLayout,
+    agents: FakeAgentRunner,
+    fake_ffmpeg: FakeFfmpeg,
+    recording_sink: RecordingSink,
+) -> None:
+    first = _CHUNKS[0]
+    write_model(layout.chunk_translation(*first.index_range), _translated(first))
+    advances_seen: list[int] = []
+
+    def counting(chunk: Chunk) -> Callable[[AgentTask[Any]], object]:
+        def run(_task: AgentTask[Any]) -> object:
+            advances_seen.append(
+                sum(isinstance(e, ProgressAdvanced) for e in recording_sink.events)
+            )
+            return _translated(chunk)
+
+        return run
+
+    for chunk in _CHUNKS[1:]:
+        agents.script[task_name(chunk)] = counting(chunk)
+
+    chunks.STAGE.run(make_context(StageKey.CHUNKS))
+
+    # The cache hit is counted before any agent runs.
+    assert len(advances_seen) == 2
+    assert min(advances_seen) >= 1
+    assert _chunk_progress(recording_sink) == [
+        ProgressStarted("chunks", "chunks", 3),
+        ProgressAdvanced("chunks", 1, None),
+        ProgressAdvanced("chunks", 1, None),
+        ProgressAdvanced("chunks", 1, None),
+        ProgressFinished("chunks"),
+    ]
+
+
+def test_progress_stays_open_when_the_batch_fails(
+    make_context: MakeContext,
+    agents: FakeAgentRunner,
+    fake_ffmpeg: FakeFfmpeg,
+    recording_sink: RecordingSink,
+) -> None:
+    agents.script["chunks/0003-0004"] = AgentQuotaError("quota spent")
+
+    with pytest.raises(TranslateError):
+        chunks.STAGE.run(make_context(StageKey.CHUNKS))
+
+    progress = _chunk_progress(recording_sink)
+    assert progress[0] == ProgressStarted("chunks", "chunks", 3)
+    # No finish: a finished bar reads as every chunk done.
+    assert progress[1:] == [
+        ProgressAdvanced("chunks", 1, None),
+        ProgressAdvanced("chunks", 1, None),
+    ]
 
 
 def test_stale_cache_fails_loudly(

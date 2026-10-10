@@ -30,14 +30,13 @@ def _preflight(_config: AppConfig, secrets: Secrets) -> None:
 
 def _run(ctx: StageContext) -> str:
     layout = ctx.layout
+    secrets = ctx.secrets
     cost = ensure_transcription(
+        # The key itself was checked by the preflight.
+        lambda: ctx.speech_to_text(secrets.require_elevenlabs_api_key()),
+        AsrOptions(model=ctx.config.asr.model, language=ctx.config.asr.language),
         require(layout.audio, StageKey.AUDIO),
         layout.asr_json,
-        options=AsrOptions(
-            model=ctx.config.asr.model, language=ctx.config.asr.language
-        ),
-        api_key=ctx.secrets.require_elevenlabs_api_key(),
-        connect=ctx.speech_to_text,
     )
     if cost is None:
         return f"cached · project ${ctx.state.asr_cost_usd:.4f}"

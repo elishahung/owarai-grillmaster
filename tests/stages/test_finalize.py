@@ -28,7 +28,9 @@ def project(layout: ProjectLayout) -> ProjectLayout:
 
 
 def test_writes_both_deliverables(make_context: MakeContext, project: ProjectLayout):
-    finalize.STAGE.run(make_context(StageKey.FINALIZE))
+    result = finalize.STAGE.run(make_context(StageKey.FINALIZE))
+
+    assert result == "subs/cht.ass, subs/cht.srt"
 
     assert project.cht_srt.read_text(encoding="utf-8") == (
         "1\n00:00:01,000 --> 00:00:02,000\n他是Bob啦\n"

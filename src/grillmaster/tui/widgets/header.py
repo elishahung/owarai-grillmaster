@@ -1,4 +1,5 @@
-"""Top bar: project, serial position, weighted progress, clock and status."""
+"""Top bar: project, serial position, weighted progress, clock, ASR cost
+and status."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ from rich.table import Table
 from rich.text import Text
 from textual.widgets import Static
 
+from grillmaster.core.stage_key import StageKey
 from grillmaster.events.types import PlanKind
 from grillmaster.tui.state import ItemState, SessionState
 from grillmaster.tui.widgets._common import bar, fmt_clock, fmt_tokens
@@ -53,6 +55,11 @@ def render_header(state: PipelineState, view: View) -> RenderableType:
     info.append(
         f"  stage {done}/{planned}  ·  elapsed {fmt_clock(state.wall_elapsed())}"
     )
+    asr = state.step(StageKey.ASR)
+    if asr is not None and asr.result:
+        # The ASR stage reports its spend and the project's total as its result.
+        info.append("  ·  ASR ")
+        info.append(asr.result, "green")
     running = sum(
         session.state is SessionState.RUNNING for session in state.sessions.values()
     )

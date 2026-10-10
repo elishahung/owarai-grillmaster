@@ -22,11 +22,6 @@ def test_empty_input_has_no_chunks() -> None:
     assert split_into_chunks([], 6000) == []
 
 
-def test_limit_must_be_positive() -> None:
-    with pytest.raises(ValueError, match="positive"):
-        split_into_chunks(make_blocks(3), 0)
-
-
 def test_everything_fits_in_one_chunk() -> None:
     blocks = make_blocks(5)
     [chunk] = split_into_chunks(blocks, 100_000)

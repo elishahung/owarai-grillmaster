@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from grillmaster.core.srt import read_srt_file
-from grillmaster.subtitles.structure import check_aligned
+from grillmaster.subtitles.structure import check_aligned_file
 
 if TYPE_CHECKING:
     from grillmaster.core.tool_session import SrtCheckTool
@@ -40,14 +40,7 @@ class SrtChecker:
         candidate_path = Path(path)
         if not candidate_path.is_absolute():
             return f"INVALID\n- pass an absolute path, got: {path}"
-        try:
-            candidate = read_srt_file(candidate_path)
-        except FileNotFoundError:
-            problems = [f"file not found: {candidate_path}"]
-        except (ValueError, UnicodeDecodeError) as error:
-            problems = [f"cannot parse {candidate_path}: {error}"]
-        else:
-            problems = check_aligned(self._reference, candidate)
+        problems = check_aligned_file(self._reference, candidate_path)
         if not problems:
             return VALID
         return "\n".join(["INVALID", *(f"- {problem}" for problem in problems)])

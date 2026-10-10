@@ -1,4 +1,5 @@
-"""`grill run <src> [HINT]` (also plain `grill <src> [HINT]`)."""
+"""`grill run <src> [HINT]` (also plain `grill <src> [HINT]`), and the run
+options `grill serial` shares."""
 
 from __future__ import annotations
 
@@ -13,9 +14,67 @@ from grillmaster.cli.args import (
     reject_directory_source,
     resolve_remix,
 )
-from grillmaster.cli.common import fail, load_or_exit
+from grillmaster.cli.common import fail, load_or_exit, pipeline_from
+from grillmaster.cli.live import run_or_exit
 from grillmaster.core.stage_key import StageKey
 from grillmaster.live_chat.layout import DEFAULT_CHAT_LAYOUT, ChatLayout
+
+ParentOption = Annotated[
+    Path | None,
+    typer.Option(
+        "--parent",
+        help=(
+            "Project directory (archived ones too) whose briefing seeds this "
+            "new project's pre-pass for cross-episode consistency."
+        ),
+        exists=True,
+        file_okay=False,
+        show_default=False,
+    ),
+]
+CoverOption = Annotated[
+    bool, typer.Option("--cover", help="Generate a cover image this run.")
+]
+DateResearchOption = Annotated[
+    bool,
+    typer.Option(
+        "--date-research",
+        help="Research the broadcast date with an agent when metadata has none.",
+    ),
+]
+ChatOption = Annotated[
+    bool,
+    typer.Option(
+        "--chat",
+        help=(
+            "Also fetch and translate the YouTube live-chat replay and burn it "
+            "in as a scrolling panel when packaging (see --chat-layout)."
+        ),
+    ),
+]
+ChatLayoutOption = Annotated[
+    ChatLayout,
+    typer.Option(
+        "--chat-layout",
+        help=(
+            "'side': 16:9 picture on the left, chat in a right column, "
+            "dialogue in the bottom bar; 'overlay': translucent panel over "
+            "the full frame; 'none': leave the chat out."
+        ),
+        case_sensitive=False,
+    ),
+]
+RemixOption = Annotated[
+    str | None,
+    typer.Option(
+        "--remix",
+        help=(
+            "Package as remix with this noise pool; a bare --remix uses "
+            "package.remix_pool."
+        ),
+        show_default=False,
+    ),
+]
 
 
 def run_command(
@@ -54,62 +113,12 @@ def run_command(
             show_default=False,
         ),
     ] = None,
-    parent: Annotated[
-        Path | None,
-        typer.Option(
-            "--parent",
-            help=(
-                "Project directory (archived ones too) whose briefing seeds this "
-                "new project's pre-pass for cross-episode consistency."
-            ),
-            exists=True,
-            file_okay=False,
-            show_default=False,
-        ),
-    ] = None,
-    cover: Annotated[
-        bool, typer.Option("--cover", help="Generate a cover image this run.")
-    ] = False,
-    date_research: Annotated[
-        bool,
-        typer.Option(
-            "--date-research",
-            help="Research the broadcast date with an agent when metadata has none.",
-        ),
-    ] = False,
-    chat: Annotated[
-        bool,
-        typer.Option(
-            "--chat",
-            help=(
-                "Also fetch and translate the YouTube live-chat replay and burn it "
-                "in as a scrolling panel when packaging (see --chat-layout)."
-            ),
-        ),
-    ] = False,
-    chat_layout: Annotated[
-        ChatLayout,
-        typer.Option(
-            "--chat-layout",
-            help=(
-                "'side': 16:9 picture on the left, chat in a right column, "
-                "dialogue in the bottom bar; 'overlay': translucent panel over "
-                "the full frame; 'none': leave the chat out."
-            ),
-            case_sensitive=False,
-        ),
-    ] = DEFAULT_CHAT_LAYOUT,
-    remix: Annotated[
-        str | None,
-        typer.Option(
-            "--remix",
-            help=(
-                "Package as remix with this noise pool; a bare --remix uses "
-                "package.remix_pool."
-            ),
-            show_default=False,
-        ),
-    ] = None,
+    parent: ParentOption = None,
+    cover: CoverOption = False,
+    date_research: DateResearchOption = False,
+    chat: ChatOption = False,
+    chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
+    remix: RemixOption = None,
     start: Annotated[
         str | None,
         typer.Option(
@@ -132,8 +141,6 @@ def run_command(
 ) -> None:
     """Download, transcribe and translate one video, resuming where it stopped."""
     from grillmaster.core.source_id import parse_source
-    from grillmaster.events.sinks import ConsoleSink
-    from grillmaster.pipeline.registry import PIPELINE, Pipeline
     from grillmaster.pipeline.runner import run_project
     from grillmaster.project.state import Section
     from grillmaster.stages.base import RunOptions
@@ -160,10 +167,9 @@ def run_command(
         remix=resolve_remix(remix, loaded.config.package.remix_pool),
         section=section,
     )
-    try:
-        # Tests hand in their own pipeline as the context object.
-        pipeline = ctx.obj if isinstance(ctx.obj, Pipeline) else PIPELINE
-        final = run_project(loaded, options, sinks=[ConsoleSink()], pipeline=pipeline)
-    except Exception as error:  # noqa: BLE001 - reported as the command's failure
-        fail(f"Failed to process {source}: {error}")
+    pipeline = pipeline_from(ctx)
+    final = run_or_exit(
+        lambda sinks: run_project(loaded, options, sinks=sinks, pipeline=pipeline),
+        failure=f"Failed to process {source}",
+    )
     logger.success(f"Finished {source}: {final.root}")

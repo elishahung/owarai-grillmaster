@@ -63,11 +63,10 @@ def split_into_chunks(
     N = ceil(total / limit); blocks are added greedily until a chunk reaches
     the average target, and the last chunk takes whatever remains. Blocks are
     never split. With N at least the block count, each block is its own chunk.
+    `target_char_limit` is positive (config validation).
     """
     if not blocks:
         return []
-    if target_char_limit <= 0:
-        raise ValueError("target_char_limit must be positive")
 
     total_chars = sum(block.char_count for block in blocks)
     num_chunks = max(1, math.ceil(total_chars / target_char_limit))

@@ -2,7 +2,8 @@
 `subs/cht.ass` and `subs/cht.srt` (name spacing + Netflix-TC punctuation).
 
 Name units come from the effective briefing and the fixed glossary. No
-intermediates, so `work/12_finalize/` is never created.
+intermediates, so `work/12_finalize/` is never created. The step result
+lists the written files, project-relative.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
     from grillmaster.stages.base import StageContext
 
 
-def _run(ctx: StageContext) -> None:
+def _run(ctx: StageContext) -> str:
     layout = ctx.layout
     briefing = read_model(
         require(layout.effective_briefing(), StageKey.PREPASS), Briefing
@@ -40,6 +41,10 @@ def _run(ctx: StageContext) -> None:
     )
     logger.success(
         f"Finalized {len(blocks)} blocks: {layout.cht_ass}, {layout.cht_srt}"
+    )
+    return ", ".join(
+        path.relative_to(layout.root).as_posix()
+        for path in (layout.cht_ass, layout.cht_srt)
     )
 
 

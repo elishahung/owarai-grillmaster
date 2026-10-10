@@ -322,8 +322,9 @@ def test_break_after_stops_and_skips_side_tasks_delivery_and_archive(
         False,
         False,
     ]
-    assert steps(events)[-3:] == [
+    assert steps(events)[-4:] == [
         StepCompleted("download", PlanKind.STAGE, 1.0),
+        StepSkipped("combine", PlanKind.STAGE, SkipReason.BREAKPOINT),
         StepSkipped("package", PlanKind.DELIVERY, SkipReason.BREAKPOINT),
         StepSkipped("archive", PlanKind.DELIVERY, SkipReason.BREAKPOINT),
     ]
@@ -341,6 +342,42 @@ def test_break_after_a_disabled_stage_still_stops(run: Runner, journal: Journal)
     )
     run(pipeline, break_after=StageKey.CHAT_FETCH)
     assert journal.entries == []
+
+
+def test_break_after_reports_every_later_stage_skipped(
+    run: Runner, journal: Journal, recording_sink: RecordingSink
+):
+    pipeline = Pipeline(
+        (
+            fake_stage(StageKey.METADATA, journal),
+            fake_stage(StageKey.CHAT_FETCH, journal, enabled=False),
+            fake_stage(StageKey.AUDIO, journal),
+        )
+    )
+    run(pipeline, break_after=StageKey.METADATA)
+    assert steps(recording_sink.events)[-2:] == [
+        StepSkipped("chat_fetch", PlanKind.STAGE, SkipReason.DISABLED),
+        StepSkipped("audio", PlanKind.STAGE, SkipReason.BREAKPOINT),
+    ]
+
+
+def test_break_after_reports_later_completed_stages_as_complete(
+    run: Runner, journal: Journal, recording_sink: RecordingSink, state: ProjectState
+):
+    state.mark_done(StageKey.AUDIO, elapsed_s=1.0)
+    pipeline = Pipeline(
+        (
+            fake_stage(StageKey.METADATA, journal),
+            fake_stage(StageKey.AUDIO, journal),
+            fake_stage(StageKey.ASR, journal),
+        )
+    )
+    run(pipeline, break_after=StageKey.METADATA)
+    assert journal.entries == ["run:metadata@metadata"]
+    assert steps(recording_sink.events)[-2:] == [
+        StepSkipped("audio", PlanKind.STAGE, SkipReason.ALREADY_COMPLETE),
+        StepSkipped("asr", PlanKind.STAGE, SkipReason.BREAKPOINT),
+    ]
 
 
 def test_break_after_an_unregistered_stage_is_refused(run: Runner, journal: Journal):

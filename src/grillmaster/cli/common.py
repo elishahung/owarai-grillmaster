@@ -18,6 +18,7 @@ from grillmaster.events.context import install_log_context
 
 if TYPE_CHECKING:
     from grillmaster.config.load import LoadedConfig
+    from grillmaster.pipeline.registry import Pipeline
     from grillmaster.project.layout import ProjectLayout
     from grillmaster.project.state import ProjectState
 
@@ -25,12 +26,35 @@ _CONSOLE_FORMAT = (
     "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | {message}"
 )
 
+# The loguru handler id of the console sink, which the dashboard replaces
+# while it owns the terminal.
+_console_handler: int | None = None
+
 
 def configure_console_logging() -> None:
     """INFO and up on stderr; the run log file keeps DEBUG (pipeline.logs)."""
     logger.remove()
-    logger.add(sys.stderr, level="INFO", format=_CONSOLE_FORMAT)
+    restore_console_logging()
     install_log_context()
+
+
+def restore_console_logging() -> None:
+    """Add the console sink (again), leaving every other handler alone."""
+    global _console_handler  # noqa: PLW0603 - the one console sink of the process
+    _console_handler = logger.add(sys.stderr, level="INFO", format=_CONSOLE_FORMAT)
+
+
+def console_handler() -> int | None:
+    """The console sink's loguru handler id, if one is installed."""
+    return _console_handler
+
+
+def pipeline_from(ctx: typer.Context) -> Pipeline:
+    """The pipeline a command runs: the registry's, unless a test handed in
+    its own as the context object."""
+    from grillmaster.pipeline.registry import PIPELINE, Pipeline
+
+    return ctx.obj if isinstance(ctx.obj, Pipeline) else PIPELINE
 
 
 def fail(message: str) -> NoReturn:

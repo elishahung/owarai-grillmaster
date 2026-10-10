@@ -4,9 +4,10 @@ Per stage, in registry order: skip it when disabled for this run, skip it
 (running `on_skip`) when the ledger already has it, otherwise run it as a
 step and record it in the ledger with an atomic save. The run stops after the
 `--break-after` stage whether that stage ran, was already complete or was
-disabled. Side tasks start as the loop passes their stage and are joined when
-the loop ends, however it ends. Then come the delivery steps, the project's
-logs close, and the archive move (when one is wired) runs last.
+disabled; the stages after it are reported skipped (`breakpoint`). Side
+tasks start as the loop passes their stage and are joined when the loop
+ends, however it ends. Then come the delivery steps, the project's logs
+close, and the archive move (when one is wired) runs last.
 
 `run_project` is the `grill run` entry (archive wired from `[paths] archive`);
 `deliver_project` runs only the delivery steps on an existing project
@@ -278,7 +279,8 @@ class _Run:
             usage=self._usage,
             clock=self._clock,
         ) as side_tasks:
-            for stage in self._pipeline.stages:
+            stages = self._pipeline.stages
+            for index, stage in enumerate(stages):
                 self._run_stage(stage)
                 side_tasks.stage_passed(stage.key)
                 if self._options.break_after == stage.key:
@@ -286,7 +288,21 @@ class _Run:
                         f"Breakpoint reached after {stage.key}; stopping "
                         f"{self._store.state.id}"
                     )
+                    self._skip_after_break(stages[index + 1 :])
                     return
+
+    def _skip_after_break(self, stages: Sequence[StageDef]) -> None:
+        """Report the stages a `--break-after` run never reaches, so no sink
+        leaves them pending; disabled and already complete ones keep the
+        reason a full run would give them."""
+        for stage in stages:
+            if not stage.enabled(self._options):
+                reason = SkipReason.DISABLED
+            elif self._store.state.is_done(stage.key):
+                reason = SkipReason.ALREADY_COMPLETE
+            else:
+                reason = SkipReason.BREAKPOINT
+            self._events.emit(StepSkipped(stage.key, PlanKind.STAGE, reason))
 
     def _run_stage(self, stage: StageDef) -> None:
         key = stage.key

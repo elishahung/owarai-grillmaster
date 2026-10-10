@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING
 import pytest
 
 from grillmaster.core.fs import staging_dir
-from grillmaster.core.paths import MAX_COMPONENT_UNITS, MAX_PATH_UNITS, measure
+from grillmaster.core.paths import (
+    MAX_COMPONENT_UNITS,
+    MAX_PATH_UNITS,
+    attempt_path,
+    measure,
+)
 from grillmaster.core.stage_key import SideTaskKey, StageKey
 from grillmaster.project.layout import ProjectLayout, session_dir
 from grillmaster.project.naming import (
@@ -48,7 +53,7 @@ def _every_layout_path() -> list[Path]:
         *(LAYOUT.side_dir(key) for key in SideTaskKey),
         *(frames / SAMPLE_FRAME for frames in LAYOUT.frames_dirs(SAMPLE_CHUNK)),
         *(
-            session_dir(parent, attempt=SAMPLE_ATTEMPT, label=label) / name
+            attempt_path(session_dir(parent, label=label), SAMPLE_ATTEMPT) / name
             for parent in LAYOUT.session_parents(SAMPLE_CHUNK)
             for label in ("", "polish", batch_label)
             for name in ("prompt.md", "tools.json", "raw.jsonl", "result.json")

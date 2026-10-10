@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING, Final
 from loguru import logger
 
 from grillmaster.core.prompts import (
+    frames_guidance,
     join_sections,
     load_prompt,
     render_program_instruction,
@@ -38,7 +39,6 @@ if TYPE_CHECKING:
 
 _SLOT = re.compile(r"\{\{audio:([a-z_]+)\}\}")
 _FRAGMENT_HEADER = re.compile(r"^<!-- ([a-z_]+) -->$", re.MULTILINE)
-_SCOPE_PLACEHOLDER = "{scope}"
 # CC timing is broadcast-derived and only approximately aligned with the ASR
 # timeline, so a chunk's CC slice keeps this margin around its time range.
 OFFICIAL_SUBTITLE_PADDING_S = 2.0
@@ -124,8 +124,7 @@ def prepass_instruction(inputs: PrepassInputs) -> str:
         if source.parent_briefing is not None
         else None,
         render_program_instruction(source.program_instruction),
-        _frames_tool("the entire video"),
-        load_prompt(__package__, "pre_pass_frames.md"),
+        frames_guidance(load_prompt(__package__, "pre_pass_frames.md")),
         load_prompt(__package__, "pre_pass_web_search.md"),
     )
 
@@ -195,7 +194,7 @@ def chunk_instruction(program_instruction: str, *, has_audio: bool) -> str:
     return join_sections(
         render_audio_template("chunk", has_audio=has_audio),
         render_program_instruction(program_instruction),
-        _frames_tool("your assigned chunk range"),
+        frames_guidance(),
     )
 
 
@@ -247,7 +246,3 @@ def official_subtitle_slice(blocks: Sequence[SrtBlock], chunk: Chunk) -> list[Sr
     """CC blocks overlapping the chunk's time range, padded on both sides."""
     window = chunk.time_range.padded(OFFICIAL_SUBTITLE_PADDING_S)
     return [block for block in blocks if block.time_range.overlaps(window)]
-
-
-def _frames_tool(scope: str) -> str:
-    return load_prompt(__package__, "frames_tool.md").replace(_SCOPE_PLACEHOLDER, scope)

@@ -10,9 +10,12 @@ from __future__ import annotations
 
 import re
 from http import HTTPStatus
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 
 from grillmaster.events.types import SessionOutcome
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 class AgentError(Exception):
@@ -54,6 +57,11 @@ class AgentOutputError(AgentError):
 class ValidationFailure(Exception):  # noqa: N818 - a verdict, not a crash
     """Raised by a task validator; the message is sent back as the repair prompt,
     so it must say exactly what is wrong."""
+
+    @classmethod
+    def from_problems(cls, header: str, problems: Iterable[str]) -> ValidationFailure:
+        """`header`, then one `- <problem>` line per problem."""
+        return cls(header + "\n" + "\n".join(f"- {problem}" for problem in problems))
 
 
 _QUOTA_MARKERS = (

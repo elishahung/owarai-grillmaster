@@ -3,7 +3,8 @@
 `PipelineState.apply` folds one event into the model; nothing here imports
 Textual or the pipeline. The plan (keys, labels, weights, params) comes from
 `RunStarted`; agent sessions are keyed by task name, and the chunk board is
-every session whose task name starts with `chunks/`.
+every session whose task name starts with `chunks/`, counted against the
+step's `chunks` progress bar (which also counts chunks served from cache).
 
 The state is not locked: it is owned by the Textual thread, which applies
 the events `TuiSink` queued on the emitting threads (each stamped there with
@@ -21,6 +22,7 @@ from enum import StrEnum
 from itertools import islice
 from typing import TYPE_CHECKING, assert_never
 
+from grillmaster.events.progress import CHUNK_PROGRESS_SCOPE
 from grillmaster.events.types import (
     ActivityKind,
     AgentActivity,
@@ -294,11 +296,18 @@ class PipelineState:
         return sorted(cells, key=lambda cell: cell.from_index)
 
     def chunk_stats(self, key: str) -> ChunkStats:
+        """Counts for the chunk board; `total` / `done` come from the step's
+        chunk progress bar when it has one (cached chunks have no cell)."""
         cells = self.chunk_cells(key)
         states = Counter(cell.session.state for cell in cells)
+        total, done = len(cells), states[SessionState.OK]
+        step = self._by_key.get(key)
+        bar = step.bars.get(CHUNK_PROGRESS_SCOPE) if step is not None else None
+        if bar is not None and bar.total is not None:
+            total, done = int(bar.total), int(bar.completed)
         return ChunkStats(
-            total=len(cells),
-            done=states[SessionState.OK],
+            total=total,
+            done=done,
             active=states[SessionState.RUNNING],
             failed=states[SessionState.FAILED],
             retries=sum(cell.session.retries for cell in cells),

@@ -3,7 +3,9 @@ onto the Japanese timecodes as `work/09_chunks/merged.srt`.
 
 Each chunk works in its own `work/09_chunks/<from>-<to>/` (frames, audio
 slice, session record, agent cwd, `translation.json` cache); the batch
-itself is `translate.chunk.translate_chunks`.
+itself is `translate.chunk.translate_chunks`. Progress is the
+`CHUNK_PROGRESS_SCOPE` bar over the chunk count, advanced per finished or
+cached chunk; a failed batch leaves it open.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from grillmaster.core.json_artifact import read_model
 from grillmaster.core.model_spec import Role
 from grillmaster.core.srt import write_srt_file
 from grillmaster.core.stage_key import StageKey
+from grillmaster.events.progress import CHUNK_PROGRESS_SCOPE, track
 from grillmaster.project.layout import session_dir
 from grillmaster.stages._common import (
     accepts_audio,
@@ -65,7 +68,10 @@ def _run(ctx: StageContext) -> None:
         translation=layout.chunk_translation,
         session_dir=chunk_session,
     )
-    merged = translate_chunks(inputs, files, ctx.agents, ctx.ffmpeg)
+    with track(ctx.events, CHUNK_PROGRESS_SCOPE, "chunks", len(chunks)) as advance:
+        merged = translate_chunks(
+            inputs, files, ctx.agents, ctx.ffmpeg, on_chunk_done=advance
+        )
     write_srt_file(layout.merged_srt, merged)
     logger.success(f"Merged {len(merged)} translated blocks: {layout.merged_srt}")
 

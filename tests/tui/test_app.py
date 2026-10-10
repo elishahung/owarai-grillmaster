@@ -37,8 +37,9 @@ from grillmaster.tui.app import (
 )
 from grillmaster.tui.sink import TuiSink
 from grillmaster.tui.state import ACTIVITY_LINES, PipelineState
-from grillmaster.tui.widgets import ActivityLog, ChunkBoard, SessionTable
+from grillmaster.tui.widgets import ActivityLog, ChunkBoard, SessionTable, View
 from grillmaster.tui.widgets.chunk_board import render_chunk_board
+from grillmaster.tui.widgets.header import render_header
 from grillmaster.tui.widgets.session_table import listed_sessions, render_session_table
 from grillmaster.tui.widgets.stage_detail import render_stage_detail
 from grillmaster.tui.widgets.summary import render_summary
@@ -412,3 +413,20 @@ def test_clipboard_payload_is_utf16_with_a_bom_for_clip_exe():
     text = "みなみかわ"
     assert clipboard_payload(text, "win32") == b"\xff\xfe" + text.encode("utf-16-le")
     assert clipboard_payload(text, "linux") == text.encode("utf-8")
+
+
+def test_header_shows_the_asr_cost():
+    state = PipelineState()
+    state.apply(RunStarted("epabc123", PLAN))
+    assert "ASR" not in _text(render_header(state, View()))
+    state.apply(StepCompleted("asr", PlanKind.STAGE, 3.0, "$0.1234 · project $0.1234"))
+    assert "ASR $0.1234 · project $0.1234" in _text(render_header(state, View()))
+
+
+def test_chunk_board_shows_progress_of_cached_chunks():
+    state = PipelineState()
+    state.apply(RunStarted("epabc123", PLAN))
+    state.apply(StepStarted("chunks", PlanKind.STAGE))
+    state.apply(ProgressStarted("chunks", "chunks", 3), stage="chunks")
+    state.apply(ProgressAdvanced("chunks", 2), stage="chunks")
+    assert "2/3 done" in _text(render_chunk_board(state, "chunks", None))

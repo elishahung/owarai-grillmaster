@@ -16,6 +16,11 @@ live with the bundled CLI):
 
 Raw records are the SDK message dataclasses encoded by `encode_message`
 (`thinking_tokens` progress ticks are dropped before they leave the pump).
+
+The SDK spawns the CLI itself, so each turn hands `query()` a
+`RegisteredTransport`: the SDK's own subprocess transport, whose child is held
+in `core.process.LIVE_PROCESSES` from `connect` to `close`, so an abort's
+`kill_all` tree-kills it like any other agent process.
 """
 
 from __future__ import annotations
@@ -44,6 +49,9 @@ from claude_agent_sdk import (
     UserMessage,
     query,
 )
+from claude_agent_sdk._internal.transport.subprocess_cli import (
+    SubprocessCLITransport,
+)
 
 from grillmaster.agents.adapters.base import (
     Capability,
@@ -68,17 +76,20 @@ from grillmaster.agents.events import (
     normalize_usage,
 )
 from grillmaster.core.model_spec import Backend, Effort
+from grillmaster.core.process import LIVE_PROCESSES
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Sequence
     from pathlib import Path
 
+    from anyio.abc import Process
     from claude_agent_sdk.types import EffortLevel
 
     from grillmaster.agents.events import AgentEvent
     from grillmaster.core.model_spec import ModelSpec
 
 type QueryFn = Callable[..., AsyncIterator[Any]]
+type Prompt = str | AsyncIterator[dict[str, Any]]
 
 EFFORTS: dict[Effort, EffortLevel] = {
     Effort.LOW: "low",
@@ -215,10 +226,13 @@ class ClaudeTurn(Turn):
     def _finish(self) -> FinalOutput:
         return self._parser.finish(self._failure, "\n".join(self._stderr))
 
-    def _pump(self, query_fn: QueryFn, prompt: object) -> None:
+    def _pump(self, query_fn: QueryFn, prompt: Prompt) -> None:
         async def consume() -> None:
+            transport = RegisteredTransport(prompt=prompt, options=self._options)
             async with asyncio.timeout(self._request.timeout_s):
-                async for message in query_fn(prompt=prompt, options=self._options):
+                async for message in query_fn(
+                    prompt=prompt, options=self._options, transport=transport
+                ):
                     if not is_progress_tick(message):
                         self._queue.put(message)
 
@@ -230,6 +244,47 @@ class ClaudeTurn(Turn):
             self._failure = error
         finally:
             self._queue.put(self._END)
+
+
+class RegisteredTransport(SubprocessCLITransport):
+    """The SDK's CLI transport with its child in `LIVE_PROCESSES` while
+    connected. Relies on the SDK's private `_process` (anyio `Process`)."""
+
+    _handle: CliProcess | None = None
+
+    @override
+    async def connect(self) -> None:
+        await super().connect()
+        process = self._process
+        if process is not None and self._handle is None:
+            self._handle = CliProcess(process)
+            LIVE_PROCESSES.register(self._handle)
+
+    @override
+    async def close(self) -> None:
+        try:
+            await super().close()
+        finally:
+            if self._handle is not None:
+                LIVE_PROCESSES.unregister(self._handle)
+                self._handle = None
+
+
+class CliProcess:
+    """An anyio `Process` as a `core.process.ChildProcess`."""
+
+    def __init__(self, process: Process) -> None:
+        self._process = process
+
+    @property
+    def pid(self) -> int:
+        return self._process.pid
+
+    def poll(self) -> int | None:
+        return self._process.returncode
+
+    def kill(self) -> None:
+        self._process.kill()
 
 
 class ClaudeTurnParser:
@@ -349,7 +404,7 @@ def encode_message(value: object) -> Any:
     return value
 
 
-def _prompt(request: TurnRequest) -> object:
+def _prompt(request: TurnRequest) -> Prompt:
     """A plain string, or one streamed user message carrying image blocks."""
     if not request.images:
         return request.message

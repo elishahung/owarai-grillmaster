@@ -203,7 +203,7 @@ def test_session_directory_contents(
     message = (session / "prompt.md").read_text(encoding="utf-8")
     assert message.startswith("INSTRUCTIONS\n\nPROMPT\n\n【可用工具】")
     assert "get_frames(times)" in message
-    assert "10 秒與70.5 秒之間" in message
+    assert "10.000 秒與70.500 秒之間" in message
     assert ToolSession.load(session / "tools.json") == tools
     assert (session / "raw.jsonl").read_text(encoding="utf-8") == '{"a":1}\n{"b":2}\n'
     record = SessionRecord.model_validate_json(

@@ -8,6 +8,7 @@ from grillmaster.agents.errors import (
     AgentError,
     AgentQuotaError,
     AgentTransientError,
+    ValidationFailure,
     classify_failure,
 )
 from grillmaster.events.types import SessionOutcome
@@ -46,3 +47,8 @@ def test_each_error_maps_to_its_session_outcome():
     assert AgentAuthError.outcome is SessionOutcome.AUTH_ERROR
     assert AgentConfigError.outcome is SessionOutcome.CONFIG_ERROR
     assert AgentTransientError.outcome is SessionOutcome.TRANSIENT_ERROR
+
+
+def test_validation_failure_lists_problems_under_the_header():
+    failure = ValidationFailure.from_problems("請修正：", ["缺少 index：1", "x"])
+    assert str(failure) == "請修正：\n- 缺少 index：1\n- x"

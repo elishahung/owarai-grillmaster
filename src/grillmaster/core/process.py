@@ -5,7 +5,8 @@ a process group that `kill_process_tree` can signal as a whole; on Windows
 `taskkill /T` walks the tree instead. `Popen.kill` alone reaches only the
 direct child, and a surviving descendant keeps the stdout pipe open.
 
-Every spawned tree is also held in `LIVE_PROCESSES` while it runs, so an
+Every spawned tree (the Claude SDK's CLI too, registered by
+`agents.adapters.claude`) is also held in `LIVE_PROCESSES` while it runs, so an
 abort can end them all from the main thread (`kill_all`): on Windows a child
 does not die with its parent, and the daemon threads that own the children
 are frozen at interpreter exit before their `finally` blocks run. `kill_all`
@@ -22,13 +23,27 @@ import subprocess
 import sys
 import threading
 from collections import deque
-from typing import IO, TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-def kill_process_tree(process: subprocess.Popen[str]) -> None:
+class ChildProcess(Protocol):
+    """What a tree kill needs of a child: a `Popen`, or a handle on a child
+    spawned elsewhere (the Claude SDK's CLI)."""
+
+    @property
+    def pid(self) -> int: ...
+
+    def poll(self) -> int | None:
+        """The exit code, or `None` while the process runs."""
+        ...
+
+    def kill(self) -> None: ...
+
+
+def kill_process_tree(process: ChildProcess) -> None:
     """Forcefully end `process` and every descendant; an exited process is fine."""
     if process.poll() is not None:
         return
@@ -84,9 +99,7 @@ class ProcessRegistry[P]:
         return len(processes)
 
 
-LIVE_PROCESSES: ProcessRegistry[subprocess.Popen[str]] = ProcessRegistry(
-    kill_process_tree
-)
+LIVE_PROCESSES: ProcessRegistry[ChildProcess] = ProcessRegistry(kill_process_tree)
 
 
 def kill_all() -> int:

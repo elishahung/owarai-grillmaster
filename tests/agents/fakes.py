@@ -125,8 +125,12 @@ class FakeQuery:
     hang: bool = False
     calls: list[dict[str, Any]] = field(default_factory=list)
 
-    def __call__(self, *, prompt: Any, options: Any) -> AsyncIterator[Any]:
-        self.calls.append({"prompt": prompt, "options": options})
+    def __call__(
+        self, *, prompt: Any, options: Any, transport: Any
+    ) -> AsyncIterator[Any]:
+        self.calls.append(
+            {"prompt": prompt, "options": options, "transport": transport}
+        )
         return self._stream()
 
     async def _stream(self) -> AsyncIterator[Any]:

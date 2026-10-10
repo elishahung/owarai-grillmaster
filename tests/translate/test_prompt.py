@@ -75,7 +75,9 @@ def test_prepass_instruction_has_only_the_blocks_for_present_inputs(
     text = prompt.prepass_instruction(prepass_inputs())
     assert "### FIXED GLOSSARY" in text
     assert "## On-demand video frames" in text
-    assert "the entire video" in text
+    # The window is stated with the tool list; the pre-pass says what it is.
+    assert "entire video" not in text
+    assert "end of the last subtitle block" in text
     assert "Pre-pass is the anchor" in text
     assert "Use built-in web search only" in text
     for absent in (
@@ -168,7 +170,7 @@ def test_prepass_message_sections(
 def test_chunk_instruction(chunk_inputs: Callable[..., ChunkInputs]) -> None:
     text = prompt.chunk_instruction("チャンクルール", has_audio=True)
     assert "chunk-specific audio slice" in text
-    assert "your assigned chunk range" in text
+    assert "the window stated for `get_frames` under 【可用工具】" in text
     assert text.index("### PROGRAM-SPECIFIC INSTRUCTIONS") < text.index(
         "## On-demand video frames"
     )

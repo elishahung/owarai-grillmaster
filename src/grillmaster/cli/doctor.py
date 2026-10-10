@@ -2,16 +2,34 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import typer
 
 from grillmaster.core.model_spec import Backend
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
 _VERSION_TIMEOUT_S = 30.0
 # The Claude backend runs the CLI bundled with the SDK, not one on PATH.
 _CLAUDE_SDK_DISTRIBUTION = "claude-agent-sdk"
+# Where Claude Code finds its login; checked offline, without the network.
+_CLAUDE_LOGIN_VARS = (
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    # Cloud providers authenticate through their own credentials.
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+)
+_CLAUDE_CONFIG_VAR = "CLAUDE_CONFIG_DIR"
+_CLAUDE_CREDENTIALS = ".credentials.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,7 +42,8 @@ class Check:
 
 
 def doctor_command() -> None:
-    """Check ffmpeg/ffprobe, the agent CLIs and grill.toml."""
+    """Check ffmpeg/ffprobe, the agent CLIs, the Claude login and grill.toml."""
+    # Only the backends the configured roles use must pass.
     from grillmaster.config.errors import ConfigError
     from grillmaster.config.load import load_config
 
@@ -47,9 +66,11 @@ def doctor_command() -> None:
                 Backend, pool.map(_backend_check, Backend), strict=True
             )
         ]
+    login = claude_login_check(os.environ, Path.home(), sys.platform)
+    checks.append(replace(login, required=Backend.CLAUDE in used_backends))
     for check in checks:
         status = "ok" if check.ok else ("FAIL" if check.required else "warn")
-        typer.echo(f"{status:<5}{check.name:<12}{check.detail}")
+        typer.echo(f"{status:<5}{check.name:<14}{check.detail}")
     if any(check.required and not check.ok for check in checks):
         raise typer.Exit(code=1)
 
@@ -98,3 +119,26 @@ def _backend_check(backend: Backend) -> Check:
         detail = first_line(result.stderr) or f"exit {result.returncode}"
         return Check(name, ok=False, detail=detail)
     return Check(name, ok=True, detail=first_line(result.stdout) or executable)
+
+
+def claude_login_check(environ: Mapping[str, str], home: Path, platform: str) -> Check:
+    """Whether Claude Code has a login: a token or cloud-provider variable,
+    or its credentials file (macOS keeps the login in the keychain, which is
+    not inspected). `settings.json` (`apiKeyHelper`) does not count: the
+    adapter runs with `setting_sources=[]`."""
+    name = "claude login"
+    for variable in _CLAUDE_LOGIN_VARS:
+        if environ.get(variable):
+            return Check(name, ok=True, detail=f"{variable} is set")
+    config_dir = environ.get(_CLAUDE_CONFIG_VAR)
+    config = Path(config_dir) if config_dir else home / ".claude"
+    credentials = config / _CLAUDE_CREDENTIALS
+    if credentials.is_file():
+        return Check(name, ok=True, detail=str(credentials))
+    if platform == "darwin":
+        return Check(name, ok=True, detail="macOS keychain (not checked)")
+    return Check(
+        name,
+        ok=False,
+        detail=f"no {credentials}; run `claude` and /login once",
+    )

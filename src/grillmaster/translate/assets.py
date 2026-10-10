@@ -2,7 +2,8 @@
 
 Frames are sampled at SRT block starts (+0.2 s, past the cut) spread evenly
 over the blocks: the pre-pass takes 20-40 over the whole film, a chunk one
-per `interval_s` of its time range (at most one per block). Stills and audio
+per `interval_s` of its time range (at most one per block); intervals are
+positive by config validation. Stills and audio
 slices are fixed-name caches: an existing file is reused as-is. A frame that
 cannot be extracted is skipped with a warning; the pre-sampled frames are a
 convenience, and the agent can still fetch any moment with `get_frames`.
@@ -57,8 +58,6 @@ def prepass_frame_times(
 ) -> list[float]:
     """Pre-pass sample times: one per `interval_s` of SRT, clamped to 20-40
     and to the block count, each clamped to `[0, video_end]`."""
-    if interval_s <= 0:
-        raise ValueError("interval_s must be positive")
     if not blocks or video_end <= 0:
         return []
     srt_duration = max(0.0, blocks[-1].time_range.end)
@@ -75,8 +74,6 @@ def prepass_frame_times(
 def chunk_frame_times(chunk: Chunk, *, interval_s: int) -> list[float]:
     """Chunk sample times: one per `interval_s` of the chunk (at least one,
     at most one per block), each clamped into the chunk's time range."""
-    if interval_s <= 0:
-        raise ValueError("interval_s must be positive")
     span = chunk.time_range
     if span.duration <= 0:
         return []
@@ -104,8 +101,6 @@ def prepare_prepass_assets(
 ) -> MediaAssets:
     """Whole-film stills; `audio` (the full track, or `None` for a backend
     that cannot hear) is passed through unchanged."""
-    if interval_s <= 0:
-        raise ValueError("interval_s must be positive")
     video_end = max(0.0, probe.duration(runner, video) - VIDEO_END_MARGIN_S)
     times = prepass_frame_times(blocks, video_end=video_end, interval_s=interval_s)
     frames = extract_available_frames(runner, video, times, frames_dir, max_side)

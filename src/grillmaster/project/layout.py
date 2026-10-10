@@ -15,7 +15,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from grillmaster.core.paths import attempt_path
 from grillmaster.core.srt import chunk_range_name
 from grillmaster.core.stage_key import SideTaskKey, StageKey
 
@@ -26,19 +25,18 @@ if TYPE_CHECKING:
 _SESSION_DIR_NAME = "session"
 
 
-def session_dir(parent: Path, *, attempt: int = 1, label: str = "") -> Path:
-    """Session record directory under `parent` for one agent task.
+def session_dir(parent: Path, *, label: str = "") -> Path:
+    """Session record directory under `parent` for one agent task's first
+    attempt; the agent runner puts retries beside it
+    (`core.paths.attempt_path`: `session.2/`, `session.3/`).
 
-    The first attempt is `session/`; the agent runner puts retries beside it
-    (`core.paths.attempt_path`: `session.2/`, `session.3/`), which `attempt`
-    reproduces for the MAX_PATH budget. `label` tells apart several tasks
-    sharing one parent (chat translation labels batches by their file stem,
-    `ProjectLayout.chat_batch(i).stem`, and the polish pass `polish`):
-    `session_<label>/`, `session_<label>.2/`. Names stay short for the
-    MAX_PATH budget.
+    `label` tells apart several tasks sharing one parent (chat translation
+    labels batches by their file stem, `ProjectLayout.chat_batch(i).stem`,
+    and the polish pass `polish`): `session_<label>/`. Names stay short for
+    the MAX_PATH budget.
     """
     name = f"{_SESSION_DIR_NAME}_{label}" if label else _SESSION_DIR_NAME
-    return attempt_path(parent / name, attempt)
+    return parent / name
 
 
 def _stamp(at: datetime) -> str:

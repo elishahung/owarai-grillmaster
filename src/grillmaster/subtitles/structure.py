@@ -11,7 +11,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from grillmaster.core.srt import read_srt_file
+
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from grillmaster.core.srt import SrtBlock
 
 MAX_REPORTED_PROBLEMS = 20
@@ -50,3 +54,23 @@ def check_aligned(reference: list[SrtBlock], candidate: list[SrtBlock]) -> list[
             f"... and {omitted} more problems",
         ]
     return problems
+
+
+def check_aligned_file(reference: list[SrtBlock], path: Path) -> list[str]:
+    """`check_aligned` against the SRT file at `path`; a missing,
+    unreadable (locked, a directory) or unparsable file is reported as a
+    problem, not raised."""
+    try:
+        candidate = read_srt_file(path)
+    except OSError as error:
+        return [unreadable_problem(path, error)]
+    except ValueError as error:  # UnicodeDecodeError included
+        return [f"cannot parse {path}: {error}"]
+    return check_aligned(reference, candidate)
+
+
+def unreadable_problem(path: Path, error: OSError) -> str:
+    """The problem line for an SRT file that could not be read at all."""
+    if isinstance(error, FileNotFoundError):
+        return f"file not found: {path}"
+    return f"cannot read {path}: {error}"

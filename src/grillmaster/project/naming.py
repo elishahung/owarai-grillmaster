@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from grillmaster.core.fs import STAGING_SUFFIX
-from grillmaster.core.paths import fit_dir_name, measure
+from grillmaster.core.paths import attempt_path, fit_dir_name, measure
 from grillmaster.project.layout import ProjectLayout, session_dir
 
 if TYPE_CHECKING:
@@ -52,7 +52,7 @@ def deepest_project_paths(layout: ProjectLayout) -> tuple[Path, ...]:
     return (
         *(frames / SAMPLE_FRAME for frames in layout.frames_dirs(SAMPLE_CHUNK)),
         *(
-            session_dir(parent, attempt=SAMPLE_ATTEMPT, label=label)
+            attempt_path(session_dir(parent, label=label), SAMPLE_ATTEMPT)
             / _LONGEST_SESSION_FILE
             for parent in layout.session_parents(SAMPLE_CHUNK)
         ),

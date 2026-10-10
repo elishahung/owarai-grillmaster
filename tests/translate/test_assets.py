@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import pytest
 from tests.fakes import FakeFfmpeg
 
 from grillmaster.core.srt import SrtBlock
@@ -95,19 +94,6 @@ def test_prepass_frames_stay_clear_of_the_video_end(tmp_path: Path) -> None:
     assert assets.audio is None
 
 
-def test_prepass_interval_must_be_positive(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="positive"):
-        prepare_prepass_assets(
-            FakeFfmpeg(duration=10.0),
-            video=tmp_path / "video.mp4",
-            blocks=_blocks(1, 1, cue=1, last_cue=1),
-            frames_dir=tmp_path / "frames",
-            interval_s=0,
-            max_side=768,
-            audio=None,
-        )
-
-
 # --- chunks -----------------------------------------------------------------
 
 
@@ -141,12 +127,6 @@ def test_chunk_frames_cap_at_block_count() -> None:
 def test_chunk_frame_clamps_to_the_range_end() -> None:
     chunk = Chunk((SrtBlock(10, "00:00:09,950 --> 00:00:10,000", "a"),))
     assert chunk_frame_times(chunk, interval_s=30) == [10.0]
-
-
-def test_chunk_interval_must_be_positive() -> None:
-    chunk = Chunk((SrtBlock(1, "00:00:00,000 --> 00:00:01,000", "a"),))
-    with pytest.raises(ValueError, match="positive"):
-        chunk_frame_times(chunk, interval_s=0)
 
 
 def test_chunk_audio_slice_starts_at_the_first_srt_start(tmp_path: Path) -> None:

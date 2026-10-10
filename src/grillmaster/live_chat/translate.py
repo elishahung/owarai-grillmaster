@@ -27,6 +27,7 @@ from loguru import logger
 
 from grillmaster.agents.errors import ValidationFailure
 from grillmaster.agents.task import AgentJob, AgentTask, SchemaOutput
+from grillmaster.core.id_coverage import id_coverage
 from grillmaster.core.json_artifact import load_model, write_model
 from grillmaster.core.model_spec import Role
 from grillmaster.core.models import StrictModel
@@ -342,17 +343,20 @@ def _check_lines(
     require_all: bool,
 ) -> None:
     """Reject unknown, duplicated, empty or (if required) missing ids."""
-    allowed = set(allowed)
-    returned = [line.id for line in lines]
+    coverage = id_coverage(
+        allowed,
+        ((line.id, line.text.strip()) for line in lines),
+        require_all=require_all,
+    )
     problems: list[str] = []
-    if unknown := sorted(set(returned) - allowed):
-        problems.append(f"unknown ids {unknown}")
-    if require_all and (missing := sorted(allowed - set(returned))):
-        problems.append(f"missing ids {missing}")
-    if len(returned) != len(set(returned)):
+    if coverage.unknown:
+        problems.append(f"unknown ids {list(coverage.unknown)}")
+    if coverage.missing:
+        problems.append(f"missing ids {list(coverage.missing)}")
+    if coverage.duplicate:
         problems.append("duplicated ids")
-    if empty := [line.id for line in lines if not line.text.strip()]:
-        problems.append(f"empty text for ids {empty}")
+    if coverage.empty:
+        problems.append(f"empty text for ids {list(coverage.empty)}")
     if problems:
         raise ValidationFailure(
             "Return one non-empty line per listed id: " + "; ".join(problems)

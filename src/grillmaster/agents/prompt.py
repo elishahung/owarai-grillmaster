@@ -39,10 +39,10 @@ def tools_section(tools: ToolSession) -> str:
     lines: list[str] = []
     if tools.frames is not None:
         start, end = tools.frames.window
-        until = f"{end:g} 秒" if end is not None else "影片結尾"
+        until = f"{end:.3f} 秒" if end is not None else "影片結尾"
         lines.append(
             "- `get_frames(times)`：擷取影片指定秒數的畫面，直接以圖片回傳"
-            f"（時間需介於 {start:g} 秒與{until}之間）。"
+            f"（時間需介於 {start:.3f} 秒與{until}之間）。"
         )
     if tools.check_srt is not None:
         lines.append(

@@ -108,6 +108,7 @@ def inputs(tmp_path: Path) -> GlossaryInputs:
         fixed_glossary=GLOSSARY,
         fixed_glossary_path=FIXED_GLOSSARY_PATH,
         fixed_glossary_guide_path=FIXED_GLOSSARY_GUIDE_PATH,
+        workdir=stage,
         output_srt=stage / "checked.srt",
         report=stage / "report.md",
         briefing_candidate=stage / "briefing.candidate.json",
@@ -356,8 +357,3 @@ def test_an_unaccepted_candidate_is_never_promoted(
 
     assert not inputs.corrected_briefing.exists()
     assert not any(copy.exists() for copy in inputs.glossary_copies)
-
-
-def test_outputs_must_share_a_directory(inputs: GlossaryInputs, tmp_path: Path):
-    with pytest.raises(ValueError, match="one directory"):
-        replace(inputs, briefing_candidate=tmp_path / "briefing.candidate.json")

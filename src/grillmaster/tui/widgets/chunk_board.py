@@ -2,7 +2,8 @@
 selected chunk's session activity.
 
 Cells exist only for chunks that started a session this run; chunks served
-from their cache never do.
+from their cache never do, but count as done in the board's `done/total`
+line (from the stage's chunk progress bar).
 """
 
 from __future__ import annotations
@@ -30,12 +31,12 @@ ACTIVITY_SHOWN = 15
 
 
 class ChunkBoard(Static):
-    """Hidden while the step has no chunk session."""
+    """Hidden while the step has neither a chunk session nor chunk progress."""
 
     def show(self, state: PipelineState, key: str | None, chunk: str | None) -> None:
-        cells = state.chunk_cells(key) if key is not None else []
-        self.display = bool(cells)
-        if cells:
+        visible = key is not None and state.chunk_stats(key).total > 0
+        self.display = visible
+        if visible:
             self.update(render_chunk_board(state, key or "", chunk))
 
 

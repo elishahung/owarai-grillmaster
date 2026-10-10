@@ -10,20 +10,27 @@ never survives a fresh attempt).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from grillmaster.agents.task import AgentTask, FilesOutput
 from grillmaster.core.model_spec import Role
-from grillmaster.core.prompts import join_sections, render_program_instruction
-from grillmaster.postprocess._shared import (
-    check_skeleton,
-    frames_prompt,
-    read_reference,
+from grillmaster.core.prompts import (
+    frames_guidance,
+    join_sections,
+    load_prompt,
+    render_program_instruction,
     render_template,
+)
+from grillmaster.postprocess._shared import (
+    PROMPTS,
+    check_skeleton,
+    read_reference,
+    workdir_name,
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from grillmaster.core.tool_session import ToolSession
 
 TASK_NAME = "refine"
@@ -33,8 +40,8 @@ TASK_NAME = "refine"
 class RefineInputs:
     """Everything the refine agent reads and writes.
 
-    `translated_srt` is both the baseline and the skeleton reference. The two
-    outputs sit in one directory, which becomes the agent's workdir.
+    `translated_srt` is both the baseline and the skeleton reference.
+    `workdir` is the agent's cwd; the two outputs lie inside it.
     """
 
     translated_srt: Path
@@ -42,21 +49,11 @@ class RefineInputs:
     briefing: Path
     prepass_frames_dir: Path
     chunks_dir: Path
+    workdir: Path
     output_srt: Path
     report: Path
     # The program's configured refine text; empty when none.
     program_instruction: str = ""
-
-    def __post_init__(self) -> None:
-        if self.report.parent != self.output_srt.parent:
-            raise ValueError(
-                f"refine outputs must share one directory: {self.output_srt}, "
-                f"{self.report}"
-            )
-
-    @property
-    def workdir(self) -> Path:
-        return self.output_srt.parent
 
 
 def build_refine_task(
@@ -81,17 +78,16 @@ def build_refine_task(
 
     instructions = join_sections(
         render_template(
+            PROMPTS,
             "refine.md",
-            {
-                "translated_srt": str(inputs.translated_srt),
-                "ja_srt": str(inputs.ja_srt),
-                "briefing": str(inputs.briefing),
-                "prepass_frames_dir": str(inputs.prepass_frames_dir),
-                "chunks_dir": str(inputs.chunks_dir),
-                "output_srt": inputs.output_srt.name,
-                "output_srt_path": str(inputs.output_srt),
-                "report": inputs.report.name,
-            },
+            translated_srt=str(inputs.translated_srt),
+            ja_srt=str(inputs.ja_srt),
+            briefing=str(inputs.briefing),
+            prepass_frames_dir=str(inputs.prepass_frames_dir),
+            chunks_dir=str(inputs.chunks_dir),
+            output_srt=workdir_name(inputs.output_srt, inputs.workdir),
+            output_srt_path=str(inputs.output_srt),
+            report=workdir_name(inputs.report, inputs.workdir),
         ),
         render_program_instruction(inputs.program_instruction),
     )
@@ -99,11 +95,12 @@ def build_refine_task(
         name=TASK_NAME,
         role=Role.POSTPROCESS,
         instructions=instructions,
-        prompt=frames_prompt("refine_frames.md"),
+        prompt=frames_guidance(load_prompt(PROMPTS, "refine_frames.md")),
         session_dir=session_dir,
         workdir=inputs.workdir,
         output=FilesOutput(
-            (Path(inputs.output_srt.name),), optional=(Path(inputs.report.name),)
+            (inputs.output_srt.relative_to(inputs.workdir),),
+            optional=(inputs.report.relative_to(inputs.workdir),),
         ),
         tools=tools,
         add_dirs=(tools.project_root,),

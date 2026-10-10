@@ -15,7 +15,6 @@ its fixed-name cache, written the moment its session is accepted.
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
@@ -23,6 +22,7 @@ from loguru import logger
 
 from grillmaster.agents.errors import ValidationFailure
 from grillmaster.agents.task import AgentJob, AgentTask, SchemaOutput
+from grillmaster.core.id_coverage import id_coverage
 from grillmaster.core.json_artifact import load_model, write_model
 from grillmaster.core.model_spec import Role
 from grillmaster.core.models import StrictModel
@@ -82,6 +82,8 @@ def translate_chunks(
     files: ChunkFiles,
     agents: AgentRunner,
     ffmpeg: FfmpegRunner,
+    *,
+    on_chunk_done: Callable[[], None] = lambda: None,
 ) -> list[SrtBlock]:
     """Every chunk translated and merged onto the source timecodes.
 
@@ -90,6 +92,10 @@ def translate_chunks(
     prepares its media on a worker, and its accepted translation is cached
     at once, so a failure, crash or Ctrl-C elsewhere never loses it. Raises
     `TranslateError` listing the failed chunks after the whole batch ran.
+
+    `on_chunk_done` is called once per chunk whose translation is in hand:
+    for a cache hit while scanning, for an agent result right after it is
+    cached (on that worker's thread).
     """
     chunks = inputs.chunks
     translations: dict[tuple[int, int], ChunkTranslation] = {}
@@ -100,6 +106,7 @@ def translate_chunks(
             pending.append(chunk)
         else:
             translations[chunk.index_range] = cached
+            on_chunk_done()
     logger.info(
         f"Translating {len(pending)}/{len(chunks)} chunks "
         f"({len(translations)} cached, audio "
@@ -110,6 +117,7 @@ def translate_chunks(
         def accept(result: AgentResult[ChunkTranslation]) -> None:
             write_model(files.translation(*chunk.index_range), result.output)
             translations[chunk.index_range] = result.output
+            on_chunk_done()
 
         return AgentJob(
             task_name(chunk),
@@ -230,54 +238,40 @@ def chunk_validator(chunk: Chunk) -> Callable[[ChunkTranslation], None]:
     def validate(translation: ChunkTranslation) -> None:
         problems = translation_problems(chunk, translation)
         if problems:
-            raise ValidationFailure(
+            raise ValidationFailure.from_problems(
                 f"翻譯結果必須對 index {chunk.from_index}-{chunk.to_index} 的每個來源"
-                "區塊各輸出恰好一筆非空的 text。請修正下列問題後重新輸出完整的 blocks：\n"
-                + "\n".join(f"- {problem}" for problem in problems)
+                "區塊各輸出恰好一筆非空的 text。請修正下列問題後重新輸出完整的 blocks：",
+                problems,
             )
 
     return validate
 
 
 def translation_problems(chunk: Chunk, translation: ChunkTranslation) -> list[str]:
-    """Missing, duplicate and unexpected indexes, and empty texts; empty = valid."""
-    expected = [block.index for block in chunk.blocks]
-    expected_set = set(expected)
-    counts = Counter(line.index for line in translation.blocks)
-    missing = [index for index in expected if index not in counts]
-    duplicates = sorted(index for index, count in counts.items() if count > 1)
-    unexpected = sorted(index for index in counts if index not in expected_set)
-    empty = sorted(
-        {
-            line.index
-            for line in translation.blocks
-            if line.index in expected_set and not clean_text(line.text)
-        }
+    """Missing, duplicate and unexpected indexes, and empty texts (judged
+    after `clean_text`); empty = valid."""
+    coverage = id_coverage(
+        (block.index for block in chunk.blocks),
+        ((line.index, clean_text(line.text)) for line in translation.blocks),
     )
-    problems: list[str] = []
-    if missing:
-        problems.append(f"缺少 index：{_indexes(missing)}")
-    if duplicates:
-        problems.append(f"重複的 index：{_indexes(duplicates)}")
-    if unexpected:
-        problems.append(f"不屬於本區段的 index：{_indexes(unexpected)}")
-    if empty:
-        problems.append(f"text 為空的 index：{_indexes(empty)}")
-    return problems
+    return [
+        f"{label}：{', '.join(map(str, indexes))}"
+        for label, indexes in (
+            ("缺少 index", coverage.missing),
+            ("重複的 index", coverage.duplicate),
+            ("不屬於本區段的 index", coverage.unknown),
+            ("text 為空的 index", coverage.empty),
+        )
+        if indexes
+    ]
 
 
 def rebuild_blocks(chunk: Chunk, translation: ChunkTranslation) -> list[SrtBlock]:
     """The chunk's source blocks carrying the translated (cleaned) text.
 
-    Assumes `translation` passed `chunk_validator`; raises `ValueError` when
-    it does not, so a stale cache never merges silently.
+    `translation` must already have passed `translation_problems` (as the
+    task validator or the cache check); it is not checked again here.
     """
-    problems = translation_problems(chunk, translation)
-    if problems:
-        raise ValueError(
-            f"translation for {chunk.from_index}-{chunk.to_index} does not match "
-            f"the source: {'; '.join(problems)}"
-        )
     texts = {line.index: clean_text(line.text) for line in translation.blocks}
     return [replace(block, text=texts[block.index]) for block in chunk.blocks]
 
@@ -293,7 +287,3 @@ def clean_text(text: str) -> str:
     return "\n".join(
         line for line in text.splitlines() if line.strip() not in _DEBRIS_LINES
     )
-
-
-def _indexes(indexes: Sequence[int]) -> str:
-    return ", ".join(str(index) for index in indexes)

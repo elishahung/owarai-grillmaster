@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 import pytest
 from tests.fakes import make_blocks
 
-from grillmaster.core.srt import SrtBlock
-from grillmaster.subtitles.structure import MAX_REPORTED_PROBLEMS, check_aligned
+from grillmaster.core.srt import SrtBlock, serialize_srt, write_srt_file
+from grillmaster.subtitles.structure import (
+    MAX_REPORTED_PROBLEMS,
+    check_aligned,
+    check_aligned_file,
+)
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 REFERENCE = make_blocks(3)
 
@@ -75,3 +83,50 @@ def test_dropped_block_report_is_capped():
     assert (
         problems[-1] == f"... and {989 * 2 + 1 - MAX_REPORTED_PROBLEMS} more problems"
     )
+
+
+def test_aligned_file_is_checked_against_the_reference(tmp_path: Path):
+    path = tmp_path / "candidate.srt"
+    write_srt_file(path, REFERENCE[:2])
+
+    assert check_aligned_file(REFERENCE, path) == [
+        "block count differs: reference=3 candidate=2"
+    ]
+
+
+def test_aligned_file_with_a_bom_is_valid(tmp_path: Path):
+    path = tmp_path / "candidate.srt"
+    path.write_text("﻿" + serialize_srt(REFERENCE), encoding="utf-8")
+
+    assert check_aligned_file(REFERENCE, path) == []
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        pytest.param(None, "file not found: ", id="missing"),
+        pytest.param("1\nnot a timecode\n字\n", "cannot parse ", id="malformed"),
+        pytest.param(b"\xff\xfe\x00", "cannot parse ", id="not-utf8"),
+    ],
+)
+def test_unreadable_file_is_a_problem(
+    tmp_path: Path, content: str | bytes | None, expected: str
+):
+    path = tmp_path / "candidate.srt"
+    if isinstance(content, str):
+        path.write_text(content, encoding="utf-8")
+    elif content is not None:
+        path.write_bytes(content)
+
+    (problem,) = check_aligned_file(REFERENCE, path)
+    assert problem.startswith(expected)
+    assert str(path) in problem
+
+
+def test_a_path_that_cannot_be_read_is_a_problem(tmp_path: Path):
+    # A directory stands in for a locked file: both fail with an `OSError`.
+    path = tmp_path / "candidate.srt"
+    path.mkdir()
+
+    (problem,) = check_aligned_file(REFERENCE, path)
+    assert problem.startswith(f"cannot read {path}: ")

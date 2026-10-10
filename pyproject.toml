@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.scripts]
-grill = "grillmaster.legacy.main:main"
+grill = "grillmaster.cli:main"
 
 [dependency-groups]
 dev = [

@@ -12,7 +12,6 @@ from grillmaster.agents.task import FilesOutput
 from grillmaster.core.model_spec import Role
 from grillmaster.core.srt import serialize_srt, write_srt_file
 from grillmaster.core.tool_session import SrtCheckTool, ToolSession
-from grillmaster.postprocess._shared import render_template
 from grillmaster.postprocess.errors import PostprocessError
 from grillmaster.postprocess.refine import (
     TASK_NAME,
@@ -35,6 +34,7 @@ def inputs(tmp_path: Path) -> RefineInputs:
         briefing=tmp_path / "work" / "08_prepass" / "briefing.json",
         prepass_frames_dir=tmp_path / "work" / "08_prepass" / "frames",
         chunks_dir=tmp_path / "work" / "09_chunks",
+        workdir=stage,
         output_srt=stage / "refined.srt",
         report=stage / "report.md",
     )
@@ -55,6 +55,15 @@ def build(inputs: RefineInputs, tools: ToolSession):
         session_dir=inputs.workdir / "session",
         tools=tools,
     )
+
+
+def test_outputs_outside_the_workdir_itself_are_refused(
+    inputs: RefineInputs, tools: ToolSession
+):
+    # The prompt names outputs by bare file name, relative to the agent's cwd.
+    nested = replace(inputs, report=inputs.workdir / "notes" / "report.md")
+    with pytest.raises(ValueError, match="not directly in the agent workdir"):
+        build(nested, tools)
 
 
 def test_task_writes_in_the_stage_directory(inputs: RefineInputs, tools: ToolSession):
@@ -124,16 +133,21 @@ def test_validator_accepts_a_rewrite_keeping_the_skeleton(
             id="empty-block",
         ),
         pytest.param("1\nnot a timecode\n字\n", "不是有效的 SRT", id="malformed"),
+        pytest.param(None, "cannot read", id="unreadable"),
     ],
 )
 def test_validator_rejects_a_broken_skeleton(
     inputs: RefineInputs,
     tools: ToolSession,
-    content: str,
+    content: str | None,
     expected: str,
 ):
     task = build(inputs, tools)
-    inputs.output_srt.write_text(content, encoding="utf-8")
+    if content is None:
+        # A directory in its place: unreadable, like a locked file.
+        inputs.output_srt.mkdir()
+    else:
+        inputs.output_srt.write_text(content, encoding="utf-8")
 
     assert task.validate is not None
     with pytest.raises(ValidationFailure, match=expected):
@@ -147,13 +161,3 @@ def test_missing_translation_fails_before_any_agent(
 
     with pytest.raises(PostprocessError, match="translated SRT"):
         build(inputs, tools)
-
-
-def test_outputs_must_share_a_directory(inputs: RefineInputs, tmp_path: Path):
-    with pytest.raises(ValueError, match="one directory"):
-        replace(inputs, report=tmp_path / "report.md")
-
-
-def test_template_slots_must_match_the_values():
-    with pytest.raises(ValueError, match="do not match"):
-        render_template("refine.md", {"translated_srt": "x"})

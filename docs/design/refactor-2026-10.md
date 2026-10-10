@@ -500,7 +500,7 @@ AgentSessionFinished(task, outcome, elapsed, usage, repairs)
 LogLine(stage?, task?, level, text)
 ```
 
-Sink：`TuiSink`（更新 `PipelineState`）、`ConsoleSink`（非 TTY 的純 log）、`JsonlSink`（`projects/<id>/logs/events-<ts>.jsonl`，事後回放）。Rich reporter 刪除（D5），`grill package` 改用 ConsoleSink 印進度。
+Sink：`TuiSink`（更新 `PipelineState`）、`ConsoleSink`（非 TTY 的純 log）、`JsonlSink`（`projects/<id>/logs/events-<ts>.jsonl`，事後回放）。Rich reporter 刪除（D5），`grill package` 與 `grill run` 相同：TTY 上用 TUI，否則 ConsoleSink。進度條一律經 `events.progress.track`：只有正常結束才發 `ProgressFinished`，失敗時進度條停在原處，由該步驟的 `StepFailed` 收尾。
 
 chunk 專用事件（`chunk_started/finished/failed`）不再需要：chunk board 由 `AgentSessionStarted/Finished` + task 名稱前綴 `chunks/` 推導。
 
@@ -776,10 +776,12 @@ prepass = "..."
 - 全部 prompt 經 `core/prompts.py`（`importlib.resources`），刪除 11 處模組載入時 `read_text`。
 - **音訊變體改成片段組合**：把 `chunk.md`、`pre_pass.md` 中與音訊有關的段落拆成 `*_audio.md` 片段，`has_audio` 時才組進去。刪掉 `_NO_AUDIO_SUBS` 的 find/replace 與守護它的測試。這只是重新排列既有文字，不改措辭；以「拆分前後 `has_audio=True/False` 兩種輸出逐字相同」的一次性測試驗證後移除該測試。
 - 使用者訊息的段落標題（`【節目標題】` 等）集中成 `PromptSection` 常數，pre-pass 與 chunk 共用。
+- 有 `{slot}` 的模板一律經 `core.prompts.render_template(package, name, **values)`：模板的 slot 與傳入值必須完全一致，缺漏或多餘都直接報錯。
+- `get_frames` 的通用說明只有一份（`core/prompts/frames_tool.md`，經 `frames_guidance()` 組入），時間窗由 agents 層的「可用工具」段落列出；各 stage 只保留自己的使用時機片段（pre-pass 片段另說明它的時間窗是「影片開頭到最後一個字幕區塊結束」）。
 
 ### 12.2 翻譯（D8）
 
-- chunk 輸出 schema：`ChunkTranslation(blocks: list[ChunkLine(index: int, text: str)])`。validator：每個來源 index 恰好一次、無多餘 index、text 非空；錯誤訊息逐一列出缺漏/重複的 index，作為 resume 的修復指示。
+- chunk 輸出 schema：`ChunkTranslation(blocks: list[ChunkLine(index: int, text: str)])`。validator：每個來源 index 恰好一次、無多餘 index、text 非空；錯誤訊息逐一列出缺漏/重複的 index，作為 resume 的修復指示。這個覆蓋檢查是 `core.id_coverage.id_coverage`（回傳缺漏/未知/重複/空白 id），聊天室批次的 validator 共用，各呼叫端自行組修復訊息。快取在讀取時驗證一次，補回 timecode 時不再重驗。
 - Python 用來源 `SrtBlock` 補回 timecode 組成 SRT，`merged.srt` 由 stage 合併後重新編號。
 - 刪除：`structural_fix.py`、`structural_fix.md`、`validate_chunk.py`、`*.fixed.srt` 快取、`normalizer.py`（空 speaker-dash 行改由 validator 拒絕或在補回時清理，二擇一於實作時依資料決定）。
 - 快取：`work/09_chunks/<range>/translation.json` 存在即命中。
@@ -789,14 +791,14 @@ prepass = "..."
 
 ### 12.3 Postprocess / extras
 
-- `refine`、`glossary_check` 改吃 `RefineInputs` / `GlossaryInputs`（路徑 + 文字），輸出 `FilesOutput`，validator 用 `subtitles.structure.check_aligned()`；agent 可用 `check_srt` 工具自檢。
-- 它們的 `workdir` 是自己的 stage 目錄（agent 只在這裡寫檔）；要讀的其他檔案（`subs/ja.srt`、`merged.srt`、有效 briefing）以絕對路徑寫進 prompt，並以 `add_dirs` 開放專案根目錄的讀取。
+- `refine`、`glossary_check` 改吃 `RefineInputs` / `GlossaryInputs`（路徑 + 文字），輸出 `FilesOutput`，validator 用 `subtitles.structure.check_aligned_file()`；agent 可用 `check_srt` 工具自檢。
+- 它們的 `workdir` 是自己的 stage 目錄（由 stage 明確傳入，agent 只在這裡寫檔，輸出路徑都在其下）；要讀的其他檔案（`subs/ja.srt`、`merged.srt`、有效 briefing）以絕對路徑寫進 prompt，並以 `add_dirs` 開放專案根目錄的讀取。
 - glossary 的「疑似區塊」偵測、報告必寫規則、briefing 修正驗證保留，寫入位置改為 §10.3。
 - `cover`、`date_research`、`titles` 移到 `extras/`；`titles` 的快取改到 `work/package/titles.json`。
 
 ### 12.4 Subtitles
 
-- `subtitles/structure.py`：`check_aligned(reference, candidate)`（index、timecode、數量、非空，refine/glossary/check_srt 共用）。
+- `subtitles/structure.py`：`check_aligned(reference, candidate)`（index、timecode、數量、非空）與讀檔版 `check_aligned_file(reference, path)`（讀不到或無法解析也列為問題），refine/glossary/check_srt 共用。
 - `subtitles/ass.py`：ASS 畫布、字型、邊界常數與 style header，`finalize` 與 `live_chat/render` 都從這裡拿。
 - `finalize` 改吃 typed `Briefing` + glossary 名稱單位，不再自己 parse raw dict。
 

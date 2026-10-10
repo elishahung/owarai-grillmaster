@@ -1,3 +1,5 @@
-from grillmaster.legacy.main import main
+from __future__ import annotations
+
+from grillmaster.cli import main
 
 main()

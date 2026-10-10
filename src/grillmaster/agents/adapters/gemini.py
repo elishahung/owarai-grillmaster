@@ -37,7 +37,11 @@ message on stdin. Facts this module is built on (gemini-cli 0.63.0):
   ends with a `success` result whose `stats.models` is empty, without
   calling the model or saving the session; the parser refuses that turn.
 * `--resume <session id>` continues a session stored per cwd, so the
-  workdir must stay the same.
+  workdir must stay the same. A resumed process has no real token count
+  yet, so it estimates the history, again counting audio by its base64
+  length; past `model.compressionThreshold` (default 0.5 of the window) it
+  replaces the history, attached audio included, with a summary and the
+  model no longer hears it. Settings set the threshold out of reach.
 * Paid API-key variables are removed from the environment so the CLI uses
   the subscription login, which needs `GOOGLE_CLOUD_PROJECT` for a Code
   Assist account.
@@ -101,6 +105,9 @@ THINKING_BUDGETS = {
 }
 # The message's own `@`, which the CLI would parse as `@path` commands.
 LITERAL_AT = "\N{FULLWIDTH COMMERCIAL AT}"
+# `model.compressionThreshold` is a fraction of the context window; no
+# history reaches this multiple of it, so the CLI never compresses a session.
+NEVER_COMPRESS = 1000.0
 SETTINGS_RELPATH = (".gemini", "settings.json")
 MAX_MEDIA_BYTES = 20 * 1024 * 1024
 _MCP_TOOL_PREFIX = f"mcp_{MCP_SERVER}_"
@@ -191,7 +198,8 @@ class GeminiAdapter:
 
 
 def write_settings(request: TurnRequest) -> None:
-    """The workspace settings of this turn: thinking effort, grill MCP server."""
+    """The workspace settings of this turn: thinking effort, no history
+    compression, grill MCP server."""
     effort, model = request.spec.effort, request.spec.model
     thinking = (
         {"thinkingBudget": THINKING_BUDGETS[effort]}
@@ -200,9 +208,10 @@ def write_settings(request: TurnRequest) -> None:
     )
     model_config = {"generateContentConfig": {"thinkingConfig": thinking}}
     settings: dict[str, Any] = {
+        "model": {"compressionThreshold": NEVER_COMPRESS},
         "modelConfigs": {
             "overrides": [{"match": {"model": model}, "modelConfig": model_config}]
-        }
+        },
     }
     if request.mcp is not None:
         settings["mcpServers"] = mcp_servers(request.mcp)

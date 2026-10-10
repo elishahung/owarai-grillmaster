@@ -122,8 +122,11 @@ only a defect's resends.
   nested format drops the image), hence `NEXT_MESSAGE`; `SchemaDelivery.PROMPT`.
   agy and gemini share `_google.py` (key stripping, `mcpServers` entry,
   readable roots). Effort → `thinkingLevel` (`thinkingBudget` for
-  `gemini-2.5*`) and the MCP server go into `<workdir>/.gemini/settings.json`
-  (rewritten every turn). Model ids are gemini-cli's (`gemini-3.1-pro-preview`,
+  `gemini-2.5*`), the MCP server and `model.compressionThreshold: 1000` go
+  into `<workdir>/.gemini/settings.json` (rewritten every turn). Without the
+  last one a resumed turn estimates audio by base64 length, passes the 0.5
+  default and compresses the attached audio out of the history (prepass then
+  ended `GRILL_AUDIO_UNAVAILABLE`). Model ids are gemini-cli's (`gemini-3.1-pro-preview`,
   not agy's `gemini-3.1-pro`); with media attached, an unknown id or an
   oversized request ends in a `success` result with empty `stats.models` (no
   model call, no saved session), which the parser raises as `AgentConfigError`.

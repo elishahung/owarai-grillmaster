@@ -25,7 +25,7 @@ from grillmaster.legacy.services.ytdlp.info import (
 )
 
 PROJECT_ROOT_NAME = "projects"
-PROJECT_FILE_NAME = "grillmaster.legacy.project.json"
+PROJECT_FILE_NAME = "project.json"
 METADATA_INFO_FILE_NAME = "metadata.info.json"
 VIDEO_FILE_NAME = "video.mp4"
 FULL_VIDEO_FILE_NAME = "video.full.mp4"

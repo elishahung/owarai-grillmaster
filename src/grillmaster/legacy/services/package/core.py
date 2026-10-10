@@ -114,7 +114,7 @@ def package_project_directory(
     project_json = project_dir / PROJECT_FILE_NAME
     if not project_json.exists():
         raise FileNotFoundError(
-            f"grillmaster.legacy.project.json not found: {project_json}"
+            f"project.json not found: {project_json}"
         )
     project = Project.model_validate_json(project_json.read_text(encoding="utf-8"))
     package_project(

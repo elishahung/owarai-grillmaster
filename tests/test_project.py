@@ -32,7 +32,7 @@ class ProjectTests(unittest.TestCase):
         project_id = "legacy-project"
         project_dir = root / project_id
         project_dir.mkdir(parents=True, exist_ok=True)
-        (project_dir / "grillmaster.legacy.project.json").write_text(
+        (project_dir / "project.json").write_text(
             json.dumps({"id": project_id, "name": "legacy"}),
             encoding="utf-8",
         )
@@ -47,7 +47,7 @@ class ProjectTests(unittest.TestCase):
     ) -> None:
         project_dir = root / project_id
         project_dir.mkdir(parents=True, exist_ok=True)
-        (project_dir / "grillmaster.legacy.project.json").write_text(
+        (project_dir / "project.json").write_text(
             json.dumps(
                 {
                     "id": project_id,
@@ -291,7 +291,7 @@ class ArchiveLayoutTests(unittest.TestCase):
         archived_root = self._make_temp_dir("tmp_archive_dest")
         project_dir = root / project.id
         project_dir.mkdir(parents=True, exist_ok=True)
-        (project_dir / "grillmaster.legacy.project.json").write_text(
+        (project_dir / "project.json").write_text(
             "{}", encoding="utf-8"
         )
 
@@ -322,7 +322,7 @@ class ArchiveLayoutTests(unittest.TestCase):
         archived_root = self._make_temp_dir("tmp_archive_dest")
         project_dir = root / project.id
         project_dir.mkdir(parents=True, exist_ok=True)
-        (project_dir / "grillmaster.legacy.project.json").write_text(
+        (project_dir / "project.json").write_text(
             "{}", encoding="utf-8"
         )
 
@@ -342,7 +342,7 @@ class ArchiveLayoutTests(unittest.TestCase):
 
         self.assertEqual(result, leaf)
         self.assertFalse((leaf / "stale.txt").exists())
-        self.assertTrue((leaf / "grillmaster.legacy.project.json").exists())
+        self.assertTrue((leaf / "project.json").exists())
         self.assertTrue(sibling.is_dir())
 
 
@@ -433,7 +433,7 @@ class SourceParsingTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         archived = root / "26" / "08" / "260827_ep3dxmhg0g_demo"
         archived.mkdir(parents=True)
-        (archived / "grillmaster.legacy.project.json").write_text(
+        (archived / "project.json").write_text(
             json.dumps({"id": "ep3dxmhg0g", "name": "demo"}),
             encoding="utf-8",
         )

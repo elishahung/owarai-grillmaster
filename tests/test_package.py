@@ -719,7 +719,7 @@ class PackageTests(unittest.TestCase):
         project_dir = root / "project"
         package_root = root / "package"
         project_dir.mkdir()
-        (project_dir / "grillmaster.legacy.project.json").write_text(
+        (project_dir / "project.json").write_text(
             Project(id="demo", name="show").model_dump_json(),
             encoding="utf-8",
         )

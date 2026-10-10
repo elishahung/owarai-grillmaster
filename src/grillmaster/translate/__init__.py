@@ -1,4 +1,4 @@
-"""Two-step subtitle translation (decision D8).
+"""Two-step subtitle translation.
 
 The pre-pass (`prepass`) analyzes the whole film once into a `Briefing`;
 chunk translators (`chunk`) then translate deterministic, char-balanced SRT

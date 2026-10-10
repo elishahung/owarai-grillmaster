@@ -61,7 +61,7 @@ check = ["fmt-check", "lint", "types", "layers", "test"]
 target-version = "py313"
 line-length = 88
 src = ["src", "tests"]
-# Skill scripts follow their own conventions; design-doc code blocks are sketches.
+# Skill scripts follow their own conventions; code blocks in docs/ are sketches.
 extend-exclude = [".agents", "docs"]
 
 [tool.ruff.lint]

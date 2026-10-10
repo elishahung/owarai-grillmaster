@@ -28,7 +28,8 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
   `prepass.py` builds/validates the pre-pass task and caches the briefing;
   `chunk.py` owns `ChunkTranslation`, its validator, the batch run and the
   rebuild/merge; `prompt.py` only assembles prompts; `assets.py` samples
-  frames and slices audio for both steps.
+  frames for both steps and slices each chunk's audio (the pre-pass gets the
+  full track).
 - `core/briefing.py` owns `Briefing`; `core/id_coverage.py` the id coverage
   check shared with live-chat batches.
 
@@ -38,8 +39,8 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
 - `work/09_chunks/<from>-<to>/` (`chunk_range_name`, `0001-0119`): `frames/`,
   `audio.ogg`, `translation.json`, `session/`; the dir is also the agent cwd.
 - `work/09_chunks/merged.srt` — renumbered 1..N on Japanese timecodes (refine input).
-- The chunks stage and a serial parent's briefing read
-  `layout.effective_briefing()` (the glossary stage's copy wins when present).
+- The chunks stage and the pre-pass's parent briefing (`--parent` or serial)
+  read `layout.effective_briefing()` (the glossary stage's copy wins when present).
 
 ## Invariants
 
@@ -58,14 +59,17 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
 - **Python owns timecodes.** The agent returns `{blocks: [{index, text}]}`
   only; `rebuild_blocks` puts cleaned text under each source block's index and
   timecode. `clean_text` drops blank and dash-only (`-`) lines; validation
-  judges the cleaned text, so a debris-only block is "empty".
+  judges the cleaned text, so a debris-only block is "empty". JSON replaced
+  agent-written SRT, whose broken skeletons needed a separate structural-fix
+  agent; do not go back.
 - `ja.srt` stays the sole block/timecode scaffold; official CC is a wording
   reference only (pre-pass gets all of it, a chunk the blocks overlapping its
   time range ±2 s).
 
 ## Contracts
 
-- `Briefing` (strict JSON, all fields required, no free-key maps): `summary`,
+- `Briefing` (strict JSON, all fields required, no free-key maps, which
+  strict native schemas cannot express): `summary`,
   `characters[{name_jp,name_zh,role_note}]`, `proper_nouns` and `glossary` as
   `TermMapping{source,target}` lists (conflicting targets for one source are
   rejected), `catchphrases[{phrase_jp,phrase_zh,note}]`, `tone_notes`,
@@ -97,9 +101,9 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
   Chunk instruction: audio-rendered `chunk.md`, program instruction,
   `frames_guidance()`.
 - `core/prompts.py`: `load_prompt`, strict-slot `render_template`,
-  `render_program_instruction`, `frames_guidance` (shared
+  `join_sections`, `render_program_instruction`, `frames_guidance` (shared
   `core/prompts/frames_tool.md` + stage fragment). User-message headings are
-  `PromptSection` constants shared by both steps.
+  `translate/prompt.py` `PromptSection` constants shared by both steps.
 
 ## Config (`grill.toml`, `config/model.py`)
 

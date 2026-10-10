@@ -1,8 +1,7 @@
 """Load, save, create and archive project directories.
 
 `project.json` is always written atomically, and read strictly: a missing or
-invalid file raises (there are no old formats to tolerate; the migration
-script converts those).
+invalid file raises (there are no old formats to tolerate).
 """
 
 from __future__ import annotations

@@ -56,8 +56,9 @@ For registry and ledger rules, see **project-architecture**.
 - The role is `Role.CHAT`, i.e. `[agents.roles] chat`. If omitted it falls back to `utility`
   (`AgentRoles.spec`). Concurrency uses the runner's global slots.
 - Caches use fixed filenames and never invalidate themselves; a parseable file skips the agent.
-  To re-run a step, delete a batch file or `polish.json`, or run
-  `grill reset <id> --only chat_translate`.
+  Deleting a batch file (and `polish.json`, whose stale corrections would still apply) only
+  matters while the stage is unfinished; once it is in the ledger, use
+  `grill reset <id> --only chat_translate` (wipes every batch).
 
 ## Rendering and packaging
 
@@ -66,8 +67,9 @@ For registry and ledger rules, see **project-architecture**.
   needs `grill package`. The dialogue alone burns on the full frame when the chat file is
   missing, when the layout is `none`, or when rendering fails (warned).
 - `--chat-layout` (default `side`) is read only at package time, on `run`, `serial` and
-  `package`. `render._LAYOUTS` maps each layout to a `_Panel` and a `ChatPlacement`
-  (`picture: PictureBox | None` plus the dialogue `force_style`):
+  `package`. `render._LAYOUTS` maps `side`/`overlay` (`none` never renders) to a
+  `_LayoutSpec` of a `_Panel` and a `ChatPlacement` (`picture: PictureBox | None`,
+  `dialogue_style`, the dialogue layer's `force_style`):
   - `side`: the 16:9 picture is shrunk into the left `SIDE_VIDEO_WIDTH` box. Chat fills the
     black right column with no background and scrolls out at the top edge. The dialogue moves to
     the bottom bar via `force_style` margins built from `subtitles.ass.MARGIN_H`.

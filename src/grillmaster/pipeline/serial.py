@@ -3,7 +3,7 @@
 Every project's final directory (its archived one when `[paths] archive` is
 set) becomes the next project's `--parent`, so names and terms stay
 consistent across episodes; the pre-pass reads the parent's briefing
-through `ProjectLayout(parent).effective_briefing()` (design §9.4). The
+through `ProjectLayout(parent).effective_briefing()`. The
 chain stops at the first failure and logs the command that resumes it.
 """
 

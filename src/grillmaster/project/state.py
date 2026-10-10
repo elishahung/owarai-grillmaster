@@ -4,7 +4,7 @@
 the stages need, the section the video was cut to, metered spend, and the
 stage ledger. The ledger is keyed by `StageKey`, so an unknown key (a renamed
 or removed stage) fails validation instead of being silently ignored; old
-projects are converted by the one-off migration script, never read here.
+formats are never read.
 
 Ledger `params` are a display snapshot (`grill status`), never a cache key.
 """

@@ -4,7 +4,8 @@ Deliverables live at the root (`video.mp4` with its `video.cht.srt` /
 `video.cht.ass` beside it, `poster.jpg`, `cover.png`, `subs/`); each stage keeps its intermediates in its own `work/NN_<stage>/`
 (`NN` = `StageKey.number`); side tasks and packaging get unnumbered
 `work/side/<task>/` and `work/package/`. No other module spells a project
-path: stages, packaging, the TUI and the tool manifest all ask this class.
+path: stages and the pipeline ask this class and hand the paths on (to
+packaging, the tool manifest and other domain code).
 
 `ProjectLayout` is a pure path calculator. It never creates directories; the
 only filesystem read is `effective_briefing`'s existence check.

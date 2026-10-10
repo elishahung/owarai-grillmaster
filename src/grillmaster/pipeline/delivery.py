@@ -6,7 +6,7 @@ every complete run. A `--break-after` run skips them and the archive. Archive
 is not a `DeliveryStepDef`: it moves the project directory, so the runner
 performs it as soon as the stages (and side tasks) are done, and the delivery
 steps then read the project where it now lives, the archived copy when an
-archive is configured (design §9.4).
+archive is configured.
 """
 
 from __future__ import annotations

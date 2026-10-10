@@ -1,4 +1,4 @@
-"""Command-line entry point: one Typer app over the pipeline (design §13).
+"""Command-line entry point: one Typer app over the pipeline.
 
 The top layer: parses arguments, loads config and picks event sinks, then
 hands over to `pipeline.runner.run_project`. Typer resolves annotations at

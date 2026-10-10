@@ -43,7 +43,7 @@ Extra contracts: domain and foundation packages (everything except `cli`,
 `pipeline`, `stages`, `project`, `config`) never import `project` or `config`
 — they take explicit input objects, and only `stages/` binds the layout and
 config to them. `project` and `config` build on `core` alone (no `events`).
-`tui` imports only `events` (plus foundation), never stages or domain code.
+`tui` imports only `events` and `core`, never stages or domain code.
 Breaking a contract fails `poe check`; fix the dependency, not the contract.
 
 ## Pipeline (`pipeline/`, `stages/`)
@@ -59,13 +59,13 @@ members is a layout change. `pipeline/registry.py` holds the only lists:
 |---|---|---|
 | 1 | `metadata` | state: name, broadcast date, `source` (title, series, channel, talents, broadcast_label) |
 | 2 | `download` | `poster.jpg`; `work/02_download/{parts/,full.mp4}`; appends new programs to `grill.toml` |
-| 3 | `combine` | `video.mp4` (cut to the section, else `full.mp4` moved), `subs/ja.official.srt`; state `section` |
+| 3 | `combine` | `video.mp4` (cut to the section, else `full.mp4` moved), `subs/ja.official.srt` (normally none without CC or with multi-part CC; unusable downloaded CC fails); state `section` |
 | 4 | `chat_fetch` | `--chat` only (see live-chat) |
 | 5 | `audio` | `work/05_audio/audio.ogg` |
 | 6 | `asr` | `work/06_asr/asr.json`; adds `asr_cost_usd` (an existing `asr.json` costs nothing) |
 | 7 | `transcript` | `subs/ja.srt` |
 | 8–11 | `prepass`, `chunks`, `refine`, `glossary` | work dirs only (translate-pipeline, postprocess-and-packaging) |
-| 12 | `finalize` | `video.cht.srt`, `video.cht.ass` (root, `video.mp4`'s stem: players auto-load them) |
+| 12 | `finalize` | `video.cht.srt`, `video.cht.ass` (root, `video.mp4`'s stem: players auto-load them; under `subs/` they did not) |
 | 13 | `chat_translate` | `--chat` only: `subs/chat.cht.json` |
 
 Side tasks: `cover` (after `download`), `date_research` (after `metadata`).
@@ -103,21 +103,27 @@ between the stages and delivery.
 **Runner (`pipeline/runner.py`):** `run_project` → `store.project_lock`
 (held for the whole run incl. archive and delivery; `deliver_project` and
 `grill archive`/`reset` take it too) → `find_project` (via
-`store.locate_project`, the one local/archived/none resolver; an archived ID
-raises `ArchivedProjectError` naming `grill package` before any preflight, a
-local ID also archived raises `DuplicateProjectError` naming both) →
-`Pipeline.check` (options + preflight of every stage and delivery step that
-will run; a rejected run creates no project) → `open_project` → per stage: disabled → `StepSkipped(disabled)`; in the ledger
+`store.locate_project`, the local/archived/none resolver of run and reset;
+an archived ID raises `ArchivedProjectError` naming `grill package` before
+any preflight, a local ID also archived raises `DuplicateProjectError`
+naming both) → `Pipeline.check` (options + preflight of every stage and
+delivery step that will run; a rejected run creates no project) →
+`open_project` → per stage: disabled → `StepSkipped(disabled)`; in the ledger
 → `on_skip` + `StepSkipped(already_complete)`; else `execute_step` (the one
 step executor: scope, Started/Completed/Failed, per-step token usage) then
 `state.mark_done` with an atomic save. `--break-after <key>` stops after that
-stage (ran, complete or disabled) and reports the rest as `breakpoint`; side
+stage (ran, complete or disabled) and reports the rest skipped (`breakpoint`,
+or their own `disabled`/`already_complete`); side
 tasks, archive and delivery are skipped entirely. Then side tasks join, the
-archive move runs (`delivery.run_archive`: logs close, the directory moves,
-`ProjectLogs.relocate` reopens the same files appending, `StateStore.relocate`
-repoints saves), delivery runs on the moved layout, `RunFinished`. A delivery
-failure after a move raises `ArchivedDeliveryError` naming `grill package
-"<archived dir>"` (the ID no longer resolves locally); `ProjectRun` (what
+archive move runs (`delivery.run_archive`: logs close, since Windows cannot
+move a directory with open files; the directory moves; `ProjectLogs.relocate`
+reopens the same files appending, in place if the move failed;
+`StateStore.relocate` repoints saves), delivery runs on the moved layout,
+`RunFinished`. Archive before package is the owner's choice (the reverse was
+tried and reverted): package works on the archived copy. A failed move fails
+the run before delivery. A delivery failure after a move raises
+`ArchivedDeliveryError` naming `grill package "<archived dir>"` (the ID no
+longer resolves locally); `ProjectRun` (what
 `grill run` and its TUI retry call; `SerialRun` runs one per item) then
 retries only `deliver_project`.
 `deliver_project` (`grill package`) runs only the delivery steps.
@@ -158,7 +164,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   DateResearchRecord`). Readers use `effective_broadcast_date`.
 - `store.py`: strict load (no old formats), atomic save, `archive_project`
   (staged copy, verify, swap; refuses when the ID is already archived under
-  any `YY/MM` or the destination holds `project.json`; deletes the local
+  any `YY/MM` or `etc/` or the destination holds `project.json`; deletes the local
   `project.json` first so a failed cleanup leaves no project),
   `locate_project` (local, else `find_archived` by
   `naming.archived_candidates`, else none; also behind `grill reset`; an
@@ -168,7 +174,8 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   (outside the project, so it never blocks the archive move and also covers
   the archived copy); a second grill process on the same ID fails at once
   with `ProjectBusyError`; a crash releases it. `naming.py`: deliverable name
-  `YYMMDD_<id>_<name>` and archive/package destinations trimmed by
+  `YYMMDD_<id>_<name>`, archived under `<archive>/YY/MM/` (`etc/` when
+  undated), packaged flat; both destinations trimmed by
   `core.paths.fit_dir_name`; `PROJECT_INNER_PATH_RESERVE` is derived from the
   layout's deepest paths, so a deeper path raises it automatically.
 
@@ -180,8 +187,8 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   everywhere. Sections: `paths`, `agents` (+ `roles`: prepass, chunk,
   postprocess, utility, chat→utility, image), `asr`, `translate`, `features`,
   `package` (+ `inserts`), `programs.{series,channel}`.
-- Only `cli/` and `pipeline/` read `AppConfig` wholesale; stages pass the
-  sections domain code needs as inputs. No global settings object.
+- Only `cli/`, `pipeline/` and `stages/` see the whole `AppConfig`; stages
+  pass domain code only the sections or values it needs. No global settings object.
 - New setting: add a `Field(description=…)` in `model.py`, document it in
   `grill.example.toml`, regenerate `grill.schema.json` with `uv run poe
   schema` (a test asserts it is current).
@@ -215,9 +222,10 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   resets yt-dlp's cached token before downloading. Extras and broadcast dates
   are best-effort. Downloads keep `skip_unavailable_fragments=False` and fail
   on audio gaps (a gap drifts ASR timestamps).
-- External processes only via `media/ffmpeg.py` (ffmpeg/ffprobe) or
-  `agents/process.py` (agent CLIs); ruff bans `subprocess.*` elsewhere. Both
-  spawn `core.process.spawn_tree` trees, tree-kill on timeout and register in
+- External processes only via `media/ffmpeg.py` (ffmpeg/ffprobe),
+  `agents/process.py` (agent CLIs) or the Claude SDK (its CLI `adopt_tree`d);
+  ruff bans `subprocess.*` elsewhere. The first two spawn
+  `core.process.spawn_tree` trees; every tree is killable and registered in
   `LIVE_PROCESSES`; after `kill_all` (`ABORT` latched) no child may start.
 - `asr/`: ElevenLabs client and the ASR-JSON → SRT builder (tuning constants
   are intentional, not settings). `glossary/`: the fixed glossary, a required
@@ -237,7 +245,9 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 `grill <src> [HINT]` = `grill run`; options `--break-after <key>`, `--parent`,
 `--cover`, `--date-research`, `--chat`, `--chat-layout`, `--remix [pool]`,
 `--start`, `--to`. Also `serial`, `package <dir|id>`, `archive <id>`,
-`reset <id> --from|--only <key>`, `status [<id>]`, `doctor`. Commands import
+`reset <id> --from|--only <key>`, `status [<id>]`, `doctor`. `package`,
+`archive` and `status` resolve an ID locally only (pass an archived
+project's directory). Commands import
 heavy modules inside the function so `--help` stays fast; a bare `--remix`
 is expanded in `cli/args.py`. On a TTY the run goes through
 `tui.run_with_tui`, else a `ConsoleSink`.
@@ -245,17 +255,21 @@ is expanded in `cli/args.py`. On a TTY the run goes through
 ## Invariants
 
 - Resumable: a stage is complete iff it is in the ledger; re-running resumes.
-- A stage writes only its work dir and its declared `outputs` (download's
-  `grill.toml` append is the one exception). No stage rewrites another's output.
+- A stage writes only its work dir and its declared `outputs`. Exceptions:
+  download appends to `grill.toml`; an uncut combine moves download's
+  `full.mp4` to `video.mp4` (`on_reset` moves it back). No stage rewrites
+  another's output.
 - Caches hit on fixed filenames and never self-invalidate; `grill reset` is
   the explicit re-run. Never add hash or staleness checks.
 - Agent-written stages (refine, glossary) discard old output on re-entry.
 - Side tasks join in `finally`; `--break-after` skips side tasks, archive and
   delivery.
 - Every agent call goes through `AgentRunner`; only ElevenLabs is metered.
-- Windows MAX_PATH 260: generated directory names go through the path budget.
+- Windows MAX_PATH 260 (ffmpeg and yt-dlp are not long-path aware): generated
+  directory names go through the path budget.
 - Agent-written SRTs may carry a BOM; read them with `core.srt.read_srt_file`.
-- No compatibility code: old formats fail loudly.
+- No compatibility code: old formats fail loudly (old archives were migrated
+  once; no reader for an old layout or format exists, and none is added).
 
 ## Making a change
 
@@ -271,3 +285,7 @@ is expanded in `cli/args.py`. On a TTY the run goes through
 - Done means `uv run poe check` (fmt-check, ruff, basedpyright, import-linter,
   pytest) passes. Tests mirror `src/grillmaster/`, inject fakes instead of
   patching module paths, and use `tmp_path`; `-m live` tests spend quota.
+- Conventions: a package's errors share a `<Package>Error` base (in its
+  `errors.py` when it has several); pydantic for anything persisted, crossing
+  a process or returned by an agent, frozen slots dataclasses for in-memory
+  value objects.

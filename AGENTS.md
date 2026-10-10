@@ -26,14 +26,16 @@ or database: all state lives in `projects/<id>/project.json`, and the pipeline
 is a declarative, **resumable** stage registry — re-running an ID resumes where
 it left off.
 
-Pipeline at a glance (stage keys, in order; `work/NN_<key>/` per stage):
+Pipeline at a glance (stage keys, in order; `work/NN_<key>/` per stage with
+intermediates):
 `metadata → download → combine → (chat_fetch) → audio → asr → transcript →
 prepass → chunks → refine → glossary → finalize → (chat_translate)`, then
 `(archive)` and delivery `(package)`, which reads the archived copy. Side
 tasks `(cover)` and `(date_research)` run beside the stages. Parentheses
 mark optional steps.
 
-Commands: `grill <SOURCE> [HINT]` (= `grill run`), `grill serial`,
+Commands (`bin/grill.bat` is the PATH launcher; `scripts/` holds dev tools):
+`grill <SOURCE> [HINT]` (= `grill run`), `grill serial`,
 `grill package`, `grill archive`, `grill reset <id> --from|--only <stage>`,
 `grill status`, `grill doctor`. Entry point `grillmaster.cli:main`.
 
@@ -62,8 +64,8 @@ uv run pytest -k chunk              # by keyword
 `uv run poe check` must pass before a change is done; there is no CI. Tests are
 offline and fast; `uv run pytest -m live` (tests/agents/test_live.py) calls the
 real agent CLIs and spends quota; `scripts/record_agent_fixture.py` re-records
-the adapter contract fixtures. The rationale behind the architecture (decisions
-D1–D9, referenced by `.importlinter`) is in `docs/design/refactor-2026-10.md`.
+the adapter contract fixtures. The skills record the reasons behind
+non-obvious choices; read them before "fixing" one.
 
 ## Keep the docs current (important)
 

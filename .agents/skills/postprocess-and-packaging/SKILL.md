@@ -48,7 +48,7 @@ own semantic rules and get `ProgramRules.instruction_text(<stage>)` appended.
 
 `checked.srt` → `video.cht.ass` + `video.cht.srt` at the project root, sharing
 `video.mp4`'s stem so players auto-load them (declared `outputs`; no
-`work/12_finalize/`). Deterministic and last: name spacing (effective briefing
+`work/12_finalize/`). Deterministic, the last pass over the dialogue: name spacing (effective briefing
 names + curated Han/kana-Latin `zh` from the fixed glossary, longest first),
 then Netflix-TC punctuation. `subtitles/ass.py` holds canvas, font, margins and
 dialogue style, shared with the chat panel; a change hits every package.
@@ -93,16 +93,18 @@ locked old deliverable fails now, not after the render) + `plan_remix`
 (`cover.png`|`cover.jpg`, `info.json` = titles + `briefing.prompt_dict()`,
 the briefing part omitted with a warning when the project has none, `refine.md`/`glossary_check.md`
 if present, inserts), then the render. Destination
-`naming.package_destination`: flat `YYMMDD_<id>_<name>`, MAX_PATH-trimmed.
+`naming.package_destination` (computed in `stages/package.py`): flat
+`YYMMDD_<id>_<name>` (`<id>_<name>` undated), only the name tail MAX_PATH-trimmed.
 
 **Burn plan**: dialogue alone, or with translated chat and layout ≠ `none` the
-panel at `work/package/chat.ass` plus a `picture` box (scale+pad after the look).
+panel at `work/package/chat.ass`; `side` also shrinks the picture into a box
+(scale+pad after the look), `overlay` keeps the full frame.
 Layers must sit under the video's dir (ffmpeg runs there with relative names).
 
 **Render recipe** (`package/render.py`; every value measured, do not "clean
 up"): scale, 0.2° rotate `bilinear=0`, crop 1920x1080, eq/hue,
 `noise=c0s=4:c0f=t+u`, canvas, ASS (after rotate, source timestamps), trim,
-`setpts=PTS/1.03`, yuv420p @ 29.94. Audio: band-limit, rubberband 1.03, 44.1 kHz
+`setpts=PTS/1.03`, yuv420p @ 29.94. Audio: band-limit, rubberband tempo 1.03 / pitch 1.01, 44.1 kHz
 stereo, -54 dB pink bed (`amix=normalize=0`). `h264_nvenc` p4/hq/VBR `-cq 21`,
 maxrate 24M, no `-b:v`. The first 3 s are dropped; each output is probed
 against usable/1.03 (same length = failed speed-up; short = SMB/VPN truncation).
@@ -111,12 +113,14 @@ against usable/1.03 (same length = failed speed-up; short = SMB/VPN truncation).
   audio pass (`-filter_complex`) are separate processes, muxed by `concat_copy`.
 - Audio is never split; video splits into ≤ 3 parts (≥ 120 s, whole-frame
   boundaries). `EncodeLanes`: 3 NVENC sessions + 1 audio lane across all outputs.
-- `-copyts -start_at_zero -ss` before `-i`; map by index (`0:v:0`, `0:a:0`),
+- `-copyts -start_at_zero -ss` before `-i`; map video by index (`0:v:0`),
   never bare `0:v` (cover-art mjpeg streams).
 
-**Remix**: after the lead trim, `round_half_up(duration / 15 min)` segments
-(≥ 2, ≥ 60 s) snapped to `video.cht.srt` cue gaps; `N.mp4` = 60 s noise cut
-(format-only fit) + content, concat stream-copied; a segment's scratch
+**Remix**: the post-trim range splits into a target of `max(2,
+round_half_up(video duration / 15 min))` segments (≥ 60 s) snapped to
+`video.cht.srt` cue gaps (a cut that cannot snap is dropped); `N.mp4` = a
+~60 s noise cut (format-only fit; < 120 s, shorter if the pool file is) +
+content, video stream-copied, audio re-encoded; a segment's scratch
 (parts, head, target) is deleted once it passes its duration check.
 
 **Pools** (`pools.py`): `<package>/pools/<name>/` with contiguous `001.*`… and
@@ -125,7 +129,8 @@ against usable/1.03 (same length = failed speed-up; short = SMB/VPN truncation).
 Noise walks seconds (`reserve_seconds`); inserts rotate files (`next_file`).
 
 **Inserts**: `[[package.inserts]] {pool, output, when = "remix"|"always"}` copies
-the next pool file as `<output><ext>`. An insert named by any `[programs.*]
+the next pool file as `<output><ext>` (`when` stays: inserts are not tied to
+remix by design). An insert named by any `[programs.*]
 inserts` applies only to those programs. Outputs ≤ 24 chars, not all digits,
 not `video|cover|info|refine|glossary_check`.
 

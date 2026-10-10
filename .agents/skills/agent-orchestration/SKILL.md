@@ -29,6 +29,9 @@ description: >-
   `domain-purity`); `ModelSpec`, `Role` and `ToolSession` live in `core/`.
 - No silent degradation: missing capability/model/input file or a non-strict
   schema raises `AgentConfigError` before any slot is taken.
+- A thin layer of our own over the three CLIs, not ACP or an agent framework:
+  agy has no native ACP and ACP has no structured output. The event vocabulary
+  borrows ACP's.
 
 ## Task API (`task.py`, `schema.py`)
 
@@ -46,8 +49,9 @@ description: >-
   persists the result right after its session. An exception fails only its
   job; failures return in input order and the caller raises after the batch.
   Ctrl-C cancels the runner and unstarted jobs; running ones end without a
-  new turn and accept what succeeded. An `AgentQuotaError` fails the batch's
-  unstarted jobs with `AgentCancelledError`.
+  new turn and accept what succeeded. After an `AgentQuotaError`, jobs of that
+  backend that have not entered `run` fail at once with `AgentQuotaError`;
+  other backends' jobs continue.
 - `strict_json_schema`: refs inlined, all properties required,
   `additionalProperties: false`, object root; free-key dicts and recursive
   models are rejected (use `T | None`, lists of objects). Pydantic is the judge.
@@ -58,7 +62,8 @@ description: >-
 `utility`) → `dict[Role, ModelSpec]`, written `backend/model[/effort]`
 (default `high`). `[agents] max_concurrent` (default 10) sizes the semaphore
 of one grill process (concurrent processes each get their own);
-`timeout_minutes` bounds each turn (per-process watchdog), not the session.
+`timeout_minutes` bounds each turn (process watchdog; `asyncio.timeout` for
+Claude), not the session.
 
 All adapters declare IMAGE_INPUT, NATIVE_SCHEMA, RESUME, MCP, MCP_IMAGE_RESULT,
 WEB_SEARCH; only agy has AUDIO_INPUT, only codex IMAGE_GENERATION. Required =
@@ -73,7 +78,8 @@ Stages check `runner.capabilities(role)` (`accepts_audio`) before adding audio.
 `base.py`: `media_delivery` (`ATTACHED`, or `VIEW_FILE`: the runner lists
 absolute paths to open), `preflight`, `start`/`resume(session_id, TurnRequest)`
 → `SessionHandle` → `FinalOutput(session_id, text, structured, usage,
-defects)`. A resume repeats every start setting with a new `message`.
+defects)`. A resume repeats model, workdir, tools and schema with a new
+`message`; its images/audio are only a defect's resends.
 
 - **agy**: `--input-format stream-json --output-format stream-json -p=`, one
   text-only stdin line, stdin closed on `result`. Model id
@@ -84,30 +90,45 @@ defects)`. A resume repeats every start setting with a new `message`.
   object in this turn's final message (one json fence stripped). MCP from
   `<workdir>/.agents/mcp_config.json` (deleted when no tools). Resume
   `--conversation`. `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_GENAI_API_KEY`
-  are stripped so agy stays on the subscription login.
+  are stripped so agy stays on the subscription login (its only isolation
+  from user settings). Repair wording must never forbid tool calls: `finish`
+  is a tool.
 - **codex**: `codex exec --json … -`, `--ignore-user-config`, sandbox bypassed,
   `--image` on the start turn only, `--output-schema` (last `agent_message`),
   `-c mcp_servers.grill.*`, `-c tools.web_search=true` only when required.
-  `exec resume <thread>` has no `--cd`: the process cwd is the workdir.
+  `exec resume <thread>` has no `--cd`: the process cwd is the workdir. No
+  `--ephemeral` (resume needs the stored thread), so sessions accumulate in
+  `~/.codex/sessions`.
 - **claude**: SDK `query()` under `asyncio.run` on a per-turn thread (the only
-  module allowed asyncio); `setting_sources=[]` + `strict_mcp_config=True`,
-  base64 image blocks, `output_format`, `resume=`. Stream-captured rate-limit
-  and error details win over the SDK's opaque exception.
+  module allowed asyncio); `setting_sources=[]` + `strict_mcp_config=True`
+  (like codex's `--ignore-user-config`: the user's own settings, MCP servers
+  and CLAUDE.md never reach a grill session), no `system_prompt` (the SDK
+  then sends an empty one), base64 image blocks, `output_format`, `resume=`.
+  Stream-captured rate-limit and error details win over the SDK's opaque
+  exception.
 
 ## Runner loop (`runner.py`)
 
-- Each attempt gets a fresh session dir (`session/`, `session.2/`, …):
-  `prompt.md`, `tools.json`, `schema.json`, `raw.jsonl` (verbatim stream),
-  `result.json` (`SessionRecord`); agy adds `agy.log`.
+- Each attempt gets a fresh session dir (`session/` or `session_<label>/`,
+  retries `session.2/`, …; names kept short for MAX_PATH): `prompt.md`,
+  `tools.json` (with tools), `schema.json` (with a schema), `raw.jsonl`
+  (verbatim CLI stream; encoded SDK messages for Claude), `result.json`
+  (`SessionRecord`); agy adds `agy.log`. Normalized events go only to the
+  project's `logs/events-<ts>.jsonl`, as `AgentActivity` summaries.
 - One global slot is held from the first turn through every repair. Adapter
   defects first, then parse + `validate`; a failure resumes the same session
-  with only `prompt.repair_message(...)`. Exhausted repairs →
-  `AgentOutputError`. Nested `run`/`run_jobs` inside a slot is refused.
+  with only `prompt.repair_message(...)`, so the agent keeps its context
+  (heard audio, fetched frames) and the prompt is not resent. Exhausted
+  repairs → `AgentOutputError`. Nested `run`/`run_jobs` inside a slot is
+  refused (deadlock). `run_jobs` polls with a timed wait because lock waits
+  are not interruptible on Windows.
 - Errors: `AgentConfigError`, `AgentQuotaError` (quota/usage-limit phrase,
   any status), `AgentAuthError` (401 + login hint), `AgentTransientError`
   (timeout, crash, no result, a bare 429/rate limit), `AgentOutputError`,
-  `AgentCancelledError`; `classify_failure`: quota phrase, then status, then
-  whole-word auth markers, else transient. The only retry loop is in `run`:
+  `AgentCancelledError`; `classify_failure`: quota phrase, then status (401
+  auth, 429 transient, other 4xx `AgentConfigError`), then whole-word auth
+  markers, else transient. Claude's rejected rate-limit event and
+  `billing_error` are quota too. The only retry loop is in `run`:
   transient → new session (up to `attempts`) after 30 s without a slot.
 - Abort (`kill_all`, a `run_jobs` interrupt) sets `core.process.ABORT` for
   good: the retry wait (`ABORT.wait`) wakes, and no session or repair turn
@@ -120,7 +141,8 @@ defects)`. A resume repeats every start setting with a new `message`.
 
 ## MCP tools (`agent_tools/`)
 
-The runner launches `python -m grillmaster.agent_tools --session
+The runner launches, by module name (`agents` never imports `agent_tools`),
+`python -m grillmaster.agent_tools --session
 <session_dir>/tools.json` (argv: codex MCP servers do not inherit env). Only
 tools with a sub-config in `ToolSession` exist; a bad manifest exits 2.
 `get_frames(times)`: ≤20 timestamps inside the window, saved to `frames_dir`,
@@ -128,11 +150,13 @@ returned as MCP image content. `check_srt(path)`: skeleton check of an
 absolute path against `reference_srt` → `VALID` / `INVALID` + problems.
 `agents/prompt.py` lists the tools (with the window); stages add guidance via
 `core.prompts.frames_guidance`. A new tool = config in `core/tool_session.py`
-+ handler in `server.py` + line in `agents/prompt.py`.
+(`ToolName` + sub-config) + handler module + registration in `server.py` +
+line in `agents/prompt.py`.
 
 ## Tests
 
 `tests/agents/` uses fakes (`FakeSpawn`, `FakeQuery`); `test_contract.py`
 replays real recordings in `tests/fixtures/agents/<backend>/`. `test_live.py`
 is `live`-marked (deselected by default; spends quota); after a CLI upgrade
-`scripts/record_agent_fixture.py [backend...]` reruns it to re-record fixtures.
+`scripts/record_agent_fixture.py [backend...]` reruns it to re-record the
+`live_start`/`live_resume` fixtures (the other recordings are hand-captured).

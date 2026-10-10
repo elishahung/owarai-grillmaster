@@ -2,7 +2,7 @@
 root_package = grillmaster
 
 [importlinter:contract:layers]
-name = Layered architecture (design §5.1)
+name = Layered architecture
 type = layers
 layers =
     (grillmaster.cli)
@@ -41,7 +41,7 @@ forbidden_modules =
     grillmaster.config
 
 [importlinter:contract:project-foundation]
-name = project builds on core alone (design §5.1)
+name = project builds on core alone
 type = forbidden
 source_modules =
     grillmaster.project
@@ -49,7 +49,7 @@ forbidden_modules =
     grillmaster.events
 
 [importlinter:contract:config-foundation]
-name = config builds on core alone (design §5.1)
+name = config builds on core alone
 type = forbidden
 source_modules =
     grillmaster.config
@@ -57,7 +57,7 @@ forbidden_modules =
     grillmaster.events
 
 [importlinter:contract:tui-events-only]
-name = tui consumes events only (design §8)
+name = tui consumes events only
 type = forbidden
 source_modules =
     grillmaster.tui

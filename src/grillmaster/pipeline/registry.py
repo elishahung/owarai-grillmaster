@@ -1,9 +1,8 @@
 """The one list of stages, side tasks and delivery steps.
 
 `STAGES` must follow `StageKey` declaration order (asserted when this module
-loads, by building `PIPELINE`). Stage ports append their definitions here as
-`stages/<key>.py` modules land; a key without a definition simply does not
-run yet.
+loads, by building `PIPELINE`). A `StageKey` without a definition here does
+not run.
 """
 
 from __future__ import annotations

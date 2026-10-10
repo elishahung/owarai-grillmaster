@@ -40,7 +40,7 @@ def test_full_state_round_trips_through_json(state: ProjectState):
     state.name = "全力脱力タイムズ"
     state.broadcast_date = date(2026, 10, 9)
     state.source.series = "全力!脱力タイムズ"
-    state.source.talents = [Talent(id="t1", name="有吉弘行", roles=["MC"])]
+    state.source.talents = [Talent(id="t1", name="有吉弘行", roles=("MC",))]
     state.section = Section(start=10.0, end=95.5)
     state.add_asr_cost(0.31)
     state.mark_done(

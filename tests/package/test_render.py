@@ -41,8 +41,7 @@ if TYPE_CHECKING:
 
     from grillmaster.package.render import RenderJob
 
-# Golden strings: the package recipe is measured and must not drift. The
-# look part is byte-identical to the legacy media module's.
+# Golden strings: the package recipe is measured and must not drift.
 LOOK = (
     "scale=1960:1102:flags=bicubic,"
     "rotate=a=0.003490658503988659:ow=rotw(0.003490658503988659):"

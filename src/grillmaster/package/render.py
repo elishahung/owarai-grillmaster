@@ -1,4 +1,4 @@
-"""The package look and the burned-in render (moved verbatim from legacy media).
+"""The package look and the burned-in render.
 
 Every package render applies one look: scale, a 0.2 degree rotate, crop,
 grade and grain, then the burn plan's subtitle layers, then trim and the

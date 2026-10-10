@@ -18,7 +18,7 @@ layers =
 
 [importlinter:contract:domain-purity]
 # Extend source_modules as each new domain package lands.
-name = Foundation and domain modules never import project, config or legacy
+name = Foundation and domain modules never import project or config
 type = forbidden
 source_modules =
     grillmaster.core
@@ -39,7 +39,6 @@ source_modules =
 forbidden_modules =
     grillmaster.project
     grillmaster.config
-    grillmaster.legacy
 
 [importlinter:contract:project-foundation]
 name = project builds on core alone (design §5.1)
@@ -48,7 +47,6 @@ source_modules =
     grillmaster.project
 forbidden_modules =
     grillmaster.events
-    grillmaster.legacy
 
 [importlinter:contract:config-foundation]
 name = config builds on core alone (design §5.1)
@@ -57,7 +55,6 @@ source_modules =
     grillmaster.config
 forbidden_modules =
     grillmaster.events
-    grillmaster.legacy
 
 [importlinter:contract:tui-events-only]
 name = tui consumes events only (design §8)

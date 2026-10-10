@@ -161,7 +161,7 @@ def test_config_keeps_inserts_off_the_fixed_entries():
     assert config_model.INSERT_OUTPUT_MAX_LENGTH == INSERT_OUTPUT_MAX_LENGTH
 
 
-# --- burn plan (ported from the legacy chat burn plan) --------------------------
+# --- burn plan -----------------------------------------------------------------
 
 
 def write_chat(path: Path) -> None:

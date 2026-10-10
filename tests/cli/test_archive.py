@@ -9,7 +9,7 @@ from grillmaster.cli import app
 from grillmaster.config.load import CONFIG_FILE_NAME
 from grillmaster.core.stage_key import StageKey
 from grillmaster.project.layout import ProjectLayout
-from grillmaster.project.store import load_state, save_state
+from grillmaster.project.store import load_state, project_lock, save_state
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -90,3 +90,14 @@ def test_unknown_project_fails(cli: CliRunner, archiving_home: Path):
 
     assert result.exit_code == 1
     assert "Error:" in result.output
+
+
+def test_refuses_a_project_another_process_holds(
+    cli: CliRunner, archiving_home: Path, finished: ProjectLayout, state: ProjectState
+):
+    with project_lock(finished.root.parent, state.id):
+        result = cli.invoke(app, ["archive", finished.root.name])
+
+    assert result.exit_code == 1
+    assert "project epabc123 is in use by another grill process" in result.output
+    assert finished.project_json.is_file()

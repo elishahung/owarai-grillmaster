@@ -1,7 +1,8 @@
 """Agent failures, classified by what the caller should do about them.
 
 Only `AgentTransientError` is retried, and only by the runner (in a fresh
-session, `AgentTask.attempts` times). Everything else fails the task at once.
+session, `AgentTask.attempts` times) unless the run was aborted.
+Everything else fails the task at once.
 `ValidationFailure` is not an `AgentError`: a task's validator raises it, and
 the runner turns it into a repair round in the same session.
 """
@@ -31,7 +32,8 @@ class AgentConfigError(AgentError):
 
 
 class AgentQuotaError(AgentError):
-    """Subscription quota or rate limit reached (HTTP 429)."""
+    """Subscription quota or usage limit exhausted; the runner stops using
+    that backend for the rest of the run."""
 
     outcome = SessionOutcome.QUOTA_ERROR
 
@@ -43,7 +45,8 @@ class AgentAuthError(AgentError):
 
 
 class AgentTransientError(AgentError):
-    """Timeout, crash or empty output: a fresh session may succeed."""
+    """Timeout, crash, empty output or a short-lived rate limit (HTTP 429
+    without a quota phrase): a fresh session may succeed."""
 
     outcome = SessionOutcome.TRANSIENT_ERROR
 
@@ -52,6 +55,13 @@ class AgentOutputError(AgentError):
     """The output still failed validation after every repair round."""
 
     outcome = SessionOutcome.OUTPUT_ERROR
+
+
+class AgentCancelledError(AgentError):
+    """Not started, or stopped between turns: the run was aborted. Never
+    retried; a re-run resumes the work."""
+
+    outcome = SessionOutcome.CANCELLED
 
 
 class ValidationFailure(Exception):  # noqa: N818 - a verdict, not a crash
@@ -64,17 +74,25 @@ class ValidationFailure(Exception):  # noqa: N818 - a verdict, not a crash
         return cls(header + "\n" + "\n".join(f"- {problem}" for problem in problems))
 
 
-_QUOTA_MARKERS = (
-    "429",
-    "quota",
-    "exhausted",
-    "rate limit",
-    "rate_limit",
-    "usage limit",
+def _phrases(*patterns: str) -> re.Pattern[str]:
+    """Any of `patterns` as a whole word: no letter or digit may touch it,
+    so "4291" is not "429"; `_` and `-` separate (`insufficient_quota`)."""
+    return re.compile(
+        r"(?<![a-z0-9])(?:" + "|".join(patterns) + r")(?![a-z0-9])", re.IGNORECASE
+    )
+
+
+_QUOTA_RE = _phrases(
+    "quotas?",
+    r"resource[ _-]exhausted",
+    "resource has been exhausted",
+    r"usage[ _-]limits?",
+    r"(?:session|weekly|(?:5|five)[ _-]hour)[ _-]limits?",
+    "hit your limit",
 )
-_AUTH_MARKERS = (
+_AUTH_RE = _phrases(
     "401",
-    "unauthorized",
+    "unauthori[sz]ed",
     "unauthenticated",
     "not logged in",
     "authentication",
@@ -88,30 +106,28 @@ def classify_failure(
 ) -> AgentError:
     """Turn a CLI error message into the matching `AgentError`.
 
-    An HTTP status (given, or embedded in the message as `"status": 400`)
-    decides first: 4xx other than 401/429 is a bad request such as an unknown
-    model, so retrying cannot help. Otherwise well-known quota and auth
-    phrases decide; anything else counts as transient. `login_hint` is
-    appended to auth failures (e.g. "run `codex login`").
+    Phrases match as whole words ("retries exhausted" and "4291" are not
+    quota). A quota phrase (quota, usage limit, resource exhausted) is a
+    quota error whatever the status. Otherwise an HTTP status (given, or
+    embedded in the message as `"status": 400`) decides: 401 is auth, 429 a
+    short-lived rate limit (transient), any other 4xx a bad request such as
+    an unknown model, so retrying cannot help. Without a status, auth
+    phrases decide; rate-limit wording and anything else count as transient.
+    `login_hint` is appended to auth failures (e.g. "run `codex login`").
     """
+    if _QUOTA_RE.search(message):
+        return AgentQuotaError(message)
     if status is None:
         match = _STATUS_RE.search(message)
         status = int(match.group(1)) if match else None
-    lowered = message.lower()
-    if status == HTTPStatus.TOO_MANY_REQUESTS or (
-        status is None and _has(lowered, _QUOTA_MARKERS)
-    ):
-        return AgentQuotaError(message)
     if status == HTTPStatus.UNAUTHORIZED or (
-        status is None and _has(lowered, _AUTH_MARKERS)
+        status is None and _AUTH_RE.search(message)
     ):
         return AgentAuthError(f"{message} ({login_hint})")
+    if status == HTTPStatus.TOO_MANY_REQUESTS:
+        return AgentTransientError(message)
     if status is not None and (
         HTTPStatus.BAD_REQUEST <= status < HTTPStatus.INTERNAL_SERVER_ERROR
     ):
         return AgentConfigError(message)
     return AgentTransientError(message)
-
-
-def _has(text: str, markers: tuple[str, ...]) -> bool:
-    return any(marker in text for marker in markers)

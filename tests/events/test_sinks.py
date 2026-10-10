@@ -93,6 +93,10 @@ def test_console_sink_logs_described_events_only(log_records: list[Record]):
             AgentSessionFinished("refine", SessionOutcome.OUTPUT_ERROR, 30.0, 3),
             ("WARNING", "<refine> session output_error in 30.0s, 3 repair(s)"),
         ),
+        (
+            AgentSessionFinished("refine", SessionOutcome.CANCELLED, 2.0, 0),
+            ("INFO", "<refine> session cancelled in 2.0s"),
+        ),
         (LogLine("INFO", "already logged"), None),
         (ProgressAdvanced("chunks"), None),
     ],

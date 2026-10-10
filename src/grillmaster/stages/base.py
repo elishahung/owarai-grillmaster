@@ -116,6 +116,16 @@ def no_preflight(_config: AppConfig, _secrets: Secrets) -> None:
     """`StageDef.preflight` default: nothing to check before the run."""
 
 
+def no_delivery_preflight(
+    _options: RunOptions, _config: AppConfig, _state: ProjectState | None
+) -> None:
+    """`DeliveryStepDef.preflight` default: nothing to check before the run."""
+
+
+def no_reset(_layout: ProjectLayout) -> None:
+    """`StageDef.on_reset` default: removing the stage's files is enough."""
+
+
 def describe(value: object) -> str | None:
     """`SideTaskDef.describe` default: the payload as text, if any."""
     return None if value is None else str(value)
@@ -156,7 +166,9 @@ class StageDef:
     `--to` no longer apply). `params` is the display snapshot shown in the
     plan and stored in the ledger, never a cache key. `preflight` raises
     when the configuration cannot carry the stage (a missing API key);
-    `Pipeline.check` runs it before any stage does work.
+    `Pipeline.check` runs it before any stage does work. `on_reset` runs
+    when `grill reset` clears the stage, before any file is deleted, for
+    an output that must go back upstream rather than be deleted.
     """
 
     key: StageKey
@@ -169,6 +181,7 @@ class StageDef:
     params: Callable[[AppConfig], dict[str, str]] = no_params
     clear_state: Callable[[ProjectState], None] = no_clear
     preflight: Callable[[AppConfig, Secrets], None] = no_preflight
+    on_reset: Callable[[ProjectLayout], None] = no_reset
 
     def __post_init__(self) -> None:
         if self.weight < 1:
@@ -228,7 +241,10 @@ class DeliveryStepDef:
     """One delivery step.
 
     `run` returns the `StepCompleted` result text; `workdir` is the step's
-    own directory (its `StageContext.workdir`).
+    own directory (its `StageContext.workdir`). `preflight` raises when the
+    step would fail on its configuration (a missing pool); `Pipeline.check`
+    runs it before any stage when the step will run, with the project's
+    state when it exists (`None` before the first run).
     """
 
     key: str
@@ -238,6 +254,9 @@ class DeliveryStepDef:
     workdir: Callable[[ProjectLayout], Path]
     enabled: Callable[[RunOptions, AppConfig], bool] = always_deliver
     params: Callable[[AppConfig], dict[str, str]] = no_params
+    preflight: Callable[[RunOptions, AppConfig, ProjectState | None], None] = (
+        no_delivery_preflight
+    )
 
 
 class StateAccess(Protocol):

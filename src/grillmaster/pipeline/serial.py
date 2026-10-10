@@ -18,7 +18,9 @@ from loguru import logger
 from grillmaster.events.bus import EventBus
 from grillmaster.events.types import BatchItemStarted
 from grillmaster.pipeline.registry import PIPELINE, Pipeline
-from grillmaster.pipeline.runner import ArchivedDeliveryError, run_project
+from grillmaster.pipeline.runner import ProjectRun
+from grillmaster.project.errors import ArchivedProjectError
+from grillmaster.project.layout import ProjectLayout
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -27,7 +29,6 @@ if TYPE_CHECKING:
     from grillmaster.config.load import LoadedConfig
     from grillmaster.core.source_id import SourceId
     from grillmaster.events.bus import EventSink
-    from grillmaster.project.layout import ProjectLayout
     from grillmaster.stages.base import RunOptions
 
 
@@ -41,8 +42,11 @@ class SerialRun:
     dashboard's retry) continues from the failed project, which is itself
     resumable, instead of restarting the chain whose earlier projects may
     already be archived away. A project whose packaging failed after its
-    archive move counts as done (re-running its source would start it over
-    locally): the chain continues after it and `grill package` finishes it.
+    archive move (its `ProjectRun.archived`) counts as done (its source is
+    refused once archived): the chain continues after it and `grill package`
+    finishes it. So does an item whose source was already archived before
+    the chain reached it (`ArchivedProjectError`, raised before any work):
+    its archived directory seeds the next item.
     """
 
     sources: tuple[SourceId, ...]
@@ -78,11 +82,18 @@ class SerialRun:
             source = self.sources[self.position]
             bus.emit(BatchItemStarted(self.position + 1, total, str(source)))
             options = replace(self.template, source=source, parent=self.parent)
+            item = ProjectRun(loaded, options, pipeline)
             try:
-                final = run_project(loaded, options, sinks=sinks, pipeline=pipeline)
-            except BaseException as error:
-                if isinstance(error, ArchivedDeliveryError):
-                    self.parent = error.archived.root
+                final = item.run(sinks)
+            except ArchivedProjectError as error:
+                logger.info(
+                    f"Serial {self.position + 1}/{total}: {source} is already "
+                    f"archived at {error.root}; continuing after it"
+                )
+                final = ProjectLayout(error.root)
+            except BaseException:
+                if item.archived is not None:
+                    self.parent = item.archived.root
                     self.position += 1
                 resume = (
                     f" Resume with the original flags plus: {self.resume_command()}"
@@ -100,8 +111,14 @@ class SerialRun:
 
     def resume_command(self) -> str:
         """The `grill serial` line continuing the chain from the current item
-        (without the run flags, which the user repeats)."""
-        parts = ["grill", "serial", *map(str, self.sources[self.position :])]
+        (without the run flags, which the user repeats). Sources are full
+        URLs: a bare ID may parse as another platform (an Abema slot ID
+        starting with `sh` reads as TVer)."""
+        parts = [
+            "grill",
+            "serial",
+            *(source.url for source in self.sources[self.position :]),
+        ]
         if self.parent is not None:
             parts += ["--parent", str(self.parent)]
         return " ".join(f'"{part}"' if " " in part else part for part in parts)

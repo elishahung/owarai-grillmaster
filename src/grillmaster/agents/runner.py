@@ -8,6 +8,13 @@ rounds resume that session with only the repair message. Only
 `AgentTransientError` starts another attempt, after a delay spent without a
 slot. Every session leaves `prompt.md`, `tools.json`, `schema.json`,
 `raw.jsonl` and `result.json` in its session directory.
+
+Once the process-wide `core.process.ABORT` latch is set (an abort's
+`kill_all`, an interrupt in `run_jobs`) no session or repair turn starts:
+the retry delay wakes up and the next step raises `AgentCancelledError`.
+Once a backend raised `AgentQuotaError`, every later task for that backend
+fails at once with `AgentQuotaError` for the runner's lifetime; other
+backends are unaffected.
 """
 
 from __future__ import annotations
@@ -38,9 +45,11 @@ from grillmaster.agents.adapters.base import (
     TurnRequest,
 )
 from grillmaster.agents.errors import (
+    AgentCancelledError,
     AgentConfigError,
     AgentError,
     AgentOutputError,
+    AgentQuotaError,
     AgentTransientError,
     ValidationFailure,
 )
@@ -60,6 +69,7 @@ from grillmaster.agents.task import (
 from grillmaster.core.fs import atomic_write_text
 from grillmaster.core.json_artifact import write_model
 from grillmaster.core.paths import attempt_path
+from grillmaster.core.process import ABORT, ProcessAbortedError
 from grillmaster.events.context import current_stage, task_scope
 from grillmaster.events.types import (
     ActivityKind,
@@ -160,8 +170,10 @@ class AgentRunner:
         tool_server: Sequence[str] = DEFAULT_TOOL_SERVER,
         retry_delay_s: float = DEFAULT_RETRY_DELAY_S,
         clock: Callable[[], float] = time.monotonic,
-        sleep: Callable[[float], None] = time.sleep,
+        abort: threading.Event = ABORT,
     ) -> None:
+        """`abort` is the process-wide abort latch (a test may pass its
+        own); the retry delay waits on it."""
         if max_concurrent < 1:
             raise ValueError(f"max_concurrent must be >= 1: {max_concurrent}")
         self._roles = dict(roles)
@@ -173,7 +185,9 @@ class AgentRunner:
         self._tool_server = tuple(tool_server)
         self._retry_delay_s = retry_delay_s
         self._clock = clock
-        self._sleep = sleep
+        self._abort = abort
+        # The first quota error of each backend; later tasks fail with it.
+        self._exhausted: dict[Backend, AgentQuotaError] = {}
         # Workdirs of in-flight runs: two sessions in one cwd would clobber
         # each other's files (agy's MCP config, `FilesOutput` targets).
         self._active_workdirs: set[Path] = set()
@@ -193,11 +207,22 @@ class AgentRunner:
                 f"{task.name}: nested agent run while holding a slot would deadlock"
             )
         prepared = self._prepare(task)
+        backend = prepared.spec.backend
+        exhausted = self._exhausted.get(backend)
+        if exhausted is not None:
+            raise AgentQuotaError(
+                f"{task.name}: not started: {backend} hit its quota earlier: "
+                f"{exhausted}"
+            )
         with ExitStack() as stack:
             if task.workdir is None:
+                # A CLI descendant may still hold a file open on Windows;
+                # a leftover temp dir must not fail an accepted session.
                 workdir = Path(
                     stack.enter_context(
-                        tempfile.TemporaryDirectory(prefix="grill_agent_")
+                        tempfile.TemporaryDirectory(
+                            prefix="grill_agent_", ignore_cleanup_errors=True
+                        )
                     )
                 )
             else:
@@ -208,11 +233,15 @@ class AgentRunner:
             while True:
                 try:
                     return self._attempt(prepared, workdir, attempt)
+                except AgentQuotaError as error:
+                    self._exhausted.setdefault(backend, error)
+                    raise
                 except AgentTransientError:
                     if attempt >= task.attempts:
                         raise
-                # The slot is already released; waiting must not hold one.
-                self._sleep(self._retry_delay_s)
+                    # The slot is already released; waiting must not hold one.
+                    # An abort wakes it; the next attempt then refuses to start.
+                    self._abort.wait(self._retry_delay_s)
                 attempt += 1
 
     def run_jobs[T](self, jobs: Sequence[AgentJob[T]]) -> list[JobFailure]:
@@ -220,9 +249,11 @@ class AgentRunner:
         the failures in input order.
 
         Each job prepares its task, runs it and accepts the result on one
-        worker; any exception in those steps fails only that job. An
-        interrupt while waiting cancels the jobs not yet started, lets the
-        running ones finish (accepting what succeeds), then propagates.
+        worker; any exception in those steps fails only that job (after a
+        quota error, the queued jobs of that backend fail at once). An
+        interrupt while waiting sets the abort latch and cancels the jobs not
+        yet started, lets the running ones end (accepting what succeeds; no
+        new turn starts), then propagates.
         """
         if _holding_slot.get():
             raise AgentConfigError("nested agent run_jobs while holding a slot")
@@ -232,6 +263,9 @@ class AgentRunner:
         def run_one(job: AgentJob[T]) -> JobFailure | None:
             try:
                 job.accept(self.run(job.prepare()))
+            except (AgentCancelledError, AgentQuotaError) as error:
+                logger.error(f"{job.name} failed: {error}")
+                return JobFailure(job.name, error)
             except Exception as error:  # noqa: BLE001 - reported per job
                 logger.opt(exception=True).debug(f"{job.name} traceback")
                 logger.error(f"{job.name} failed: {error}")
@@ -261,6 +295,9 @@ class AgentRunner:
                     future.result()
             outcomes = [future.result() for future in futures]
         except BaseException:
+            # Process-terminal (Ctrl-C): no worker may start a new session
+            # or child process while the running jobs wind down.
+            self._abort.set()
             pool.shutdown(wait=True, cancel_futures=True)
             raise
         pool.shutdown(wait=True)
@@ -338,12 +375,14 @@ class AgentRunner:
     ) -> AgentResult[T]:
         task, spec = prepared.task, prepared.spec
         session_dir = _session_dir(task.session_dir, attempt)
-        files = self._prepare_session_dir(prepared, session_dir)
-        if isinstance(task.output, FilesOutput):
-            for path in task.output.declared(workdir):
-                path.unlink(missing_ok=True)
-
         with task_scope(task.name), self._slot():
+            # Checked once the slot is ours: waiting for it may outlast an abort.
+            if self._abort.is_set():
+                raise self._cancelled(task.name, "a session")
+            files = self._prepare_session_dir(prepared, session_dir)
+            if isinstance(task.output, FilesOutput):
+                for path in task.output.declared(workdir):
+                    path.unlink(missing_ok=True)
             started = self._clock()
             state = _SessionState()
             self._events.emit(
@@ -361,7 +400,10 @@ class AgentRunner:
                     "a", encoding="utf-8", newline="\n"
                 ) as raw:
                     request = self._request(prepared, workdir, session_dir, files, raw)
-                    output = self._session(prepared, request, workdir, state)
+                    try:
+                        output = self._session(prepared, request, workdir, state)
+                    except ProcessAbortedError as aborted:
+                        raise self._cancelled(task.name, "a turn") from aborted
             except BaseException as caught:
                 error = caught
                 raise
@@ -416,6 +458,8 @@ class AgentRunner:
                 raise AgentTransientError(
                     f"{task.name}: no session id to resume for a repair"
                 )
+            if self._abort.is_set():
+                raise self._cancelled(task.name, "a repair")
             state.repairs += 1
             self._activity(task.name, ActivityKind.REPAIR, first_line(defect.message))
             handle = adapter.resume(
@@ -452,6 +496,9 @@ class AgentRunner:
         return final
 
     # -- plumbing -------------------------------------------------------------
+
+    def _cancelled(self, task_name: str, step: str) -> AgentCancelledError:
+        return AgentCancelledError(f"{task_name}: the run was aborted before {step}")
 
     def _request(
         self,

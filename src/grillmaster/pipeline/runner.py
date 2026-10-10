@@ -12,12 +12,14 @@ project where it now lives.
 
 `run_project` is the `grill run` entry (archive wired from `[paths] archive`);
 `deliver_project` runs only the delivery steps on an existing project
-(`grill package`).
+(`grill package`); `ProjectRun` is `run_project` made retryable (the
+dashboard's `r`).
 """
 
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -38,13 +40,13 @@ from grillmaster.events.types import (
 from grillmaster.media.ffmpeg import SubprocessFfmpegRunner
 from grillmaster.pipeline.delivery import run_archive, run_delivery
 from grillmaster.pipeline.logs import ProjectLogs
-from grillmaster.pipeline.projects import existing_state, open_project
+from grillmaster.pipeline.projects import find_project, open_project
 from grillmaster.pipeline.registry import PIPELINE, Pipeline
 from grillmaster.pipeline.side_tasks import SideTaskManager
 from grillmaster.pipeline.state_store import StateStore
 from grillmaster.pipeline.steps import UsageCollector, execute_step
 from grillmaster.project.state import now as local_now
-from grillmaster.project.store import archive_project, load_state
+from grillmaster.project.store import archive_project, load_state, project_lock
 from grillmaster.sources.http import UrllibJsonHttp
 from grillmaster.sources.ytdlp import YtDlpLibrary
 from grillmaster.stages.base import Externals, StageContext
@@ -74,58 +76,70 @@ def run_project(
     """Check the run, open (or create) the project and run it; returns the
     project's final layout.
 
-    A rejected run (`Pipeline.check`, against the existing state if any)
-    creates nothing. The agent runner is built from `[agents]`, the
+    The whole run, archive move and delivery included, holds the project's
+    run lock (`project_lock`, taken first: a project another grill process
+    holds raises `ProjectBusyError` before anything is read). An archived
+    source (`ArchivedProjectError`) or a rejected run (`Pipeline.check`,
+    against the existing state if any) creates no project; the archive
+    lookup comes first. The agent runner is built from `[agents]`, the
     processes and services by `real_externals`; events go to `sinks` (plus
     the project's JSONL log). With `[paths] archive` set, a complete run
     moves the project there once the stages finish, and packages it there.
     """
-    pipeline.check(
-        options,
-        loaded.config,
-        loaded.secrets,
-        state=existing_state(loaded.projects_root, options),
-    )
-    layout, state = open_project(loaded.projects_root, options)
-    events = EventBus(sinks)
     archive_root = loaded.config.paths.archive
-    if archive_root is None:
-        logger.info("[paths] archive is not set; the project stays in place")
-    return run_pipeline(
-        layout,
-        state,
-        loaded=loaded,
-        options=options,
-        agents=_agent_runner(loaded, events),
-        externals=real_externals(),
-        events=events,
-        pipeline=pipeline,
-        archive=archive_to(archive_root) if archive_root is not None else None,
-    )
+    with project_lock(loaded.projects_root, options.source.video_id):
+        existing = find_project(
+            loaded.projects_root, options, archive_root=archive_root
+        )
+        pipeline.check(
+            options,
+            loaded.config,
+            loaded.secrets,
+            state=existing[1] if existing is not None else None,
+        )
+        layout, state = open_project(loaded.projects_root, options, existing)
+        events = EventBus(sinks)
+        if archive_root is None:
+            logger.info("[paths] archive is not set; the project stays in place")
+        return run_pipeline(
+            layout,
+            state,
+            loaded=loaded,
+            options=options,
+            agents=_agent_runner(loaded, events),
+            externals=real_externals(),
+            events=events,
+            pipeline=pipeline,
+            archive=archive_to(archive_root) if archive_root is not None else None,
+        )
 
 
 def deliver_project(
     loaded: LoadedConfig,
     layout: ProjectLayout,
-    state: ProjectState,
     options: RunOptions,
     *,
     sinks: Sequence[EventSink],
     pipeline: Pipeline = PIPELINE,
 ) -> ProjectLayout:
-    """Run only `pipeline`'s delivery steps on an existing project, local or
-    archived; no stage, side task or archive move runs."""
-    events = EventBus(sinks)
-    return run_pipeline(
-        layout,
-        state,
-        loaded=loaded,
-        options=options,
-        agents=_agent_runner(loaded, events),
-        externals=real_externals(),
-        events=events,
-        pipeline=Pipeline((), delivery=pipeline.delivery),
-    )
+    """Run only `pipeline`'s delivery steps on the existing project at
+    `layout`, local or archived; no stage, side task or archive move runs.
+
+    Holds the run lock of `options.source` (`project_lock`, keyed by ID
+    under the local projects root, so an archived copy is covered too) and
+    reads the state under it."""
+    with project_lock(loaded.projects_root, options.source.video_id):
+        events = EventBus(sinks)
+        return run_pipeline(
+            layout,
+            load_state(layout),
+            loaded=loaded,
+            options=options,
+            agents=_agent_runner(loaded, events),
+            externals=real_externals(),
+            events=events,
+            pipeline=Pipeline((), delivery=pipeline.delivery),
+        )
 
 
 def archive_to(archived_root: Path) -> Archive:
@@ -151,6 +165,48 @@ class ArchivedDeliveryError(RuntimeError):
             f'grill package "{archived.root}")'
         )
         self.archived = archived
+
+
+@dataclass(slots=True)
+class ProjectRun:
+    """`run_project` for one source, retryable; also each item of a
+    `SerialRun`.
+
+    Stateful on purpose: once a run failed after its archive move
+    (`ArchivedDeliveryError`, recorded as `archived`), the source resolves
+    only to the archive and re-running it is refused, so every further `run`
+    (the dashboard's retry) runs only the delivery on the archived project.
+    """
+
+    loaded: LoadedConfig
+    options: RunOptions
+    pipeline: Pipeline = PIPELINE
+    archived: ProjectLayout | None = None
+
+    def run(self, sinks: Sequence[EventSink]) -> ProjectLayout:
+        if self.archived is not None:
+            return self._deliver(self.archived, sinks)
+        try:
+            return run_project(
+                self.loaded, self.options, sinks=sinks, pipeline=self.pipeline
+            )
+        except ArchivedDeliveryError as error:
+            self.archived = error.archived
+            raise
+
+    def _deliver(
+        self, archived: ProjectLayout, sinks: Sequence[EventSink]
+    ) -> ProjectLayout:
+        try:
+            return deliver_project(
+                self.loaded,
+                archived,
+                self.options,
+                sinks=sinks,
+                pipeline=self.pipeline,
+            )
+        except Exception as error:
+            raise ArchivedDeliveryError(archived, error) from error
 
 
 def real_externals() -> Externals:

@@ -3,14 +3,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+from loguru import logger
 from tests.fakes import FakeFfmpeg, RecordingSink
 from tests.sources.fakes import FakeJsonHttp, FakeYtDlp
 
+from grillmaster.core.process import ABORT
 from grillmaster.core.source_id import Platform, SourceId
 from grillmaster.project.state import ProjectState
 from grillmaster.stages.base import Externals
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     from grillmaster.asr.client import SpeechToText, SpeechToTextFactory
@@ -23,6 +26,25 @@ def _isolated_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("GRILL_HOME", raising=False)
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _reset_abort_latch() -> Iterator[None]:
+    """A test may abort (`kill_all`, an interrupted `run_jobs`); the
+    process-wide latch must not leak into the next test."""
+    yield
+    ABORT.clear()
+
+
+@pytest.fixture
+def warnings() -> Iterator[list[str]]:
+    """The messages logged at WARNING or above while the test runs."""
+    messages: list[str] = []
+    handler = logger.add(
+        lambda message: messages.append(message.record["message"]), level="WARNING"
+    )
+    yield messages
+    logger.remove(handler)
 
 
 @pytest.fixture

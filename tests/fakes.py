@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
     from typing import BinaryIO
 
+    import pytest
+
     from grillmaster.agents.adapters.base import AgentAdapter
     from grillmaster.agents.task import AgentTask
     from grillmaster.core.model_spec import Role
@@ -353,3 +355,32 @@ def draws(task: AgentTask[Any]) -> tuple[Path, ...]:
     drawn = task.workdir / COVER_NAME
     drawn.write_bytes(b"png")
     return (drawn,)
+
+
+def refuse_rename(monkeypatch: pytest.MonkeyPatch, path: Path, message: str) -> None:
+    """Make every rename of `path` (`Path.rename` and `Path.replace`) fail
+    like a Windows lock, with `message`; other paths rename as usual."""
+    for name in ("rename", "replace"):
+        real: Callable[[Path, Path], Path] = getattr(Path, name)
+
+        def refuse(
+            self: Path, target: Path, *, _real: Callable[[Path, Path], Path] = real
+        ) -> Path:
+            if self == path:
+                raise PermissionError(message)
+            return _real(self, target)
+
+        monkeypatch.setattr(Path, name, refuse)
+
+
+def refuse_unlink(monkeypatch: pytest.MonkeyPatch, path: Path, message: str) -> None:
+    """Make `Path.unlink` of `path` fail like a Windows lock, with `message`;
+    other paths unlink as usual."""
+    real = Path.unlink
+
+    def refuse(self: Path, missing_ok: bool = False) -> None:
+        if self == path:
+            raise PermissionError(message)
+        real(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", refuse)

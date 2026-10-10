@@ -17,9 +17,14 @@ description: >-
   `pipeline/runner.py`, exposed as `StageContext.agents`); domain code builds
   an `AgentTask` and never touches an adapter or CLI.
 - Child processes are spawned only by `agents/process.py` (agent CLIs) and
-  `media/ffmpeg.py`. Both register in `core.process.LIVE_PROCESSES`; the Claude
-  SDK's CLI is registered by `RegisteredTransport`. Abort (TUI/CLI) and
-  `atexit` call `kill_all()`, which tree-kills (`taskkill /T /F` / `killpg`).
+  `media/ffmpeg.py`, both as `core.process.spawn_tree` `ProcessTree`s
+  (Windows Job Object / POSIX process group, killable after the leader
+  exited) held via `track`/`release` in `LIVE_PROCESSES`. The Claude SDK's
+  CLI is `adopt_tree`d by `RegisteredTransport` after `connect` (Job Object;
+  failure → `AgentConfigError`) and its tree always ends on `close`. Abort
+  (TUI/CLI) and `atexit` call `kill_all()`: it latches the process-wide
+  `core.process.ABORT` (new spawns then raise `ProcessAbortedError`), then
+  kills every tree.
 - `agents` and `agent_tools` never import `config`/`project` (import-linter
   `domain-purity`); `ModelSpec`, `Role` and `ToolSession` live in `core/`.
 - No silent degradation: missing capability/model/input file or a non-strict
@@ -40,7 +45,9 @@ description: >-
   `prepare` builds the task on the worker before it takes a slot, `accept`
   persists the result right after its session. An exception fails only its
   job; failures return in input order and the caller raises after the batch.
-  Ctrl-C cancels unstarted jobs and lets running ones finish and accept.
+  Ctrl-C cancels the runner and unstarted jobs; running ones end without a
+  new turn and accept what succeeded. An `AgentQuotaError` fails the batch's
+  unstarted jobs with `AgentCancelledError`.
 - `strict_json_schema`: refs inlined, all properties required,
   `additionalProperties: false`, object root; free-key dicts and recursive
   models are rejected (use `T | None`, lists of objects). Pydantic is the judge.
@@ -49,7 +56,8 @@ description: >-
 
 `grill.toml [agents.roles]` → `AgentRoles.specs()` (`chat` falls back to
 `utility`) → `dict[Role, ModelSpec]`, written `backend/model[/effort]`
-(default `high`). `[agents] max_concurrent` sizes the global semaphore;
+(default `high`). `[agents] max_concurrent` (default 10) sizes the semaphore
+of one grill process (concurrent processes each get their own);
 `timeout_minutes` bounds each turn (per-process watchdog), not the session.
 
 All adapters declare IMAGE_INPUT, NATIVE_SCHEMA, RESUME, MCP, MCP_IMAGE_RESULT,
@@ -69,9 +77,11 @@ defects)`. A resume repeats every start setting with a new `message`.
 
 - **agy**: `--input-format stream-json --output-format stream-json -p=`, one
   text-only stdin line, stdin closed on `result`. Model id
-  `<model>-<low|medium|high>` checked once against `agy models`. Audio not
+  `<model>-<low|medium|high>` checked against `agy models` (success cached
+  for good; a failure answers every task for 60 s). Audio not
   opened by a finished `view_file` step → `TurnDefect` resending it.
-  `--json-schema` output trusted only if `finish` ran this turn. MCP from
+  `--json-schema` output trusted only if `finish` ran this turn, else a JSON
+  object in this turn's final message (one json fence stripped). MCP from
   `<workdir>/.agents/mcp_config.json` (deleted when no tools). Resume
   `--conversation`. `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_GENAI_API_KEY`
   are stripped so agy stays on the subscription login.
@@ -93,11 +103,17 @@ defects)`. A resume repeats every start setting with a new `message`.
   defects first, then parse + `validate`; a failure resumes the same session
   with only `prompt.repair_message(...)`. Exhausted repairs →
   `AgentOutputError`. Nested `run`/`run_jobs` inside a slot is refused.
-- Errors: `AgentConfigError`, `AgentQuotaError` (429), `AgentAuthError` (401 +
-  login hint), `AgentTransientError` (timeout, crash, no result),
-  `AgentOutputError`; `classify_failure` maps status, then markers, else
-  transient. The only retry loop is in `run`: transient → new session (up to
-  `attempts`) after 30 s without a slot.
+- Errors: `AgentConfigError`, `AgentQuotaError` (quota/usage-limit phrase,
+  any status), `AgentAuthError` (401 + login hint), `AgentTransientError`
+  (timeout, crash, no result, a bare 429/rate limit), `AgentOutputError`,
+  `AgentCancelledError`; `classify_failure`: quota phrase, then status, then
+  whole-word auth markers, else transient. The only retry loop is in `run`:
+  transient → new session (up to `attempts`) after 30 s without a slot.
+- Abort (`kill_all`, a `run_jobs` interrupt) sets `core.process.ABORT` for
+  good: the retry wait (`ABORT.wait`) wakes, and no session or repair turn
+  starts (`AgentCancelledError`, outcome `cancelled`, never retried). An `AgentQuotaError` latches
+  its backend for the runner's lifetime: later tasks on that backend fail at
+  once with `AgentQuotaError`; other backends keep running.
 - Events: adapters yield `Thought`/`ToolCall`/`ToolResult`/`Message`; the
   runner emits `AgentSessionStarted` (on slot), `AgentActivity` via
   `summarize` (final message by length only) and `AgentSessionFinished`.

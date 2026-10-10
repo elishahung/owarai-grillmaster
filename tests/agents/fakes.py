@@ -18,13 +18,17 @@ from grillmaster.agents.adapters.base import (
     TurnDefect,
     TurnRequest,
 )
-from grillmaster.core.model_spec import Backend, Effort, ModelSpec
+from grillmaster.agents.runner import AgentRunner
+from grillmaster.agents.task import AgentTask
+from grillmaster.core.model_spec import Backend, Effort, ModelSpec, Role
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 
     from grillmaster.agents.events import AgentEvent
     from grillmaster.agents.process import ProcessSpec
+    from grillmaster.agents.task import OutputSpec
+    from grillmaster.events.bus import EventSink
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "agents"
 # The cheapest model of each backend: the live tests run on these, and the
@@ -32,7 +36,7 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "agents"
 SPECS = {
     Backend.AGY: ModelSpec(Backend.AGY, "gemini-3.8-flash", Effort.LOW),
     Backend.CODEX: ModelSpec(Backend.CODEX, "gpt-6-astra", Effort.LOW),
-    Backend.CLAUDE: ModelSpec(Backend.CLAUDE, "haiku", Effort.LOW),
+    Backend.CLAUDE: ModelSpec(Backend.CLAUDE, "claude-haiku-5-5", Effort.LOW),
 }
 
 
@@ -247,3 +251,61 @@ class FakeAdapter:
         if turn.on_start is not None:
             turn.on_start(call.request)
         return FakeHandle(turn, call.request)
+
+
+# --- runner builders ------------------------------------------------------------
+
+# The one spec every role of a `make_runner` runner resolves to by default.
+RUNNER_SPEC = ModelSpec(Backend.CODEX, "gpt-test", Effort.HIGH)
+
+
+class Clock:
+    """A monotonic clock advancing one second per reading."""
+
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        self.now += 1.0
+        return self.now
+
+
+def make_runner(
+    adapter: FakeAdapter, *, events: EventSink, **overrides: Any
+) -> AgentRunner:
+    """A runner over `adapter` with test-sized defaults and its own abort
+    event (never the process-wide latch); `roles=` and any `AgentRunner`
+    option override them."""
+    options: dict[str, Any] = {
+        "max_concurrent": 2,
+        "timeout_s": 60.0,
+        "events": events,
+        "tool_server": ("python", "-m", "grillmaster.agent_tools"),
+        "retry_delay_s": 7.0,
+        "clock": Clock(),
+        "abort": threading.Event(),
+    }
+    options.update(overrides)
+    roles = options.pop("roles", dict.fromkeys(Role, RUNNER_SPEC))
+    return AgentRunner(roles, {adapter.backend: adapter}.__getitem__, **options)
+
+
+def make_task[T](
+    tmp_path: Path,
+    output: OutputSpec[T],
+    *,
+    name: str = "refine",
+    **overrides: Any,
+) -> AgentTask[T]:
+    """A task named `name` with its session and workdir under `tmp_path`."""
+    fields: dict[str, Any] = {
+        "name": name,
+        "role": Role.POSTPROCESS,
+        "instructions": "INSTRUCTIONS",
+        "prompt": "PROMPT",
+        "session_dir": tmp_path / name / "session",
+        "workdir": tmp_path / name / "work",
+        "output": output,
+    }
+    fields.update(overrides)
+    return AgentTask(**fields)

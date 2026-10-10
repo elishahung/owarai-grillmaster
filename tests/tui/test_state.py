@@ -330,6 +330,25 @@ def test_chunk_range(task: str, expected: tuple[int, int] | None):
     assert chunk_range(task) == expected
 
 
+def test_a_cancelled_session_reads_as_cancelled_not_failed(run_state: PipelineState):
+    run_state.apply(StepStarted("chunks", STAGE))
+    run_state.apply(_session_started("chunks/0001-0040"))
+    run_state.apply(_session_started("chunks/0041-0080"))
+    run_state.apply(
+        AgentSessionFinished("chunks/0001-0040", SessionOutcome.CANCELLED, 1.0, 0)
+    )
+    run_state.apply(
+        AgentSessionFinished("chunks/0041-0080", SessionOutcome.QUOTA_ERROR, 1.0, 0)
+    )
+
+    cancelled = run_state.sessions["chunks/0001-0040"]
+    assert cancelled.state is SessionState.CANCELLED
+    assert cancelled.outcome is SessionOutcome.CANCELLED
+    assert run_state.sessions["chunks/0041-0080"].state is SessionState.FAILED
+    stats = run_state.chunk_stats("chunks")
+    assert (stats.active, stats.failed) == (0, 1)
+
+
 def test_chunk_board_is_derived_from_chunk_sessions(run_state: PipelineState):
     run_state.apply(StepStarted("chunks", STAGE))
     for task in ("chunks/0081-0120", "chunks/0001-0040", "chunks/0041-0080"):

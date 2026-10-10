@@ -6,26 +6,29 @@ binary and the flags every run shares, and hand the argv to an injected
 whole process tree on a timeout, a stalled progress clock or a set `abort`
 event; the tree is also killed when the run is abandoned (Ctrl+C, a failing
 progress callback), and a non-zero exit becomes a `MediaError` carrying the
-stderr tail. While it runs the process is held in `core.process.LIVE_PROCESSES`,
-so `kill_all` can end it from another thread.
+stderr tail. The child is a `core.process.ProcessTree` (spawned and killed
+like every agent CLI) held in `LIVE_PROCESSES` while it runs, so `kill_all`
+can end it from another thread; once an abort began, a run raises
+`core.process.ProcessAbortedError` instead of starting.
 """
 
 from __future__ import annotations
 
 import shlex
 import subprocess
-import sys
 import threading
 import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
-from grillmaster.core.process import LIVE_PROCESSES, StderrTail, kill_process_tree
+from grillmaster.core.process import StderrTail, release, spawn_tree, track
 from grillmaster.media.errors import MediaError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
+
+    from grillmaster.core.process import ProcessTree
 
 # Called with the output timestamp (seconds) each time ffmpeg reports progress.
 type ProgressCallback = Callable[[float], None]
@@ -115,26 +118,23 @@ class SubprocessFfmpegRunner:
         if abort is not None and abort.is_set():
             raise MediaError(f"{program} aborted before start: {shlex.join(command)}")
         try:
-            process = subprocess.Popen(
+            tree = spawn_tree(
                 command,
                 cwd=cwd,
+                env=None,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                # POSIX: own process group, so the whole tree can be killed.
-                start_new_session=sys.platform != "win32",
             )
         except FileNotFoundError:
             raise MediaError(f"{program} not found on PATH") from None
-        LIVE_PROCESSES.register(process)
+        track(tree)
+        process = tree.leader
 
         assert process.stderr is not None  # noqa: S101 - piped above
         stderr_tail = StderrTail(process.stderr, _STDERR_TAIL_LINES)
         watchdog = _Watchdog(
-            process,
+            tree,
             timeout=timeout,
             stall_timeout=self.stall_timeout if on_progress is not None else None,
             abort=abort,
@@ -144,9 +144,8 @@ class SubprocessFfmpegRunner:
             returncode = process.wait()
         finally:
             watchdog.stop()
-            kill_process_tree(process)
+            release(tree)
             process.wait()
-            LIVE_PROCESSES.unregister(process)
             stderr_tail.join()
 
         if watchdog.reason is not None:
@@ -179,18 +178,18 @@ def _read_stdout(
 
 
 class _Watchdog:
-    """Kills `process`'s tree on timeout, a stall or `abort`; `reason` says
+    """Kills `tree` on timeout, a stall or `abort`; `reason` says
     which (read it after `stop`). Starts no thread when nothing is watched."""
 
     def __init__(
         self,
-        process: subprocess.Popen[str],
+        tree: ProcessTree[subprocess.Popen[str]],
         *,
         timeout: float | None,
         stall_timeout: float | None,
         abort: threading.Event | None,
     ) -> None:
-        self._process = process
+        self._tree = tree
         self._timeout = timeout
         self._stall_timeout = stall_timeout
         self._abort = abort
@@ -220,7 +219,7 @@ class _Watchdog:
             reason = self._verdict(time.monotonic())
             if reason is not None:
                 self.reason = reason
-                kill_process_tree(self._process)
+                self._tree.kill()
                 return
 
     def _verdict(self, now: float) -> str | None:

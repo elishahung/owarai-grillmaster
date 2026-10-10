@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from tests.fakes import Recorder
@@ -112,8 +113,11 @@ def fake_delivery(
     *,
     action: Callable[[StageContext], str | None] | None = None,
     enabled: bool = True,
+    preflight: Callable[[RunOptions, AppConfig, ProjectState | None], None]
+    | None = None,
 ) -> DeliveryStepDef:
-    """A delivery step working in `work/<key>/`."""
+    """A delivery step working in `work/<key>/`; `preflight` replaces the
+    default no-op check."""
 
     def run(ctx: StageContext) -> str | None:
         journal.add(f"deliver:{key}@{current_stage()}")
@@ -122,7 +126,7 @@ def fake_delivery(
     def is_enabled(options: RunOptions, config: AppConfig) -> bool:
         return enabled
 
-    return DeliveryStepDef(
+    step = DeliveryStepDef(
         key=key,
         label=f"Deliver {key}",
         weight=3,
@@ -130,3 +134,4 @@ def fake_delivery(
         workdir=lambda layout: layout.work_root / key,
         enabled=is_enabled,
     )
+    return step if preflight is None else replace(step, preflight=preflight)

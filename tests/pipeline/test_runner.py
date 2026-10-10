@@ -761,7 +761,7 @@ def test_run_project_checks_options_before_creating_anything(
             sinks=[recording_sink],
             pipeline=Pipeline((fake_stage(StageKey.METADATA, journal),)),
         )
-    assert not loaded.projects_root.exists()
+    assert not ProjectLayout.for_id(loaded.projects_root, "epnew1").root.exists()
     assert recording_sink.events == []
 
 
@@ -778,7 +778,7 @@ def test_run_project_preflights_before_creating_anything(
                 (replace(asr, preflight=refusing(journal, StageKey.ASR)),)
             ),
         )
-    assert not loaded.projects_root.exists()
+    assert not ProjectLayout.for_id(loaded.projects_root, "epnew1").root.exists()
 
 
 def test_run_project_skips_the_preflight_of_completed_stages(

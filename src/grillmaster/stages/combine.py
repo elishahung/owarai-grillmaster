@@ -4,8 +4,9 @@ cut to the section.
 `--start` / `--to` apply only while this stage has not run: the section is
 recorded on `ProjectState.section` (the chat fetch reads it there). A cut
 writes `video.mp4` and keeps `full.mp4`, so `grill reset --from combine`
-can cut again; without a section `full.mp4` becomes `video.mp4`. Platform
-captions become `subs/ja.official.srt`, shifted onto the section.
+can cut again; without a section `full.mp4` becomes `video.mp4`, the only
+copy, which a combine reset moves back (`on_reset`). Platform captions
+become `subs/ja.official.srt`, shifted onto the section.
 """
 
 from __future__ import annotations
@@ -69,6 +70,17 @@ def _on_skip(ctx: StageContext) -> None:
         logger.warning("Video already combined; --start/--to are ignored on resume")
 
 
+def _on_reset(layout: ProjectLayout) -> None:
+    """Without a cut `video.mp4` is the moved `full.mp4`: put it back so the
+    reset (deleting `video.mp4` as an output) does not lose the download."""
+    full = layout.full_video
+    if full.exists() or not layout.video.exists():
+        return
+    logger.info(f"Moving {layout.video} back to {full}")
+    full.parent.mkdir(parents=True, exist_ok=True)
+    layout.video.replace(full)
+
+
 def _outputs(layout: ProjectLayout) -> Sequence[Path]:
     return (layout.video, layout.ja_official_srt)
 
@@ -86,4 +98,5 @@ STAGE = StageDef(
     on_skip=_on_skip,
     params=tool_params("ffmpeg"),
     clear_state=_clear_state,
+    on_reset=_on_reset,
 )

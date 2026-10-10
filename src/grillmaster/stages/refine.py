@@ -35,7 +35,9 @@ def _run(ctx: StageContext) -> None:
         workdir=ctx.workdir,
         output_srt=layout.refined_srt,
         report=layout.refine_report,
-        program_instruction=program_rules(ctx).instruction_text(StageKey.REFINE),
+        program_instruction=program_rules(
+            ctx.config, ctx.state.source
+        ).instruction_text(StageKey.REFINE),
     )
     tools = ToolSession(
         project_root=layout.root,

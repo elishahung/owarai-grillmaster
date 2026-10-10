@@ -5,6 +5,11 @@ On a terminal the work runs under the dashboard (`tui.run_with_tui`), whose
 every event into the dashboard's log pane. Anywhere else (a pipe, CI) the
 events go to a `ConsoleSink`. Either way the run's JSONL log is added by the
 pipeline itself.
+
+Either way an abort runs `core.process.kill_all`, which latches
+`core.process.ABORT` before it kills the child processes, so a worker whose
+CLI was killed starts no new agent session (no retry, repair or queued job)
+and no new child process.
 """
 
 from __future__ import annotations
@@ -51,7 +56,8 @@ def run_live[T](
 
     Raises `KeyboardInterrupt` (`tui.RunAborted` from the dashboard) once
     the work's child processes are killed; `kill_processes` (default
-    `core.process.kill_all`) kills them on a console run's Ctrl-C.
+    `core.process.kill_all`, which also latches the abort for every agent
+    runner) kills them on a console run's Ctrl-C.
     """
     if interactive is None:
         interactive = interactive_terminal()
@@ -75,9 +81,11 @@ def run_live[T](
 
 @contextlib.contextmanager
 def _kill_on_interrupt(kill_processes: Callable[[], object]) -> Iterator[None]:
-    """While the block runs, Ctrl-C kills the live child processes before
+    """While the block runs, Ctrl-C kills the live child processes (and,
+    through `kill_all`, latches the abort) before
     `KeyboardInterrupt` unwinds the main thread: a thread pool's exit joins
-    its workers, which would otherwise wait on those children first."""
+    its workers, which would otherwise wait on those children first, and
+    retry in a fresh session once they died."""
 
     def interrupt(signum: int, frame: FrameType | None) -> NoReturn:  # noqa: ARG001 - the signal handler signature
         kill_processes()

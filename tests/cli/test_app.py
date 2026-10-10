@@ -9,7 +9,7 @@ from grillmaster.cli.args import expand_bare_remix
 from grillmaster.config.load import CONFIG_FILE_NAME
 from grillmaster.core.stage_key import StageKey
 from grillmaster.project.layout import ProjectLayout
-from grillmaster.project.store import load_state, save_state
+from grillmaster.project.store import load_state, project_lock, save_state
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -80,7 +80,7 @@ def test_run_break_after_an_unregistered_stage_creates_nothing(
     result = cli.invoke(app, ["epnew1", "--break-after", "asr"])
     assert result.exit_code == 1
     assert "not registered" in result.output
-    assert not projects_root.exists()
+    assert not (projects_root / "epnew1").exists()
 
 
 def test_run_without_grill_toml_fails(cli: CliRunner, isolated_cwd: Path):
@@ -186,6 +186,50 @@ def test_reset_only_asks_first(
     assert saved.is_done(StageKey.REFINE)
 
 
+def test_reset_refuses_an_archived_project(
+    cli: CliRunner, home: Path, state: ProjectState
+):
+    for key in StageKey:
+        state.mark_done(key, elapsed_s=1.0)
+    archived = ProjectLayout(home.parent / "archive" / "etc" / state.id)
+    save_state(archived, state)
+
+    result = cli.invoke(app, ["reset", str(archived.root), "--from", "refine", "-y"])
+
+    assert result.exit_code == 1
+    assert "stages cannot re-run there" in result.output
+    assert load_state(archived).is_done(StageKey.REFINE)
+
+
+def test_reset_by_id_finds_and_refuses_the_archived_project(
+    cli: CliRunner, home: Path, state: ProjectState
+):
+    archive_root = home.parent / "archive"
+    config = home / CONFIG_FILE_NAME
+    config.write_text(
+        config.read_text(encoding="utf-8")
+        + f"\n[paths]\narchive = '{archive_root.as_posix()}'\n",
+        encoding="utf-8",
+    )
+    state.mark_done(StageKey.REFINE, elapsed_s=1.0)
+    archived = ProjectLayout(archive_root / "etc" / state.id)
+    save_state(archived, state)
+
+    result = cli.invoke(app, ["reset", state.id, "--from", "refine", "-y"])
+
+    assert result.exit_code == 1
+    assert f'grill package "{archived.root}"' in result.output.replace("\n", "")
+    assert load_state(archived).is_done(StageKey.REFINE)
+
+
+def test_reset_accepts_a_local_project_directory(
+    cli: CliRunner, layout: ProjectLayout, finished: ProjectState
+):
+    result = cli.invoke(app, ["reset", str(layout.root), "--only", "chunks", "-y"])
+    assert result.exit_code == 0, result.output
+    assert not load_state(layout).is_done(StageKey.CHUNKS)
+
+
 @pytest.mark.parametrize(
     "flags",
     [[], ["--from", "asr", "--only", "asr"]],
@@ -197,3 +241,14 @@ def test_reset_needs_exactly_one_flag(
     result = cli.invoke(app, ["reset", "epabc123", *flags, "--yes"])
     assert result.exit_code == 1
     assert "exactly one" in result.output
+
+
+def test_reset_refuses_a_project_another_process_holds(
+    cli: CliRunner, projects_root: Path, layout: ProjectLayout, finished: ProjectState
+):
+    with project_lock(projects_root, finished.id):
+        result = cli.invoke(app, ["reset", "epabc123", "--from", "refine"])
+    assert result.exit_code == 1
+    assert "project epabc123 is in use by another grill process" in result.output
+    assert "Reset refine" not in result.output  # refused before asking
+    assert load_state(layout).is_done(StageKey.REFINE)

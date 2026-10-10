@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import pytest
 from tests.package.conftest import PackageFfmpeg
 
+from grillmaster.core.fs import exclusive_lock
 from grillmaster.package.errors import PoolError
 from grillmaster.package.pools import (
     CURSOR_FILE_NAME,
@@ -226,35 +227,38 @@ def test_concurrent_draws_never_take_the_same_file(tmp_path: Path):
 
     assert sorted(drawn) == names
     assert cursor_of(directory) == {"index": 0, "seconds": 0}
-    assert not (directory / CURSOR_LOCK_NAME).exists()
 
 
 def test_a_draw_waits_for_the_lock_holder(tmp_path: Path):
     directory = make_pool(tmp_path, ["001.mp4", "002.mp4"])
-    lock = directory / CURSOR_LOCK_NAME
-    lock.write_text("", encoding="utf-8")
     drawn: list[str] = []
     thread = threading.Thread(
         target=lambda: drawn.append(MediaPool(directory).next_file().name)
     )
 
-    thread.start()
-    thread.join(0.2)
-    assert drawn == []
-    lock.unlink()
+    with exclusive_lock(directory / CURSOR_LOCK_NAME, timeout=0):
+        thread.start()
+        thread.join(0.2)
+        assert drawn == []
     thread.join(5)
 
     assert drawn == ["001.mp4"]
 
 
-def test_a_lock_left_by_a_crash_fails_the_draw(tmp_path: Path):
+def test_a_lock_held_too_long_fails_the_draw(tmp_path: Path):
     directory = make_pool(tmp_path, ["001.mp4"], cursor={"index": 0})
-    (directory / CURSOR_LOCK_NAME).write_text("", encoding="utf-8")
 
-    with pytest.raises(PoolError, match=r"locked.*\.cursor\.lock"):
-        MediaPool(directory, lock_timeout=0.1).next_file()
-    with pytest.raises(PoolError, match="locked"):
-        MediaPool(directory, lock_timeout=0.1).reserve_seconds(
-            60, count=1, ffmpeg=probing(directory, {"001.mp4": 600.0})
-        )
+    with exclusive_lock(directory / CURSOR_LOCK_NAME, timeout=0):
+        with pytest.raises(PoolError, match=r"locked.*\.cursor\.lock"):
+            MediaPool(directory, lock_timeout=0.1).next_file()
+        with pytest.raises(PoolError, match="locked"):
+            MediaPool(directory, lock_timeout=0.1).reserve_seconds(
+                60, count=1, ffmpeg=probing(directory, {"001.mp4": 600.0})
+            )
     assert cursor_of(directory) == {"index": 0}
+
+
+def test_a_lock_file_left_by_a_crash_does_not_block(tmp_path: Path):
+    directory = make_pool(tmp_path, ["001.mp4", "002.mp4"])
+    (directory / CURSOR_LOCK_NAME).write_text("", encoding="utf-8")
+    assert MediaPool(directory, lock_timeout=0).next_file().name == "001.mp4"

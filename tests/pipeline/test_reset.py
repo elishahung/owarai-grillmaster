@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -104,3 +105,29 @@ def test_stages_from():
         StageKey.FINALIZE,
         StageKey.CHAT_TRANSLATE,
     )
+
+
+def test_on_reset_runs_after_the_save_and_before_any_deletion(
+    layout: ProjectLayout, finished: ProjectState
+):
+    seen: list[tuple[bool, bool]] = []
+
+    def on_reset(project: ProjectLayout) -> None:
+        seen.append(
+            (
+                load_state(project).is_done(StageKey.COMBINE),
+                project.work_dir(StageKey.CHUNKS).is_dir(),
+            )
+        )
+
+    journal = Journal()
+    pipeline = Pipeline(
+        (
+            replace(fake_stage(StageKey.COMBINE, journal), on_reset=on_reset),
+            fake_stage(StageKey.CHUNKS, journal),
+        )
+    )
+
+    reset(layout, finished, stages_from(StageKey.COMBINE), pipeline=pipeline)
+
+    assert seen == [(False, True)]

@@ -72,8 +72,8 @@
           "type": "integer"
         },
         "max_concurrent": {
-          "default": 5,
-          "description": "Agent processes running at once across fan-out stages (chunks, chat batches).",
+          "default": 10,
+          "description": "Agent processes one grill process runs at once across fan-out stages (chunks, chat batches); several grill processes each get this many.",
           "minimum": 1,
           "title": "Max Concurrent",
           "type": "integer"

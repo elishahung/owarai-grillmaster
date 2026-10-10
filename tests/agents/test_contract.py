@@ -142,13 +142,14 @@ CASES = [
         text="green\n",
     ),
     # No `finish` step in this turn: agy's `structured_output` is the
-    # previous turn's stale value and must not be trusted.
+    # previous turn's stale value ("blue") and must not be trusted; the
+    # turn's own json-fenced answer is the structured output.
     Case(
         Backend.AGY,
         "resume",
         "8e461142-3acb-43f3-8ecb-26a4491006e5",
         tools=(),
-        structured=None,
+        structured={"answer": "BLUE", "items": [{"source": "a", "target": "b"}]},
         schema=True,
         resume="8e461142-3acb-43f3-8ecb-26a4491006e5",
     ),
@@ -186,18 +187,7 @@ CASES = [
         },
         schema=True,
     ),
-    Case(
-        Backend.CLAUDE,
-        "resume",
-        "22bfb9d2-29d6-4b36-aa20-fc7e004877fb",
-        tools=(),
-        structured={
-            "answer": "SESSION=<NONE> ARGV=--SESSION CLAUDE-ARG | GREEN",
-            "items": [{"source": "a", "target": "b"}],
-        },
-        schema=True,
-        resume="22bfb9d2-29d6-4b36-aa20-fc7e004877fb",
-    ),
+    # Claude's resume turn is the live recording (`test_live_recording_*`).
 ]
 
 
@@ -316,7 +306,7 @@ def _quota_stream(backend: Backend) -> dict[str, Any]:
             json.dumps({"type": "turn.failed", "error": {"message": message}}),
         ]
         return {"lines": lines, "returncode": 1}
-    messages = claude_messages("resume")
+    messages = claude_messages("live_resume")
     result = messages[-1]
     result.is_error = True
     result.api_error_status = 429

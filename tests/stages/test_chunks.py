@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, override
 import pytest
 from tests.fakes import FakeAgentRunner, FakeFfmpeg, Rounds, make_blocks, make_briefing
 
-from grillmaster.agents.errors import AgentQuotaError
+from grillmaster.agents.errors import AgentOutputError
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.srt import SrtBlock, read_srt_file, write_srt_file
 from grillmaster.core.stage_key import StageKey
@@ -220,7 +220,7 @@ def test_progress_stays_open_when_the_batch_fails(
     fake_ffmpeg: FakeFfmpeg,
     recording_sink: RecordingSink,
 ) -> None:
-    agents.script["chunks/0003-0004"] = AgentQuotaError("quota spent")
+    agents.script["chunks/0003-0004"] = AgentOutputError("still invalid")
 
     with pytest.raises(TranslateError):
         chunks.STAGE.run(make_context(StageKey.CHUNKS))
@@ -257,12 +257,12 @@ def test_failures_surface_after_the_batch(
     agents: FakeAgentRunner,
     fake_ffmpeg: FakeFfmpeg,
 ) -> None:
-    agents.script["chunks/0003-0004"] = AgentQuotaError("quota spent")
+    agents.script["chunks/0003-0004"] = AgentOutputError("still invalid")
 
     with pytest.raises(TranslateError, match="1/3 chunks failed") as caught:
         chunks.STAGE.run(make_context(StageKey.CHUNKS))
 
-    assert "chunks/0003-0004: quota spent" in str(caught.value)
+    assert "chunks/0003-0004: still invalid" in str(caught.value)
     # Every chunk ran; the ones that succeeded keep their caches.
     assert len(agents.tasks) == 3
     assert layout.chunk_translation(1, 2).exists()

@@ -85,12 +85,17 @@ def deliverable_dir(destination: Path) -> Iterator[Path]:
 
 
 def write_info(
-    target_dir: Path, *, titles: Mapping[str, object] | None, briefing: Briefing
+    target_dir: Path,
+    *,
+    titles: Mapping[str, object] | None,
+    briefing: Briefing | None,
 ) -> Path:
     """Write `info.json`: the title suggestions first (what a human reads
-    first), then the briefing in its prompt view (term lists as objects)."""
+    first), then the briefing, if any, in its prompt view (term lists as
+    objects)."""
     info: dict[str, object] = dict(titles or {})
-    info.update(briefing.prompt_dict())
+    if briefing is not None:
+        info.update(briefing.prompt_dict())
     target = target_dir / INFO_FILE_NAME
     target.write_text(json.dumps(info, ensure_ascii=False, indent=4), encoding="utf-8")
     logger.info(f"Wrote package artifact: {target}")

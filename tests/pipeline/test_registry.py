@@ -180,3 +180,40 @@ def test_delivery_steps_work_under_the_project(
     step: DeliveryStepDef, layout: ProjectLayout
 ):
     assert step.workdir(layout).is_relative_to(layout.work_root)
+
+
+class PoolMissingError(Exception):
+    pass
+
+
+def test_check_runs_the_preflight_of_each_delivery_step_that_will_run(
+    options: RunOptions, loaded: LoadedConfig
+):
+    journal = Journal()
+    calls: list[tuple[str, object]] = []
+
+    def refuse(key: str) -> Any:
+        def preflight(run: RunOptions, config: object, state: object) -> None:
+            calls.append((key, state))
+            raise PoolMissingError(key)
+
+        return preflight
+
+    pipeline = Pipeline(
+        (fake_stage(StageKey.METADATA, journal),),
+        delivery=(
+            replace(
+                fake_delivery("off", journal, enabled=False), preflight=refuse("off")
+            ),
+            fake_delivery("package", journal, preflight=refuse("package")),
+        ),
+    )
+
+    with pytest.raises(PoolMissingError, match="package"):
+        pipeline.check(options, loaded.config, loaded.secrets)
+    assert calls == [("package", None)]
+    # A --break-after run never delivers.
+    pipeline.check(
+        replace(options, break_after=StageKey.METADATA), loaded.config, loaded.secrets
+    )
+    assert journal.entries == []

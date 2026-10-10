@@ -36,8 +36,9 @@ from grillmaster.tui.app import (
     clipboard_payload,
 )
 from grillmaster.tui.sink import TuiSink
-from grillmaster.tui.state import ACTIVITY_LINES, PipelineState
+from grillmaster.tui.state import ACTIVITY_LINES, PipelineState, SessionState
 from grillmaster.tui.widgets import ActivityLog, ChunkBoard, SessionTable, View
+from grillmaster.tui.widgets._common import CHUNK_STYLE, SESSION_ICON
 from grillmaster.tui.widgets.chunk_board import render_chunk_board
 from grillmaster.tui.widgets.header import render_header
 from grillmaster.tui.widgets.session_table import listed_sessions, render_session_table
@@ -186,6 +187,11 @@ def test_session_table_lists_running_chunks_and_last_activity():
     text = _text(render_session_table(state, sessions))
     assert "agy/gemini" in text
     assert "get_frames 62.5" in text
+
+
+def test_every_session_state_has_an_icon_and_a_chunk_style():
+    assert set(SESSION_ICON) == set(SessionState)
+    assert set(CHUNK_STYLE) == set(SessionState)
 
 
 def test_copy_log_puts_the_whole_buffer_on_the_clipboard():

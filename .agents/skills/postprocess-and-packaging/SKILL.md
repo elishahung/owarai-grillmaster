@@ -81,12 +81,17 @@ Delivery step, not a stage: no ledger entry, runs every complete run when
 copy; a failure there raises `ArchivedDeliveryError` naming
 `grill package "<archived dir>"`. `grill archive <id>` retries only the move.
 
+`preflight` (in `Pipeline.check`, before any stage): `[paths] package` must
+be a directory and the remix/insert pools must exist (program rules only once
+the state knows the series/channel).
 `_run` order: require `video.mp4`, `video.cht.ass`, `video.cht.srt` → remix pool (`--remix`
 wins, else a `remix = true` program uses `package.remix_pool`; a missing pool
-fails) and inserts → `require_pools` + `plan_remix` **before any cursor moves**
-→ titles → burn plan → `deliverable_dir` (staged `<name>.partial`, swapped in
-only on success). Inside: plain copies first (`cover.png`|`cover.jpg`,
-`info.json` = titles + `briefing.prompt_dict()`, `refine.md`/`glossary_check.md`
+fails) and inserts → `require_pools`, `check_replaceable(destination)` (a
+locked old deliverable fails now, not after the render) + `plan_remix`
+**before any cursor moves** → titles → burn plan → `deliverable_dir` (staged
+`<name>.partial`, swapped in only on success). Inside: plain copies first
+(`cover.png`|`cover.jpg`, `info.json` = titles + `briefing.prompt_dict()`,
+the briefing part omitted with a warning when the project has none, `refine.md`/`glossary_check.md`
 if present, inserts), then the render. Destination
 `naming.package_destination`: flat `YYMMDD_<id>_<name>`, MAX_PATH-trimmed.
 
@@ -111,7 +116,8 @@ against usable/1.03 (same length = failed speed-up; short = SMB/VPN truncation).
 
 **Remix**: after the lead trim, `round_half_up(duration / 15 min)` segments
 (≥ 2, ≥ 60 s) snapped to `video.cht.srt` cue gaps; `N.mp4` = 60 s noise cut
-(format-only fit) + content, concat stream-copied.
+(format-only fit) + content, concat stream-copied; a segment's scratch
+(parts, head, target) is deleted once it passes its duration check.
 
 **Pools** (`pools.py`): `<package>/pools/<name>/` with contiguous `001.*`… and
 `.cursor.json` `{index, seconds}` under `.cursor.lock`. Draws advance the cursor

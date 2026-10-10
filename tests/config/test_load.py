@@ -76,7 +76,7 @@ def test_byte_order_mark_is_accepted(
     tmp_path: Path, roles_toml: str, write_toml: Callable[[Path, str], Path]
 ):
     write_toml(tmp_path, "﻿" + roles_toml)
-    assert load_config(tmp_path, env={}).config.agents.max_concurrent == 5
+    assert load_config(tmp_path, env={}).config.agents.max_concurrent == 10
 
 
 def test_invalid_toml_fails_with_the_path(

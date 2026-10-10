@@ -722,7 +722,7 @@ cookies = "cookies.txt"
 
 [agents]
 timeout_minutes = 40
-max_concurrent = 5
+max_concurrent = 10
 
 [agents.roles]                 # backend/model[/effort]
 prepass     = "agy/gemini-3.1-pro/high"

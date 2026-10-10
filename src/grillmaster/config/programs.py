@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from grillmaster.config.errors import ConfigError
-from grillmaster.core.fs import atomic_write_text
+from grillmaster.core.fs import atomic_write_text, exclusive_lock
 from grillmaster.core.prompts import join_sections
 
 if TYPE_CHECKING:
@@ -34,6 +34,9 @@ if TYPE_CHECKING:
     from grillmaster.core.stage_key import StageKey
 
 _BOM = "﻿"
+# A registration holds the lock for one small read and write; waiting
+# longer means a stuck process, not a queue.
+REGISTER_LOCK_TIMEOUT_S = 30.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,34 +96,71 @@ def resolve_program_rules(
 
 
 def register_program(
-    toml_path: Path, *, series: str | None, channel: str | None
+    toml_path: Path,
+    *,
+    series: str | None,
+    channel: str | None,
+    lock_timeout: float = REGISTER_LOCK_TIMEOUT_S,
 ) -> list[str]:
     """Append empty `[programs.series."X"]` / `[programs.channel."Y"]` entries.
 
     Only names not listed yet are added, at the end of the file, so the
     user's comments and layout stay byte-for-byte. Returns the labels of the
-    entries added; the file is not touched when there are none.
+    entries added; the file is not touched when there are none. Several grill
+    processes may register at once: the read-modify-write runs under
+    `<grill.toml>.lock` (`core.fs.exclusive_lock`) and re-reads the file
+    there, so no process overwrites another's entries; a lock held past
+    `lock_timeout` raises `ConfigError`.
     """
-    import tomlkit  # noqa: PLC0415 - only a new program needs it
+    if not _missing_entries(_read_toml(toml_path), series=series, channel=channel):
+        return []
+    lock = toml_path.with_name(f"{toml_path.name}.lock")
+    try:
+        with exclusive_lock(lock, timeout=lock_timeout):
+            return _append_entries(toml_path, series=series, channel=channel)
+    except TimeoutError as error:
+        raise ConfigError(
+            f"Cannot register programs in {toml_path}: {error}"
+        ) from error
 
+
+def _read_toml(toml_path: Path) -> str:
     # newline="": keep the file's own line endings for the byte-exact rewrite.
-    raw = toml_path.read_text(encoding="utf-8", newline="")
-    bom = _BOM if raw.startswith(_BOM) else ""
-    text = raw.removeprefix(bom)
-    programs = tomllib.loads(text).get("programs", {})
+    return toml_path.read_text(encoding="utf-8", newline="")
 
-    missing: dict[str, dict[str, dict[str, object]]] = {}
-    registered: list[str] = []
+
+def _missing_entries(
+    raw: str, *, series: str | None, channel: str | None
+) -> dict[str, list[str]]:
+    """Section -> names `raw` does not list yet."""
+    programs = tomllib.loads(raw.removeprefix(_BOM)).get("programs", {})
+    missing: dict[str, list[str]] = {}
     for section, name in (("series", series), ("channel", channel)):
         if name and name not in programs.get(section, {}):
-            missing.setdefault(section, {})[name] = {}
-            registered.append(f"{section} '{name}'")
+            missing.setdefault(section, []).append(name)
+    return missing
+
+
+def _append_entries(
+    toml_path: Path, *, series: str | None, channel: str | None
+) -> list[str]:
+    import tomlkit  # noqa: PLC0415 - only a new program needs it
+
+    raw = _read_toml(toml_path)
+    missing = _missing_entries(raw, series=series, channel=channel)
+    registered = [
+        f"{section} '{name}'" for section, names in missing.items() for name in names
+    ]
     if not registered:
         return []
-
+    bom = _BOM if raw.startswith(_BOM) else ""
+    text = raw.removeprefix(bom)
     newline = "\r\n" if "\r\n" in text else "\n"
+    entries = {
+        section: {name: {} for name in names} for section, names in missing.items()
+    }
     # tomlkit renders the headers so names needing quotes or escapes are right.
-    snippet = tomlkit.dumps({"programs": missing}).strip().replace("\n", newline)
+    snippet = tomlkit.dumps({"programs": entries}).strip().replace("\n", newline)
     if text and not text.endswith("\n"):
         text += newline
     updated = f"{text}{newline if text else ''}{snippet}{newline}"

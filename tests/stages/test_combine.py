@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-from loguru import logger
 from tests.fakes import FAKE_JPEG
 
 from grillmaster.core.srt import SrtBlock, read_srt_file
@@ -16,7 +15,6 @@ from grillmaster.stages import combine
 from grillmaster.stages.base import MissingArtifactError, RunOptions
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
     from pathlib import Path
 
     from tests.fakes import FakeFfmpeg
@@ -45,16 +43,6 @@ def full(layout: ProjectLayout) -> Path:
     layout.full_video.write_bytes(b"full")
     (layout.download_parts_dir / "0.ja.srt").write_text(RAW_CAPTIONS, encoding="utf-8")
     return layout.full_video
-
-
-@pytest.fixture
-def warnings() -> Iterator[list[str]]:
-    messages: list[str] = []
-    handler = logger.add(
-        lambda message: messages.append(message.record["message"]), level="WARNING"
-    )
-    yield messages
-    logger.remove(handler)
 
 
 def test_without_a_section_the_full_video_becomes_the_video(
@@ -113,6 +101,40 @@ def test_reset_and_recut_keeps_the_download(
     assert layout.full_video.exists()
     assert not layout.video.exists()
     assert state.section == Section()
+
+
+@pytest.mark.usefixtures("full")
+def test_reset_without_a_section_moves_the_video_back(
+    make_context: MakeContext,
+    layout: ProjectLayout,
+    state: ProjectState,
+    fake_ffmpeg: FakeFfmpeg,
+):
+    # Uncut, `video.mp4` is the moved download, its only copy.
+    combine.STAGE.run(make_context(StageKey.COMBINE))
+    state.mark_done(StageKey.COMBINE, elapsed_s=1.0)
+
+    reset(layout, state, stages_from(StageKey.COMBINE))
+
+    assert layout.full_video.read_bytes() == b"full"
+    assert not layout.video.exists()
+    combine.STAGE.run(make_context(StageKey.COMBINE))
+    assert layout.video.read_bytes() == b"full"
+    assert fake_ffmpeg.calls == []
+
+
+@pytest.mark.usefixtures("full")
+def test_reset_from_download_still_deletes_the_moved_video(
+    make_context: MakeContext, layout: ProjectLayout, state: ProjectState
+):
+    combine.STAGE.run(make_context(StageKey.COMBINE))
+    state.mark_done(StageKey.DOWNLOAD, elapsed_s=1.0)
+    state.mark_done(StageKey.COMBINE, elapsed_s=1.0)
+
+    reset(layout, state, stages_from(StageKey.DOWNLOAD))
+
+    assert not layout.full_video.exists()
+    assert not layout.video.exists()
 
 
 def test_a_missing_full_video_names_the_reset(

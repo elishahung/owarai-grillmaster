@@ -39,12 +39,14 @@ SESSION_ICON = {
     SessionState.RUNNING: ("▶", "yellow1"),
     SessionState.OK: ("✔", "green3"),
     SessionState.FAILED: ("✘", "red"),
+    SessionState.CANCELLED: ("⊘", "grey42"),
 }
 
 CHUNK_STYLE = {
     SessionState.RUNNING: "black on yellow1",
     SessionState.OK: "black on green3",
     SessionState.FAILED: "white on red",
+    SessionState.CANCELLED: "white on grey42",
 }
 
 ACTIVITY_ICON = {

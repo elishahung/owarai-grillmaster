@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from tests.pipeline.fakes import Journal, fake_delivery, fake_stage
@@ -22,16 +22,18 @@ from grillmaster.package.errors import PackageError
 from grillmaster.pipeline.registry import Pipeline
 from grillmaster.pipeline.runner import (
     ArchivedDeliveryError,
+    ProjectRun,
     archive_to,
     deliver_project,
     run_project,
 )
+from grillmaster.project.errors import ProjectBusyError, ProjectExistsError
 from grillmaster.project.layout import ProjectLayout
-from grillmaster.project.store import load_state, save_state
+from grillmaster.project.store import load_state, project_lock, save_state
 from grillmaster.stages.base import RunOptions
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
     from tests.fakes import RecordingSink
@@ -162,7 +164,6 @@ def test_deliver_project_runs_only_the_delivery_steps(
     final = deliver_project(
         archiving,
         layout,
-        state,
         RunOptions(source=state.source_id, remix="noise"),
         sinks=[recording_sink],
         pipeline=pipeline,
@@ -236,3 +237,160 @@ def test_a_failed_package_after_the_archive_gives_the_resume_command(
     assert recording_sink.events[-1] == RunFinished(
         RunOutcome.FAILED, str(caught.value)
     )
+
+
+def test_rerunning_an_archived_source_is_refused_before_any_preflight(
+    archiving: LoadedConfig, journal: Journal, recording_sink: RecordingSink
+):
+    checked: list[ProjectState | None] = []
+
+    def preflight(options: RunOptions, config: object, state: object) -> None:
+        checked.append(cast("ProjectState | None", state))
+
+    pipeline = Pipeline(
+        (fake_stage(StageKey.METADATA, journal),),
+        delivery=(fake_delivery("package", journal, preflight=preflight),),
+    )
+    final = run_project(
+        archiving, RunOptions(source=SOURCE), sinks=[], pipeline=pipeline
+    )
+    checks = len(checked)
+
+    with pytest.raises(ProjectExistsError, match="stages cannot re-run") as caught:
+        run_project(
+            archiving,
+            RunOptions(source=SOURCE),
+            sinks=[recording_sink],
+            pipeline=pipeline,
+        )
+
+    assert f'grill package "{final.root}"' in str(caught.value)
+    assert not ProjectLayout.for_id(archiving.projects_root, "epnew1").root.exists()
+    assert journal.entries == ["run:metadata@metadata", "deliver:package@package"]
+    assert recording_sink.events == []
+    assert len(checked) == checks  # refused before any preflight
+
+
+def test_project_run_retries_only_the_delivery_after_the_archive(
+    archiving: LoadedConfig,
+    archive_root: Path,
+    journal: Journal,
+    recording_sink: RecordingSink,
+):
+    attempts = iter([PackageError("NVENC busy"), PackageError("still busy"), None])
+
+    def package(ctx: StageContext) -> None:
+        if (error := next(attempts)) is not None:
+            raise error
+
+    run = ProjectRun(
+        archiving,
+        RunOptions(source=SOURCE),
+        Pipeline(
+            (fake_stage(StageKey.METADATA, journal),),
+            delivery=(fake_delivery("package", journal, action=package),),
+        ),
+    )
+    archived = ProjectLayout(archive_root / "etc" / "epnew1")
+
+    with pytest.raises(ArchivedDeliveryError, match="NVENC busy"):
+        run.run([recording_sink])
+    # A failed retry still names the archived directory.
+    with pytest.raises(ArchivedDeliveryError, match="still busy") as caught:
+        run.run([recording_sink])
+    assert caught.value.archived == archived
+    assert run.run([recording_sink]) == archived
+
+    assert journal.entries == [
+        "run:metadata@metadata",
+        "deliver:package@package",
+        "deliver:package@package",
+        "deliver:package@package",
+    ]
+    assert not ProjectLayout.for_id(archiving.projects_root, "epnew1").root.exists()
+
+
+def test_a_failing_delivery_preflight_creates_nothing(
+    loaded: LoadedConfig, journal: Journal
+):
+    def missing_pool(options: RunOptions, config: object, state: object) -> None:
+        raise PackageError("pool sleep is missing")
+
+    pipeline = Pipeline(
+        (fake_stage(StageKey.METADATA, journal),),
+        delivery=(fake_delivery("package", journal, preflight=missing_pool),),
+    )
+    with pytest.raises(PackageError, match="sleep"):
+        run_project(loaded, RunOptions(source=SOURCE), sinks=[], pipeline=pipeline)
+    assert not ProjectLayout.for_id(loaded.projects_root, SOURCE.video_id).root.exists()
+    assert journal.entries == []
+
+
+# --- the per-project run lock -------------------------------------------------------
+
+
+def lock_probe(loaded: LoadedConfig, seen: list[str]) -> Callable[[StageContext], None]:
+    """A step body recording whether another holder could take the run lock."""
+
+    def probe(ctx: StageContext) -> None:
+        try:
+            with project_lock(loaded.projects_root, SOURCE.video_id):
+                seen.append("free")
+        except ProjectBusyError:
+            seen.append("held")
+
+    return probe
+
+
+def test_the_run_holds_its_project_through_the_archive_and_package(
+    archiving: LoadedConfig, journal: Journal
+):
+    seen: list[str] = []
+    probe = lock_probe(archiving, seen)
+    run_project(
+        archiving,
+        RunOptions(source=SOURCE),
+        sinks=[],
+        pipeline=Pipeline(
+            (fake_stage(StageKey.METADATA, journal, action=probe),),
+            delivery=(fake_delivery("package", journal, action=probe),),
+        ),
+    )
+    assert seen == ["held", "held"]
+    with project_lock(archiving.projects_root, SOURCE.video_id):  # released
+        pass
+
+
+def test_a_project_another_process_holds_is_refused_before_anything_runs(
+    loaded: LoadedConfig, journal: Journal, recording_sink: RecordingSink
+):
+    pipeline = Pipeline((fake_stage(StageKey.METADATA, journal),))
+    with (
+        project_lock(loaded.projects_root, SOURCE.video_id),
+        pytest.raises(ProjectBusyError, match="epnew1 is in use"),
+    ):
+        run_project(
+            loaded, RunOptions(source=SOURCE), sinks=[recording_sink], pipeline=pipeline
+        )
+    assert journal.entries == []
+    assert recording_sink.events == []
+    assert not ProjectLayout.for_id(loaded.projects_root, SOURCE.video_id).root.exists()
+
+
+def test_packaging_an_archived_project_takes_its_lock(
+    archiving: LoadedConfig, journal: Journal, tmp_path: Path, state: ProjectState
+):
+    layout = ProjectLayout(tmp_path / "archive" / "25" / "10" / state.id)
+    save_state(layout, state)
+    pipeline = Pipeline((), delivery=(fake_delivery("package", journal),))
+    options = RunOptions(source=state.source_id)
+
+    with (
+        project_lock(archiving.projects_root, state.id),
+        pytest.raises(ProjectBusyError),
+    ):
+        deliver_project(archiving, layout, options, sinks=[], pipeline=pipeline)
+    assert journal.entries == []
+
+    deliver_project(archiving, layout, options, sinks=[], pipeline=pipeline)
+    assert journal.entries == ["deliver:package@package"]

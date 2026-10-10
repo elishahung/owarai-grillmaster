@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from grillmaster.config.programs import ProgramRules
     from grillmaster.core.model_spec import Role
     from grillmaster.core.srt import SrtBlock
+    from grillmaster.project.state import SourceInfo
     from grillmaster.sources.base import SourcePlatform
     from grillmaster.stages.base import RunOptions, StageContext
 
@@ -85,14 +86,10 @@ def chat_enabled(options: RunOptions) -> bool:
 # --- project context --------------------------------------------------------
 
 
-def program_rules(ctx: StageContext) -> ProgramRules:
-    """The merged `[programs.*]` rules of this project's series and channel."""
-    info = ctx.state.source
+def program_rules(config: AppConfig, source: SourceInfo) -> ProgramRules:
+    """The merged `[programs.*]` rules of `source`'s series and channel."""
     return resolve_program_rules(
-        ctx.config.programs,
-        ctx.config.package,
-        series=info.series,
-        channel=info.channel,
+        config.programs, config.package, series=source.series, channel=source.channel
     )
 
 
@@ -164,7 +161,7 @@ def source_context(
         description=info.description,
         hint=state.translation_hint,
         talents=tuple(info.talents),
-        program_instruction=program_rules(ctx).instruction_text(stage),
+        program_instruction=program_rules(ctx.config, info).instruction_text(stage),
         official_subtitles=tuple(read_srt_file(official)) if official.exists() else (),
         parent_briefing=parent_briefing,
     )

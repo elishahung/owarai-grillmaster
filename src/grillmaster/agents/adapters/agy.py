@@ -13,10 +13,11 @@ module is built on (agy 1.3.2):
 * `--json-schema` output arrives through agy's `finish` tool and is copied
   to `result.structured_output`; a turn that never calls `finish` still
   reports the previous turn's value there, so it is trusted only after a
-  `finish` step in the same turn.
+  `finish` step in the same turn. Without one, a JSON object in the turn's
+  own final message (one ```json fence stripped) is the structured output.
 * The effort is part of the model id (`gemini-3.1-pro-high`); `preflight`
-  checks ids against `agy models`, probed once per adapter (a failed probe
-  is remembered too).
+  checks ids against `agy models`. A success is kept for good; a failure
+  (e.g. a timeout) answers every task for 60 s, then the next one probes.
 * MCP servers come from `<workdir>/.agents/mcp_config.json`; their calls
   appear as the `call_mcp_tool` tool.
 * Paid API-key variables are removed from the environment so agy always
@@ -27,7 +28,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import threading
+import time
 from typing import TYPE_CHECKING, Any
 
 from grillmaster.agents import process
@@ -75,10 +78,14 @@ _EFFORT_SUFFIX = {
 API_KEY_ENV_VARS = ("GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GENAI_API_KEY")
 MCP_CONFIG_RELPATH = (".agents", "mcp_config.json")
 _MODELS_TIMEOUT_S = 120.0
+# How long a failed `agy models` probe answers for the tasks after it.
+PROBE_FAILURE_TTL_S = 60.0
 _LOGIN_HINT = "run `agy` once interactively to sign in"
 _FINISH_TOOL = "finish"
 _MCP_TOOL = "call_mcp_tool"
 _VIEW_FILE_TOOL = "view_file"
+# One whole-message ``` / ```json fence around the answer.
+_JSON_FENCE_RE = re.compile(r"\A```(?:json)?[ \t]*\n(.*)\n```\Z", re.DOTALL)
 _USAGE_NAMES = {
     "input_tokens": "input_tokens",
     "output_tokens": "output_tokens",
@@ -108,12 +115,15 @@ class AgyAdapter:
         spawn: process.Spawn = process.spawn,
         executable: str | None = None,
         list_models: Callable[[], Sequence[str]] | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._spawn = spawn
         self._executable = executable
         self._list_models = list_models or self._models_from_cli
-        # The probe's outcome, failure included: one probe per adapter.
-        self._models: frozenset[str] | AgentConfigError | None = None
+        self._clock = clock
+        # The first successful probe, and the latest failed one with its time.
+        self._models: frozenset[str] | None = None
+        self._probe_failure: tuple[float, AgentConfigError] | None = None
         self._models_lock = threading.Lock()
 
     def preflight(
@@ -176,20 +186,23 @@ class AgyAdapter:
             stdin=stdin + "\n",
             keep_stdin_open=True,
         )
-        parser = AgyTurnParser(request.audio)
+        parser = AgyTurnParser(request.audio, schema=request.schema is not None)
         return JsonlTurn(self._spawn(spec), parser, request)
 
     def _available_models(self) -> frozenset[str]:
         with self._models_lock:
-            if self._models is None:
-                try:
-                    self._models = frozenset(self._list_models())
-                except AgentConfigError as error:
-                    self._models = error
-            models = self._models
-        if isinstance(models, AgentConfigError):
-            raise AgentConfigError(str(models))
-        return models
+            if self._models is not None:
+                return self._models
+            if self._probe_failure is not None:
+                failed_at, failure = self._probe_failure
+                if self._clock() - failed_at < PROBE_FAILURE_TTL_S:
+                    raise AgentConfigError(str(failure)) from failure
+            try:
+                self._models = frozenset(self._list_models())
+            except AgentConfigError as error:
+                self._probe_failure = (self._clock(), error)
+                raise
+            return self._models
 
     def _models_from_cli(self) -> list[str]:
         spec = process.ProcessSpec(
@@ -226,16 +239,20 @@ def scrubbed_env() -> dict[str, str]:
 
 
 class AgyTurnParser:
-    """Reads one turn's `init` / `step_update` / `result` records."""
+    """Reads one turn's `init` / `step_update` / `result` records; `schema`
+    says the turn was asked for structured output."""
 
-    def __init__(self, audio: Sequence[Path]) -> None:
+    def __init__(self, audio: Sequence[Path], *, schema: bool = False) -> None:
         self._audio = tuple(audio)
+        self._schema = schema
         self._session_id = ""
         self._texts: dict[int, list[str]] = {}
         self._thoughts: dict[int, list[str]] = {}
         self._announced: set[int] = set()
         self._viewed: set[str] = set()
         self._finished = False
+        # This turn's last finished agent message.
+        self._last_text = ""
         self._result: dict[str, Any] | None = None
 
     @property
@@ -268,10 +285,19 @@ class AgyTurnParser:
         return FinalOutput(
             session_id=str(result.get("conversation_id") or self._session_id),
             text=str(result.get("response") or ""),
-            structured=result.get("structured_output") if self._finished else None,
+            structured=self._structured(result),
             usage=normalize_usage(result.get("usage"), _USAGE_NAMES),
             defects=(unheard_audio_defect(unheard),) if unheard else (),
         )
+
+    def _structured(self, result: dict[str, Any]) -> object | None:
+        """The `finish` value of this turn, else a JSON object answered as
+        this turn's final message; never an earlier turn's `finish` value."""
+        if not self._schema:
+            return None
+        if self._finished:
+            return result.get("structured_output")
+        return json_object_answer(self._last_text)
 
     def _step(self, step: dict[str, Any]) -> Iterator[AgentEvent]:
         index = int(step.get("step_index", -1))
@@ -287,6 +313,7 @@ class AgyTurnParser:
                     if thought := "".join(self._thoughts.pop(index, [])).strip():
                         yield Thought(thought)
                     if text := "".join(self._texts.pop(index, [])).strip():
+                        self._last_text = text
                         yield Message(text)
             case "tool":
                 yield from self._tool_step(index, step, done=done)
@@ -314,6 +341,19 @@ class AgyTurnParser:
             yield ToolCall(name, params)
         if done:
             yield ToolResult(name)
+
+
+def json_object_answer(text: str) -> dict[str, Any] | None:
+    """`text` (inside at most one ``` / ```json fence) as a JSON object, or
+    `None`; whether it fits the schema is the output model's call."""
+    stripped = text.strip()
+    if fenced := _JSON_FENCE_RE.match(stripped):
+        stripped = fenced.group(1)
+    try:
+        value = json.loads(stripped)
+    except ValueError:
+        return None
+    return value if isinstance(value, dict) else None
 
 
 def unheard_audio_defect(paths: Sequence[Path]) -> TurnDefect:

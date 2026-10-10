@@ -10,8 +10,11 @@ chat panel is rendered to `work/package/chat.ass`. A remix comes from
 inserts follow `[[package.inserts]]` and the program's `inserts`. Pools are
 checked and the remix segments picked before any pool cursor moves; the
 folder is built under a staging name and replaces the previous deliverable
-only on success. Any failure fails the run; the archive move already
-happened, so the resume command is `grill package <archived dir>`.
+only on success; a locked previous deliverable fails before the render
+(rename probe). `preflight` checks the package root and the pools before
+any stage runs. A project without a briefing packages without its data.
+Any failure fails the run; the archive move already happened, so the
+resume command is `grill package <archived dir>`.
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from grillmaster.core.briefing import Briefing
+from grillmaster.core.fs import check_replaceable
 from grillmaster.core.json_artifact import read_model
 from grillmaster.core.model_spec import Role
 from grillmaster.core.srt import read_srt_file
@@ -40,15 +44,18 @@ from grillmaster.package.pools import MediaPool, require_pools
 from grillmaster.package.remix import plan_remix, render_remix
 from grillmaster.package.render import burn_in
 from grillmaster.project.naming import package_destination
+from grillmaster.project.state import SourceInfo
 from grillmaster.stages._common import program_rules
 from grillmaster.stages.base import DeliveryStepDef
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from pathlib import Path
 
     from grillmaster.config.model import AppConfig
     from grillmaster.config.programs import ProgramRules
     from grillmaster.project.layout import ProjectLayout
+    from grillmaster.project.state import ProjectState
     from grillmaster.stages.base import RunOptions, StageContext
 
 KEY = "package"
@@ -57,22 +64,16 @@ VIDEO_NAME = "video.mp4"
 
 
 def _run(ctx: StageContext) -> str:
-    package_root = ctx.config.paths.package
-    if package_root is None:
-        raise PackageError("[paths] package is not set in grill.toml")
+    package_root = _package_root(ctx.config)
     layout = ctx.layout
     require_inputs(layout.video, layout.cht_ass, layout.cht_srt)
-    rules = program_rules(ctx)
-    pool = _remix_pool(ctx, rules)
-    inserts = [
-        Insert(pool=rule.pool, output=rule.output)
-        for rule in rules.inserts_for(remix=pool is not None)
-    ]
+    pool, inserts = _pools(ctx.options, ctx.config, ctx.state.source)
     # Whatever can refuse the package runs before a pool cursor moves.
-    require_pools(
-        package_root,
-        [insert.pool for insert in inserts] + ([pool] if pool is not None else []),
+    require_pools(package_root, _pool_names(pool, inserts))
+    destination = package_destination(
+        ctx.state, package_root, reserve=PACKAGE_INNER_PATH_RESERVE
     )
+    check_replaceable(destination)
     remix = (
         None
         if pool is None
@@ -85,11 +86,10 @@ def _run(ctx: StageContext) -> str:
             ),
         )
     )
-    briefing_path = layout.effective_briefing()
-    briefing = read_model(briefing_path, Briefing)
+    briefing = _briefing(layout)
     titles = ensure_titles(
         ctx.agents,
-        briefing=briefing_path,
+        briefing=layout.effective_briefing(),
         cache=layout.titles,
         session_dir=ctx.session_dir(),
         enabled=ctx.config.features.title_suggestion,
@@ -101,9 +101,6 @@ def _run(ctx: StageContext) -> str:
         chat=layout.chat_cht_json,
         chat_ass=layout.chat_panel_ass,
         layout=ctx.options.chat_layout,
-    )
-    destination = package_destination(
-        ctx.state, package_root, reserve=PACKAGE_INNER_PATH_RESERVE
     )
     with deliverable_dir(destination) as target:
         copy_cover(cover=layout.cover, poster=layout.poster, target_dir=target)
@@ -139,22 +136,72 @@ def _run(ctx: StageContext) -> str:
     return str(destination)
 
 
-def _remix_pool(ctx: StageContext, rules: ProgramRules) -> str | None:
+def _preflight(
+    options: RunOptions, config: AppConfig, state: ProjectState | None
+) -> None:
+    """Fail before any stage runs when the package root or a pool it will
+    draw from is missing. Before the first run the program (series,
+    channel) is unknown, so only the `--remix` pool and the inserts no
+    program scopes are checked; `_run` checks again with the metadata."""
+    package_root = _package_root(config)
+    if not package_root.is_dir():
+        raise PackageError(f"[paths] package {package_root} is not a directory")
+    source = state.source if state is not None else SourceInfo()
+    require_pools(package_root, _pool_names(*_pools(options, config, source)))
+
+
+def _package_root(config: AppConfig) -> Path:
+    package_root = config.paths.package
+    if package_root is None:
+        raise PackageError("[paths] package is not set in grill.toml")
+    return package_root
+
+
+def _briefing(layout: ProjectLayout) -> Briefing | None:
+    """The effective briefing; projects migrated without one package
+    without its data (a warning, not a failure)."""
+    path = layout.effective_briefing()
+    if not path.exists():
+        logger.warning(f"No briefing at {path}; info.json carries only the titles")
+        return None
+    return read_model(path, Briefing)
+
+
+def _pools(
+    options: RunOptions, config: AppConfig, source: SourceInfo
+) -> tuple[str | None, list[Insert]]:
+    """The remix noise pool (`None` for a plain burn-in) and the inserts of
+    this deliverable, from the run flags and the program's rules."""
+    rules = program_rules(config, source)
+    pool = _remix_pool(options, config, rules, source)
+    inserts = [
+        Insert(pool=rule.pool, output=rule.output)
+        for rule in rules.inserts_for(remix=pool is not None)
+    ]
+    return pool, inserts
+
+
+def _pool_names(pool: str | None, inserts: Sequence[Insert]) -> list[str]:
+    return [insert.pool for insert in inserts] + ([pool] if pool is not None else [])
+
+
+def _remix_pool(
+    options: RunOptions, config: AppConfig, rules: ProgramRules, source: SourceInfo
+) -> str | None:
     """The noise pool of a remix deliverable, `None` for a plain burn-in.
 
     `--remix` wins; otherwise a program marked `remix` forces one with the
     default pool (whose absence then fails the package rather than
     degrading to a burn-in).
     """
-    if ctx.options.remix is not None:
-        return ctx.options.remix
+    if options.remix is not None:
+        return options.remix
     if not rules.remix:
         return None
-    pool = ctx.config.package.remix_pool
-    info = ctx.state.source
+    pool = config.package.remix_pool
     logger.info(
-        f"Program rules force a remix for series={info.series!r} "
-        f"channel={info.channel!r}; using pool {pool!r}"
+        f"Program rules force a remix for series={source.series!r} "
+        f"channel={source.channel!r}; using pool {pool!r}"
     )
     return pool
 
@@ -181,4 +228,5 @@ STEP = DeliveryStepDef(
     workdir=_workdir,
     enabled=_enabled,
     params=_params,
+    preflight=_preflight,
 )

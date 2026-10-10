@@ -141,7 +141,7 @@ def run_command(
 ) -> None:
     """Download, transcribe and translate one video, resuming where it stopped."""
     from grillmaster.core.source_id import parse_source
-    from grillmaster.pipeline.runner import run_project
+    from grillmaster.pipeline.runner import ProjectRun
     from grillmaster.project.state import Section
     from grillmaster.stages.base import RunOptions
 
@@ -167,9 +167,8 @@ def run_command(
         remix=resolve_remix(remix, loaded.config.package.remix_pool),
         section=section,
     )
-    pipeline = pipeline_from(ctx)
-    final = run_or_exit(
-        lambda sinks: run_project(loaded, options, sinks=sinks, pipeline=pipeline),
-        failure=f"Failed to process {source}",
-    )
+    # The dashboard's retry after a failure past the archive move only
+    # re-delivers the archived project (see `ProjectRun`).
+    run = ProjectRun(loaded, options, pipeline_from(ctx))
+    final = run_or_exit(run.run, failure=f"Failed to process {source}")
     logger.success(f"Finished {source}: {final.root}")

@@ -88,7 +88,13 @@ def describe(event: Event) -> tuple[str, str] | None:  # noqa: PLR0911 - one cas
         case AgentSessionFinished(
             task=task, outcome=outcome, elapsed=elapsed, repairs=repairs
         ):
-            level = "INFO" if outcome is SessionOutcome.OK else "WARNING"
+            # A cancelled session is the abort's echo; the abort's cause is
+            # logged on its own.
+            level = (
+                "INFO"
+                if outcome in {SessionOutcome.OK, SessionOutcome.CANCELLED}
+                else "WARNING"
+            )
             repaired = f", {repairs} repair(s)" if repairs else ""
             return level, f"<{task}> session {outcome} in {elapsed:.1f}s{repaired}"
         case LogLine():

@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
+import signal
 import sys
 import time
+from typing import TYPE_CHECKING
 
 import pytest
 
 from grillmaster.agents.process import ProcessSpec, TimeoutExpired, run_text, spawn
 from grillmaster.core.process import LIVE_PROCESSES, kill_all
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from grillmaster.core.process import ChildProcess
 
 _UTF8 = "import sys; sys.stdout.reconfigure(encoding='utf-8'); "
 
@@ -83,3 +92,91 @@ def test_a_spawned_tree_is_live_until_waited_and_kill_all_ends_it():
     assert process.wait() != 0
     assert time.monotonic() - began < 20
     assert LIVE_PROCESSES.live() == before
+
+
+# A grandchild that holds the inherited stdout and appends to a heartbeat
+# file until it is killed (or gives up after 60 s).
+_GRANDCHILD = """\
+import sys, time
+for _ in range(1200):
+    with open(sys.argv[1], "a") as beat:
+        beat.write(".")
+    time.sleep(0.05)
+"""
+# Starts the grandchild on its own stdout (the pipe), reports its pid, exits.
+_PARENT = """\
+import subprocess, sys
+child = subprocess.Popen([sys.executable, sys.argv[1], sys.argv[2]], stdout=sys.stdout)
+print(child.pid, flush=True)
+"""
+
+
+def _orphaning_parent(tmp_path: Path, **options: object) -> tuple[ProcessSpec, Path]:
+    (tmp_path / "grandchild.py").write_text(_GRANDCHILD, encoding="utf-8")
+    (tmp_path / "parent.py").write_text(_PARENT, encoding="utf-8")
+    beat = tmp_path / "beat.txt"
+    fields: dict[str, object] = {"timeout_s": 60.0, "cwd": None}
+    fields.update(options)
+    argv = [
+        sys.executable,
+        str(tmp_path / "parent.py"),
+        str(tmp_path / "grandchild.py"),
+        str(beat),
+    ]
+    return ProcessSpec(argv=argv, **fields), beat  # pyright: ignore[reportArgumentType]
+
+
+def _assert_stopped(beat: Path) -> None:
+    size = beat.stat().st_size
+    time.sleep(0.5)
+    assert beat.stat().st_size == size, "the grandchild is still running"
+
+
+def _wait_until_exited(tree: ChildProcess) -> None:
+    deadline = time.monotonic() + 10
+    while tree.poll() is None:
+        assert time.monotonic() < deadline, "the parent did not exit"
+        time.sleep(0.05)
+
+
+def _end(pid: int) -> None:
+    # Cleanup after a failed assertion; on Windows `os.kill` terminates.
+    with contextlib.suppress(OSError):
+        os.kill(pid, signal.SIGTERM)
+
+
+def test_kill_all_ends_a_grandchild_whose_parent_already_exited(tmp_path: Path):
+    spec, beat = _orphaning_parent(tmp_path)
+    before = LIVE_PROCESSES.live()
+    process = spawn(spec)
+    lines = process.lines()
+    grandchild = int(next(lines))
+    try:
+        [tree] = [item for item in LIVE_PROCESSES.live() if item not in before]
+        _wait_until_exited(tree)
+        began = time.monotonic()
+
+        kill_all()
+        # The reader was blocked on the grandchild's copy of stdout.
+        assert list(lines) == []
+        assert time.monotonic() - began < 20
+        _assert_stopped(beat)
+        assert LIVE_PROCESSES.live() == before
+    finally:
+        _end(grandchild)
+
+
+def test_timeout_ends_a_grandchild_whose_parent_already_exited(tmp_path: Path):
+    spec, beat = _orphaning_parent(tmp_path, timeout_s=2.0)
+    process = spawn(spec)
+    began = time.monotonic()
+    lines = process.lines()
+    grandchild = int(next(lines))
+    try:
+        assert list(lines) == []
+        assert process.wait() == 0  # the parent's own exit code
+        assert process.timed_out
+        assert time.monotonic() - began < 20
+        _assert_stopped(beat)
+    finally:
+        _end(grandchild)

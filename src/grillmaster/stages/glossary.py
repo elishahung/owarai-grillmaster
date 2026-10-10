@@ -46,7 +46,9 @@ def _run(ctx: StageContext) -> None:
         report=layout.glossary_report,
         briefing_candidate=layout.glossary_briefing_candidate,
         corrected_briefing=layout.glossary_briefing,
-        program_instruction=program_rules(ctx).instruction_text(StageKey.GLOSSARY),
+        program_instruction=program_rules(
+            ctx.config, ctx.state.source
+        ).instruction_text(StageKey.GLOSSARY),
     )
     tools = ToolSession(
         project_root=layout.root,

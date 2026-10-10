@@ -12,15 +12,22 @@ live with the bundled CLI):
 * MCP tools are named `mcp__<server>__<tool>` and image results reach the
   model; `resume=<session_id>` keeps the context, tools and schema.
 * A 429 surfaces as a rejected `RateLimitEvent` / error result, after which
-  the SDK raises an opaque exception; the captured details win.
+  the SDK raises an opaque exception; the captured details win. A rejected
+  `RateLimitEvent` names a subscription window (`five_hour`, `seven_day`...),
+  so it is a quota error; a bare 429 is transient unless its text names a
+  quota (`classify_failure`).
 
 Raw records are the SDK message dataclasses encoded by `encode_message`
 (`thinking_tokens` progress ticks are dropped before they leave the pump).
 
 The SDK spawns the CLI itself, so each turn hands `query()` a
-`RegisteredTransport`: the SDK's own subprocess transport, whose child is held
-in `core.process.LIVE_PROCESSES` from `connect` to `close`, so an abort's
-`kill_all` tree-kills it like any other agent process.
+`RegisteredTransport`: the SDK's own subprocess transport, whose child is
+adopted as a `core.process.ProcessTree` right after `connect` (on Windows it
+joins a Job Object; a child that cannot is killed and the turn fails with
+`AgentConfigError`) and held in `LIVE_PROCESSES` until `close`, so an abort's
+`kill_all` kills it like any other agent process. A turn timeout
+(`asyncio.timeout`) cancels the SDK's `close` before its terminate/kill
+escalation, so `close` always ends the tree itself.
 """
 
 from __future__ import annotations
@@ -32,6 +39,7 @@ import json
 import queue
 import threading
 from collections import deque
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any, override
 
 from claude_agent_sdk import (
@@ -62,6 +70,7 @@ from grillmaster.agents.adapters.base import (
 )
 from grillmaster.agents.errors import (
     AgentAuthError,
+    AgentCancelledError,
     AgentConfigError,
     AgentError,
     AgentQuotaError,
@@ -76,7 +85,12 @@ from grillmaster.agents.events import (
     normalize_usage,
 )
 from grillmaster.core.model_spec import Backend, Effort
-from grillmaster.core.process import LIVE_PROCESSES
+from grillmaster.core.process import (
+    ProcessAbortedError,
+    adopt_tree,
+    release,
+    track,
+)
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable, Iterator, Sequence
@@ -87,6 +101,7 @@ if TYPE_CHECKING:
 
     from grillmaster.agents.events import AgentEvent
     from grillmaster.core.model_spec import ModelSpec
+    from grillmaster.core.process import ProcessTree
 
 type QueryFn = Callable[..., AsyncIterator[Any]]
 type Prompt = str | AsyncIterator[dict[str, Any]]
@@ -247,27 +262,38 @@ class ClaudeTurn(Turn):
 
 
 class RegisteredTransport(SubprocessCLITransport):
-    """The SDK's CLI transport with its child in `LIVE_PROCESSES` while
-    connected. Relies on the SDK's private `_process` (anyio `Process`)."""
+    """The SDK's CLI transport with its child adopted as a tracked
+    `ProcessTree` while connected; `close` ends the tree unconditionally
+    (the SDK's own `close` may have been cancelled by a timeout). Relies on
+    the SDK's private `_process` (anyio `Process`)."""
 
-    _handle: CliProcess | None = None
+    _tree: ProcessTree[CliProcess] | None = None
 
     @override
     async def connect(self) -> None:
         await super().connect()
         process = self._process
-        if process is not None and self._handle is None:
-            self._handle = CliProcess(process)
-            LIVE_PROCESSES.register(self._handle)
+        if process is None:
+            raise AgentTransientError("claude-agent-sdk connected without a process")
+        handle = CliProcess(process)
+        try:
+            tree = adopt_tree(handle)
+        except OSError as error:
+            handle.kill()
+            raise AgentConfigError(
+                f"cannot put the Claude Code CLI (pid {handle.pid}) in a "
+                f"Job Object: {error}"
+            ) from error
+        self._tree = track(tree)
 
     @override
     async def close(self) -> None:
         try:
             await super().close()
         finally:
-            if self._handle is not None:
-                LIVE_PROCESSES.unregister(self._handle)
-                self._handle = None
+            tree, self._tree = self._tree, None
+            if tree is not None:
+                release(tree)
 
 
 class CliProcess:
@@ -294,7 +320,7 @@ class ClaudeTurnParser:
         self._session_id = ""
         self._last_text = ""
         self._tool_names: dict[str, str] = {}
-        self._rate_limit: str | None = None
+        self._usage_limit: str | None = None
         self._assistant_error: tuple[str, str] | None = None
         self._result: ResultMessage | None = None
 
@@ -304,10 +330,7 @@ class ClaudeTurnParser:
                 self._session_id = str(data.get("session_id") or "")
             case AssistantMessage(error=error, content=content) if error:
                 text = "".join(b.text for b in content if isinstance(b, TextBlock))
-                if error == "rate_limit":
-                    self._rate_limit = text or "rate limit reached"
-                else:
-                    self._assistant_error = (error, text)
+                self._assistant_error = (error, text)
             case AssistantMessage(content=content):
                 yield from self._assistant_blocks(content)
             case UserMessage(content=list() as content):
@@ -317,7 +340,7 @@ class ClaudeTurnParser:
                     ):
                         yield ToolResult(name, ok=not block.is_error)
             case RateLimitEvent(rate_limit_info=info) if info.status == "rejected":
-                self._rate_limit = self._rate_limit or (
+                self._usage_limit = self._usage_limit or (
                     f"{info.rate_limit_type or 'rate'} limit reached"
                     + (f", resets at {info.resets_at}" if info.resets_at else "")
                 )
@@ -330,14 +353,18 @@ class ClaudeTurnParser:
         """The final output, or the classified `AgentError` for this turn;
         `failure` is what the SDK raised, if anything."""
         result = self._result
-        if self._rate_limit is not None:
-            raise AgentQuotaError(f"Claude rate limit hit: {self._rate_limit}")
+        if self._usage_limit is not None:
+            raise AgentQuotaError(f"Claude usage limit hit: {self._usage_limit}")
         if result is not None and result.is_error:
             raise _classify_result(result, self._assistant_error)
         if self._assistant_error is not None:
             code, text = self._assistant_error
             raise _classify_code(code, text)
         if failure is not None:
+            if isinstance(failure, AgentError):
+                raise failure
+            if isinstance(failure, ProcessAbortedError):
+                raise AgentCancelledError(f"Claude Code CLI not started: {failure}")
             if isinstance(failure, CLINotFoundError):
                 raise AgentConfigError(f"Claude Code CLI not found: {failure}")
             raise AgentTransientError(
@@ -451,8 +478,13 @@ def _classify_code(code: str, text: str) -> AgentError:
     match code:
         case "authentication_failed":
             return AgentAuthError(f"{message} ({_LOGIN_HINT})")
-        case "billing_error" | "rate_limit":
+        case "billing_error":
             return AgentQuotaError(message)
+        case "rate_limit":
+            # A usage limit names itself; a bare rate limit passes.
+            return classify_failure(
+                message, login_hint=_LOGIN_HINT, status=HTTPStatus.TOO_MANY_REQUESTS
+            )
         case "invalid_request":
             return AgentConfigError(message)
         case _:

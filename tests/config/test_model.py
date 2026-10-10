@@ -23,7 +23,7 @@ def test_minimal_config_fills_in_defaults(minimal_data: dict[str, Any]):
     config = validate_config(minimal_data, root=Path("/root"))
 
     assert config.paths.archive is None
-    assert config.agents.max_concurrent == 5
+    assert config.agents.max_concurrent == 10
     assert config.translate.chunk_char_limit == 6000
     assert config.features.official_subtitles
     assert not config.features.cover

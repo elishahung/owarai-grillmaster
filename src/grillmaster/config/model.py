@@ -139,9 +139,9 @@ class AgentsConfig(BaseModel):
         description="Wall-clock limit for one agent turn (each repair round gets its own).",
     )
     max_concurrent: int = Field(
-        default=5,
+        default=10,
         ge=1,
-        description="Agent processes running at once across fan-out stages (chunks, chat batches).",
+        description="Agent processes one grill process runs at once across fan-out stages (chunks, chat batches); several grill processes each get this many.",
     )
     roles: AgentRoles
 

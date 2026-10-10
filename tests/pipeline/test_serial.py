@@ -17,13 +17,14 @@ from tests.pipeline.fakes import (
 
 from grillmaster.config.load import LoadedConfig
 from grillmaster.config.model import validate_config
-from grillmaster.core.source_id import Platform, SourceId
+from grillmaster.core.source_id import Platform, SourceId, parse_source
 from grillmaster.core.stage_key import StageKey
 from grillmaster.events.types import BatchItemStarted, RunStarted
 from grillmaster.pipeline.registry import Pipeline
 from grillmaster.pipeline.runner import ArchivedDeliveryError
 from grillmaster.pipeline.serial import SerialRun
 from grillmaster.project.layout import ProjectLayout
+from grillmaster.project.state import ProjectState
 from grillmaster.project.store import load_state, save_state
 from grillmaster.stages.base import RunOptions
 
@@ -32,7 +33,6 @@ if TYPE_CHECKING:
 
     from tests.fakes import RecordingSink
 
-    from grillmaster.project.state import ProjectState
     from grillmaster.stages.base import StageContext
 
 EP1 = SourceId(Platform.TVER, "epone111")
@@ -120,7 +120,7 @@ def test_failure_stops_the_chain_and_a_rerun_continues_it(
     first = ProjectLayout.for_id(loaded.projects_root, EP1.video_id)
     assert chain.position == 1
     assert not ProjectLayout.for_id(loaded.projects_root, EP3.video_id).root.exists()
-    assert f"grill serial eptwo222 epthree3 --parent {first.root}" in errors[-1]
+    assert f"grill serial {EP2.url} {EP3.url} --parent {first.root}" in errors[-1]
 
     fail_on.clear()
     final = chain.run(loaded, sinks=[recording_sink], pipeline=pipeline)
@@ -166,7 +166,36 @@ def test_a_package_failure_after_the_archive_moves_the_chain_past_it(
     # Re-running EP1's source would start it over locally: the chain moves on.
     archived = archive_root / "etc" / EP1.video_id
     assert (chain.position, chain.parent) == (1, archived)
-    assert f"grill serial eptwo222 --parent {archived}" in errors[-1]
+    assert f"grill serial {EP2.url} --parent {archived}" in errors[-1]
+
+
+def test_an_already_archived_source_counts_as_done_and_seeds_the_next(
+    *,
+    loaded: LoadedConfig,
+    roles: dict[str, str],
+    journal: Journal,
+    recording_sink: RecordingSink,
+    tmp_path: Path,
+):
+    archive_root = tmp_path / "archive"
+    config = validate_config(
+        {"agents": {"roles": roles}, "paths": {"archive": str(archive_root)}},
+        root=loaded.root,
+    )
+    archiving = LoadedConfig(root=loaded.root, config=config, secrets=loaded.secrets)
+    archived = ProjectLayout(archive_root / "etc" / EP1.video_id)
+    save_state(archived, ProjectState.create(EP1))
+    chain = serial(EP1, EP2)
+
+    final = chain.run(
+        archiving, sinks=[recording_sink], pipeline=metadata_only(journal)
+    )
+
+    assert final == ProjectLayout(archive_root / "etc" / EP2.video_id)
+    assert final is not None
+    assert journal.entries == ["run:metadata@metadata"]  # EP2 only
+    assert load_state(final).parent == archived.root
+    assert chain.position == 2
 
 
 def test_resume_command_quotes_paths_with_spaces():
@@ -174,8 +203,18 @@ def test_resume_command_quotes_paths_with_spaces():
         (EP1, EP2), RunOptions(source=EP1, parent=Path("C:/my projects/ep0"))
     )
     assert chain.resume_command() == (
-        f'grill serial epone111 eptwo222 --parent "{Path("C:/my projects/ep0")}"'
+        f'grill serial {EP1.url} {EP2.url} --parent "{Path("C:/my projects/ep0")}"'
     )
+
+
+def test_resume_command_names_sources_by_url():
+    # A bare Abema slot ID starting with `sh` would parse as TVer.
+    slot = SourceId(Platform.ABEMA, "sh0123abcd")
+    chain = SerialRun((EP1, slot), RunOptions(source=EP1), position=1)
+
+    assert chain.resume_command() == f"grill serial {slot.url}"
+    assert parse_source(slot.url) == slot
+    assert parse_source(slot.video_id) != slot
 
 
 @pytest.mark.parametrize(

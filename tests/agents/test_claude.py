@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import subprocess
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 from claude_agent_sdk import (
+    AssistantMessage,
     ClaudeAgentOptions,
     CLINotFoundError,
     RateLimitEvent,
     ResultMessage,
     SystemMessage,
+    TextBlock,
 )
 from claude_agent_sdk.types import RateLimitInfo
 from tests.agents.fakes import FakeQuery, claude_messages
@@ -32,11 +35,13 @@ from grillmaster.agents.errors import (
     AgentTransientError,
 )
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec
-from grillmaster.core.process import LIVE_PROCESSES
+from grillmaster.core.process import LIVE_PROCESSES, adopt_tree, track
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
     from pathlib import Path
+
+    from anyio.abc import Process
 
     from grillmaster.agents.adapters.base import TurnRequest
 
@@ -56,6 +61,10 @@ def _result(**overrides: Any) -> ResultMessage:
     }
     fields.update(overrides)
     return ResultMessage(**fields)
+
+
+def _rate_limited(text: str) -> AssistantMessage:
+    return AssistantMessage([TextBlock(text)], "claude-opus-5-5", error="rate_limit")
 
 
 def test_options_isolate_the_session_and_carry_every_setting(
@@ -101,19 +110,20 @@ def test_ultra_effort_clamps_to_max(make_request: Callable[..., TurnRequest]):
 def test_resume_passes_the_session_and_only_the_message(
     make_request: Callable[..., TurnRequest],
 ):
-    query = FakeQuery(claude_messages("resume"))
+    messages = claude_messages("live_resume")
+    query = FakeQuery(messages)
     request = make_request(spec=SPEC, message="fix it")
     final = ClaudeAdapter(query_fn=query).resume("sess-9", request).result()
     call = query.calls[0]
     assert call["prompt"] == "fix it"
     assert call["options"].resume == "sess-9"
-    assert final.session_id == "22bfb9d2-29d6-4b36-aa20-fc7e004877fb"
+    assert final.session_id == messages[-1].session_id
 
 
 def test_each_turn_spawns_the_cli_through_a_registered_transport(
     make_request: Callable[..., TurnRequest],
 ):
-    query = FakeQuery(claude_messages("resume"))
+    query = FakeQuery(claude_messages("live_resume"))
     ClaudeAdapter(query_fn=query).start(make_request(spec=SPEC)).result()
     assert isinstance(query.calls[0]["transport"], RegisteredTransport)
 
@@ -130,7 +140,9 @@ def test_registered_transport_holds_its_child_in_live_processes(
 
     async def spawn_and_close() -> None:
         await transport.connect()
-        seen.append([p.pid for p in LIVE_PROCESSES.live() if isinstance(p, CliProcess)])
+        seen.append(
+            [p.pid for p in LIVE_PROCESSES.live() if isinstance(p.leader, CliProcess)]
+        )
         await transport.close()
 
     before = LIVE_PROCESSES.live()
@@ -140,12 +152,49 @@ def test_registered_transport_holds_its_child_in_live_processes(
     assert LIVE_PROCESSES.live() == before
 
 
+class _PopenAsAnyio:
+    """The bits of an anyio `Process` that `CliProcess` reads, over a `Popen`."""
+
+    def __init__(self, popen: subprocess.Popen[bytes]) -> None:  # noqa: TID251 - a type only
+        self._popen = popen
+
+    @property
+    def pid(self) -> int:
+        return self._popen.pid
+
+    @property
+    def returncode(self) -> int | None:
+        return self._popen.poll()
+
+    def kill(self) -> None:
+        self._popen.kill()
+
+
+def test_close_kills_a_cli_the_sdk_left_running():
+    # A turn timeout cancels the SDK's `close` before its kill escalation;
+    # here the SDK side has nothing to close, and the CLI still runs.
+    # Spawned like the SDK spawns its CLI, then adopted like `connect` does.
+    cli = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])  # noqa: TID251
+    try:
+        tree = track(adopt_tree(CliProcess(cast("Process", _PopenAsAnyio(cli)))))
+        transport = RegisteredTransport(prompt="hi", options=ClaudeAgentOptions())
+        transport._tree = tree  # what `connect` would have set
+
+        asyncio.run(transport.close())  # noqa: TID251 - drives the SDK transport directly
+
+        assert cli.wait(timeout=10) != 0
+        assert tree not in LIVE_PROCESSES.live()
+    finally:
+        cli.kill()
+        cli.wait()
+
+
 def test_images_travel_as_base64_blocks(
     make_request: Callable[..., TurnRequest], tmp_path: Path
 ):
     image = tmp_path / "frame.png"
     image.write_bytes(b"\x89PNG fake")
-    query = FakeQuery(claude_messages("resume"))
+    query = FakeQuery(claude_messages("live_resume"))
     ClaudeAdapter(query_fn=query).start(
         make_request(spec=SPEC, images=(image,), message="look")
     ).result()
@@ -178,7 +227,7 @@ def test_unsupported_image_type_is_a_config_error(
 def test_thinking_progress_ticks_are_dropped(make_request: Callable[..., TurnRequest]):
     tick = SystemMessage(subtype="thinking_tokens", data={"tokens": 12})
     raw: list[str] = []
-    messages = claude_messages("resume")
+    messages = claude_messages("live_resume")
     query = FakeQuery([tick, *messages, tick])
     ClaudeAdapter(query_fn=query).start(
         make_request(spec=SPEC, raw=raw.append)
@@ -190,7 +239,7 @@ def test_thinking_progress_ticks_are_dropped(make_request: Callable[..., TurnReq
 def test_structured_output_tool_is_not_reported_as_a_tool_call(
     make_request: Callable[..., TurnRequest],
 ):
-    handle = ClaudeAdapter(query_fn=FakeQuery(claude_messages("resume"))).start(
+    handle = ClaudeAdapter(query_fn=FakeQuery(claude_messages("live_resume"))).start(
         make_request(spec=SPEC)
     )
     assert all(
@@ -202,7 +251,18 @@ def test_structured_output_tool_is_not_reported_as_a_tool_call(
     ("messages", "failure", "error"),
     [
         (
-            [_result(is_error=True, api_error_status=429, result="limit")],
+            [_result(is_error=True, api_error_status=429, result="slow down")],
+            None,
+            AgentTransientError,
+        ),
+        (
+            [
+                _result(
+                    is_error=True,
+                    api_error_status=429,
+                    result="Claude AI usage limit reached",
+                )
+            ],
             None,
             AgentQuotaError,
         ),
@@ -232,16 +292,29 @@ def test_structured_output_tool_is_not_reported_as_a_tool_call(
             RuntimeError("Command failed with exit code 1"),
             AgentQuotaError,
         ),
+        (
+            [_rate_limited("Claude AI usage limit reached")],
+            RuntimeError("Command failed with exit code 1"),
+            AgentQuotaError,
+        ),
+        (
+            [_rate_limited("Too many requests, retry later")],
+            RuntimeError("Command failed with exit code 1"),
+            AgentTransientError,
+        ),
         ([], CLINotFoundError("missing"), AgentConfigError),
         ([], RuntimeError("crashed"), AgentTransientError),
         ([], None, AgentTransientError),
     ],
     ids=[
         "429",
+        "429-usage-limit",
         "401",
         "400",
         "529",
         "rate-limit-event",
+        "rate-limit-usage",
+        "rate-limit-bare",
         "no-cli",
         "crash",
         "no-result",

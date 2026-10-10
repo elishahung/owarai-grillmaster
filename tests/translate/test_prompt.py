@@ -214,3 +214,18 @@ def test_chunk_message_slices_official_cc_with_padding(
     for text in ("at the edge", "too late"):
         assert text not in section
     assert section.index("padded end") < section.index("【SRT 區段")
+
+
+@pytest.mark.parametrize("has_audio", [True, False])
+def test_prepass_prompt_describes_terms_in_the_strict_schema_shape(
+    has_audio: bool,
+) -> None:
+    # The schema is `list[TermMapping{source, target}]`, not a free-key dict.
+    text = render_audio_template("pre_pass", has_audio=has_audio)
+    assert "Dict mapping" not in text
+    assert '"森山": "盛山"' not in text
+    assert '{"source": "森山", "target": "盛山"}' in text
+    for field in ("proper_nouns", "glossary"):
+        assert (
+            f'- **{field}**: List of `{{"source": ..., "target": ...}}` objects' in text
+        )

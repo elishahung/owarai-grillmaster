@@ -15,15 +15,19 @@ deeper layout path raises the reserve automatically.
 
 from __future__ import annotations
 
-from datetime import datetime
+import os
+import re
+from datetime import date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from grillmaster.core.fs import STAGING_SUFFIX
+from grillmaster.core.fs import BACKUP_SUFFIX, STAGING_SUFFIX
 from grillmaster.core.paths import attempt_path, fit_dir_name, measure
 from grillmaster.project.layout import ProjectLayout, session_dir
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from grillmaster.project.state import ProjectState
 
 # Widest realistic values for the parameterized parts of the layout: 4-digit
@@ -38,6 +42,16 @@ SAMPLE_STAMP = datetime(2026, 12, 31, 23, 59, 59).astimezone()
 # The longest file name in an agent session record (see `agents` session
 # records).
 _LONGEST_SESSION_FILE = "result.json"
+
+# Deliverable names are `<YYMMDD>_<id>[_<name>]`; dated archive groups are
+# `YY/MM`, undated ones `etc`. `archived_candidates` matches the same pieces.
+_NAME_SEPARATOR = "_"
+_STEM_DATE_FORMAT = "%y%m%d"
+_STEM_DATE_DIGITS = len(f"{date(2000, 1, 1):{_STEM_DATE_FORMAT}}")
+_GROUP_FORMATS = ("%y", "%m")
+_UNDATED_GROUP = "etc"
+# Sibling directories `core.fs.staged_dir` leaves, never a project.
+_NOT_PROJECT_SUFFIXES = (STAGING_SUFFIX, BACKUP_SUFFIX)
 
 # Room (counting the leading separator) for a relative path an agent creates
 # under one of `ProjectLayout.agent_workspaces`, e.g. `/notes/candidates.md`.
@@ -85,19 +99,23 @@ PROJECT_INNER_PATH_RESERVE = _project_inner_path_reserve()
 def deliverable_stem(state: ProjectState) -> str:
     """`YYMMDD_<id>`, or `<id>` when the broadcast date is unknown."""
     aired = state.effective_broadcast_date
-    return state.id if aired is None else f"{aired:%y%m%d}_{state.id}"
+    if aired is None:
+        return state.id
+    return f"{aired:{_STEM_DATE_FORMAT}}{_NAME_SEPARATOR}{state.id}"
 
 
 def deliverable_name(state: ProjectState) -> str:
     """The untrimmed deliverable name; destinations may shorten the tail."""
     stem = deliverable_stem(state)
-    return f"{stem}_{state.name}" if state.name else stem
+    return f"{stem}{_NAME_SEPARATOR}{state.name}" if state.name else stem
 
 
 def archive_group(state: ProjectState) -> Path:
     """Shared parents under the archive root: `YY/MM`, or `etc` when undated."""
     aired = state.effective_broadcast_date
-    return Path("etc") if aired is None else Path(f"{aired:%y}") / f"{aired:%m}"
+    if aired is None:
+        return Path(_UNDATED_GROUP)
+    return Path(*(f"{aired:{part}}" for part in _GROUP_FORMATS))
 
 
 def _fit_deliverable_dir(state: ProjectState, parent: Path, reserve: int) -> Path:
@@ -128,3 +146,44 @@ def package_destination(
     inner-path reserve.
     """
     return _fit_deliverable_dir(state, package_root, reserve)
+
+
+def archived_candidates(archived_root: Path, video_id: str) -> Iterator[Path]:
+    """Directories under `archived_root` whose name could be `video_id`'s
+    archived project: `YY/MM/YYMMDD_<id>[_<name>]` or `etc/<id>[_<name>]`
+    (see `archive_destination`), in name order. Staging and backup
+    directories are not candidates. Callers confirm a match by its
+    `project.json` (another ID may start with `<id>_`)."""
+    name = re.compile(
+        rf"(?P<date>\d{{{_STEM_DATE_DIGITS}}}{_NAME_SEPARATOR})?"
+        rf"{re.escape(video_id)}(?:{_NAME_SEPARATOR}|$)"
+    )
+
+    def matching(parent: Path, *, dated: bool) -> Iterator[Path]:
+        for entry in _subdirs(parent):
+            found = name.match(entry.name)
+            if (
+                found is not None
+                and (found["date"] is not None) == dated
+                and not entry.name.endswith(_NOT_PROJECT_SUFFIXES)
+            ):
+                yield Path(entry.path)
+
+    # Dated groups are two levels deep (`_GROUP_FORMATS`: YY, then MM).
+    for group in _subdirs(archived_root):
+        if group.name == _UNDATED_GROUP:
+            yield from matching(Path(group.path), dated=False)
+        elif group.name.isdigit():
+            for month in _subdirs(Path(group.path)):
+                if month.name.isdigit():
+                    yield from matching(Path(month.path), dated=True)
+
+
+def _subdirs(path: Path) -> list[os.DirEntry[str]]:
+    """The subdirectories of `path` in name order; none when it is missing.
+    Any other `OSError` (an unreachable archive) propagates."""
+    try:
+        with os.scandir(path) as entries:
+            return sorted((e for e in entries if e.is_dir()), key=lambda e: e.name)
+    except FileNotFoundError:
+        return []

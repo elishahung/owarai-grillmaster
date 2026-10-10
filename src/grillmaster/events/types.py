@@ -43,7 +43,8 @@ class ActivityKind(StrEnum):
 
 
 class SessionOutcome(StrEnum):
-    """`ok`, or the agents-layer error category that ended the session."""
+    """`ok`, the agents-layer error category that ended the session, or
+    `cancelled` (the run was aborted; not a failure of the session itself)."""
 
     OK = "ok"
     CONFIG_ERROR = "config_error"
@@ -51,6 +52,7 @@ class SessionOutcome(StrEnum):
     AUTH_ERROR = "auth_error"
     TRANSIENT_ERROR = "transient_error"
     OUTPUT_ERROR = "output_error"
+    CANCELLED = "cancelled"
 
 
 @dataclass(frozen=True, slots=True)

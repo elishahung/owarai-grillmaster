@@ -74,16 +74,19 @@ between the stages and delivery.
 
 **Stage API (`stages/base.py`, below `pipeline`):**
 - `StageDef(key, label, weight, run, outputs, enabled, on_skip, params,
-  clear_state, preflight)`. `run(ctx)` returns optional `StepCompleted` result
+  clear_state, preflight, on_reset)`. `run(ctx)` returns optional `StepCompleted` result
   text. `outputs(layout)` = root deliverables it writes (what `grill reset`
   deletes, with the work dir). `clear_state` resets the state fields it writes.
   `params(config)` is a display/ledger snapshot, **never a cache key**.
   `preflight(config, secrets)` raises before any stage runs (missing ASR key).
+  `on_reset(layout)` runs on `grill reset` before deletion (combine moves an
+  uncut `video.mp4` back to `full.mp4`).
 - `SideTaskDef[T](key, start_after, run, enabled, record, describe, is_done,
   on_skip, …)`: `run` returns a payload; the manager writes the record
   (default `TaskRecord`) under the state lock.
-- `DeliveryStepDef(key, run, workdir, enabled, …)`: no ledger, re-runs on every
-  complete run.
+- `DeliveryStepDef(key, run, workdir, enabled, preflight, …)`: no ledger,
+  re-runs on every complete run; `preflight(options, config, state|None)`
+  runs in `Pipeline.check` (package: root dir and pools).
 - `StageContext`: `layout`, `state`, `save()`, `update(fn)` (locked atomic
   save; use it for any state change a side task may race), `config`,
   `secrets`, `config_file`, `options` (`RunOptions`), `agents`
@@ -97,9 +100,14 @@ between the stages and delivery.
   (program rules, yt-dlp request, frame tool, source split, `role_params`,
   `tool_params`, `flag_or_feature`, `chat_enabled`) is in `stages/_common.py`.
 
-**Runner (`pipeline/runner.py`):** `run_project` → `Pipeline.check` (options +
-preflight of every stage that will run; a rejected run creates nothing) →
-`open_project` → per stage: disabled → `StepSkipped(disabled)`; in the ledger
+**Runner (`pipeline/runner.py`):** `run_project` → `store.project_lock`
+(held for the whole run incl. archive and delivery; `deliver_project` and
+`grill archive`/`reset` take it too) → `find_project` (via
+`store.locate_project`, the one local/archived/none resolver; an archived ID
+raises `ArchivedProjectError` naming `grill package` before any preflight, a
+local ID also archived raises `DuplicateProjectError` naming both) →
+`Pipeline.check` (options + preflight of every stage and delivery step that
+will run; a rejected run creates no project) → `open_project` → per stage: disabled → `StepSkipped(disabled)`; in the ledger
 → `on_skip` + `StepSkipped(already_complete)`; else `execute_step` (the one
 step executor: scope, Started/Completed/Failed, per-step token usage) then
 `state.mark_done` with an atomic save. `--break-after <key>` stops after that
@@ -109,7 +117,9 @@ archive move runs (`delivery.run_archive`: logs close, the directory moves,
 `ProjectLogs.relocate` reopens the same files appending, `StateStore.relocate`
 repoints saves), delivery runs on the moved layout, `RunFinished`. A delivery
 failure after a move raises `ArchivedDeliveryError` naming `grill package
-"<archived dir>"` (the ID no longer resolves locally).
+"<archived dir>"` (the ID no longer resolves locally); `ProjectRun` (what
+`grill run` and its TUI retry call; `SerialRun` runs one per item) then
+retries only `deliver_project`.
 `deliver_project` (`grill package`) runs only the delivery steps.
 
 **Side tasks (`pipeline/side_tasks.py`):** start on a daemon thread with a
@@ -120,14 +130,16 @@ because the agent cost is already paid (an interrupt waits only
 
 **Reset (`pipeline/reset.py`):** clears ledger entries, `clear_state` fields,
 the whole work dir and declared `outputs`; state is saved first so an
-interrupted deletion still reruns. `stages_from(key)` backs `--from`. This is
-the only sanctioned way to force a re-run.
+interrupted deletion still reruns, then `on_reset` hooks run, then files go.
+`stages_from(key)` backs `--from`. This is the only sanctioned way to force
+a re-run; `grill reset` refuses directories outside `projects/`.
 
 **Serial (`pipeline/serial.py`):** each project's final directory (archived
 one when `[paths] archive` is set) becomes the next `--parent`; the pre-pass
 reads `ProjectLayout(parent).effective_briefing()`. Stops at the first failure
-and logs the resume command (an `ArchivedDeliveryError` project counts as done,
-since re-running its source would start over); emits `BatchItemStarted`.
+and logs the resume command (sources as full URLs; an `ArchivedDeliveryError` project counts as done,
+since re-running its source would start over, and so does a source already
+archived (`ArchivedProjectError`): its archived dir seeds the next item); emits `BatchItemStarted`.
 
 ## Project (`project/`)
 
@@ -145,7 +157,17 @@ since re-running its source would start over); emits `BatchItemStarted`.
   error), `side_tasks` (`cover: TaskRecord`, `date_research:
   DateResearchRecord`). Readers use `effective_broadcast_date`.
 - `store.py`: strict load (no old formats), atomic save, `archive_project`
-  (staged copy, verify, swap). `naming.py`: deliverable name
+  (staged copy, verify, swap; refuses when the ID is already archived under
+  any `YY/MM` or the destination holds `project.json`; deletes the local
+  `project.json` first so a failed cleanup leaves no project),
+  `locate_project` (local, else `find_archived` by
+  `naming.archived_candidates`, else none; also behind `grill reset`; an
+  archive that cannot be listed only warns there, while `archive_project`
+  still fails loudly on it).
+  `project_lock(projects_root, id)`: OS lock on `projects/.locks/<id>.lock`
+  (outside the project, so it never blocks the archive move and also covers
+  the archived copy); a second grill process on the same ID fails at once
+  with `ProjectBusyError`; a crash releases it. `naming.py`: deliverable name
   `YYMMDD_<id>_<name>` and archive/package destinations trimmed by
   `core.paths.fit_dir_name`; `PROJECT_INNER_PATH_RESERVE` is derived from the
   layout's deepest paths, so a deeper path raises it automatically.
@@ -168,7 +190,8 @@ since re-running its source would start over); emits `BatchItemStarted`.
 - `programs.py` `ProgramRules`: channel then series entries merged (`common`
   text before stage text; stage keys `prepass`, `chunks`, `refine`,
   `glossary`). `register_program` (download stage) is the only writer of
-  `grill.toml`, appending empty entries with `tomlkit`.
+  `grill.toml`, appending empty entries with `tomlkit` under
+  `grill.toml.lock`, re-reading the file inside it (concurrent processes).
 
 ## Events, logs, TUI (`events/`, `tui/`)
 
@@ -194,12 +217,18 @@ since re-running its source would start over); emits `BatchItemStarted`.
   on audio gaps (a gap drifts ASR timestamps).
 - External processes only via `media/ffmpeg.py` (ffmpeg/ffprobe) or
   `agents/process.py` (agent CLIs); ruff bans `subprocess.*` elsewhere. Both
-  tree-kill on timeout and register in `core.process.LIVE_PROCESSES`.
+  spawn `core.process.spawn_tree` trees, tree-kill on timeout and register in
+  `LIVE_PROCESSES`; after `kill_all` (`ABORT` latched) no child may start.
 - `asr/`: ElevenLabs client and the ASR-JSON → SRT builder (tuning constants
   are intentional, not settings). `glossary/`: the fixed glossary, a required
   runtime input of pre-pass, glossary check and finalize.
 - `core/`: single copies of SRT parsing (`read_srt_file` reads `utf-8-sig`),
-  timecodes, atomic writes, JSON artifacts (`load_model` = corrupt is a miss),
+  timecodes, atomic writes, `fs.staged_dir` (a failed swap keeps
+  `<name>.partial` with a `.complete` marker and raises `SwapError`; a later
+  entry refuses such a kept build instead of deleting it, removes an
+  unmarked one, and restores a crash's `<name>.old`; `check_replaceable`
+  probes both before long work), `fs.exclusive_lock` (OS-level, released
+  when the holder dies; the lock file stays), JSON artifacts (`load_model` = corrupt is a miss),
   prompt loading (`render_template` demands exact slots), `ModelSpec`,
   `Briefing`, path budgets.
 

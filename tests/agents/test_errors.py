@@ -4,6 +4,7 @@ import pytest
 
 from grillmaster.agents.errors import (
     AgentAuthError,
+    AgentCancelledError,
     AgentConfigError,
     AgentError,
     AgentQuotaError,
@@ -19,8 +20,19 @@ from grillmaster.events.types import SessionOutcome
     [
         ("RESOURCE_EXHAUSTED: quota exceeded", None, AgentQuotaError),
         ("You've hit your usage limit", None, AgentQuotaError),
-        ('{"type":"error","status":429}', None, AgentQuotaError),
-        ("anything", 429, AgentQuotaError),
+        # A quota phrase is a quota whatever the status...
+        (
+            '{"type":"error","status":429,"error":{"message":"usage limit reached"}}',
+            None,
+            AgentQuotaError,
+        ),
+        ("You've hit your session limit", 429, AgentQuotaError),
+        ('{"status":400,"error":{"type":"insufficient_quota"}}', None, AgentQuotaError),
+        # ...while a bare rate limit is short-lived: retried, never latched.
+        ('{"type":"error","status":429}', None, AgentTransientError),
+        ("anything", 429, AgentTransientError),
+        ("429 Too Many Requests, rate limit, retry later", None, AgentTransientError),
+        ("429 Too Many Requests, rate limit, retry later", 429, AgentTransientError),
         ("HTTP 401 Unauthorized", None, AgentAuthError),
         ("not logged in", None, AgentAuthError),
         (
@@ -30,6 +42,19 @@ from grillmaster.events.types import SessionOutcome
         ),
         ("stream disconnected", None, AgentTransientError),
         ("overloaded", 529, AgentTransientError),
+        # Whole words only: these merely contain a marker.
+        ("stream error: retries exhausted", None, AgentTransientError),
+        ("request 4291 failed", None, AgentTransientError),
+        ("connection reset after 14010 bytes", None, AgentTransientError),
+        ("generate failed: deliberately unquotable", None, AgentTransientError),
+        # Separators still count as word edges.
+        ("insufficient_quota", None, AgentQuotaError),
+        ("rate_limit_error: slow down", None, AgentTransientError),
+        ("You are being rate-limited", None, AgentTransientError),
+        ("Resource has been exhausted (e.g. check quota).", None, AgentQuotaError),
+        ("Error 429: too many requests", None, AgentTransientError),
+        ("authentication_error: invalid token", None, AgentAuthError),
+        ("Login required.", None, AgentAuthError),
     ],
 )
 def test_classify_failure(message: str, status: int | None, expected: type[AgentError]):
@@ -47,6 +72,7 @@ def test_each_error_maps_to_its_session_outcome():
     assert AgentAuthError.outcome is SessionOutcome.AUTH_ERROR
     assert AgentConfigError.outcome is SessionOutcome.CONFIG_ERROR
     assert AgentTransientError.outcome is SessionOutcome.TRANSIENT_ERROR
+    assert AgentCancelledError.outcome is SessionOutcome.CANCELLED
 
 
 def test_validation_failure_lists_problems_under_the_header():

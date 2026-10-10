@@ -84,7 +84,8 @@ class Pipeline:
         """Reject a run that cannot finish, before anything runs: options this
         pipeline cannot honour, then the `preflight` of every stage the run
         would execute (enabled, not complete in `state`, up to
-        `--break-after`)."""
+        `--break-after`), then that of every delivery step a complete run
+        executes."""
         if options.break_after is not None and self.stage(options.break_after) is None:
             raise ValueError(
                 f"--break-after {options.break_after}: that stage is not registered"
@@ -94,6 +95,9 @@ class Pipeline:
                 stage.preflight(config, secrets)
             if stage.key == options.break_after:
                 return
+        for step in self.delivery:
+            if step.enabled(options, config):
+                step.preflight(options, config, state)
 
     def plan(
         self, options: RunOptions, config: AppConfig, *, archive: bool = False

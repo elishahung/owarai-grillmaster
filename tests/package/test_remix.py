@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+import time
+from pathlib import Path
+from typing import TYPE_CHECKING, override
 
 import pytest
 from tests.fakes import RecordingSink
@@ -28,7 +30,10 @@ from grillmaster.package.render import (
 )
 
 if TYPE_CHECKING:
-    from pathlib import Path
+    import threading
+    from collections.abc import Sequence
+
+    from grillmaster.media.ffmpeg import ProgressCallback
 
 
 def spans(*pairs: tuple[float, float]) -> list[TimeRange]:
@@ -292,3 +297,67 @@ def test_every_part_shares_one_abort_event(
     assert len(fake.aborts) == 14
     assert len(events) == 1
     assert None not in fake.aborts
+
+
+class ScratchWatch(PackageFfmpeg):
+    """Holds segment 2's final concat until segment 1's scratch directory
+    (found from its noise head's output) is gone, recording whether it went."""
+
+    def __init__(self, durations: dict[Path, float], second: Path) -> None:
+        super().__init__(durations)
+        self.second = second
+        self.first_scratch_gone: bool | None = None
+
+    @override
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        timeout: float | None = None,
+        cwd: Path | None = None,
+        on_progress: ProgressCallback | None = None,
+        abort: threading.Event | None = None,
+    ) -> str:
+        if argv[0] == "ffmpeg" and argv[-1] == str(self.second):
+            heads = [
+                Path(call[-1])
+                for call in encodes(self)
+                if call[-1].endswith("head.mp4")
+            ]
+            first = next(head.parent for head in heads if head.parent.name == "1")
+            deadline = time.monotonic() + 5
+            while first.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.first_scratch_gone = not first.exists()
+        return super().run(
+            argv, timeout=timeout, cwd=cwd, on_progress=on_progress, abort=abort
+        )
+
+
+def test_a_finished_segment_deletes_its_scratch_at_once(
+    tmp_path: Path, project: Path, noise: MediaPool
+):
+    target = tmp_path / "deliverable"
+    target.mkdir()
+    fake = ScratchWatch(
+        {
+            project / "video.mp4": 1000.0,
+            noise.directory / "001.mp4": 150.0,
+            target / "1.mp4": 60.0 + PART_SECONDS,
+            target / "2.mp4": 90.0 + PART_SECONDS,
+        },
+        second=target / "2.mp4",
+    )
+
+    render_remix(
+        fake,
+        video=project / "video.mp4",
+        burn=BurnPlan.dialogue(project / "video.cht.ass"),
+        plan=PLAN,
+        noise=noise,
+        target_dir=target,
+        events=RecordingSink(),
+    )
+
+    # Segment 1's parts, head and target went while segment 2 still worked.
+    assert fake.first_scratch_gone is True

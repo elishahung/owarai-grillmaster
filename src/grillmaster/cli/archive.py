@@ -7,7 +7,12 @@ from typing import Annotated
 import typer
 from loguru import logger
 
-from grillmaster.cli.common import fail, load_or_exit, load_project_or_exit
+from grillmaster.cli.common import (
+    fail,
+    hold_project_or_exit,
+    load_or_exit,
+    load_project_or_exit,
+)
 
 
 def archive_command(
@@ -30,13 +35,14 @@ def archive_command(
     archive_root = loaded.config.paths.archive
     if archive_root is None:
         fail("[paths] archive is not set in grill.toml; nowhere to archive to")
-    layout, state = load_project_or_exit(project)
-    if not state.is_done(StageKey.FINALIZE):
-        fail(f"{state.id} is not finished ({StageKey.FINALIZE} is not done)")
-    try:
-        archived = archive_project(layout, state, archive_root)
-    except (ProjectError, OSError) as error:
-        fail(f"Failed to archive {layout.root}: {error}")
+    layout, found = load_project_or_exit(project)
+    with hold_project_or_exit(loaded, layout, found.id) as state:
+        if not state.is_done(StageKey.FINALIZE):
+            fail(f"{state.id} is not finished ({StageKey.FINALIZE} is not done)")
+        try:
+            archived = archive_project(layout, state, archive_root)
+        except (ProjectError, OSError) as error:
+            fail(f"Failed to archive {layout.root}: {error}")
     if archived.root == layout.root:
         logger.info(f"{state.id} is already archived at {archived.root}")
         return

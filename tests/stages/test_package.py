@@ -5,10 +5,12 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from tests.fakes import make_briefing
+from tests.fakes import make_briefing, refuse_rename
 from tests.package.conftest import PackageFfmpeg, arg_after, encodes
 
+from grillmaster.core.fs import SwapError
 from grillmaster.core.json_artifact import write_model
+from grillmaster.core.source_id import Platform, SourceId
 from grillmaster.core.srt import SrtBlock, read_srt_file, write_srt_file
 from grillmaster.core.timecode import format_timecode_line
 from grillmaster.extras.titles import TitleSuggestion, TitleSuggestions
@@ -421,3 +423,93 @@ def test_enabled_only_with_a_package_root(loaded: LoadedConfig, state: ProjectSt
         update={"paths": loaded.config.paths.model_copy(update={"package": None})}
     )
     assert not package.STEP.enabled(options, unset)
+
+
+def test_a_missing_briefing_packages_the_titles_alone(
+    make: MakeContext,
+    finished: ProjectLayout,
+    package_root: Path,
+    warnings: list[str],
+):
+    # Migrated projects have no briefing; that must not block packaging.
+    finished.prepass_briefing.unlink()
+    write_model(finished.titles, TITLES)
+    package.STEP.run(make(burn_in_fake(finished, package_root)))
+
+    info = json.loads((package_root / DESTINATION / "info.json").read_text("utf-8"))
+    assert info == TITLES.model_dump()
+    assert any("No briefing" in warning for warning in warnings)
+
+
+def test_a_locked_previous_deliverable_fails_before_the_render(
+    make: MakeContext,
+    finished: ProjectLayout,
+    package_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    previous = package_root / DESTINATION
+    previous.mkdir(parents=True)
+    (previous / "video.mp4").write_bytes(b"old")
+    refuse_rename(monkeypatch, previous, "video.mp4 is open in a player")
+    fake = burn_in_fake(finished, package_root)
+
+    with pytest.raises(SwapError, match="open in a player"):
+        package.STEP.run(make(fake))
+
+    assert encodes(fake) == []
+    assert sorted(path.name for path in package_root.iterdir()) == [DESTINATION]
+    assert (previous / "video.mp4").read_bytes() == b"old"
+
+
+def preflight(loaded: LoadedConfig, state: ProjectState | None, **options: Any) -> None:
+    source = state.source_id if state is not None else SourceId(Platform.TVER, "ep1")
+    package.STEP.preflight(RunOptions(source=source, **options), loaded.config, state)
+
+
+def test_preflight_requires_the_package_root(loaded: LoadedConfig):
+    with pytest.raises(PackageError, match="not a directory"):
+        preflight(loaded, None)
+
+
+def test_preflight_checks_the_remix_and_insert_pools(
+    loaded: LoadedConfig, package_root: Path
+):
+    package_root.mkdir()
+    preflight(loaded, None)
+    make_pool(package_root, "judge", 1)
+    with pytest.raises(PoolError, match="sleep"):
+        preflight(loaded, None, remix="sleep")
+    make_pool(package_root, "sleep", 1)
+    preflight(loaded, None, remix="sleep")
+
+
+@pytest.mark.parametrize(
+    "config_data",
+    [
+        pytest.param(
+            {
+                "package": {
+                    "remix_pool": "noise",
+                    "inserts": [{"pool": "ending", "output": "outro"}],
+                },
+                "programs": {
+                    "series": {"ドキュメンタル": {"remix": True, "inserts": ["outro"]}}
+                },
+            },
+            id="remix-series",
+        )
+    ],
+    indirect=True,
+)
+def test_preflight_follows_the_program_rules_once_known(
+    loaded: LoadedConfig, package_root: Path, state: ProjectState
+):
+    package_root.mkdir()
+    # Before the metadata the program is unknown: nothing to draw yet.
+    preflight(loaded, None)
+    state.source.series = "ドキュメンタル"
+    with pytest.raises(PoolError, match="ending"):
+        preflight(loaded, state)
+    make_pool(package_root, "ending", 1)
+    with pytest.raises(PoolError, match="noise"):
+        preflight(loaded, state)

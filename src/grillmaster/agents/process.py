@@ -2,25 +2,26 @@
 
 Agent CLIs on Windows are batch shims (cmd.exe -> node) that spawn children
 of their own, and an agent may start shell tools. `Popen.kill` reaches only
-the direct child, and a surviving descendant keeps the stdout pipe open, so a
-timeout kills the whole tree (`taskkill /T /F` on Windows, the session's
-process group on POSIX). Every spawned tree is held in
-`core.process.LIVE_PROCESSES` until it is dead, so an abort can kill it from
-another thread. Output is decoded as UTF-8 explicitly: the Windows
-locale code page would garble Japanese.
+the direct child, and a surviving descendant keeps the stdout pipe open, so
+each CLI is a `core.process.ProcessTree` (its own Job Object on Windows, its
+own process group on POSIX) and a timeout kills the whole tree, even when the
+CLI itself already exited and only a descendant holds stdout. Every spawned
+tree is held in `core.process.LIVE_PROCESSES` until it is dead, so an abort
+can kill it from another thread; once an abort began, spawning raises
+`core.process.ProcessAbortedError`. Output is decoded as UTF-8 explicitly: the
+Windows locale code page would garble Japanese.
 """
 
 from __future__ import annotations
 
 import contextlib
 import subprocess
-import sys
 import threading
 from dataclasses import dataclass
 from subprocess import CalledProcessError, TimeoutExpired
 from typing import IO, TYPE_CHECKING, Protocol
 
-from grillmaster.core.process import LIVE_PROCESSES, StderrTail, kill_process_tree
+from grillmaster.core.process import StderrTail, release, spawn_tree, track
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -39,6 +40,9 @@ __all__ = [
 _STDERR_TAIL_LINES = 40
 # Bound on waiting for the exit code once stdout closed or the tree was killed.
 _EXIT_WAIT_S = 30.0
+# How long a CLI that closed stdout may take to exit before what is left of
+# its tree is killed (which would replace its exit code).
+_EXIT_GRACE_S = 5.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,22 +85,17 @@ type Spawn = Callable[[ProcessSpec], LineProcess]
 
 class _PopenLineProcess:
     def __init__(self, spec: ProcessSpec) -> None:
-        self._process = subprocess.Popen(
-            list(spec.argv),
-            cwd=spec.cwd,
-            env=dict(spec.env) if spec.env is not None else None,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            # POSIX: a new session makes the child a process-group leader, so
-            # `killpg` reaches every descendant.
-            start_new_session=sys.platform != "win32",
+        self._tree = track(
+            spawn_tree(
+                spec.argv,
+                cwd=spec.cwd,
+                env=spec.env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
         )
-        LIVE_PROCESSES.register(self._process)
-        self._stderr = StderrTail(_pipe(self._process.stderr), _STDERR_TAIL_LINES)
+        self._stderr = StderrTail(_pipe(self._tree.leader.stderr), _STDERR_TAIL_LINES)
         self._timed_out = threading.Event()
         self._stdin_lock = threading.Lock()
         self._writer = threading.Thread(
@@ -110,21 +109,24 @@ class _PopenLineProcess:
         self._watchdog.start()
 
     def lines(self) -> Iterator[str]:
-        stdout = _pipe(self._process.stdout)
+        stdout = _pipe(self._tree.leader.stdout)
+        eof = False
         try:
             for line in stdout:
                 yield line.rstrip("\r\n")
+            eof = True
         finally:
             # Stdout is done: either the CLI exited, the caller stopped early
             # or the watchdog killed it. Nothing of the tree may outlive this.
-            self._watchdog.cancel()
-            kill_process_tree(self._process)
-            LIVE_PROCESSES.unregister(self._process)
+            if eof:
+                with contextlib.suppress(TimeoutExpired):
+                    self._tree.leader.wait(timeout=_EXIT_GRACE_S)
+            self._release()
 
     def close_stdin(self) -> None:
         self._writer.join()
         with self._stdin_lock:
-            stdin = _pipe(self._process.stdin)
+            stdin = _pipe(self._tree.leader.stdin)
             if not stdin.closed:
                 # The child may have exited already.
                 with contextlib.suppress(OSError):
@@ -132,11 +134,11 @@ class _PopenLineProcess:
 
     def wait(self) -> int:
         try:
-            code = self._process.wait(timeout=_EXIT_WAIT_S)
+            code = self._tree.leader.wait(timeout=_EXIT_WAIT_S)
         except TimeoutExpired:
-            kill_process_tree(self._process)
-            code = self._process.wait(timeout=_EXIT_WAIT_S)
-        LIVE_PROCESSES.unregister(self._process)
+            self._tree.kill()
+            code = self._tree.leader.wait(timeout=_EXIT_WAIT_S)
+        self._release()
         self._stderr.join(timeout=_EXIT_WAIT_S)
         self.close_stdin()
         return code
@@ -150,7 +152,7 @@ class _PopenLineProcess:
         return self._stderr.text
 
     def _write_stdin(self, text: str, keep_open: bool) -> None:  # noqa: FBT001 - a Thread target
-        stdin = _pipe(self._process.stdin)
+        stdin = _pipe(self._tree.leader.stdin)
         try:
             if text:
                 stdin.write(text)
@@ -161,9 +163,14 @@ class _PopenLineProcess:
             with self._stdin_lock, contextlib.suppress(OSError):
                 stdin.close()
 
+    def _release(self) -> None:
+        """Nothing of the tree may outlive this; idempotent."""
+        self._watchdog.cancel()
+        release(self._tree)
+
     def _on_timeout(self) -> None:
         self._timed_out.set()
-        kill_process_tree(self._process)
+        self._tree.kill()
 
 
 def spawn(spec: ProcessSpec) -> LineProcess:

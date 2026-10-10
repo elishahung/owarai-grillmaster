@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import itertools
 import math
+import shutil
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,7 +111,7 @@ def render_remix(
     share the NVENC sessions (`EncodeLanes`); each segment's audio renders
     once. A segment is muxed and concatenated as soon as its own encodes
     finish, then probed against its expected length (see
-    `check_output_duration`).
+    `check_output_duration`); its scratch files are deleted once it passes.
     """
     check_subtitles_under(video, burn)
     segments = plan.segments
@@ -188,6 +189,9 @@ class _RemixOutput:
             self.runner, [self._head_file, target], self.output, abort=abort
         )
         check_output_duration(self.runner, self.output, self.expected_duration)
+        # The parts, head and target of a finished segment are dead weight
+        # while the others still render (a long show fills the temp drive).
+        shutil.rmtree(self.content.scratch, ignore_errors=True)
 
 
 def encode_noise_segment(

@@ -168,6 +168,7 @@ class SessionState(StrEnum):
     RUNNING = "running"
     OK = "ok"
     FAILED = "failed"
+    CANCELLED = "cancelled"  # stopped by the run's abort, not by its own failure
 
 
 @dataclass(slots=True)
@@ -549,11 +550,7 @@ class PipelineState:
         session = self.sessions.get(event.task)
         if session is None:
             return
-        session.state = (
-            SessionState.OK
-            if event.outcome is SessionOutcome.OK
-            else SessionState.FAILED
-        )
+        session.state = _SESSION_STATE.get(event.outcome, SessionState.FAILED)
         session.outcome = event.outcome
         session.elapsed = event.elapsed
         # The event's count is authoritative over the live REPAIR tally.
@@ -569,6 +566,11 @@ class PipelineState:
         if session is not None:
             session.log.append(entry)
 
+
+_SESSION_STATE = {
+    SessionOutcome.OK: SessionState.OK,
+    SessionOutcome.CANCELLED: SessionState.CANCELLED,
+}
 
 _SKIP_STATE = {
     SkipReason.ALREADY_COMPLETE: ItemState.CACHED,

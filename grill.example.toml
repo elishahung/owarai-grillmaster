@@ -19,8 +19,9 @@ cookies = "cookies.txt"
 [agents]
 # Wall-clock limit in minutes for one agent session.
 timeout_minutes = 40
-# Agent processes running at once across fan-out stages (chunks, chat).
-max_concurrent = 5
+# Agent processes one grill process runs at once across fan-out stages
+# (chunks, chat); each concurrent grill process gets its own allowance.
+max_concurrent = 10
 
 [agents.roles]
 # Each role is "backend/model[/effort]".

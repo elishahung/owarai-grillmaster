@@ -9,7 +9,10 @@ from tests.agents.fakes import FakeProcess, FakeSpawn, fixture_lines
 
 from grillmaster.agents.adapters.agy import (
     API_KEY_ENV_VARS,
+    PROBE_FAILURE_TTL_S,
     AgyAdapter,
+    AgyTurnParser,
+    json_object_answer,
     parse_model_list,
 )
 from grillmaster.agents.adapters.base import McpServer
@@ -152,13 +155,34 @@ def test_model_list_comes_from_agy_models():
     assert list(spawn.specs[0].argv) == ["agy", "models"]
 
 
-def test_failing_model_list_is_a_config_error_and_not_probed_again():
-    spawn = FakeSpawn(FakeProcess([], returncode=1, stderr="not signed in"))
-    adapter = AgyAdapter(spawn=spawn, executable="agy")
-    for _ in range(2):
+def test_a_failed_model_probe_answers_later_tasks_until_it_expires():
+    now = [0.0]
+    spawn = FakeSpawn(
+        FakeProcess([], returncode=1, stderr="not signed in"),
+        FakeProcess([], returncode=1, stderr="not signed in"),
+    )
+    adapter = AgyAdapter(spawn=spawn, executable="agy", clock=lambda: now[0])
+    for at in (0.0, PROBE_FAILURE_TTL_S - 1, PROBE_FAILURE_TTL_S + 1):
+        now[0] = at
         with pytest.raises(AgentConfigError, match="not signed in"):
             adapter.preflight(PRO_HIGH, (), ())
-    assert len(spawn.specs) == 1
+    # The second task shared the first failure; the third probed again.
+    assert len(spawn.specs) == 2
+
+
+def test_a_timed_out_model_probe_does_not_fail_tasks_after_it_expires():
+    now = [0.0]
+    listed = ["gemini-3.1-pro-high\tGemini 3.1 Pro (High)"]
+    spawn = FakeSpawn(FakeProcess([], timed_out=True), FakeProcess(listed))
+    adapter = AgyAdapter(spawn=spawn, executable="agy", clock=lambda: now[0])
+    with pytest.raises(AgentConfigError, match="timed out"):
+        adapter.preflight(PRO_HIGH, (), ())
+
+    now[0] = PROBE_FAILURE_TTL_S
+    adapter.preflight(PRO_HIGH, (), ())
+    now[0] = 10 * PROBE_FAILURE_TTL_S
+    adapter.preflight(PRO_HIGH, (), ())  # the success is remembered
+    assert len(spawn.specs) == 2
 
 
 def test_parse_model_list_skips_banner_lines():
@@ -204,3 +228,61 @@ def test_mcp_server_goes_into_the_workspace_config(
     }
     _run(adapter, make_request(spec=PRO_HIGH))
     assert not config_path.exists()
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('{"a": 1}', {"a": 1}),
+        ('```json\n{"a": 1}\n```\n', {"a": 1}),
+        ('```\n{"a": 1}\n```', {"a": 1}),
+        ('Here it is:\n```json\n{"a": 1}\n```', None),
+        ("```json\n[1, 2]\n```", None),
+        ("blue", None),
+        ("", None),
+    ],
+)
+def test_json_object_answer_strips_one_fence(text: str, expected: object):
+    assert json_object_answer(text) == expected
+
+
+def _turn_without_finish(answer: str, *, schema: bool) -> object:
+    """A finished turn without a `finish` step whose result still carries
+    the previous turn's structured value."""
+    parser = AgyTurnParser((), schema=schema)
+    records = [
+        {"event": "init", "conversation_id": "c1"},
+        {
+            "event": "step_update",
+            "step_update": {
+                "step_index": 1,
+                "state": "DONE",
+                "step_type": "agent_response",
+                "text_delta": answer,
+            },
+        },
+        {
+            "event": "result",
+            "result": {
+                "status": "SUCCESS",
+                "response": answer,
+                "structured_output": {"color": "stale"},
+            },
+        },
+    ]
+    for record in records:
+        list(parser.feed(record))
+    return parser.finish(0, "").structured
+
+
+def test_without_finish_the_turns_own_json_answer_is_the_structured_output():
+    answer = '```json\n{"color": "fresh"}\n```'
+    assert _turn_without_finish(answer, schema=True) == {"color": "fresh"}
+
+
+def test_without_finish_a_prose_answer_is_no_structured_output():
+    assert _turn_without_finish("The color is fresh.", schema=True) is None
+
+
+def test_without_a_schema_no_structured_output_is_read_from_text():
+    assert _turn_without_finish('{"color": "fresh"}', schema=False) is None

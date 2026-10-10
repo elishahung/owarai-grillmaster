@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -13,6 +15,7 @@ from grillmaster.config.programs import (
     register_program,
     resolve_program_rules,
 )
+from grillmaster.core.fs import atomic_write_text, exclusive_lock
 from grillmaster.core.stage_key import StageKey
 
 if TYPE_CHECKING:
@@ -216,3 +219,45 @@ def test_programs_written_inline_cannot_be_appended_to(
     with pytest.raises(ConfigError, match="would break the file"):
         register_program(path, series="S", channel=None)
     assert path.read_text(encoding="utf-8") == original
+
+
+def test_concurrent_registrations_keep_every_entry(
+    tmp_path: Path, roles_toml: str, write_toml: Callable[[Path, str], Path]
+):
+    # Two downloads register while a third process holds the file's lock and
+    # appends its own entry: each writer must re-read under the lock, or the
+    # last write drops the others' entries.
+    path = write_toml(tmp_path, roles_toml)
+    lock = path.with_name(f"{path.name}.lock")
+    writers = [
+        threading.Thread(
+            target=register_program,
+            args=(path,),
+            kwargs={"series": name, "channel": None},
+        )
+        for name in ("A", "B")
+    ]
+    with exclusive_lock(lock, timeout=0):
+        for writer in writers:
+            writer.start()
+        time.sleep(0.2)
+        assert path.read_text(encoding="utf-8") == roles_toml  # both wait
+        atomic_write_text(path, roles_toml + '\n[programs.channel."C"]\n')
+    for writer in writers:
+        writer.join(10)
+
+    config = read_config(path)
+    assert set(config.programs.series) == {"A", "B"}
+    assert set(config.programs.channel) == {"C"}
+
+
+def test_a_stuck_lock_holder_fails_the_registration(
+    tmp_path: Path, roles_toml: str, write_toml: Callable[[Path, str], Path]
+):
+    path = write_toml(tmp_path, roles_toml)
+    with (
+        exclusive_lock(path.with_name(f"{path.name}.lock"), timeout=0),
+        pytest.raises(ConfigError, match=r"grill\.toml\.lock"),
+    ):
+        register_program(path, series="S", channel=None, lock_timeout=0.1)
+    assert path.read_text(encoding="utf-8") == roles_toml

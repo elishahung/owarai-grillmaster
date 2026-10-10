@@ -6,20 +6,30 @@ import json
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, override
 
 import pytest
 from pydantic import BaseModel
-from tests.agents.fakes import Call, FakeAdapter, Turn, final
+from tests.agents.fakes import (
+    RUNNER_SPEC,
+    Call,
+    FakeAdapter,
+    Turn,
+    final,
+    make_task,
+)
+from tests.agents.fakes import make_runner as build_runner
 
 from grillmaster.agents.adapters.base import Capability, MediaDelivery, TurnDefect
 from grillmaster.agents.errors import (
+    AgentCancelledError,
     AgentConfigError,
     AgentError,
     AgentOutputError,
     AgentQuotaError,
     AgentTransientError,
     ValidationFailure,
+    classify_failure,
 )
 from grillmaster.agents.events import Message, Thought, ToolCall, ToolResult
 from grillmaster.agents.runner import AgentRunner, SessionRecord
@@ -28,11 +38,11 @@ from grillmaster.agents.task import (
     AgentResult,
     AgentTask,
     FilesOutput,
-    OutputSpec,
     SchemaOutput,
     TextOutput,
 )
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec, Role
+from grillmaster.core.process import ABORT, ProcessAbortedError, kill_all
 from grillmaster.core.tool_session import FramesTool, ToolSession
 from grillmaster.events.context import stage_scope
 from grillmaster.events.types import (
@@ -48,21 +58,25 @@ if TYPE_CHECKING:
 
     from tests.fakes import RecordingSink
 
-SPEC = ModelSpec(Backend.CODEX, "gpt-test", Effort.HIGH)
-ROLES = dict.fromkeys(Role, SPEC)
+SPEC = RUNNER_SPEC
 
 
 class Answer(BaseModel):
     color: str
 
 
-class Clock:
-    def __init__(self) -> None:
-        self.now = 100.0
+class WaitLog(threading.Event):
+    """An abort event whose waits are recorded (`on_wait`) instead of slept."""
 
-    def __call__(self) -> float:
-        self.now += 1.0
-        return self.now
+    def __init__(self, on_wait: Callable[[float], object]) -> None:
+        super().__init__()
+        self._on_wait = on_wait
+
+    @override
+    def wait(self, timeout: float | None = None) -> bool:
+        assert timeout is not None
+        self._on_wait(timeout)
+        return self.is_set()
 
 
 @pytest.fixture
@@ -75,40 +89,10 @@ def make_runner(
     recording_sink: RecordingSink, sleeps: list[float]
 ) -> Callable[..., AgentRunner]:
     def make(adapter: FakeAdapter, **overrides: Any) -> AgentRunner:
-        options: dict[str, Any] = {
-            "max_concurrent": 2,
-            "timeout_s": 60.0,
-            "events": recording_sink,
-            "tool_server": ("python", "-m", "grillmaster.agent_tools"),
-            "retry_delay_s": 7.0,
-            "clock": Clock(),
-            "sleep": sleeps.append,
-        }
-        options.update(overrides)
-        roles = options.pop("roles", ROLES)
-        return AgentRunner(roles, {adapter.backend: adapter}.__getitem__, **options)
+        options: dict[str, Any] = {"abort": WaitLog(sleeps.append), **overrides}
+        return build_runner(adapter, events=recording_sink, **options)
 
     return make
-
-
-def make_task[T](
-    tmp_path: Path,
-    output: OutputSpec[T],
-    *,
-    name: str = "refine",
-    **overrides: Any,
-) -> AgentTask[T]:
-    fields: dict[str, Any] = {
-        "name": name,
-        "role": Role.POSTPROCESS,
-        "instructions": "INSTRUCTIONS",
-        "prompt": "PROMPT",
-        "session_dir": tmp_path / name / "session",
-        "workdir": tmp_path / name / "work",
-        "output": output,
-    }
-    fields.update(overrides)
-    return AgentTask(**fields)
 
 
 def activities(sink: RecordingSink) -> list[tuple[ActivityKind, str]]:
@@ -856,7 +840,7 @@ def test_slot_is_released_while_waiting_between_attempts(
         worker.start()
         worker.join(timeout=5)
 
-    runner = make_runner(adapter, max_concurrent=1, sleep=sleep)
+    runner = make_runner(adapter, max_concurrent=1, abort=WaitLog(sleep))
     runner.run(make_task(tmp_path, TextOutput(), prompt="flaky", attempts=2))
     assert finished.is_set()
 
@@ -892,3 +876,188 @@ def test_capabilities_of_a_role_come_from_its_backend(
     assert runner.capabilities(Role.CHUNK) == adapter.capabilities
     with pytest.raises(AgentConfigError, match="no model configured"):
         runner.capabilities(Role.PREPASS)
+
+
+# --- abort and quota ----------------------------------------------------------------
+
+
+def test_an_abort_wakes_the_retry_wait_and_starts_no_new_attempt(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    abort = WaitLog(lambda seconds: abort.set())
+    adapter = FakeAdapter(script=lambda call: Turn(error=AgentTransientError("killed")))
+    runner = make_runner(adapter, abort=abort)
+    with pytest.raises(AgentCancelledError, match="aborted before a session"):
+        runner.run(make_task(tmp_path, TextOutput(), attempts=3))
+    assert len(adapter.calls) == 1
+
+
+def test_a_real_retry_wait_returns_at_once_on_abort(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    abort = threading.Event()
+    adapter = FakeAdapter(script=lambda call: Turn(error=AgentTransientError("killed")))
+    runner = make_runner(adapter, abort=abort, retry_delay_s=60.0)
+    threading.Timer(0.2, abort.set).start()
+    began = time.monotonic()
+    with pytest.raises(AgentCancelledError):
+        runner.run(make_task(tmp_path, TextOutput(), attempts=2))
+    assert time.monotonic() - began < 10
+    assert len(adapter.calls) == 1
+
+
+def test_kill_all_latches_the_abort_for_every_runner(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    adapter = FakeAdapter([Turn(final=final("ok"))])
+    runner = make_runner(adapter, abort=ABORT)
+    kill_all()
+    with pytest.raises(AgentCancelledError):
+        runner.run(make_task(tmp_path, TextOutput()))
+    assert adapter.calls == []
+
+
+def test_a_child_refused_by_the_abort_latch_cancels_the_task(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    adapter = FakeAdapter([Turn(error=ProcessAbortedError("abort in progress"))])
+    with pytest.raises(AgentCancelledError, match="before a turn"):
+        make_runner(adapter).run(make_task(tmp_path, TextOutput(), attempts=3))
+    assert len(adapter.calls) == 1
+
+
+def test_an_abort_starts_no_repair_turn(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    abort = threading.Event()
+    adapter = FakeAdapter([Turn(final=final(""), on_start=lambda r: abort.set())])
+    runner = make_runner(adapter, abort=abort)
+    with pytest.raises(AgentCancelledError, match="before a repair"):
+        runner.run(make_task(tmp_path, TextOutput()))
+    assert [call.kind for call in adapter.calls] == ["start"]
+    record = SessionRecord.model_validate_json(
+        (tmp_path / "refine" / "session" / "result.json").read_text(encoding="utf-8")
+    )
+    assert record.error is not None
+    assert record.error.startswith("AgentCancelledError")
+    assert record.outcome is SessionOutcome.CANCELLED
+
+
+def test_a_quota_error_fails_the_backend_s_later_tasks_at_once(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    tasks = [
+        make_task(tmp_path, TextOutput(), name=name, prompt=name)
+        for name in ("first", "second", "third")
+    ]
+    adapter = FakeAdapter(
+        script=lambda call: Turn(error=AgentQuotaError("429 usage limit"))
+    )
+    runner = make_runner(adapter, max_concurrent=1)
+    failures = runner.run_jobs(jobs_of(tasks, []))
+
+    assert len(adapter.calls) == 1
+    assert [f.name for f in failures] == ["first", "second", "third"]
+    assert all(isinstance(f.error, AgentQuotaError) for f in failures)
+    assert "not started" in str(failures[1].error)
+    # The latch outlives the batch: a later task of that backend fails too.
+    with pytest.raises(AgentQuotaError, match="hit its quota earlier"):
+        runner.run(make_task(tmp_path, TextOutput(), name="later"))
+    assert len(adapter.calls) == 1
+
+
+def test_a_rate_limit_is_retried_and_does_not_latch_the_backend(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner], sleeps: list[float]
+):
+    rate_limited = classify_failure(
+        "429 Too Many Requests, rate limit, retry later", login_hint="x"
+    )
+    adapter = FakeAdapter(
+        [
+            Turn(error=rate_limited),
+            Turn(final=final("first")),
+            Turn(final=final("later")),
+        ]
+    )
+    runner = make_runner(adapter)
+
+    first = runner.run(make_task(tmp_path, TextOutput(), name="first", attempts=2))
+    later = runner.run(make_task(tmp_path, TextOutput(), name="later"))
+
+    assert (first.output, first.attempt, later.output) == ("first", 2, "later")
+    assert sleeps == [7.0]
+
+
+def test_a_quota_error_leaves_other_backends_running(
+    tmp_path: Path,
+    recording_sink: RecordingSink,
+):
+    codex = FakeAdapter(script=lambda call: Turn(error=AgentQuotaError("429")))
+    agy = FakeAdapter(backend=Backend.AGY, script=lambda call: Turn(final=final("ok")))
+    adapters = {codex.backend: codex, agy.backend: agy}
+    roles = {
+        Role.POSTPROCESS: SPEC,
+        Role.CHUNK: ModelSpec(Backend.AGY, "gemini-test", Effort.HIGH),
+    }
+    runner = AgentRunner(
+        roles,
+        adapters.__getitem__,
+        max_concurrent=1,
+        timeout_s=60.0,
+        events=recording_sink,
+        abort=threading.Event(),
+    )
+    with pytest.raises(AgentQuotaError):
+        runner.run(make_task(tmp_path, TextOutput(), name="codex"))
+    result = runner.run(make_task(tmp_path, TextOutput(), name="agy", role=Role.CHUNK))
+    assert result.output == "ok"
+
+
+def test_an_interrupt_latches_the_abort_so_a_running_job_does_not_retry(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    """Ctrl-C kills the running CLI (a transient error); the job must not
+    start a fresh session afterwards."""
+    started = threading.Event()
+
+    def enter(request: Any) -> None:
+        started.set()
+        time.sleep(0.5)
+
+    adapter = FakeAdapter(
+        script=lambda call: Turn(error=AgentTransientError("killed"), on_start=enter)
+    )
+    tasks = [make_task(tmp_path, TextOutput(), name="only", attempts=3)]
+
+    def interrupt() -> None:
+        started.wait(5)
+        _thread.interrupt_main()
+
+    threading.Thread(target=interrupt).start()
+    abort = threading.Event()
+    runner = make_runner(adapter, max_concurrent=1, abort=abort)
+    with pytest.raises(KeyboardInterrupt):
+        runner.run_jobs(jobs_of(tasks, []))
+
+    assert abort.is_set()
+    assert len(adapter.calls) == 1
+
+
+def test_a_failed_temp_workdir_cleanup_does_not_fail_the_session(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    held: list[Any] = []
+
+    def hold_a_file(request: Any) -> None:
+        # Windows refuses to delete a file that is still open.
+        held.append((request.workdir / "busy.log").open("w"))
+
+    adapter = FakeAdapter([Turn(final=final("ok"), on_start=hold_a_file)])
+    try:
+        result = make_runner(adapter).run(
+            make_task(tmp_path, TextOutput(), workdir=None)
+        )
+    finally:
+        for handle in held:
+            handle.close()
+    assert result.output == "ok"

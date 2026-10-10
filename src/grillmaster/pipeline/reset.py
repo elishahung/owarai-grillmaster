@@ -4,7 +4,9 @@ Clearing a stage removes its ledger entry, the state fields its
 `StageDef.clear_state` resets, its whole `work/NN_<stage>/` directory and the
 deliverables its `StageDef.outputs` declares; there is no other list to keep
 in sync. The state is saved first, so an interrupted deletion still reruns
-the stage.
+the stage. Then every cleared stage's `StageDef.on_reset` runs before any
+file is deleted (combine moves an uncut `video.mp4` back to `full.mp4`, which
+a download reset in the same call then deletes with its work dir).
 """
 
 from __future__ import annotations
@@ -52,6 +54,9 @@ def reset(
             stage.clear_state(state)
     state.clear(keys)
     save_state(layout, state)
+    for key in keys:
+        if (stage := pipeline.stage(key)) is not None:
+            stage.on_reset(layout)
     removed = tuple(
         path for key in keys for path in _paths(layout, key, pipeline) if _remove(path)
     )

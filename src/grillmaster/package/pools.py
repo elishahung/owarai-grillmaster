@@ -33,7 +33,8 @@ POOLS_DIR_NAME = "pools"
 CURSOR_FILE_NAME = ".cursor.json"
 CURSOR_LOCK_NAME = ".cursor.lock"
 # A draw holds the lock for a few file reads and, for a seconds walk, an
-# ffprobe per file it walks; a lock held longer belongs to a crashed run.
+# ffprobe per file it walks; a lock held longer belongs to a stuck run (a
+# crashed one releases it: `exclusive_lock` is an OS-level lock).
 CURSOR_LOCK_TIMEOUT_SECONDS = 60.0
 _STEM_DIGITS = 3
 

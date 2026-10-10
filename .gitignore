@@ -220,6 +220,7 @@ projects/
 cookies.txt
 /config.json
 /grill.toml
+/grill.toml.lock
 _test*
 
 # platform

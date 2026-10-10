@@ -2,8 +2,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import grillmaster.services.paths as paths_module
-from grillmaster.services.paths import fit_dir_name, measure
+import grillmaster.legacy.services.paths as paths_module
+from grillmaster.legacy.services.paths import fit_dir_name, measure
 
 
 class FitDirNameTests(unittest.TestCase):

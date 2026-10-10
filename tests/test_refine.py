@@ -4,11 +4,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import grillmaster.project as project_module
-import grillmaster.services.postprocess.refine as refine_module
-from grillmaster.project import Project
-from grillmaster.services.program_config import config as program_config
-from grillmaster.services.postprocess.refine import (
+import grillmaster.legacy.project as project_module
+import grillmaster.legacy.services.postprocess.refine as refine_module
+from grillmaster.legacy.project import Project
+from grillmaster.legacy.services.program_config import config as program_config
+from grillmaster.legacy.services.postprocess.refine import (
     RefinementValidationError,
     refine_subtitles,
 )

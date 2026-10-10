@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import get_args
 from unittest.mock import patch
 
-from grillmaster.services.program_config import (
+from grillmaster.legacy.services.program_config import (
     config as program_config,
     load_program_rules,
     register_program,
 )
-from grillmaster.services.program_config.schema import (
+from grillmaster.legacy.services.program_config.schema import (
     REPO_SCHEMA_PATH,
     config_json_schema,
 )

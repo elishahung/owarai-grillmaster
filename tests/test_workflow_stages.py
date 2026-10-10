@@ -2,14 +2,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import grillmaster.workflow as workflow_module
-import grillmaster.workflow.api as workflow_api
-import grillmaster.workflow.stages.transcription as transcription_stage
-import grillmaster.workflow.stages.translation as translation_stage
-from grillmaster.project import SourceMetadata
-from grillmaster.services.program_config import ProgramRules
-from grillmaster.services.elevenlabs.asr import ElevenLabsTranscriptionResult
-from grillmaster.services.translate.errors import TranslationError
+import grillmaster.legacy.workflow as workflow_module
+import grillmaster.legacy.workflow.api as workflow_api
+import grillmaster.legacy.workflow.stages.transcription as transcription_stage
+import grillmaster.legacy.workflow.stages.translation as translation_stage
+from grillmaster.legacy.project import SourceMetadata
+from grillmaster.legacy.services.program_config import ProgramRules
+from grillmaster.legacy.services.elevenlabs.asr import ElevenLabsTranscriptionResult
+from grillmaster.legacy.services.translate.errors import TranslationError
 
 
 class WorkflowTranslationStageTests(unittest.TestCase):

@@ -4,9 +4,9 @@ from unittest.mock import MagicMock
 
 from loguru import logger
 
-from grillmaster.services.progress import PlannedStage
-from grillmaster.services.tui.reporter import TuiProgressReporter
-from grillmaster.services.tui.state import ChunkState, ItemState, PipelineState
+from grillmaster.legacy.services.progress import PlannedStage
+from grillmaster.legacy.services.tui.reporter import TuiProgressReporter
+from grillmaster.legacy.services.tui.state import ChunkState, ItemState, PipelineState
 
 
 def _plan() -> list[PlannedStage]:

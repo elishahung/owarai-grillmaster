@@ -1,0 +1,342 @@
+"""Translate a single SRT chunk concurrently with timecode-first validation."""
+
+import asyncio
+import json
+
+from loguru import logger
+from pydantic import BaseModel
+
+from grillmaster.legacy.settings import settings
+from grillmaster.legacy.services.srt import SrtBlock
+from grillmaster.legacy.services.inference import (
+    Backend,
+    InferenceNotInstalledError,
+    InferenceQuotaError,
+    run_inference,
+)
+from grillmaster.legacy.services.inference.tools import (
+    build_chunk_frame_tool_instruction,
+)
+from grillmaster.legacy.services.media import MediaProcessor
+from ..assets import ChunkMediaAssets
+from ..errors import ChunkTranslationError
+from .prompts import build_chunk_instruction
+from .validation import validate_chunk_structure
+from .structural_fix import fix_chunk_structure
+from ..pre_pass.schema import PrePassResult, SegmentSummary
+
+
+# Fixed pause between chunk attempts so a momentary agent/network failure
+# is not retried straight back into the same outage. Maintainer constant.
+_RETRY_DELAY_SECONDS = 2.0
+
+
+class ChunkTranslationResult(BaseModel):
+    blocks: list[SrtBlock]
+    retries: int
+
+
+def _raw_cache_path(response_dir, from_index: int, to_index: int):
+    # Keyed on the chunk range only: an existing file is reused as-is. Changing
+    # backend/model/prompt does not invalidate it — delete the cache manually
+    # when re-running with different parameters.
+    return response_dir / f"chunk_{from_index:04d}-{to_index:04d}.raw.srt"
+
+
+def _fixed_cache_path(response_dir, from_index: int, to_index: int):
+    return response_dir / f"chunk_{from_index:04d}-{to_index:04d}.fixed.srt"
+
+
+def _find_segment_summary(
+    pre_pass: PrePassResult, from_index: int, to_index: int
+) -> SegmentSummary | None:
+    for segment in pre_pass.segment_summaries:
+        if segment.from_index == from_index and segment.to_index == to_index:
+            return segment
+    return None
+
+
+# CC timing is broadcast-derived and approximate against the ASR timeline, so
+# the per-chunk slice keeps a small margin around the chunk's time range.
+_OFFICIAL_SUBTITLE_PADDING_SECONDS = 2.0
+
+
+def _slice_official_subtitle(
+    official_subtitle_blocks: list[SrtBlock] | None,
+    start_seconds: float,
+    end_seconds: float,
+) -> list[SrtBlock]:
+    """Select official CC blocks overlapping the chunk's padded time range."""
+    if not official_subtitle_blocks:
+        return []
+    range_start = start_seconds - _OFFICIAL_SUBTITLE_PADDING_SECONDS
+    range_end = end_seconds + _OFFICIAL_SUBTITLE_PADDING_SECONDS
+    return [
+        block
+        for block in official_subtitle_blocks
+        if (
+            (r := MediaProcessor.parse_timecode_line(block.timecode))
+            and r.end_seconds > range_start
+            and r.start_seconds < range_end
+        )
+    ]
+
+
+def _build_user_message(
+    chunk: list[SrtBlock],
+    chunk_index: int,
+    total_chunks: int,
+    pre_pass: PrePassResult,
+    media_assets: ChunkMediaAssets,
+    official_subtitle_blocks: list[SrtBlock] | None = None,
+) -> str:
+    """Compose chunk-worker user message: briefing (global + local) + SRT slice."""
+    from_index = chunk[0].index
+    to_index = chunk[-1].index
+    segment = _find_segment_summary(pre_pass, from_index, to_index)
+    if segment is None:
+        # A reused pre_pass.json predating the coverage check can still be
+        # short; say so instead of silently translating without local context.
+        logger.warning(
+            f"[chunk {chunk_index + 1}/{total_chunks}] Pre-pass has no "
+            f"segment_summary for {from_index}-{to_index}; translating "
+            "without local narrative context"
+        )
+    briefing = {
+        "summary": pre_pass.summary,
+        "characters": [c.model_dump() for c in pre_pass.characters],
+        "proper_nouns": pre_pass.proper_nouns,
+        "glossary": pre_pass.glossary,
+        "catchphrases": [c.model_dump() for c in pre_pass.catchphrases],
+        "tone_notes": pre_pass.tone_notes,
+        "segment_summary": segment.summary if segment else "",
+    }
+    srt_slice = "\n\n".join(block.raw for block in chunk)
+    frame_lines = "\n".join(
+        [
+            f"- {frame.timestamp_seconds:.3f}s"
+            + (
+                " (chunk 首幀)"
+                if abs(frame.timestamp_seconds - media_assets.time_range.start_seconds)
+                < 1e-6
+                else ""
+            )
+            for frame in media_assets.frames
+        ]
+    )
+
+    official_slice = _slice_official_subtitle(
+        official_subtitle_blocks,
+        media_assets.time_range.start_seconds,
+        media_assets.time_range.end_seconds,
+    )
+    official_section = (
+        (
+            "【官方CC字幕參照（僅涵蓋部分口說台詞，時間軸為近似參考）】\n"
+            "---\n" + "\n\n".join(block.raw for block in official_slice) + "\n\n"
+        )
+        if official_slice
+        else ""
+    )
+
+    return (
+        f"你是第 {chunk_index + 1}/{total_chunks} 塊翻譯員，負責 SRT index "
+        f"{from_index}–{to_index}。\n\n"
+        f"【Chunk 時間範圍】\n"
+        f"{media_assets.time_range.start_seconds:.3f}s - "
+        f"{media_assets.time_range.end_seconds:.3f}s\n\n"
+        f"【Chunk 圖片時間點】\n"
+        f"{frame_lines or '無'}\n\n"
+        f"【Pre-pass 簡報】\n"
+        f"{json.dumps(briefing, ensure_ascii=False, indent=2)}\n\n"
+        f"{official_section}"
+        f"【SRT 區段（index {from_index}–{to_index}，共 {len(chunk)} block）】\n"
+        f"---\n{srt_slice}"
+    )
+
+
+def _write_chunk_manifest(
+    media_assets: ChunkMediaAssets,
+    raw_path,
+    fixed_path=None,
+):
+    try:
+        manifest = {}
+        if media_assets.manifest_path.exists():
+            manifest = json.loads(
+                media_assets.manifest_path.read_text(encoding="utf-8")
+            )
+        manifest.update(
+            {
+                "raw_response_path": str(raw_path),
+                "fixed_response_path": str(fixed_path) if fixed_path else None,
+            }
+        )
+        media_assets.manifest_path.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError as e:
+        logger.warning(
+            f"Failed to update chunk manifest {media_assets.manifest_path}: {e}"
+        )
+
+
+async def translate_chunk(
+    media_assets: ChunkMediaAssets,
+    chunk: list[SrtBlock],
+    chunk_index: int,
+    total_chunks: int,
+    pre_pass: PrePassResult,
+    official_subtitle_blocks: list[SrtBlock] | None = None,
+    program_instruction: str | None = None,
+) -> ChunkTranslationResult:
+    """Translate one chunk with persistent media cache and response caching.
+
+    The backend is chosen per `settings.agent_chunk_model`; the facade only
+    extracts chunk audio for an audio-capable backend, so the instruction and
+    the audio attachment follow `media_assets.audio`. Output is free-form SRT
+    (no JSON schema) — structural validation happens downstream, identical
+    for every backend.
+    """
+    user_message = _build_user_message(
+        chunk,
+        chunk_index,
+        total_chunks,
+        pre_pass,
+        media_assets,
+        official_subtitle_blocks=official_subtitle_blocks,
+    )
+
+    prefix = f"[chunk {chunk_index + 1}/{total_chunks}]"
+    from_index = chunk[0].index
+    to_index = chunk[-1].index
+    spec = settings.agent_chunk_model
+    backend = Backend(spec.backend)
+    instruction = build_chunk_instruction(has_audio=media_assets.audio is not None)
+    if program_instruction:
+        instruction += "\n\n" + program_instruction
+    instruction += "\n\n" + build_chunk_frame_tool_instruction(
+        media_assets.video_path.parent,
+        media_assets.time_range.start_seconds,
+        media_assets.time_range.end_seconds,
+    )
+    raw_path = _raw_cache_path(media_assets.response_dir, from_index, to_index)
+    source_srt = "\n\n".join(block.raw for block in chunk)
+
+    raw_text: str | None = None
+    retries = 0
+
+    if raw_path.exists():
+        try:
+            raw_text = raw_path.read_text(encoding="utf-8")
+            logger.info(f"{prefix} Raw cache hit: {raw_path.name}")
+        except OSError as e:
+            logger.warning(f"{prefix} Raw cache read failed ({e}); re-translating")
+
+    if raw_text is None:
+        max_retries = settings.chunk_max_retries
+        last_error: Exception | None = None
+        images = [frame.path for frame in media_assets.frames]
+        audio = [media_assets.audio] if media_assets.audio else None
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                logger.info(
+                    f"{prefix} Translating ({spec.backend}) index "
+                    f"{from_index}–{to_index} ({len(chunk)} blocks, "
+                    f"attempt {attempt}/{max_retries})"
+                )
+                raw_text = await asyncio.to_thread(
+                    run_inference,
+                    backend=backend,
+                    prompt=f"{instruction}\n\n{user_message}",
+                    images=images,
+                    audio=audio,
+                    cwd=media_assets.video_path.parent,
+                    model=spec.model,
+                    reasoning_effort=spec.reasoning_effort,
+                )
+                retries = attempt - 1
+                break
+            except (InferenceQuotaError, InferenceNotInstalledError):
+                # Another attempt cannot recover these; fail the chunk now.
+                raise
+            except Exception as e:
+                last_error = e
+                logger.warning(f"{prefix} Attempt {attempt} failed: {e}")
+                if attempt < max_retries:
+                    await asyncio.sleep(_RETRY_DELAY_SECONDS)
+
+        if raw_text is None:
+            logger.error(f"{prefix} All {max_retries} attempts failed")
+            raise ChunkTranslationError(
+                f"Chunk {chunk_index + 1}/{total_chunks} failed after "
+                f"{max_retries} attempts",
+                retries=max_retries - 1,
+                chunk_index=chunk_index,
+                total_chunks=total_chunks,
+                from_index=from_index,
+                to_index=to_index,
+            ) from last_error
+
+        try:
+            raw_path.write_text(raw_text, encoding="utf-8")
+            _write_chunk_manifest(media_assets, raw_path)
+        except OSError as e:
+            logger.warning(f"{prefix} Failed to write raw cache {raw_path.name}: {e}")
+
+    fixed_path = _fixed_cache_path(media_assets.response_dir, from_index, to_index)
+    if fixed_path.exists():
+        try:
+            fixed_text = fixed_path.read_text(encoding="utf-8")
+            blocks = validate_chunk_structure(chunk, fixed_text)
+            logger.info(
+                f"{prefix} Fixed cache hit: {len(blocks)} blocks from {fixed_path.name}"
+            )
+            return ChunkTranslationResult(blocks=blocks, retries=retries)
+        except (OSError, ValueError) as e:
+            logger.warning(f"{prefix} Fixed cache unusable ({e}); re-running fix")
+
+    try:
+        blocks = validate_chunk_structure(chunk, raw_text)
+    except ValueError as validation_error:
+        error_str = str(validation_error)
+    else:
+        logger.success(f"{prefix} Completed {len(blocks)} blocks (retries={retries})")
+        return ChunkTranslationResult(blocks=blocks, retries=retries)
+
+    logger.warning(
+        f"{prefix} Raw output failed validation: {error_str}. Running agent fix layer."
+    )
+    workspace_dir = (
+        media_assets.response_dir / f"chunk_{from_index:04d}-{to_index:04d}_fix"
+    )
+    try:
+        fixed_text = await fix_chunk_structure(
+            source_srt,
+            raw_text,
+            error_str,
+            workspace_dir,
+            prefix,
+        )
+    except Exception as fix_error:
+        raise ChunkTranslationError(
+            f"Fix layer failed ({fix_error}); original: {error_str}",
+            retries=retries,
+            chunk_index=chunk_index,
+            total_chunks=total_chunks,
+            from_index=from_index,
+            to_index=to_index,
+        ) from fix_error
+    blocks = validate_chunk_structure(chunk, fixed_text)
+
+    # Persist the agent-produced fix after the final in-process validation guard.
+    try:
+        fixed_path.write_text(fixed_text, encoding="utf-8")
+        _write_chunk_manifest(media_assets, raw_path, fixed_path=fixed_path)
+    except OSError as e:
+        logger.warning(f"{prefix} Failed to write fixed cache {fixed_path.name}: {e}")
+
+    logger.success(f"{prefix} Fix succeeded; {len(blocks)} blocks (retries={retries})")
+    return ChunkTranslationResult(blocks=blocks, retries=retries)

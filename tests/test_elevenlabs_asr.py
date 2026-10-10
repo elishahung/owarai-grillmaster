@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from grillmaster.services.elevenlabs.asr import (
+from grillmaster.legacy.services.elevenlabs.asr import (
     ELEVENLABS_STT_PRICE_PER_HOUR_USD,
     ElevenLabsASR,
     calculate_transcription_cost,
@@ -29,9 +29,12 @@ class ElevenLabsASRTests(unittest.TestCase):
 
         with (
             patch(
-                "grillmaster.services.elevenlabs.asr.settings.elevenlabs_api_key", "key"
+                "grillmaster.legacy.services.elevenlabs.asr.settings.elevenlabs_api_key",
+                "key",
             ),
-            patch("grillmaster.services.elevenlabs.asr.ElevenLabs") as client_cls,
+            patch(
+                "grillmaster.legacy.services.elevenlabs.asr.ElevenLabs"
+            ) as client_cls,
         ):
             client = client_cls.return_value
             client.speech_to_text.convert.return_value = response

@@ -7,10 +7,10 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import patch
 
-import grillmaster.project as project_module
-import grillmaster.services.paths as paths_module
-from grillmaster.project import Project, VideoSource
-from grillmaster.services.ytdlp.info import (
+import grillmaster.legacy.project as project_module
+import grillmaster.legacy.services.paths as paths_module
+from grillmaster.legacy.project import Project, VideoSource
+from grillmaster.legacy.services.ytdlp.info import (
     SourceProgramInfo,
     SourceTalentInfo,
     YtDlpVideoInfo,
@@ -32,7 +32,7 @@ class ProjectTests(unittest.TestCase):
         project_id = "legacy-project"
         project_dir = root / project_id
         project_dir.mkdir(parents=True, exist_ok=True)
-        (project_dir / "grillmaster.project.json").write_text(
+        (project_dir / "grillmaster.legacy.project.json").write_text(
             json.dumps({"id": project_id, "name": "legacy"}),
             encoding="utf-8",
         )
@@ -47,7 +47,7 @@ class ProjectTests(unittest.TestCase):
     ) -> None:
         project_dir = root / project_id
         project_dir.mkdir(parents=True, exist_ok=True)
-        (project_dir / "grillmaster.project.json").write_text(
+        (project_dir / "grillmaster.legacy.project.json").write_text(
             json.dumps(
                 {
                     "id": project_id,
@@ -291,7 +291,9 @@ class ArchiveLayoutTests(unittest.TestCase):
         archived_root = self._make_temp_dir("tmp_archive_dest")
         project_dir = root / project.id
         project_dir.mkdir(parents=True, exist_ok=True)
-        (project_dir / "grillmaster.project.json").write_text("{}", encoding="utf-8")
+        (project_dir / "grillmaster.legacy.project.json").write_text(
+            "{}", encoding="utf-8"
+        )
 
         with (
             patch.object(project_module, "PROJECT_ROOT_NAME", str(root)),
@@ -320,7 +322,9 @@ class ArchiveLayoutTests(unittest.TestCase):
         archived_root = self._make_temp_dir("tmp_archive_dest")
         project_dir = root / project.id
         project_dir.mkdir(parents=True, exist_ok=True)
-        (project_dir / "grillmaster.project.json").write_text("{}", encoding="utf-8")
+        (project_dir / "grillmaster.legacy.project.json").write_text(
+            "{}", encoding="utf-8"
+        )
 
         # Pre-existing leaf with stale content, plus a sibling project in
         # the same YY/MM dir that must survive the rmtree.
@@ -338,7 +342,7 @@ class ArchiveLayoutTests(unittest.TestCase):
 
         self.assertEqual(result, leaf)
         self.assertFalse((leaf / "stale.txt").exists())
-        self.assertTrue((leaf / "grillmaster.project.json").exists())
+        self.assertTrue((leaf / "grillmaster.legacy.project.json").exists())
         self.assertTrue(sibling.is_dir())
 
 
@@ -429,7 +433,7 @@ class SourceParsingTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(root, ignore_errors=True))
         archived = root / "26" / "08" / "260827_ep3dxmhg0g_demo"
         archived.mkdir(parents=True)
-        (archived / "grillmaster.project.json").write_text(
+        (archived / "grillmaster.legacy.project.json").write_text(
             json.dumps({"id": "ep3dxmhg0g", "name": "demo"}),
             encoding="utf-8",
         )

@@ -3,7 +3,7 @@ import shutil
 import unittest
 from pathlib import Path
 
-from grillmaster.services.finalize.finalize import (
+from grillmaster.legacy.services.finalize.finalize import (
     ASS_HEADER,
     _block_to_dialogue,
     _build_latin_name_spacer,
@@ -13,7 +13,7 @@ from grillmaster.services.finalize.finalize import (
     _srt_timecode_to_ass,
     finalize_and_export,
 )
-from grillmaster.services.srt import SrtBlock
+from grillmaster.legacy.services.srt import SrtBlock
 
 
 class AssConverterTextCleaningTests(unittest.TestCase):

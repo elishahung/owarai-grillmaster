@@ -1,6 +1,6 @@
 import unittest
 
-from grillmaster.services.srt import (
+from grillmaster.legacy.services.srt import (
     TIMECODE_LINE_REGEX,
     SrtBlock,
     format_timecode,

@@ -5,17 +5,17 @@ from unittest.mock import MagicMock, patch
 
 from pydantic import BaseModel
 
-import grillmaster.services.inference as inf
-from grillmaster.services.inference import (
+import grillmaster.legacy.services.inference as inf
+from grillmaster.legacy.services.inference import (
     Backend,
     InferenceError,
     UnsupportedMediaError,
     backend_supports_audio,
     run_inference,
 )
-from grillmaster.services.inference import base as base_mod
-from grillmaster.services.inference.base import truncate_middle
-from grillmaster.services.inference.schema_enforce import (
+from grillmaster.legacy.services.inference import base as base_mod
+from grillmaster.legacy.services.inference.base import truncate_middle
+from grillmaster.legacy.services.inference.schema_enforce import (
     SchemaValidationError,
     enforce_schema,
     extract_json_object,
@@ -244,7 +244,9 @@ class RunInferenceDispatchTests(unittest.TestCase):
     def test_schema_retries_use_shared_hardcoded_cap(self):
         # The repair cap is the single hardcoded MAX_SCHEMA_RETRIES constant,
         # shared by every backend (no per-call / settings knob).
-        from grillmaster.services.inference.schema_enforce import MAX_SCHEMA_RETRIES
+        from grillmaster.legacy.services.inference.schema_enforce import (
+            MAX_SCHEMA_RETRIES,
+        )
 
         with patch.object(inf, "run_claude_sdk_exec", return_value='{"a": "bad"}') as m:
             with self.assertRaises(SchemaValidationError):
@@ -258,8 +260,8 @@ class TimeoutSettingTests(unittest.TestCase):
     def test_default_timeout_follows_setting(self):
         from types import SimpleNamespace
 
-        import grillmaster.services.inference.base as base
-        import grillmaster.services.inference.codex as codex
+        import grillmaster.legacy.services.inference.base as base
+        import grillmaster.legacy.services.inference.codex as codex
 
         with patch.object(base, "settings", SimpleNamespace(agent_timeout_minutes=7)):
             self.assertEqual(base.default_timeout_secs(), 7 * 60)
@@ -284,7 +286,7 @@ class CodexCommandTests(unittest.TestCase):
     def test_codex_argv_uses_model_and_reasoning_effort(self):
         from types import SimpleNamespace
 
-        import grillmaster.services.inference.codex as codex
+        import grillmaster.legacy.services.inference.codex as codex
 
         captured = {}
 
@@ -309,7 +311,7 @@ class CodexCommandTests(unittest.TestCase):
     def test_codex_extra_maps_to_xhigh(self):
         from types import SimpleNamespace
 
-        import grillmaster.services.inference.codex as codex
+        import grillmaster.legacy.services.inference.codex as codex
 
         captured = {}
 
@@ -330,7 +332,9 @@ class CodexCommandTests(unittest.TestCase):
         self.assertIn("model_reasoning_effort=xhigh", captured["cmd"])
 
     def test_codex_max_and_ultra_pass_through(self):
-        from grillmaster.services.inference.codex import resolve_codex_reasoning_effort
+        from grillmaster.legacy.services.inference.codex import (
+            resolve_codex_reasoning_effort,
+        )
 
         self.assertEqual(resolve_codex_reasoning_effort("max"), "max")
         self.assertEqual(resolve_codex_reasoning_effort("ultra"), "ultra")
@@ -338,7 +342,7 @@ class CodexCommandTests(unittest.TestCase):
     def test_codex_falls_back_to_default_model(self):
         from types import SimpleNamespace
 
-        import grillmaster.services.inference.codex as codex
+        import grillmaster.legacy.services.inference.codex as codex
 
         captured = {}
 
@@ -356,7 +360,7 @@ class CodexCommandTests(unittest.TestCase):
     def test_codex_always_enables_web_search(self):
         from types import SimpleNamespace
 
-        import grillmaster.services.inference.codex as codex
+        import grillmaster.legacy.services.inference.codex as codex
 
         captured = {}
 
@@ -375,7 +379,7 @@ class CodexCommandTests(unittest.TestCase):
 class ClaudeCommandTests(unittest.TestCase):
     def test_claude_extra_maps_to_xhigh(self):
         import claude_agent_sdk
-        import grillmaster.services.inference.claude_sdk as claude
+        import grillmaster.legacy.services.inference.claude_sdk as claude
 
         captured = {}
 
@@ -398,7 +402,7 @@ class ClaudeCommandTests(unittest.TestCase):
         self.assertEqual(captured["effort"], "xhigh")
 
     def test_claude_max_maps_to_max_and_ultra_clamps_to_max(self):
-        from grillmaster.services.inference.claude_sdk import (
+        from grillmaster.legacy.services.inference.claude_sdk import (
             resolve_claude_reasoning_effort,
         )
 
@@ -407,7 +411,7 @@ class ClaudeCommandTests(unittest.TestCase):
 
     def test_claude_surfaces_authentication_error_result(self):
         import claude_agent_sdk
-        import grillmaster.services.inference.claude_sdk as claude
+        import grillmaster.legacy.services.inference.claude_sdk as claude
 
         async def fake_query(*, prompt, options):
             yield claude_agent_sdk.ResultMessage(
@@ -435,7 +439,7 @@ class ClaudeCommandTests(unittest.TestCase):
 
     def test_claude_surfaces_other_api_error_result(self):
         import claude_agent_sdk
-        import grillmaster.services.inference.claude_sdk as claude
+        import grillmaster.legacy.services.inference.claude_sdk as claude
 
         async def fake_query(*, prompt, options):
             yield claude_agent_sdk.ResultMessage(
@@ -460,7 +464,7 @@ class ClaudeCommandTests(unittest.TestCase):
 
     def test_claude_keeps_rate_limit_error_specialized(self):
         import claude_agent_sdk
-        import grillmaster.services.inference.claude_sdk as claude
+        import grillmaster.legacy.services.inference.claude_sdk as claude
 
         async def fake_query(*, prompt, options):
             yield claude_agent_sdk.ResultMessage(

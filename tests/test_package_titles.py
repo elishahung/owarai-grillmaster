@@ -5,10 +5,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from grillmaster.project import Project
-from grillmaster.services import package as package_module
-from grillmaster.services.package import core as package_core
-from grillmaster.services.package import titles as package_titles
+from grillmaster.legacy.project import Project
+from grillmaster.legacy.services import package as package_module
+from grillmaster.legacy.services.package import core as package_core
+from grillmaster.legacy.services.package import titles as package_titles
 
 
 _AGENT_TITLES = {

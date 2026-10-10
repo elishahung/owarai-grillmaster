@@ -1,0 +1,411 @@
+"""Command-line interface for the video captioning pipeline."""
+
+from collections.abc import Callable
+import os
+from pathlib import Path
+import sys
+
+import typer
+from loguru import logger
+from typing_extensions import Annotated
+
+from grillmaster.legacy.project import ProgressStage
+from grillmaster.legacy.services.progress import (
+    NoopProgressReporter,
+    create_progress_reporter,
+)
+from grillmaster.legacy.services.live_chat import DEFAULT_CHAT_LAYOUT, ChatLayout
+from grillmaster.legacy.services.package import package_project_directory
+from grillmaster.legacy.services.package.constants import DEFAULT_NOISE_NAME
+from grillmaster.legacy.services.ytdlp import parse_section_time
+from grillmaster.legacy.settings import settings
+from grillmaster.legacy.workflow import SerialRun, submit_project
+
+
+RESERVED_COMMANDS = {"package", "process", "serial"}
+
+legacy_app = typer.Typer(
+    help=(
+        "Owarai GrillMaster - Automatic transcription and translation for "
+        "Japanese variety show videos"
+    ),
+    add_completion=False,
+)
+tools_app = typer.Typer(
+    help="Owarai GrillMaster packaging tools",
+    add_completion=False,
+)
+app = tools_app
+
+
+# Options shared by `process` and `serial`.
+ParentProjectOption = Annotated[
+    str | None,
+    typer.Option(
+        "--parent-project",
+        help=(
+            "Path to a parent project directory whose pre_pass.json "
+            "should seed this project's pre-pass for cross-episode "
+            "consistency."
+        ),
+        show_default=False,
+    ),
+]
+CoverOption = Annotated[
+    bool,
+    typer.Option(
+        "--cover",
+        help=("Force-enable async cover image generation for this run."),
+    ),
+]
+DateResearchOption = Annotated[
+    bool,
+    typer.Option(
+        "--date-research",
+        help=(
+            "Force-enable the async broadcast-date research agent for "
+            "this run. Overrides ENABLE_BROADCAST_DATE_AGENT_FALLBACK."
+        ),
+    ),
+]
+ChatOption = Annotated[
+    bool,
+    typer.Option(
+        "--chat",
+        help=(
+            "Also fetch the YouTube live-chat replay, translate it after "
+            "the subtitles are finalized, and burn it in as a scrolling "
+            "chat panel when packaging (see --chat-layout)."
+        ),
+    ),
+]
+ChatLayoutOption = Annotated[
+    ChatLayout,
+    typer.Option(
+        "--chat-layout",
+        help=(
+            "How a translated live chat is laid out when packaging: 'side' "
+            "letterboxes the 16:9 picture on the left with the chat in a "
+            "right column and the dialogue in the bottom bar; 'overlay' "
+            "keeps the full frame with a translucent panel on the right; "
+            "'none' leaves the chat out."
+        ),
+        case_sensitive=False,
+    ),
+]
+RemixOption = Annotated[
+    str | None,
+    typer.Option(
+        "--remix",
+        help=(
+            "Use a noise source set for remix packaging. Without a "
+            f"value it uses '{DEFAULT_NOISE_NAME}'."
+        ),
+        show_default=False,
+    ),
+]
+
+
+def _run_process(
+    source_str: str,
+    translation_hint: str | None,
+    break_after: ProgressStage | None,
+    parent_project: str | None,
+    cover: bool,
+    date_research: bool,
+    chat: bool,
+    chat_layout: ChatLayout,
+    remix: str | None,
+    start: str | None = None,
+    to: str | None = None,
+) -> None:
+    logger.info(
+        f"CLI invoked with source_str={source_str}, "
+        f"translation_hint={translation_hint}, break_after={break_after}, "
+        f"parent_project={parent_project}, cover={cover}, "
+        f"date_research={date_research}, chat={chat}, "
+        f"chat_layout={chat_layout}, remix={remix}, start={start}, to={to}"
+    )
+
+    try:
+        section_start = parse_section_time(start) if start else None
+        section_end = parse_section_time(to) if to else None
+    except ValueError as e:
+        logger.error(f"Invalid --start/--to value: {e}")
+        raise typer.Exit(code=1)
+    if (
+        section_start is not None
+        and section_end is not None
+        and section_end <= section_start
+    ):
+        logger.error("--to must be later than --start")
+        raise typer.Exit(code=1)
+
+    submit_kwargs = dict(
+        source_str=source_str,
+        translation_hint=translation_hint,
+        break_after=break_after,
+        parent_project_path=parent_project,
+        enable_cover=cover,
+        enable_date_research=date_research,
+        enable_live_chat=chat,
+        chat_layout=chat_layout,
+        remix_noise_name=remix,
+        section_start=section_start,
+        section_end=section_end,
+    )
+
+    _run_pipeline(
+        lambda progress: submit_project(**submit_kwargs, progress=progress),
+        label=source_str,
+    )
+
+
+def _run_pipeline(
+    pipeline: Callable[[NoopProgressReporter | None], object], label: str
+) -> None:
+    """Run ``pipeline`` under the dashboard on a TTY, else with plain logs."""
+    if _is_interactive_terminal():
+        # Interactive runs always get the full-screen dashboard; plain
+        # logging remains for pipes/CI only.
+        from grillmaster.legacy.services.tui import run_process_ui
+
+        code = run_process_ui(pipeline)
+        if code != 0:
+            logger.error(f"Failed to process {label}")
+            raise typer.Exit(code=code)
+        logger.success(f"Successfully completed processing for {label}")
+        return
+
+    try:
+        pipeline(None)
+        logger.success(f"Successfully completed processing for {label}")
+    except Exception as e:
+        logger.error(f"Failed to process {label}: {e}")
+        raise typer.Exit(code=1)
+
+
+def _is_interactive_terminal() -> bool:
+    return (
+        sys.stdout.isatty()
+        and not os.environ.get("CI")
+        and not os.environ.get("NO_COLOR")
+    )
+
+
+@legacy_app.command()
+@tools_app.command("process")
+def process(
+    source_str: Annotated[
+        str,
+        typer.Argument(
+            help=(
+                "Video source, id or url (e.g., 'BV1ZArvBaEqL', "
+                "'https://www.bilibili.com/video/BV1ZArvBaEqL', "
+                "'https://youtu.be/dQw4w9WgXcQ', 'v=dQw4w9WgXcQ'). "
+                "A local directory is not a source; use 'grill package <dir>'."
+            ),
+            show_default=False,
+        ),
+    ],
+    translation_hint: Annotated[
+        str | None,
+        typer.Argument(
+            help=(
+                "Translation hint for the video, given to the pre-pass "
+                "alongside (not instead of) the source title and "
+                "description. On an existing project it is applied only "
+                "while the pre-pass has not run yet."
+            ),
+            show_default=False,
+        ),
+    ] = None,
+    break_after: Annotated[
+        ProgressStage | None,
+        typer.Option(
+            "--break-after",
+            "--break",
+            "-break",
+            help=(
+                "Stop after reaching the given workflow stage "
+                "(e.g. is_asr_completed). Cover generation and date "
+                "research are skipped entirely when set."
+            ),
+            show_default=False,
+        ),
+    ] = None,
+    parent_project: ParentProjectOption = None,
+    cover: CoverOption = False,
+    date_research: DateResearchOption = False,
+    chat: ChatOption = False,
+    chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
+    remix: RemixOption = None,
+    start: Annotated[
+        str | None,
+        typer.Option(
+            "--start",
+            help=(
+                "Process only from this time onward (e.g., '90', '1:30', "
+                "'0:01:30'). The full video is still downloaded and kept as "
+                "video.full.mp4; video.mp4 is cut locally with ffmpeg."
+            ),
+            show_default=False,
+        ),
+    ] = None,
+    to: Annotated[
+        str | None,
+        typer.Option(
+            "--to",
+            help=(
+                "Process only up to this time (e.g., '600', '10:00'). "
+                "See --start for how the cut is made."
+            ),
+            show_default=False,
+        ),
+    ] = None,
+) -> None:
+    """Submit and process an online video for captioning and translation."""
+    _run_process(
+        source_str=source_str,
+        translation_hint=translation_hint,
+        break_after=break_after,
+        parent_project=parent_project,
+        cover=cover,
+        date_research=date_research,
+        chat=chat,
+        chat_layout=chat_layout,
+        remix=remix,
+        start=start,
+        to=to,
+    )
+
+
+@tools_app.command("serial")
+def serial_command(
+    sources: Annotated[
+        list[str],
+        typer.Argument(
+            help=(
+                "Two or more video sources (ids or urls), processed in order. "
+                "Each project's final directory (archived when ARCHIVED_PATH "
+                "is set) becomes the next one's --parent-project, so names "
+                "and terms stay consistent across episodes. The chain stops "
+                "at the first failure and logs the command to resume it."
+            ),
+            show_default=False,
+        ),
+    ],
+    parent_project: ParentProjectOption = None,
+    cover: CoverOption = False,
+    date_research: DateResearchOption = False,
+    chat: ChatOption = False,
+    chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
+    remix: RemixOption = None,
+) -> None:
+    """Process several videos back to back, seeding each from the previous one."""
+    logger.info(
+        f"CLI invoked with serial sources={sources}, "
+        f"parent_project={parent_project}, cover={cover}, "
+        f"date_research={date_research}, chat={chat}, "
+        f"chat_layout={chat_layout}, remix={remix}"
+    )
+    try:
+        run = SerialRun(
+            sources=sources,
+            parent_project_path=(Path(parent_project) if parent_project else None),
+            submit_kwargs=dict(
+                enable_cover=cover,
+                enable_date_research=date_research,
+                enable_live_chat=chat,
+                chat_layout=chat_layout,
+                remix_noise_name=remix,
+            ),
+        )
+    except ValueError as e:
+        logger.error(f"Invalid serial sources: {e}")
+        raise typer.Exit(code=1)
+    _run_pipeline(run.run, label=f"{len(sources)} serial sources")
+
+
+@tools_app.command("package")
+def package_command(
+    project_dir: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to an already-finalized project directory.",
+            show_default=False,
+        ),
+    ],
+    remix: Annotated[
+        str | None,
+        typer.Option(
+            "--remix",
+            help=(
+                "Use a noise source set for remix packaging. Without a "
+                f"value it uses '{DEFAULT_NOISE_NAME}'."
+            ),
+            show_default=False,
+        ),
+    ] = None,
+    skip_chat: Annotated[
+        bool,
+        typer.Option(
+            "--skip-chat",
+            help=(
+                "Leave the chat panel out even when the project has a "
+                "translated chat; same as --chat-layout none."
+            ),
+        ),
+    ] = False,
+    chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
+) -> None:
+    """Run only the package step for an existing project directory."""
+    if skip_chat and chat_layout not in (DEFAULT_CHAT_LAYOUT, ChatLayout.NONE):
+        logger.error("--skip-chat conflicts with --chat-layout; use one")
+        raise typer.Exit(code=1)
+    if settings.package_path is None:
+        logger.error("PACKAGE_PATH is not set; cannot package project")
+        raise typer.Exit(code=1)
+    try:
+        with create_progress_reporter() as progress:
+            package_project_directory(
+                project_dir=project_dir,
+                package_root=settings.package_path,
+                remix_noise_name=remix,
+                progress=progress,
+                chat_layout=ChatLayout.NONE if skip_chat else chat_layout,
+            )
+    except Exception as e:
+        logger.error(f"Failed to package project {project_dir}: {e}")
+        raise typer.Exit(code=1)
+
+
+def _expand_valueless_remix(args: list[str]) -> list[str]:
+    """Let `--remix` stand alone, meaning the default noise set.
+
+    Typer has no equivalent of click's optional-value options, so the bare
+    flag is expanded here, before either app parses the arguments.
+    """
+    expanded: list[str] = []
+    for index, arg in enumerate(args):
+        expanded.append(arg)
+        if arg != "--remix":
+            continue
+        following = args[index + 1] if index + 1 < len(args) else None
+        if following is None or following.startswith("-"):
+            expanded.append(DEFAULT_NOISE_NAME)
+    return expanded
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Entry point for the CLI application."""
+    args = _expand_valueless_remix(sys.argv[1:] if argv is None else argv)
+    standalone_mode = argv is None
+    if args and args[0] in RESERVED_COMMANDS:
+        tools_app(args=args, standalone_mode=standalone_mode)
+        return
+    legacy_app(args=args, standalone_mode=standalone_mode)
+
+
+if __name__ == "__main__":
+    main()

@@ -5,11 +5,11 @@ import uuid
 from pathlib import Path
 from unittest.mock import patch
 
-from grillmaster.services.translate.assets import (
+from grillmaster.legacy.services.translate.assets import (
     prepare_chunk_media_assets,
     prepare_pre_pass_media_assets,
 )
-from grillmaster.services.srt import SrtBlock, format_timecode
+from grillmaster.legacy.services.srt import SrtBlock, format_timecode
 
 
 class TranslateAssetsTests(unittest.TestCase):
@@ -39,11 +39,11 @@ class TranslateAssetsTests(unittest.TestCase):
 
         with (
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.get_media_duration",
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.get_media_duration",
                 return_value=4055.0,
             ),
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.extract_video_frame"
             ) as extract_frame,
         ):
             assets = prepare_pre_pass_media_assets(
@@ -84,11 +84,11 @@ class TranslateAssetsTests(unittest.TestCase):
 
         with (
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.get_media_duration",
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.get_media_duration",
                 return_value=255.0,
             ),
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.extract_video_frame"
             ),
         ):
             assets = prepare_pre_pass_media_assets(
@@ -120,11 +120,11 @@ class TranslateAssetsTests(unittest.TestCase):
 
         with (
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.get_media_duration",
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.get_media_duration",
                 return_value=45.0,
             ),
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.extract_video_frame"
             ),
         ):
             assets = prepare_pre_pass_media_assets(
@@ -157,11 +157,11 @@ class TranslateAssetsTests(unittest.TestCase):
 
         with (
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.get_media_duration",
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.get_media_duration",
                 return_value=190.1,
             ),
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.extract_video_frame"
             ),
         ):
             assets = prepare_pre_pass_media_assets(
@@ -213,10 +213,10 @@ class TranslateAssetsTests(unittest.TestCase):
 
         with (
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.extract_audio_segment"
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.extract_audio_segment"
             ),
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.extract_video_frame"
             ),
         ):
             assets = prepare_chunk_media_assets(
@@ -275,10 +275,10 @@ class TranslateAssetsTests(unittest.TestCase):
 
         with (
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.extract_audio_segment"
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.extract_audio_segment"
             ),
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.extract_video_frame"
             ),
         ):
             assets = prepare_chunk_media_assets(
@@ -319,10 +319,10 @@ class TranslateAssetsTests(unittest.TestCase):
 
         with (
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.extract_audio_segment"
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.extract_audio_segment"
             ) as extract_audio,
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.extract_video_frame"
             ),
         ):
             assets = prepare_chunk_media_assets(
@@ -358,10 +358,10 @@ class TranslateAssetsTests(unittest.TestCase):
 
         with (
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.extract_audio_segment"
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.extract_audio_segment"
             ),
             patch(
-                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+                "grillmaster.legacy.services.translate.assets.MediaProcessor.extract_video_frame"
             ),
         ):
             assets = prepare_chunk_media_assets(

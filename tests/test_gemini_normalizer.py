@@ -1,7 +1,9 @@
 import unittest
 
-from grillmaster.services.srt import SrtBlock
-from grillmaster.services.translate.chunk.normalizer import normalize_translated_blocks
+from grillmaster.legacy.services.srt import SrtBlock
+from grillmaster.legacy.services.translate.chunk.normalizer import (
+    normalize_translated_blocks,
+)
 
 
 class GeminiNormalizerTests(unittest.TestCase):

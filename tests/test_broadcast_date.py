@@ -2,8 +2,8 @@ import unittest
 from datetime import date
 from unittest.mock import patch
 
-import grillmaster.services.ytdlp.broadcast_date as broadcast_date_module
-from grillmaster.services.ytdlp.broadcast_date import (
+import grillmaster.legacy.services.ytdlp.broadcast_date as broadcast_date_module
+from grillmaster.legacy.services.ytdlp.broadcast_date import (
     CST,
     JST,
     date_from_epoch,
@@ -12,7 +12,7 @@ from grillmaster.services.ytdlp.broadcast_date import (
     resolve_broadcast_date,
     resolve_tver_broadcast_date,
 )
-from grillmaster.services.ytdlp.info import YtDlpVideoInfo
+from grillmaster.legacy.services.ytdlp.info import YtDlpVideoInfo
 
 
 def _video_info(**kwargs) -> YtDlpVideoInfo:

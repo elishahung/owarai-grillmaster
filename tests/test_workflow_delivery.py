@@ -2,9 +2,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import grillmaster.workflow.delivery as delivery
-from grillmaster.services.live_chat import ChatLayout
-from grillmaster.services.progress import NoopProgressReporter
+import grillmaster.legacy.workflow.delivery as delivery
+from grillmaster.legacy.services.live_chat import ChatLayout
+from grillmaster.legacy.services.progress import NoopProgressReporter
 
 
 class WorkflowDeliveryTests(unittest.TestCase):

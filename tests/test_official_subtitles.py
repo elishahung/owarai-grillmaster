@@ -5,22 +5,25 @@ import unittest
 import uuid
 from pathlib import Path
 
-from grillmaster.services.fixed_glossary import FixedGlossary
-from grillmaster.services.media import TimeRange
-from grillmaster.services.srt import SrtBlock, parse_srt
-from grillmaster.services.translate.assets import ChunkMediaAssets
-from grillmaster.services.translate.chunk.chunk_worker import (
+from grillmaster.legacy.services.fixed_glossary import FixedGlossary
+from grillmaster.legacy.services.media import TimeRange
+from grillmaster.legacy.services.srt import SrtBlock, parse_srt
+from grillmaster.legacy.services.translate.assets import ChunkMediaAssets
+from grillmaster.legacy.services.translate.chunk.chunk_worker import (
     _build_user_message as build_chunk_user_message,
     _slice_official_subtitle,
 )
-from grillmaster.services.translate.pre_pass.pre_pass import (
+from grillmaster.legacy.services.translate.pre_pass.pre_pass import (
     _build_user_message as build_pre_pass_user_message,
 )
-from grillmaster.services.translate.pre_pass.prompts import (
+from grillmaster.legacy.services.translate.pre_pass.prompts import (
     OFFICIAL_SUBTITLE_INSTRUCTION,
 )
-from grillmaster.services.translate.pre_pass.schema import PrePassResult, SegmentSummary
-from grillmaster.services.ytdlp import normalize_official_subtitle
+from grillmaster.legacy.services.translate.pre_pass.schema import (
+    PrePassResult,
+    SegmentSummary,
+)
+from grillmaster.legacy.services.ytdlp import normalize_official_subtitle
 
 
 def _block(index: int, start: str, end: str, text: str) -> SrtBlock:

@@ -1,3 +1,3 @@
-from grillmaster.main import main
+from grillmaster.legacy.main import main
 
 main()

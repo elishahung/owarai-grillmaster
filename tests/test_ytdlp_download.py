@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 from yt_dlp.utils import DownloadError
 
-from grillmaster.services.progress import NoopProgressReporter
-from grillmaster.services.ytdlp.download import (
+from grillmaster.legacy.services.progress import NoopProgressReporter
+from grillmaster.legacy.services.ytdlp.download import (
     FRAGMENT_RETRIES,
     _JpegThumbnailFixupPP,
     _ReporterProgressHook,
@@ -122,7 +122,8 @@ def _captured_download_opts(progress) -> dict:
         return ydl
 
     with patch(
-        "grillmaster.services.ytdlp.download.yt_dlp.YoutubeDL", side_effect=fake_ydl
+        "grillmaster.legacy.services.ytdlp.download.yt_dlp.YoutubeDL",
+        side_effect=fake_ydl,
     ):
         download_video("https://example.com/v", Path("out"), progress=progress)
     return captured
@@ -167,7 +168,8 @@ class DownloadFailureTests(unittest.TestCase):
             return ydl
 
         with patch(
-            "grillmaster.services.ytdlp.download.yt_dlp.YoutubeDL", side_effect=factory
+            "grillmaster.legacy.services.ytdlp.download.yt_dlp.YoutubeDL",
+            side_effect=factory,
         ) as ydl_cls:
             with self.assertRaises(DownloadError):
                 download_video("https://example.com/v", Path("out"))
@@ -187,7 +189,8 @@ class AbemaAuthCacheResetTests(unittest.TestCase):
             return ydl
 
         with patch(
-            "grillmaster.services.ytdlp.download.yt_dlp.YoutubeDL", side_effect=factory
+            "grillmaster.legacy.services.ytdlp.download.yt_dlp.YoutubeDL",
+            side_effect=factory,
         ):
             download_video(url, Path("out"))
 
@@ -220,7 +223,7 @@ class ReporterProgressHookTests(unittest.TestCase):
         hook = _ReporterProgressHook(reporter)
 
         with patch(
-            "grillmaster.services.ytdlp.download.monotonic",
+            "grillmaster.legacy.services.ytdlp.download.monotonic",
             side_effect=[1.0, 1.1, 2.0, 3.0],
         ):
             hook(
@@ -265,7 +268,7 @@ class ReporterProgressHookTests(unittest.TestCase):
         reporter = _RecordingReporter()
         hook = _ReporterProgressHook(reporter)
         with patch(
-            "grillmaster.services.ytdlp.download.monotonic",
+            "grillmaster.legacy.services.ytdlp.download.monotonic",
             side_effect=[1.0, 2.0],
         ):
             hook(

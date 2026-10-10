@@ -6,16 +6,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from grillmaster.project import Project
-from grillmaster.services import package as package_module
-from grillmaster.services.package import core as package_core
-from grillmaster.services.program_config import config as program_config
-from grillmaster.services.package import noise as package_noise
-from grillmaster.services.package import remix as package_remix
-from grillmaster.services.package import titles as package_titles
-from grillmaster.services.live_chat import ChatLayout
-from grillmaster.services.media import BurnPlan
-from grillmaster.services.progress import NoopProgressReporter
+from grillmaster.legacy.project import Project
+from grillmaster.legacy.services import package as package_module
+from grillmaster.legacy.services.package import core as package_core
+from grillmaster.legacy.services.program_config import config as program_config
+from grillmaster.legacy.services.package import noise as package_noise
+from grillmaster.legacy.services.package import remix as package_remix
+from grillmaster.legacy.services.package import titles as package_titles
+from grillmaster.legacy.services.live_chat import ChatLayout
+from grillmaster.legacy.services.media import BurnPlan
+from grillmaster.legacy.services.progress import NoopProgressReporter
 
 
 class FakeProgressReporter(NoopProgressReporter):
@@ -719,7 +719,7 @@ class PackageTests(unittest.TestCase):
         project_dir = root / "project"
         package_root = root / "package"
         project_dir.mkdir()
-        (project_dir / "grillmaster.project.json").write_text(
+        (project_dir / "grillmaster.legacy.project.json").write_text(
             Project(id="demo", name="show").model_dump_json(),
             encoding="utf-8",
         )

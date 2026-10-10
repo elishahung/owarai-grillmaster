@@ -3,20 +3,24 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import grillmaster.workflow as workflow_module
-import grillmaster.workflow.api as workflow_api
-import grillmaster.workflow.stages.media as media_stage
-import grillmaster.workflow.stages.metadata as metadata_stage
-import grillmaster.workflow.stages.postprocess as postprocess_stage
-import grillmaster.workflow.stages.transcription as transcription_stage
-import grillmaster.workflow.stages.translation as translation_stage
-import grillmaster.project as project_module
-from grillmaster.project import Project, SourceMetadata
-from grillmaster.services.program_config import ProgramRules
-from grillmaster.services.elevenlabs.asr import ElevenLabsTranscriptionResult
-from grillmaster.services.progress import NoopProgressReporter
-from grillmaster.services.ytdlp.info import AbemaTalent, TVerTalent, YtDlpVideoInfo
-from grillmaster.services.live_chat import ChatLayout
+import grillmaster.legacy.workflow as workflow_module
+import grillmaster.legacy.workflow.api as workflow_api
+import grillmaster.legacy.workflow.stages.media as media_stage
+import grillmaster.legacy.workflow.stages.metadata as metadata_stage
+import grillmaster.legacy.workflow.stages.postprocess as postprocess_stage
+import grillmaster.legacy.workflow.stages.transcription as transcription_stage
+import grillmaster.legacy.workflow.stages.translation as translation_stage
+import grillmaster.legacy.project as project_module
+from grillmaster.legacy.project import Project, SourceMetadata
+from grillmaster.legacy.services.program_config import ProgramRules
+from grillmaster.legacy.services.elevenlabs.asr import ElevenLabsTranscriptionResult
+from grillmaster.legacy.services.progress import NoopProgressReporter
+from grillmaster.legacy.services.ytdlp.info import (
+    AbemaTalent,
+    TVerTalent,
+    YtDlpVideoInfo,
+)
+from grillmaster.legacy.services.live_chat import ChatLayout
 
 
 class WorkflowBreakpointTests(unittest.TestCase):

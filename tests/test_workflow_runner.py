@@ -1,10 +1,10 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from grillmaster.project import ProgressStage
-from grillmaster.workflow.runner import StageSpec, WorkflowRunner
-from grillmaster.workflow.side_tasks import SideTaskManager
-from grillmaster.workflow.timing import format_elapsed
+from grillmaster.legacy.project import ProgressStage
+from grillmaster.legacy.workflow.runner import StageSpec, WorkflowRunner
+from grillmaster.legacy.workflow.side_tasks import SideTaskManager
+from grillmaster.legacy.workflow.timing import format_elapsed
 
 
 def _spec(stage: ProgressStage = ProgressStage.DOWNLOADED) -> StageSpec:
@@ -37,9 +37,10 @@ class WorkflowRunnerTests(unittest.TestCase):
 
         with (
             patch(
-                "grillmaster.workflow.runner.perf_counter", side_effect=[10.0, 72.345]
+                "grillmaster.legacy.workflow.runner.perf_counter",
+                side_effect=[10.0, 72.345],
             ),
-            patch("grillmaster.workflow.runner.logger") as logger,
+            patch("grillmaster.legacy.workflow.runner.logger") as logger,
         ):
             should_stop = runner.run(_spec(), action)
 
@@ -93,14 +94,16 @@ class SideTaskManagerTests(unittest.TestCase):
         project = self._project()
 
         with (
-            patch("grillmaster.workflow.side_tasks.generate_cover") as generate_cover,
+            patch(
+                "grillmaster.legacy.workflow.side_tasks.generate_cover"
+            ) as generate_cover,
             # Three reads: start, the worker done-callback, and join. The
             # callback/join order is racy, so the last two values are equal.
             patch(
-                "grillmaster.workflow.side_tasks.perf_counter",
+                "grillmaster.legacy.workflow.side_tasks.perf_counter",
                 side_effect=[1.0, 2.5, 2.5],
             ),
-            patch("grillmaster.workflow.side_tasks.logger") as logger,
+            patch("grillmaster.legacy.workflow.side_tasks.logger") as logger,
         ):
             manager = SideTaskManager(project)
             manager.start_cover_if_needed(enabled=True, allow_side_tasks=True)
@@ -119,17 +122,17 @@ class SideTaskManagerTests(unittest.TestCase):
 
         with (
             patch(
-                "grillmaster.workflow.side_tasks.research_broadcast_date",
+                "grillmaster.legacy.workflow.side_tasks.research_broadcast_date",
                 return_value=result,
             ) as research,
             patch(
-                "grillmaster.workflow.side_tasks.apply_date_research_result"
+                "grillmaster.legacy.workflow.side_tasks.apply_date_research_result"
             ) as apply_result,
             patch(
-                "grillmaster.workflow.side_tasks.perf_counter",
+                "grillmaster.legacy.workflow.side_tasks.perf_counter",
                 side_effect=[3.0, 4.0, 4.0],
             ),
-            patch("grillmaster.workflow.side_tasks.logger") as logger,
+            patch("grillmaster.legacy.workflow.side_tasks.logger") as logger,
         ):
             manager = SideTaskManager(project)
             manager.start_date_research_if_needed(
@@ -148,7 +151,7 @@ class SideTaskManagerTests(unittest.TestCase):
         project = self._project()
 
         with patch(
-            "grillmaster.workflow.side_tasks.generate_cover",
+            "grillmaster.legacy.workflow.side_tasks.generate_cover",
             side_effect=RuntimeError("cover failed"),
         ):
             manager = SideTaskManager(project)

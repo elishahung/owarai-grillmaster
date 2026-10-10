@@ -4,14 +4,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from grillmaster.services.translate.chunk.validation import validate_chunk_structure
-from grillmaster.services.srt import parse_srt
+from grillmaster.legacy.services.translate.chunk.validation import (
+    validate_chunk_structure,
+)
+from grillmaster.legacy.services.srt import parse_srt
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _VALIDATOR = (
     _REPO_ROOT
     / "src"
     / "grillmaster"
+    / "legacy"
     / "services"
     / "translate"
     / "chunk"

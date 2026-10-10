@@ -6,8 +6,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from urllib.error import URLError
 
-import grillmaster.services.ytdlp.info as info_module
-from grillmaster.services.ytdlp.info import (
+import grillmaster.legacy.services.ytdlp.info as info_module
+from grillmaster.legacy.services.ytdlp.info import (
     _parse_abema_casts_response,
     _parse_tver_talents_response,
     get_abema_episode_broadcast_at,

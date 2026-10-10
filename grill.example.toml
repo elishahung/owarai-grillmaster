@@ -17,7 +17,7 @@ package = 'C:\Users\me\Videos\grilled'
 cookies = "cookies.txt"
 
 [agents]
-# Wall-clock limit in minutes for one agent session.
+# Wall-clock limit in minutes for one agent turn (each repair round gets its own).
 timeout_minutes = 40
 # Agent processes one grill process runs at once across fan-out stages
 # (chunks, chat); each concurrent grill process gets its own allowance.

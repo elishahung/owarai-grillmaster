@@ -10,7 +10,7 @@
 ## 說明
 
 - 目標是 one shot 即可直接觀看，不想校準 (避免被暴雷)
-- 1 小時左右的影片成本大概 $20 台幣 (ASR $6 + 翻譯 $14)，處理時間約 15 分鐘；現在三種 agent backend 都走訂閱，只剩 ElevenLabs ASR 計費
+- 翻譯與後處理都走 agent 訂閱，只有 ElevenLabs ASR 計費：約 $0.22 美元／小時（23 分鐘的節目約 $0.09）。同一集從下載到輸出字幕約 20 多分鐘
 - 設定偏好都是個人主觀，如需修改請自行 fork
 - 更詳細請[查看心得](docs/article.md)
 
@@ -21,7 +21,7 @@
 - **ASR**：`ElevenLabs Scribe v2`，一堆人大聲喧嘩、裝傻吐槽沒有間隔也能辨識
 - **翻譯**：`Gemini 3` 系列最能抓住日本綜藝的韻味，也很會看圖聽音檔；潤飾、名詞校對等後處理交給 Codex / Claude，輸出結構出錯時在同一個 session 內要求修正
 
-翻譯分兩階段：先看完整部片做一份簡報（人物、專有名詞、梗的譯法、語氣），再把字幕切塊平行翻譯。翻譯時會參考音檔和影片截圖，幫助辨識人物、場景與畫面上的文字
+翻譯分兩階段：先看完整部片做一份簡報（人物、專有名詞、梗的譯法、語氣），再把字幕切塊平行翻譯。翻譯時會參考音檔，模型也能透過 grill 自帶的 MCP 工具（`get_frames`）自己挑時間點截圖，辨識人物、場景與畫面上的文字
 
 ![](docs/images/image4.jpg)
 
@@ -46,7 +46,7 @@ uv tool install --editable .   # 把 grill 裝到 PATH
 
 `grill` 會從目前目錄往上找 `grill.toml`，找不到就用 `GRILL_HOME` 指定的目錄；`projects/` 與 `.env` 都放在 `grill.toml` 旁邊。用 `uv tool install` 在其他目錄執行時，把 `GRILL_HOME` 設成 repo 根目錄即可
 
-`grill doctor` 可以檢查 FFmpeg、各 agent CLI 與 `grill.toml` 是否就緒
+`grill doctor` 可以檢查 FFmpeg、各 agent CLI、Claude 登入與 `grill.toml` 是否就緒
 
 ## 使用方式
 
@@ -66,16 +66,16 @@ grill BV18KBJBeEmV --start 0 --to 5:00
 # 跑到某個 stage 就停
 grill BV18KBJBeEmV --break-after asr
 
-# 依序處理多集，前一集的譯名會帶到下一集
+# 依序處理多集，前一集的譯名會帶到下一集；中途失敗會印出接續的指令
 grill serial ep100001 ep100002 ep100003
 
-# 重新燒錄已完成的專案（可用 ID 或資料夾）
+# 重新燒錄已完成的專案（本機專案可用 ID；已歸檔的請用歸檔資料夾）
 grill package <專案 ID 或資料夾>
 
 # 歸檔失敗時只重做歸檔（之後再對歸檔資料夾執行 grill package）
 grill archive <專案 ID>
 
-# 從某個 stage 起重跑（清掉該 stage 及之後的結果）；--only 只清單一 stage
+# 從某個 stage 起重跑（清掉該 stage 及之後的結果）；--only 只清單一 stage；只限本機專案
 grill reset <專案 ID> --from refine
 
 # 查看專案進度、模型與成本
@@ -83,6 +83,8 @@ grill status [專案 ID]
 ```
 
 其他選項：`--cover`（產生封面）、`--date-research`（查不到播出日時上網找）、`--chat`（翻譯 YouTube 聊天室並燒進畫面，`--chat-layout side|overlay|none`）、`--remix [素材池]`、`--parent <專案資料夾>`。完整說明見 `grill --help`
+
+可以同時開多個 `grill` 處理不同影片：每個 agent 工具伺服器都是各自獨立的子行程，互不衝突；同一個 ID 同時只能有一個 `grill` 在處理，第二個會直接報錯
 
 ## 設定
 
@@ -108,7 +110,7 @@ date_research = true                # 查不到播出日時上網找
 title_suggestion = true             # 燒錄時產生候選標題
 ```
 
-其他可調參數（切塊大小、併發數、抽圖頻率、remix 素材池等）請見 `grill.example.toml`
+其他可調參數（切塊大小、併發數、抽圖頻率、remix 素材池等）請見 `grill.example.toml`。併發數 `[agents] max_concurrent` 預設 10，是每個 `grill` 行程各自的上限
 
 ### 節目設定
 

@@ -64,14 +64,13 @@ def _strict(
             case "properties", dict():
                 out[key] = {
                     name: _strict(sub, defs, path=f"{path}.{name}", resolving=resolving)
-                    for name, sub in value.items()  # pyright: ignore[reportUnknownVariableType]
+                    for name, sub in value.items()
                 }
             case "items", dict():
-                out[key] = _strict(value, defs, path=f"{path}[]", resolving=resolving)  # pyright: ignore[reportUnknownArgumentType]
+                out[key] = _strict(value, defs, path=f"{path}[]", resolving=resolving)
             case (("anyOf" | "oneOf" | "allOf"), list()):
                 out[key] = [
-                    _strict(sub, defs, path=path, resolving=resolving)
-                    for sub in value  # pyright: ignore[reportUnknownVariableType]
+                    _strict(sub, defs, path=path, resolving=resolving) for sub in value
                 ]
             case _:
                 out[key] = value

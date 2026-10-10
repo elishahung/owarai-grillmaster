@@ -50,7 +50,7 @@ class _HeadlessApp(GrillMasterApp):
         elif self.state.finished:
             self.exit(AppExit.DONE)
 
-    def run(self, **_: object) -> AppExit | None:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def run(self, **_: object) -> AppExit | None:
         return super().run(headless=True, size=(120, 40))
 
 

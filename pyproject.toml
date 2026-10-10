@@ -55,13 +55,14 @@ types = "basedpyright"
 layers = "lint-imports"
 test = "pytest"
 schema = "python -m grillmaster.config.schema ${POE_ROOT}/grill.schema.json"
-# lint and types join `check` once the refactor reaches zero warnings.
-check = ["fmt-check", "layers", "test"]
+check = ["fmt-check", "lint", "types", "layers", "test"]
 
 [tool.ruff]
 target-version = "py313"
 line-length = 88
 src = ["src", "tests"]
+# Skill scripts follow their own conventions; design-doc code blocks are sketches.
+extend-exclude = [".agents", "docs"]
 
 [tool.ruff.lint]
 select = [

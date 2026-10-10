@@ -1,316 +1,234 @@
 ---
 name: project-architecture
 description: >-
-  Orchestration-level architecture of the Owarai GrillMaster pipeline: the
-  resumable stage machine in `workflow/`, project state and path layout in
-  `project.py`, settings/`.env`/ModelSpec in `settings.py`, the Typer CLI in
-  `main.py`, and the supporting services (`services/srt/`, `services/media.py`,
-  `services/ytdlp/`, `services/elevenlabs/`, `services/fixed_glossary/`,
-  `services/program_config/`, `services/progress.py`, `services/paths.py`, `services/tui/`). Read this before adding/reordering a pipeline stage,
-  changing resumability or cost accounting, adding a setting, adding a source
-  platform, or any task that spans more than one service module. Deep dives
-  live in the sibling skills inference-layer, translate-pipeline, and
-  postprocess-and-packaging.
+  Orchestration-level architecture of Owarai GrillMaster under
+  `src/grillmaster/`: the declarative pipeline (`pipeline/` registry, runner,
+  side tasks, delivery, reset, serial), the stage API and stage glue
+  (`stages/base.py`, `stages/_common.py`, `stages/<key>.py`), project state and
+  paths (`project/`), config (`config/`: grill.toml, .env secrets, programs),
+  events and the TUI (`events/`, `tui/`), the CLI (`cli/`), and the foundation
+  and infrastructure packages (`core/`, `sources/`, `media/`, `asr/`,
+  `glossary/`). Read this before adding or reordering a stage, side task or
+  delivery step, changing resumability, the project layout or the ledger,
+  adding a setting or command, adding a source platform, or any change that
+  spans packages. Deep dives: agent-orchestration, translate-pipeline,
+  postprocess-and-packaging, live-chat.
 ---
 
 # Owarai GrillMaster — Architecture
 
-A single-user CLI that turns a Japanese variety-show video ID/URL into Traditional
-Chinese subtitles (SRT + styled ASS), optionally burning them into the video.
-Everything is local and resumable; there is no server, queue, or database — state
-lives entirely in `projects/<id>/`.
+A single-user CLI: Japanese variety-show video ID/URL → Traditional Chinese
+SRT + styled ASS, optionally burned in. No server, queue or database; each
+project's state is `projects/<id>/project.json`, and re-running an ID resumes
+where it stopped.
 
-Sibling skills own the deep detail — read the one whose files you're touching:
+## Layering (enforced by `.importlinter`, run by `poe layers`)
 
-- **inference-layer** — `services/inference/` (backends, schema repair, frame tools)
-- **translate-pipeline** — `services/translate/` (pre-pass, chunking, chunk workers, caches)
-- **postprocess-and-packaging** — `services/postprocess/`, `services/finalize/`, `services/package/`
-- **live-chat** — `services/live_chat/` (`--chat` replay stages and chat-panel ASS)
+Top to bottom; packages on one line are independent of each other:
 
-## Mental model
-
-The whole program is a **linear, idempotent, resumable stage machine**. One
-`Project` (a Pydantic model persisted as `projects/<id>/project.json`) carries a
-boolean per stage. The `workflow/` package runs the stages in order; each stage checks its
-boolean, skips if already done, and on success calls `project.mark_progress(...)`
-which flips the boolean and re-saves the JSON. Re-running the same ID resumes
-exactly where it left off. This is the central invariant — **every new stage must
-preserve it**.
-
-The expensive model-driven stages additionally cache their *intermediate* media
-and responses under dot-dirs (`.asr/`, `.pre_pass/`, `.chunks/`, …) so that a
-resume after a crash does not re-extract audio, re-sample frames, or re-call the
-model for chunks that already succeeded. These caches never self-invalidate;
-forcing a re-run means deleting the dot-dir.
-
-## The pipeline (`workflow/`)
-
-`workflow/__init__.py` is the public facade (`submit_project`, `process_project`,
-`SerialRun`, `ProgressStage`). `workflow/api.py` creates/loads the `Project`, then
-`_process_project_impl` runs the stages below in order through
-`WorkflowRunner`. Each maps 1:1 to a `ProgressStage` enum value and a
-`Project.is_*` boolean (see "Stage ↔ field sync" invariant). Stage bodies live
-under `workflow/stages/` by subsystem; post-finalize archive/package is in
-`workflow/delivery.py`; cover/date background futures are managed by
-`workflow/side_tasks.py`.
-
-| # | Stage (`ProgressStage`)         | What happens                                                                 | Module |
-|---|----------------------------------|------------------------------------------------------------------------------|--------|
-| 1 | `METADATA_FETCHED`               | `get_video_info` → `source_metadata.title`/`description` (never written into the user's `translation_hint`; Bilibili keeps title only); for TVer/Abema also fetch cast/talents; `resolve_broadcast_date` persists `Project.broadcast_date` (best-effort). **Kicks off async broadcast-date research after this stage** if enabled and the date is still None | `services/ytdlp`, `services/postprocess/date_research` |
-| 2 | `DOWNLOADED`                     | `download_video` (yt-dlp); also best-effort fetches platform CC subs (`ENABLE_OFFICIAL_SUBTITLES`), and records `series`/`channel` from `metadata.info.json` into `source_metadata` + `config.json`. **Kicks off async cover gen here** if enabled | `services/ytdlp`, `services/program_config`, `services/postprocess/cover` |
-| 3 | `VIDEO_PROCESSED`                | `MediaProcessor.combine_videos` (ffmpeg concat) → `video.mp4`; normalizes downloaded CC → `video.official.ja.srt` (section runs rebase/filter timestamps) | `services/media`, `services/ytdlp/subtitles` |
-| 3b| `CHAT_FETCHED` (optional)        | `--chat` only: yt-dlp `live_chat` track → `.live_chat/messages.json`, rebased to the section | `services/live_chat` |
-| 4 | `AUDIO_PROCESSED`                | `MediaProcessor.extract_audio` → `.asr/audio.ogg` (mono 16 kHz libopus)      | `services/media` |
-| 5 | `ASR_COMPLETED`                  | ElevenLabs Scribe → `.asr/asr.json`; adds cost                               | `services/elevenlabs` |
-| 6 | `SRT_COMPLETED`                  | `convert_file` ASR JSON → `video.ja.srt`                                     | `services/elevenlabs/srt_builder` |
-| 7 | `PREPASS_COMPLETED`              | One whole-film analysis call → `.pre_pass/pre_pass.json`                     | `services/translate` (pre_pass) |
-| 8 | `CHUNK_TRANSLATED`               | Concurrent per-chunk translation → `video.cht.srt`                          | `services/translate` (chunk) |
-| 9 | `SRT_REFINED`                    | Agent polishes TC subtitles → `video.cht.refined.srt`                        | `services/postprocess/refine` |
-| 10| `GLOSSARY_CHECKED`               | Agent checks full-text terminology/facts, may correct `pre_pass.json` → `video.cht.glossary_checked.srt`| `services/postprocess/glossary_check` |
-| 11| `FINALIZED`                      | Punctuation cleanup → styled `video.cht.ass` + `video.cht.finalized.srt`     | `services/finalize` |
-| 12| `CHAT_TRANSLATED` (optional)     | `--chat` only: chat batches + polish against the finalized SRT → `chat.cht.json` | `services/live_chat` |
-
-After `FINALIZED` (and only if no `--break-after`): join the async cover and
-date-research futures,
-optionally `archive()` the project dir, then `package_project` (burn-in + cover
-copy / remix; it also ensures `.titles/titles.json` — the one agent call inside
-packaging, see **postprocess-and-packaging**). Archive and package are **post-loop**, not stages. Package output
-is flat: `Project.package_dir(PACKAGE_PATH)` = `{deliverable_name}` —
-`YYMMDD_{id}_{name}` when `broadcast_date` is known (announced on-air/publish
-date, platform-local timezone), plain `{id}_{name}` otherwise. Archive nests by
-date instead: `Project.archive_dir(ARCHIVED_PATH)` =
-`YY/MM/YYMMDD_{id}_{name}`, `etc/{id}_{name}` when undated; `archive()` only
-rmtree's the leaf dir, never the shared `YY/MM`/`etc` parents. Both destinations
-go through `services/paths.fit_dir_name`, which trims `{name}` (never the
-`deliverable_stem` identity prefix) so the deepest nested artifact stays inside
-the platform path limit — Windows MAX_PATH 260, since ffmpeg/yt-dlp are not
-long-path aware. So the on-disk leaf can be shorter than `deliverable_name`;
-always resolve destinations through those two methods.
-
-Key control-flow details that are easy to break:
-
-- **`--break-after <stage>`** stops cleanly *after* the named stage (works on a
-  fresh or resumed project). When set, cover generation is skipped entirely.
-- **`--start` / `--to`** (either or both) process only a section. The full
-  video is still downloaded (yt-dlp's `--download-sections` is ffmpeg-backed
-  and slow); the video-processing stage combines to `video.full.mp4`, then
-  stream-copy cuts `video.mp4` (keyframe-aligned). Ignored with a warning if
-  the video is already processed. The bounds are persisted as
-  `Project.section_start/section_end` so later stages can rebase
-  source-timed data (live chat) without the flags on resume.
-- **Cover generation runs in a background `ThreadPoolExecutor`** started right
-  after download and joined in the `finally` block — even on pipeline failure,
-  because the Codex subscription cost is already incurred. Don't move the join.
-  The join timeout is the hardcoded `_COVER_JOIN_TIMEOUT_SECS` in
-  `workflow/side_tasks.py`. Note
-  `is_cover_generated` is a `Project` boolean but **not** a `ProgressStage`:
-  it is set directly in the `finally` block, not via `mark_progress`.
-- **Broadcast-date research** (`ENABLE_BROADCAST_DATE_AGENT_FALLBACK` /
-  `--date-research`, default off) follows the same side-task pattern: started
-  after `METADATA_FETCHED` when `broadcast_date` is None, joined in the same
-  `finally` before archive/package (the deliverable name needs the date).
-  The worker only writes `.artifacts/date_research.json` (fixed-filename
-  cache; corrupt files count as a miss; delete to re-run); the main thread
-  applies the verdict and sets `is_broadcast_date_researched` (also not a
-  `ProgressStage`) — set even on an "unknown" verdict so a resume doesn't
-  re-spend tokens. A completed artifact left by a previous run is applied at
-  kick-off even when the fallback is disabled (the result is already paid
-  for); only the agent dispatch is gated on the flag.
-- **Optional side tasks are gated twice**: by a `settings.enable_*` toggle OR
-  a per-run `--cover/--date-research` flag (the flag force-enables). The only
-  optional stages are the two `--chat` ones: per-run flag only.
-- **Cost accounting**: ElevenLabs ASR is the only metered service; the ASR
-  stage calls `project.add_asr_cost(amount)`, accumulated as `asr_cost` in
-  `project.json`. Every model backend is a subscription agent, so model stages
-  record no cost.
-- **Stage timing logs**: successful main stages go through `WorkflowRunner`,
-  which logs `Stage complete: ... (<elapsed>)` after the action and
-  `mark_progress` finish. Cover/date side tasks use the same elapsed suffix,
-  measured from async dispatch to join.
-- **Refine → glossary check → finalize is a fixed chain** (no toggles): each
-  reads the previous stage's SRT, so finalize always reads the glossary-checked
-  SRT. The pre-pass always injects the whole fixed glossary as a reference
-  table (no per-episode filtering).
-- **Serial chains** (`grill serial SRC...`, `workflow/serial.py`): `SerialRun`
-  submits sources in order; `submit_project`/`process_project` return the
-  project's final directory (archived location, else `projects/<id>`), which
-  becomes the next project's `parent_project_path`. The chain stops at the
-  first failure and logs `resume_command()`; `SerialRun` keeps `position`
-  so the dashboard's `r` retry (which re-calls the same callable) resumes at
-  the failed project. It emits `batch_item_started(index, total, source)` on
-  the reporter — the TUI shows `serial i/n` and stays RUNNING between
-  projects (`PipelineState.batch`).
-- **Future architecture direction**: the package still keeps the pipeline as an
-  explicit ordered sequence in `workflow/api.py`. If stage count or branching
-  grows, the next step is a declarative stage registry built on `StageSpec` and
-  `WorkflowRunner`, but do not introduce that extra indirection until it removes
-  real branching or repetition.
-
-## Project state (`project.py`)
-
-`Project` is the single source of truth. It owns:
-
-- **Identity**: `parse_source_str` extracts the canonical ID from an ID or URL
-  across Bilibili (`BV…`), YouTube (stored as `v=…`), TVer (`ep…`/`sh…`), Abema
-  (fallback). Existing local directories are rejected (use `grill package
-  <dir>`); bare IDs are never treated as paths, even if a cwd folder shares
-  the name. `source` and `source_url` are derived from the ID's shape — keep
-  these consistent if you add a platform. Abema has two URL kinds: episode IDs
-  contain `-`/`_`; pure-alphanumeric IDs are slots (live archives) and rebuild
-  as `channels/_/slots/<id>` (yt-dlp ignores the channel segment).
-- **All path properties** (`video_path`, `srt_path`, `pre_pass_path`,
-  `chunks_cache_dir`, …). **Never hard-code a project file path elsewhere** — add
-  or read a property here so the layout stays in one place.
-- **Cross-episode seeding**: `parent_project_path` → `parent_pre_pass_context()`
-  reads a parent project's `pre_pass.json` to keep names/terms consistent across
-  episodes. It raises early (before any model cost) if the parent is missing.
-- **Stage ↔ field sync invariant**: `check_enum_field_sync()` runs at import and
-  asserts every `ProgressStage` value names a real `Project.is_*` field. If you
-  add a stage you MUST add both the enum value and the boolean field, or import
-  fails fast.
-
-## Supporting services
-
-- `services/srt/` — SRT primitives: `SrtBlock`, `parse_srt`, `serialize_srt`,
-  timecode math. The shared subtitle data model used everywhere.
-- `services/media.py` — `MediaProcessor`: ffmpeg wrappers (combine, extract
-  audio, frame sampling, burn-in). FFmpeg must be on PATH. Burn-in runs with
-  `-nostdin` (headless safety) and **validates output duration** afterward
-  (`BURN_IN_DURATION_TOLERANCE_SECONDS`, 2 s) against
-  `package_output_duration(usable)` (`(source - lead trim) / PACKAGE_TEMPO`),
-  not the raw source length: ffmpeg can exit 0 yet silently truncate or skip
-  the tempo, so an output more than 2 s off the expected length raises
-  instead of shipping.
-- `services/ytdlp/` — download + metadata + TVer/Abema talent scraping +
-  `broadcast_date.py` (resolves the announced on-air/publish date: YouTube/
-  BiliBili from yt-dlp timestamps, TVer from `broadcastDateLabel` (the
-  metadata stage fetches it, persists it as
-  `source_metadata.broadcast_date_label`, and passes it in) — a label year
-  wins over the availability start, and a year-only archive-reupload label
-  ("2018年放送") resolves to None so agent research takes over, Abema from
-  program `broadcastAt` or slot `startAt`; all best-effort → None) +
-  `subtitles.py` (platform CC → `video.official.ja.srt`; single video part
-  only — multi-part is skipped with a warning and the pipeline continues
-  without the reference; same-part language variants prefer exact `ja`;
-  consumed as ground-truth reference by the translate stages and glossary
-  check — see **translate-pipeline** / **postprocess-and-packaging**). Two
-  BiliBili gotchas live in `client.py`: (1) a **temporary monkey-patch** falls
-  back from `/x/player/wbi/playurl` (HTTP 412 on some videos in current yt-dlp)
-  to `/x/player/playurl` — remove when upstream fixes it; (2) BiliBili inputs
-  are **anonymous by default** (cookies disabled) because authenticated
-  cookies can lock the format list to 480p; other platforms keep cookies.
-  `download.py` registers a jpeg-extension fixup PP before the thumbnail
-  convertor (Abema slot thumbnails are JPEG bytes named `.png`, which breaks
-  the extension-driven image2 demuxer) — keep the convertor out of the opts
-  dict so the fixup stays first. Downloads do **not** retry: an Abema download
-  in the same process as the metadata stage used to fail every time, because
-  yt-dlp caches the Abema token on the extractor class and only registers the
-  `abematv-license://` key handler on the YoutubeDL that mints a fresh token.
-  `reset_abema_auth_cache` (client.py) clears that cache before each download;
-  keep it if you add another yt-dlp pass ahead of the download.
-  Fragments are the exception: `skip_unavailable_fragments=False` with
-  backoff retries, because a skipped fragment leaves an audio timestamp gap
-  that decoding collapses (ASR/subtitles drift from the video after it).
-  The download stage then runs `MediaProcessor.find_audio_gaps` on every
-  part and fails on any gap; the gapped file must be deleted by hand before a
-  re-run re-downloads it.
-- `services/paths.py` — platform path-length mechanics (`measure`,
-  `fit_dir_name`, `MAX_PATH_UNITS`/`MAX_COMPONENT_UNITS`). Owns *how* to fit a
-  name; `project.py` owns the per-destination reserves
-  (`PROJECT_INNER_PATH_RESERVE`, `PACKAGE_INNER_PATH_RESERVE`) — bump the
-  project reserve if a deeper artifact path is ever added.
-- `services/elevenlabs/` — ASR client + ASR-JSON → SRT builder. Source SRT
-  formatting constants are hard-coded at the top of the builder (maintainer-tuned,
-  intentionally not settings).
-- `services/program_config/` — owns the `series`/`channel` sections of
-  `config.json` (git-ignored, cwd root; `config.example.json` is the tracked
-  shape; other top-level keys are left for other readers). Entries hold
-  `remix` (packaging) and `instruction` (`common`/`pre_pass`/`translate`/
-  `refine`/`glossary_check`). Download only appends empty entries, editing the
-  raw JSON so hand-written content survives. `Project.program_rules()` is the
-  one lookup: channel then series entries merged into `ProgramRules`, whose
-  `render_instruction(step)` gives a `prompts/program_instruction.md` section
-  (each entry's `common` before its step text) or None. Read live per stage,
-  so edits apply to stages not yet run (cached `pre_pass.json`/chunks are not
-  redone). Entries validate individually (unknown keys rejected); a bad entry
-  is warned and skipped. `config.schema.json` (repo root, referenced by
-  `$schema`) is generated from `ProgramEntry` by `schema.py`; regenerate it
-  (`python -m services.program_config.schema`) after changing the entry
-  shape or `INSTRUCTION_KEY_DOCS`.
-- `services/fixed_glossary/` — loads `fixed_glossary.json` / `.md` (canonical
-  term translations) consumed by pre-pass, glossary-check, **and finalize** (it
-  is a runtime input for name spacing, not just prompt content). A required
-  input: a missing file or bad top-level shape raises; only individual bad
-  entries are skipped with a warning.
-- `services/progress.py` — the reporter contract. `NoopProgressReporter` is the
-  base protocol: legacy bars (`start_stage/advance/finish`), chunk callbacks,
-  and structured lifecycle events (`pipeline_started(project, plan)` with
-  `PlannedStage` entries, `stage_started/completed/skipped`, `side_task_*`,
-  `pipeline_completed/failed`) emitted by `WorkflowRunner`, `SideTaskManager`,
-  and `delivery.py`. **Test fakes must subclass `NoopProgressReporter`.**
-  `create_progress_reporter` (Rich) now serves only `package` and non-TTY
-  runs.
-- `services/tui/` — full-screen Textual dashboard, the default interactive
-  experience for `process` (non-TTY falls back to plain logs; no opt-out flag).
-  `state.py` is a lock-guarded model mutated by `reporter.py`
-  (`TuiProgressReporter`, `owns_screen=True`) from the pipeline **worker
-  thread**; `app.py` renders it on a timer on the main thread
-  (`run_process_ui` in `__init__.py` owns the lifecycle; abort = double-q,
-  relies on stage resumability). Log lines and bars are attributed to stages
-  by loguru/thread name (`date-research*`/`cover*` → side tasks). yt-dlp
-  switches from its native stdout renderer to `progress_hooks` only when
-  `reporter.owns_screen` is set.
-
-## Settings & configuration (`settings.py`)
-
-Pydantic-settings, loaded from `.env`. Notable patterns:
-
-- **Per-stage backend selection**: pre-pass, chunk, post-process, and the
-  common utility agents (chunk structural fix, broadcast-date research,
-  package title suggestion) each
-  pick one spec (`agent_prepass_model` / `agent_chunk_model` /
-  `agent_postprocess_model` / `agent_common_model`, i.e. `AGENT_*_MODEL` in
-  `.env`). `agent_chat_model` is optional (`OptionalModelSpecField`); read it
-  through `settings.chat_model`, which falls back to the common spec.
-- **`ModelSpec`**: `*_MODEL` is written as `"backend/model"` or
-  `"backend/model/effort"` (effort is one of low/medium/high/extra/max/ultra,
-  default high) and parsed into `.backend` + `.model` + `.reasoning_effort`. `effort`
-  is mapped per client (agy model variant,
-  codex model_reasoning_effort, claude effort); backends without a matching
-  value clamp `extra`/`max`/`ultra` to their highest supported value. The
-  `ModelSpecField` annotation uses `NoDecode` so pydantic-settings doesn't
-  JSON-decode the shorthand string — any new spec-shaped field needs the same
-  annotation.
-
-## Prompts are `.md` files
-
-Every prompt template is a `.md` under the owning module's `prompts/` dir, loaded
-by a sibling `prompts.py`. **Edit the `.md` for wording; edit `prompts.py` only
-for assembly logic.** See **translate-pipeline** for the audio-conditioned
-substitution rules guarded by tests.
-
-## Testing
-
-```bash
-uv run --with pytest python -m pytest          # full suite (~350 tests, seconds)
-uv run --with pytest python -m pytest tests/test_inference.py        # one file
-uv run --with pytest python -m pytest -k chunk_validation            # by keyword
+```
+cli
+tui | pipeline
+stages
+translate | postprocess | extras | package
+live_chat | agent_tools
+sources | asr | subtitles
+agents
+project | config
+media | glossary
+core | events
 ```
 
-`python -m pytest` (not bare `pytest`) is required so the repo root is on
-`sys.path` and `services`/`project`/`workflow` import. pytest is **not** a project
-dependency — it's pulled in ephemerally via `uv run --with pytest`. Tests are
-fast and fully offline (model/network calls are mocked); there is no CI.
+Extra contracts: domain and foundation packages (everything except `cli`,
+`pipeline`, `stages`, `project`, `config`) never import `project` or `config`
+— they take explicit input objects, and only `stages/` binds the layout and
+config to them. `project` and `config` build on `core` alone (no `events`).
+`tui` imports only `events` (plus foundation), never stages or domain code.
+Breaking a contract fails `poe check`; fix the dependency, not the contract.
 
-## Where to make a change (cheat sheet)
+## Pipeline (`pipeline/`, `stages/`)
 
-- New pipeline stage → add `ProgressStage` value **and** `Project.is_*` field
-  (import-time sync check), add the stage body under `workflow/stages/`, wire it
-  into `workflow/api.py` with `WorkflowRunner`, add path properties on `Project`.
-- New model backend → **inference-layer**.
-- New translate behavior → **translate-pipeline** (keep chunk-boundary
-  determinism intact).
-- Refine/glossary/cover/finalize/packaging → **postprocess-and-packaging**.
-- Prompt wording → the `.md`, never inline strings.
-- New tunable → a `settings.py` field with a `description`; read it at the call
-  site, don't thread it through constructors.
+`core/stage_key.py` `StageKey` declaration order **is** execution order, and
+`key.number` numbers the work directory (`work/NN_<key>/`), so reordering
+members is a layout change. `pipeline/registry.py` holds the only lists:
+`STAGES` (must follow `StageKey` order; `Pipeline.__post_init__` asserts it),
+`SIDE_TASKS`, `DELIVERY`, combined into `PIPELINE`. Tests build their own
+`Pipeline` from fakes (the CLI takes one via `ctx.obj`).
+
+| # | key | writes (besides `work/NN_<key>/`) |
+|---|---|---|
+| 1 | `metadata` | state: name, broadcast date, `source` (title, series, channel, talents, label) |
+| 2 | `download` | `poster.jpg`; `work/02_download/{parts/,full.mp4}`; appends new programs to `grill.toml` |
+| 3 | `combine` | `video.mp4` (cut to the section, else `full.mp4` moved), `subs/ja.official.srt`; state `section` |
+| 4 | `chat_fetch` | `--chat` only (see live-chat) |
+| 5 | `audio` | `work/05_audio/audio.ogg` |
+| 6 | `asr` | `work/06_asr/asr.json`; adds `asr_cost_usd` (an existing `asr.json` costs nothing) |
+| 7 | `transcript` | `subs/ja.srt` |
+| 8–11 | `prepass`, `chunks`, `refine`, `glossary` | work dirs only (translate-pipeline, postprocess-and-packaging) |
+| 12 | `finalize` | `subs/cht.srt`, `subs/cht.ass` |
+| 13 | `chat_translate` | `--chat` only: `subs/chat.cht.json` |
+
+Side tasks: `cover` (after `download`), `date_research` (after `metadata`).
+Delivery: `package`. Archive is not a step definition; the runner does it last.
+
+**Stage API (`stages/base.py`, below `pipeline`):**
+- `StageDef(key, label, weight, run, outputs, enabled, on_skip, params,
+  clear_state, preflight)`. `run(ctx)` returns optional `StepCompleted` result
+  text. `outputs(layout)` = root deliverables it writes (what `grill reset`
+  deletes, with the work dir). `clear_state` resets the state fields it writes.
+  `params(config)` is a display/ledger snapshot, **never a cache key**.
+  `preflight(config, secrets)` raises before any stage runs (missing ASR key).
+- `SideTaskDef[T](key, start_after, run, enabled, record, describe, is_done,
+  on_skip, …)`: `run` returns a payload; the manager writes the record
+  (default `TaskRecord`) under the state lock.
+- `DeliveryStepDef(key, run, workdir, enabled, …)`: no ledger, re-runs on every
+  complete run.
+- `StageContext`: `layout`, `state`, `save()`, `update(fn)` (locked atomic
+  save; use it for any state change a side task may race), `config`,
+  `secrets`, `config_file`, `options` (`RunOptions`), `agents`
+  (`AgentRunner`), `events`, lazily created `workdir`, `session_dir(label)`,
+  and the `Externals` seams `ffmpeg`, `ytdlp`, `http`, `speech_to_text` (built
+  once by `pipeline.runner.real_externals`; tests pass fakes from
+  `tests/fakes.py`).
+- Read upstream artifacts through `require(path, produced_by)`; a missing file
+  raises `MissingArtifactError` naming the `grill reset --from` to run.
+- Stages are plain modules exporting `STAGE` / `TASK` / `STEP`. Shared glue
+  (program rules, yt-dlp request, frame tool, source split, `role_params`,
+  `tool_params`, `flag_or_feature`, `chat_enabled`) is in `stages/_common.py`.
+
+**Runner (`pipeline/runner.py`):** `run_project` → `Pipeline.check` (options +
+preflight of every stage that will run; a rejected run creates nothing) →
+`open_project` → per stage: disabled → `StepSkipped(disabled)`; in the ledger
+→ `on_skip` + `StepSkipped(already_complete)`; else `execute_step` (the one
+step executor: scope, Started/Completed/Failed, per-step token usage) then
+`state.mark_done` with an atomic save. `--break-after <key>` stops after that
+stage (ran, complete or disabled) and reports the rest as `breakpoint`; side
+tasks and delivery are skipped entirely. Then side tasks join, delivery runs,
+project logs close, archive moves the directory, `RunFinished`.
+`deliver_project` (`grill package`) runs only the delivery steps.
+
+**Side tasks (`pipeline/side_tasks.py`):** start on a daemon thread with a
+copied contextvars context when the loop passes `start_after`; never fail the
+run; always joined in the manager's `__exit__` — also when a stage failed,
+because the agent cost is already paid (an interrupt waits only
+`INTERRUPT_WAIT_S`).
+
+**Reset (`pipeline/reset.py`):** clears ledger entries, `clear_state` fields,
+the whole work dir and declared `outputs`; state is saved first so an
+interrupted deletion still reruns. `stages_from(key)` backs `--from`. This is
+the only sanctioned way to force a re-run.
+
+**Serial (`pipeline/serial.py`):** each project's final directory (archived
+one when `[paths] archive` is set) becomes the next `--parent`; the pre-pass
+reads `ProjectLayout(parent).effective_briefing()`. Stops at the first failure
+and logs the resume command; emits `BatchItemStarted`.
+
+## Project (`project/`)
+
+- `layout.py` `ProjectLayout` is the **only** place that spells a project
+  path (pure calculator, never creates dirs). Root: `project.json`,
+  `video.mp4`, `poster.jpg`, `cover.png`, `subs/`, `logs/{run,events}-<ts>`.
+  Work: `work/NN_<key>/`, unnumbered `work/side/<task>/` and `work/package/`.
+  Agent sessions: `session/`, `session_<label>/`, retries `session.2/`.
+  `effective_briefing()` = glossary's briefing if present, else pre-pass's.
+  Add a path here, never inline.
+- `state.py` `ProjectState`: identity (`id`, persisted `platform`), `source`,
+  `section`, `asr_cost_usd` (ElevenLabs is the only metered service), the
+  `stages` ledger `dict[StageKey, StageRecord]` (unknown key = validation
+  error), `side_tasks` (`cover: TaskRecord`, `date_research:
+  DateResearchRecord`). Readers use `effective_broadcast_date`.
+- `store.py`: strict load (no old formats), atomic save, `archive_project`
+  (staged copy, verify, swap). `naming.py`: deliverable name
+  `YYMMDD_<id>_<name>` and archive/package destinations trimmed by
+  `core.paths.fit_dir_name`; `PROJECT_INNER_PATH_RESERVE` is derived from the
+  layout's deepest paths, so a deeper path raises it automatically.
+
+## Config (`config/`)
+
+- `grill.toml` (git-ignored) is found walking up from cwd, else
+  `$GRILL_HOME/grill.toml`; its directory is the root for `projects/`, `.env`
+  and relative paths. `AppConfig` (`model.py`) forbids unknown keys
+  everywhere. Sections: `paths`, `agents` (+ `roles`: prepass, chunk,
+  postprocess, utility, chat→utility, image), `asr`, `translate`, `features`,
+  `package` (+ `inserts`), `programs.{series,channel}`.
+- Only `cli/` and `pipeline/` read `AppConfig` wholesale; stages pass the
+  sections domain code needs as inputs. No global settings object.
+- New setting: add a `Field(description=…)` in `model.py`, document it in
+  `grill.example.toml`, regenerate `grill.schema.json` with `uv run poe
+  schema` (a test asserts it is current).
+- `.env` holds secrets only (`Secrets`: `ELEVENLABS_API_KEY`); a missing key
+  fails the ASR preflight.
+- `programs.py` `ProgramRules`: channel then series entries merged (`common`
+  text before stage text; stage keys `prepass`, `chunks`, `refine`,
+  `glossary`). `register_program` (download stage) is the only writer of
+  `grill.toml`, appending empty entries with `tomlkit`.
+
+## Events, logs, TUI (`events/`, `tui/`)
+
+- Every report is a frozen dataclass in `events/types.py` emitted to an
+  `EventSink`; `EventBus` fans out and isolates broken sinks.
+  `events/context.py` `stage_scope` / `task_scope` contextvars attribute
+  events and loguru records; worker pools propagate them with
+  `copy_context()`. Progress bars go through `events.progress.track`.
+- Sinks: `ConsoleSink` (non-TTY), `JsonlSink` (`logs/events-<ts>.jsonl`,
+  added by the pipeline), `tui.TuiSink`. `pipeline/logs.py` also writes
+  `logs/run-<ts>.log`.
+- TUI: `PipelineState` is a pure reducer over events; plan, labels and weights
+  come from `RunStarted`; the chunk board is sessions named `chunks/…`. Abort
+  kills every live child tree (`core.process.kill_all`).
+
+## Infrastructure
+
+- `sources/`: one `SourcePlatform` per platform (`youtube`, `bilibili`,
+  `tver`, `abema`) registered in `registry.py`; ID parsing is
+  `core/source_id.py`. BiliBili never sends cookies (format list cap); ABEMA
+  resets yt-dlp's cached token before downloading. Extras and broadcast dates
+  are best-effort. Downloads keep `skip_unavailable_fragments=False` and fail
+  on audio gaps (a gap drifts ASR timestamps).
+- External processes only via `media/ffmpeg.py` (ffmpeg/ffprobe) or
+  `agents/process.py` (agent CLIs); ruff bans `subprocess.*` elsewhere. Both
+  tree-kill on timeout and register in `core.process.LIVE_PROCESSES`.
+- `asr/`: ElevenLabs client and the ASR-JSON → SRT builder (tuning constants
+  are intentional, not settings). `glossary/`: the fixed glossary, a required
+  runtime input of pre-pass, glossary check and finalize.
+- `core/`: single copies of SRT parsing (`read_srt_file` reads `utf-8-sig`),
+  timecodes, atomic writes, JSON artifacts (`load_model` = corrupt is a miss),
+  prompt loading (`render_template` demands exact slots), `ModelSpec`,
+  `Briefing`, path budgets.
+
+## CLI (`cli/`)
+
+`grill <src> [HINT]` = `grill run`; options `--break-after <key>`, `--parent`,
+`--cover`, `--date-research`, `--chat`, `--chat-layout`, `--remix [pool]`,
+`--start`, `--to`. Also `serial`, `package <dir|id>`, `archive <id>`,
+`reset <id> --from|--only <key>`, `status [<id>]`, `doctor`. Commands import
+heavy modules inside the function so `--help` stays fast; a bare `--remix`
+is expanded in `cli/args.py`. On a TTY the run goes through
+`tui.run_with_tui`, else a `ConsoleSink`.
+
+## Invariants
+
+- Resumable: a stage is complete iff it is in the ledger; re-running resumes.
+- A stage writes only its work dir and its declared `outputs` (download's
+  `grill.toml` append is the one exception). No stage rewrites another's output.
+- Caches hit on fixed filenames and never self-invalidate; `grill reset` is
+  the explicit re-run. Never add hash or staleness checks.
+- Agent-written stages (refine, glossary) discard old output on re-entry.
+- Side tasks join in `finally`; `--break-after` skips side tasks and delivery.
+- Every agent call goes through `AgentRunner`; only ElevenLabs is metered.
+- Windows MAX_PATH 260: generated directory names go through the path budget.
+- Agent-written SRTs may carry a BOM; read them with `core.srt.read_srt_file`.
+- No compatibility code: old formats fail loudly (migration scripts live in
+  `scripts/`).
+
+## Making a change
+
+- New stage: add the `StageKey` member in order (renumbers later work dirs),
+  write `stages/<key>.py` exporting `STAGE`, add it to `STAGES`, add layout
+  paths, declare `outputs` / `clear_state`.
+- New side task: `SideTaskKey`, `stages/<key>.py` `TASK`, a `SideTasks` field.
+- New platform: `sources/` + `core/source_id.py` only.
+- New backend, capability or agent tool: agent-orchestration.
+- Done means `uv run poe check` (fmt-check, ruff, basedpyright, import-linter,
+  pytest) passes. Tests mirror `src/grillmaster/`, inject fakes instead of
+  patching module paths, and use `tmp_path`; `-m live` tests spend quota.

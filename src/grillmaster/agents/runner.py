@@ -292,7 +292,7 @@ class AgentRunner:
             )
         schema = None
         if isinstance(task.output, SchemaOutput):
-            model: type[BaseModel] = task.output.model  # pyright: ignore[reportUnknownMemberType]
+            model: type[BaseModel] = task.output.model
             try:
                 schema = strict_json_schema(model)
             except StrictSchemaError as error:

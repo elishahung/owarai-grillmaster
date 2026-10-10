@@ -29,6 +29,6 @@ if __name__ == "__main__":
     match sys.argv[1:]:
         case [output]:
             atomic_write_text(Path(output), render_config_json_schema())
-            print(f"Wrote {output}")  # noqa: T201
+            print(f"Wrote {output}")  # noqa: T201 - CLI output
         case _:
             sys.exit("usage: python -m grillmaster.config.schema <output.json>")

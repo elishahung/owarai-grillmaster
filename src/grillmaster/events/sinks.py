@@ -52,7 +52,7 @@ class ConsoleSink:
             logger.log(level, message)
 
 
-def describe(event: Event) -> tuple[str, str] | None:  # noqa: PLR0911
+def describe(event: Event) -> tuple[str, str] | None:  # noqa: PLR0911 - one case per event
     """`(loguru level, message)` for an event; `None` when it is not logged."""
     match event:
         case RunStarted(project=project, plan=plan):

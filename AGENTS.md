@@ -3,60 +3,63 @@
 This file is the first-glance handoff for any agent working in this repository.
 It is intentionally short — the detailed architecture lives in the domain
 skills under `.agents/skills/`. Pick the skill that owns the files you are
-touching:
+touching (paths under `src/grillmaster/`):
 
 | Touching…                                                                 | Read first |
 |---------------------------------------------------------------------------|------------|
-| `workflow/`, `project.py`, `settings.py`, `main.py`, or `services/` srt / media / ytdlp / elevenlabs / fixed_glossary / program_config / progress / tui | **project-architecture** |
-| `services/inference/` (backends, schema repair, frame tools)              | **inference-layer** |
-| `services/translate/` (pre-pass, chunking, chunk workers, caches, prompts) | **translate-pipeline** |
-| `services/postprocess/`, `services/finalize/`, `services/package/`        | **postprocess-and-packaging** |
-| `services/live_chat/` (`--chat` replay fetch, translation, chat-panel ASS) | **live-chat** |
+| `pipeline/`, `stages/` (stage API, metadata → transcript stages), `project/`, `config/`, `events/`, `tui/`, `cli/`, `core/`, `sources/`, `media/`, `asr/`, `glossary/` | **project-architecture** |
+| `agents/` (runner, adapters, schema, repair, sessions), `agent_tools/` (MCP `get_frames`, `check_srt`) | **agent-orchestration** |
+| `translate/`, `stages/prepass.py`, `stages/chunks.py`, `core/briefing.py` | **translate-pipeline** |
+| `postprocess/`, `extras/`, `subtitles/`, `package/`, their stages, side tasks, delivery | **postprocess-and-packaging** |
+| `live_chat/`, `stages/chat_fetch.py`, `stages/chat_translate.py` (`--chat`) | **live-chat** |
 
-For a change that spans modules (new stage, new setting, new platform), start
-with **project-architecture** — it holds the orchestration contract and the
+For a change that spans packages (new stage, new setting, new platform), start
+with **project-architecture** — it holds the pipeline contract and the
 repo-wide invariants.
 
 ## What this project is
 
 **Owarai GrillMaster** — a single-user CLI that downloads a Japanese
 variety-show video (by ID or URL) and produces Traditional Chinese subtitles
-(SRT + styled ASS), optionally burning them into the video. No server, queue, or
-database: all state lives in `projects/<id>/project.json`, and the pipeline is a
-linear, idempotent, **resumable** stage machine — re-running an ID resumes where
+(SRT + styled ASS), optionally burning them into the video. No server, queue,
+or database: all state lives in `projects/<id>/project.json`, and the pipeline
+is a declarative, **resumable** stage registry — re-running an ID resumes where
 it left off.
 
-Pipeline at a glance:
-`download → combine → (live-chat fetch) → extract audio → ASR (ElevenLabs) →
-pre-pass analysis → concurrent chunk translation → refine → glossary check
-→ finalize (ASS+SRT) → (live-chat translation) → (archive) → (package)`. Stages in parentheses are optional.
+Pipeline at a glance (stage keys, in order; `work/NN_<key>/` per stage):
+`metadata → download → combine → (chat_fetch) → audio → asr → transcript →
+prepass → chunks → refine → glossary → finalize → (chat_translate)`, then
+delivery `(package)` and `(archive)`. Side tasks `(cover)` and
+`(date_research)` run beside the stages. Parentheses mark optional steps.
 
-Entry point: `main.py` (Typer CLI) → `workflow.submit_project`. Run with
-`grill <SOURCE> [HINT]` (via `scripts/grill.bat` on PATH) or
-`python main.py <SOURCE> [HINT]`.
+Commands: `grill <SOURCE> [HINT]` (= `grill run`), `grill serial`,
+`grill package`, `grill archive`, `grill reset <id> --from|--only <stage>`,
+`grill status`, `grill doctor`. Entry point `grillmaster.cli:main`.
+
+Layering: packages may import only downward in the `.importlinter` layer
+order, and domain packages never import `project` or `config` — only
+`stages/` binds them.
 
 ## Environment & tooling
 
-- **Python 3.13+**, managed with **`uv`** + a local **`.venv`**. Install deps
-  with `uv sync` (or `pip install -e .`).
-- **FFmpeg** must be installed and on `PATH` (media combine/extract/burn-in).
-- Config via a `.env` file (`settings.py` holds every key with its
-  description; `README.md` lists only the common ones). Model
-  backends are selectable per stage (`agy` / `claude` / `codex`), all
-  subscription agents; only ElevenLabs ASR is metered.
+- **Python 3.13+**, managed with **`uv`** + a local **`.venv`**; `uv sync`
+  installs the package editable with the `dev` group (pytest, ruff,
+  basedpyright, import-linter, poe).
+- **FFmpeg** on `PATH`; the agent CLIs (`agy`, `codex`; Claude runs through the
+  SDK) logged in on their subscriptions. Only ElevenLabs ASR is metered.
+- Config: `grill.toml` (see `grill.example.toml`, schema `grill.schema.json`);
+  `.env` holds secrets only (`ELEVENLABS_API_KEY`).
 
-### Running tests
+### Definition of done
 
 ```bash
-uv run pytest                       # full suite
-uv run pytest tests/test_srt.py     # single file
-uv run pytest -k chunk_validation   # by keyword
+uv run poe check                    # fmt-check, ruff, basedpyright, import-linter, pytest
+uv run pytest tests/core            # one package
+uv run pytest -k chunk              # by keyword
 ```
 
-The package lives under `src/grillmaster/` and `uv sync` installs it editable
-together with the `dev` dependency group (pytest, ruff, basedpyright,
-import-linter, poe). Tests are offline (network/model calls mocked) and fast;
-there is no CI, so run them yourself before considering a change done.
+`uv run poe check` must pass before a change is done; there is no CI. Tests are
+offline and fast; `-m live` tests call real agent CLIs and spend quota.
 
 ## Keep the docs current (important)
 
@@ -64,10 +67,12 @@ After any change, **update the skill that owns the touched area** so the next
 agent inherits an accurate map — a stale skill is worse than no skill. Update
 it whenever you:
 
-- add/rename/remove a pipeline stage, service module, or model backend;
-- change a cross-cutting invariant (resumability, stage↔field sync, chunk-
-  boundary determinism, cover-always-Codex, caches-never-self-invalidate);
-- add or rename a setting or an `.env` key.
+- add/rename/remove a stage, side task, delivery step, package, agent backend,
+  capability or MCP tool;
+- change a cross-cutting invariant (resumability via the ledger, stages writing
+  only their own outputs, chunk-boundary determinism, caches-never-self-
+  invalidate, the layering contracts);
+- add or rename a `grill.toml` setting or an `.env` key.
 
 Keep skill updates proportional. Document facts the next agent must know to
 avoid breaking architecture or operating the wrong subsystem: ownership

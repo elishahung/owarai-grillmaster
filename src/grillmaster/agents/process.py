@@ -149,7 +149,7 @@ class _PopenLineProcess:
     def stderr_tail(self) -> str:
         return self._stderr.text
 
-    def _write_stdin(self, text: str, keep_open: bool) -> None:  # noqa: FBT001
+    def _write_stdin(self, text: str, keep_open: bool) -> None:  # noqa: FBT001 - a Thread target
         stdin = _pipe(self._process.stdin)
         try:
             if text:

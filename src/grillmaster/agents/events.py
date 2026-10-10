@@ -56,7 +56,7 @@ def normalize_usage(raw: object, names: Mapping[str, str]) -> dict[str, int]:
     `cached_input_tokens`, `reasoning_tokens`)."""
     if not isinstance(raw, dict):
         return {}
-    counters: dict[str, object] = raw  # pyright: ignore[reportUnknownVariableType]
+    counters: dict[str, object] = raw
     return {
         ours: value
         for theirs, ours in names.items()
@@ -105,7 +105,7 @@ def _compact(value: object) -> str:
         case str():
             return _cut(" ".join(value.split()), _ARG_LIMIT)
         case list() | tuple():
-            return ", ".join(_compact(item) for item in value)  # pyright: ignore[reportUnknownVariableType]
+            return ", ".join(_compact(item) for item in value)
         case bool() | int() | float() | None:
             return json.dumps(value)
         case _:

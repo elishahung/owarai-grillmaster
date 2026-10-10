@@ -67,7 +67,7 @@ class PromptSection:
     @staticmethod
     def srt_slice(chunk: Chunk) -> str:
         return (
-            f"【SRT 區段（index {chunk.from_index}–{chunk.to_index}，"  # noqa: RUF001
+            f"【SRT 區段（index {chunk.from_index}–{chunk.to_index}，"  # noqa: RUF001 - en dash in prompt text
             f"共 {len(chunk.blocks)} block）】"
         )
 
@@ -229,7 +229,7 @@ def chunk_message(inputs: ChunkInputs) -> str:
     srt_slice = "\n\n".join(block.raw for block in chunk.blocks)
     return (
         f"你是第 {inputs.position + 1}/{inputs.total} 塊翻譯員，負責 SRT index "
-        f"{chunk.from_index}–{chunk.to_index}。\n\n"  # noqa: RUF001
+        f"{chunk.from_index}–{chunk.to_index}。\n\n"  # noqa: RUF001 - en dash in prompt text
         f"{PromptSection.CHUNK_TIME_RANGE}\n"
         f"{span.start:.3f}s - {span.end:.3f}s\n\n"
         f"{PromptSection.CHUNK_FRAME_TIMES}\n"

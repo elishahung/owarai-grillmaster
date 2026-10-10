@@ -74,9 +74,9 @@ def fmt_clock(seconds: float) -> str:
 
 
 def fmt_tokens(count: int) -> str:
-    if count >= 1_000_000:  # noqa: PLR2004
+    if count >= 1_000_000:  # noqa: PLR2004 - unit threshold
         return f"{count / 1_000_000:.1f}M"
-    if count >= 1_000:  # noqa: PLR2004
+    if count >= 1_000:  # noqa: PLR2004 - unit threshold
         return f"{count / 1_000:.1f}k"
     return str(count)
 

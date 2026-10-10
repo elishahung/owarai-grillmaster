@@ -12,7 +12,7 @@
 
 使用到目前三個月，覺得差不多沒什麼痛點了，於是分享紀錄一下。
 
-![](doc/article1.png)
+![](images/article1.png)
 
 # 流程
 
@@ -22,7 +22,7 @@
 
 YT-DLP 配上科學上網
 
-![](doc/article2.png)
+![](images/article2.png)
 
 另外，tver 跟 abema 可以從 API 拿到節目資訊以及出演人員，尤其出演人員很關鍵，會有名稱、所在組合、節目中的角色等重要訊息。
 

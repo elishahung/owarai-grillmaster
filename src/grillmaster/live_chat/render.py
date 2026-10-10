@@ -353,7 +353,9 @@ class _Item:
         self.height = NAME_LINE_HEIGHT + BODY_LINE_HEIGHT * len(body_lines)
 
         # A stable colour per author, not a security hash.
-        digest = hashlib.md5(message.author.encode("utf-8")).hexdigest()  # noqa: S324
+        digest = hashlib.md5(
+            message.author.encode("utf-8"), usedforsecurity=False
+        ).hexdigest()
         color = AVATAR_COLORS[int(digest, 16) % len(AVATAR_COLORS)]
         self.avatar = f"\\p1\\c&H{bgr(color)}&}}{_AVATAR_SHAPE}"
         self.initial = "}" + _escape((message.author.lstrip("@")[:1] or "?").upper())

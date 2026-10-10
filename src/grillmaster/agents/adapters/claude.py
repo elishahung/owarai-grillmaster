@@ -398,9 +398,9 @@ def encode_message(value: object) -> Any:
             },
         }
     if isinstance(value, dict):
-        return {str(key): encode_message(item) for key, item in value.items()}  # pyright: ignore[reportUnknownVariableType]
+        return {str(key): encode_message(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
-        return [encode_message(item) for item in value]  # pyright: ignore[reportUnknownVariableType]
+        return [encode_message(item) for item in value]
     return value
 
 

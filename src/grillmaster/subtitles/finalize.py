@@ -50,7 +50,7 @@ _FW_PUNCT_SPACE = re.compile(r"[ \t　]*([，、；。：！？])[ \t　]*")
 # leading hyphen/dash variant (incl. full-width "－", en/em dash, minus) plus
 # surrounding spaces becomes "-". A leading "--" (interruption) keeps its
 # second dash: only the first char is matched.
-_SPEAKER_DASH = re.compile(r"^[ \t　]*[-‐-―−－][ \t　]*")  # noqa: RUF001
+_SPEAKER_DASH = re.compile(r"^[ \t　]*[-‐-―−－][ \t　]*")  # noqa: RUF001 - dash variants on purpose
 
 # Han + kana letters that a Latin-containing name unit is separated from by
 # one half-width space. CJK punctuation, the middle dot (U+30FB), the

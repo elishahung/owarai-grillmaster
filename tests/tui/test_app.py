@@ -211,7 +211,7 @@ def test_copy_log_puts_the_whole_buffer_on_the_clipboard():
 class _NotifyRecorder(GrillMasterApp):
     severities: list[str]
 
-    def notify(self, message: str, *, severity: str = "information", **_: object):  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]
+    def notify(self, message: str, *, severity: str = "information", **_: object):
         self.severities.append(severity)
 
 
@@ -361,7 +361,7 @@ def test_hidden_activity_log_is_not_fed_and_replays_its_ring_when_shown():
             await _pump(app, pilot)
             activity = app.query_one(ActivityLog)
             # Never laid out: a write would be deferred without bound.
-            assert len(activity._deferred_renders) == 0  # pyright: ignore[reportPrivateUsage]
+            assert len(activity._deferred_renders) == 0
             await pilot.press("a")
             await pilot.pause()
             assert len(activity.lines) == ACTIVITY_LINES
@@ -369,7 +369,7 @@ def test_hidden_activity_log_is_not_fed_and_replays_its_ring_when_shown():
             await pilot.press("a")
             sink.emit(AgentActivity("chunks/0041-0080", ActivityKind.THOUGHT, "late"))
             await _pump(app, pilot)
-            assert len(activity._deferred_renders) == 0  # pyright: ignore[reportPrivateUsage]
+            assert len(activity._deferred_renders) == 0
             await pilot.press("a")
             await pilot.pause()
             assert len(activity.lines) == ACTIVITY_LINES

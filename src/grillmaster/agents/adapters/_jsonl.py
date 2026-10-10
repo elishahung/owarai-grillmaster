@@ -59,7 +59,7 @@ class JsonlTurn(Turn):
             except ValueError:
                 continue  # stray log line; kept in raw.jsonl only
             if isinstance(record, dict):
-                yield from self._parser.feed(record)  # pyright: ignore[reportUnknownArgumentType]
+                yield from self._parser.feed(record)
             if self._parser.done:
                 self._process.close_stdin()
         self._returncode = self._process.wait()

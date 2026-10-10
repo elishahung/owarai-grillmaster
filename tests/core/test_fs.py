@@ -28,7 +28,7 @@ def test_atomic_write_failure_keeps_old_content_and_cleans_up(tmp_path: Path):
     path = tmp_path / "out.txt"
     atomic_write_text(path, "old")
     with pytest.raises(TypeError):
-        atomic_write_text(path, 123)  # pyright: ignore[reportArgumentType]
+        atomic_write_text(path, 123)  # pyright: ignore[reportArgumentType] - a wrong type on purpose
     assert path.read_text(encoding="utf-8") == "old"
     assert [p.name for p in tmp_path.iterdir()] == ["out.txt"]
 

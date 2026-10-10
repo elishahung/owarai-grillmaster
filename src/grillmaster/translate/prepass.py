@@ -99,7 +99,7 @@ def segment_coverage_validator(
             raise ValidationFailure(
                 f"segment_summaries 只涵蓋 {len(boundaries) - len(missing)}/"
                 f"{len(boundaries)} 個 chunk 區間，每個區間都必須各有一筆。"
-                "缺少下列區間，請補齊（from_index／to_index 需完全相符，"  # noqa: RUF001 - legacy wording
+                "缺少下列區間，請補齊（from_index／to_index 需完全相符，"  # noqa: RUF001 - full-width prompt text
                 f"已有的區間請原樣保留）：{prompt.boundaries_json(missing)}"
             )
 

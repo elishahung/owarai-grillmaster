@@ -41,4 +41,4 @@ class Secrets(BaseSettings):
 
 def load_secrets(root: Path) -> Secrets:
     """Read `root/.env`; process environment variables take precedence."""
-    return Secrets(_env_file=root / ENV_FILE_NAME)  # pyright: ignore[reportCallIssue]
+    return Secrets(_env_file=root / ENV_FILE_NAME)  # pyright: ignore[reportCallIssue] - a pydantic-settings init option

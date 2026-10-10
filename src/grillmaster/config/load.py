@@ -77,7 +77,7 @@ def load_config(
     """Find, parse and validate `grill.toml`, and read the sibling `.env`."""
     # pydantic-settings is slow to import; commands that only need the
     # working root (`find_config`) never pay for it.
-    from grillmaster.config.secrets import load_secrets  # noqa: PLC0415
+    from grillmaster.config.secrets import load_secrets  # noqa: PLC0415 - slow import
 
     path = find_config(start, env)
     return LoadedConfig(

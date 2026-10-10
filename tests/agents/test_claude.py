@@ -134,7 +134,7 @@ def test_registered_transport_holds_its_child_in_live_processes(
         await transport.close()
 
     before = LIVE_PROCESSES.live()
-    asyncio.run(spawn_and_close())  # noqa: TID251
+    asyncio.run(spawn_and_close())  # noqa: TID251 - drives the SDK transport directly
     [pids] = seen
     assert len(pids) == 1
     assert LIVE_PROCESSES.live() == before
@@ -154,7 +154,7 @@ def test_images_travel_as_base64_blocks(
         return await anext(stream)
 
     # Reads the prompt stream the adapter built; no pipeline code involved.
-    message = asyncio.run(first(query.calls[0]["prompt"]))  # noqa: TID251
+    message = asyncio.run(first(query.calls[0]["prompt"]))  # noqa: TID251 - drains an async prompt stream
     text, block = message["message"]["content"]
     assert text == {"type": "text", "text": "look"}
     assert block["source"] == {

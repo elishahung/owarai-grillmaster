@@ -83,13 +83,13 @@ class YtDlpLibrary:
     ) -> dict[str, Any]:
         import yt_dlp  # noqa: PLC0415 - heavy, loaded on first use
 
-        with yt_dlp.YoutubeDL(dict(options)) as ydl:  # pyright: ignore[reportArgumentType]
+        with yt_dlp.YoutubeDL(dict(options)) as ydl:  # pyright: ignore[reportArgumentType] - stubs want a TypedDict
             for processor in before_download:
                 ydl.add_post_processor(processor, when="before_dl")
             info = ydl.extract_info(url, download=download)
             if info is None:
                 raise SourceError(f"yt-dlp returned no info for {url}")
-            sanitized: dict[str, Any] = ydl.sanitize_info(info)  # pyright: ignore[reportAssignmentType]
+            sanitized: dict[str, Any] = ydl.sanitize_info(info)  # pyright: ignore[reportAssignmentType] - stubs return a TypedDict
             return sanitized
 
 

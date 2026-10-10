@@ -1,129 +1,110 @@
 ---
 name: translate-pipeline
 description: >-
-  The two-stage translation package under `services/translate/` — pre-pass
-  whole-film analysis (`pre_pass/`), concurrent chunk translation
-  (`chunk/chunk_worker.py`), chunking (`chunker.py`, `facade.py`), structural
-  validation and agent repair (`validation.py`, `structural_fix.py`), chunk
-  caches under `.chunks/`, `pre_pass.json`, and the prompt `.md` templates.
-  Read this before changing chunk boundaries, cache behavior, PrePassResult
-  schema, chunk validation, or any prompt under `services/translate/`.
+  Two-step subtitle translation: the domain package `src/grillmaster/translate/`
+  (chunker.py, prepass.py, chunk.py, prompt.py, assets.py, inputs.py,
+  prompts/*.md), its stage glue `stages/prepass.py` and `stages/chunks.py`
+  (plus `split_source` / `source_context` in `stages/_common.py`), and the
+  shared contracts `core/briefing.py` and `core/id_coverage.py`. Read this
+  before changing chunk boundaries, the Briefing or ChunkTranslation schema,
+  chunk validation or caches, frame/audio inputs, or any translate prompt.
 ---
 
-# Translate package (`services/translate/`)
+# Translation (`translate/` + `stages/prepass.py`, `stages/chunks.py`)
 
-Two-stage translation orchestrated by `facade.py` (`class Translate`). Both
-stages call `Translate._prepare`, which parses the SRT and splits it into
-char-balanced chunks **deterministically** (`chunker.split_into_chunks`), so
-pre-pass and chunk stages always agree on boundaries even across resumes —
-this determinism is load-bearing: the pre-pass segment summaries are keyed by
-exact chunk index ranges, and chunk caches are keyed by range.
+`subs/ja.srt` (transcript stage) → **prepass** stage: one whole-film agent call
+→ `Briefing` → **chunks** stage: concurrent per-chunk agent calls → merged SRT.
+Runner, adapters, `AgentTask`/`AgentJob` and repair rounds: **agent-orchestration**.
+Stage registry, ledger, `grill reset`, layout: **project-architecture**.
 
-```
-services/translate/
-├── facade.py        # run_pre_pass + translate_chunks (asyncio)
-├── chunker.py       # split_into_chunks (char-balanced)
-├── assets.py        # frame sampling + per-chunk audio slicing (ffmpeg), cached
-├── request.py       # TranslationRequest (paths + context bundle)
-├── errors.py        # ChunkTranslationError / TranslationError
-├── pre_pass/
-│   ├── pre_pass.py  # whole-film analysis → pre_pass.json
-│   ├── schema.py    # PrePassResult / characters / catchphrases / SegmentSummary
-│   └── prompts.py + prompts/   # pre_pass.md, fixed_glossary.md,
-│                               # official_source_metadata.md, parent_pre_pass.md,
-│                               # official_subtitle.md
-└── chunk/
-    ├── chunk_worker.py    # translate_chunk: cache → infer → validate → fix
-    ├── prompts.py + prompts/   # chunk.md, structural_fix.md (audio-conditioned)
-    ├── validation.py / validate_chunk.py  # structural validation
-    ├── structural_fix.py  # agent self-validating repair (fix_chunk_structure)
-    └── normalizer.py      # strips empty speaker-dash lines (nothing more)
-```
+## Ownership
 
-## Pre-pass (stage 7)
+- `translate/` is pure domain code: it never imports `project` or `config`.
+  `stages/` binds layout/state/config into the frozen inputs in `inputs.py`:
+  `SourceContext` (title, description, hint, talents, `program_instruction`
+  for the running stage, `official_subtitles` CC blocks, `parent_briefing`),
+  `PrepassInputs`, `ChunkInputs` (one call), `ChunkBatchInputs` (whole run).
+- `chunker.split_into_chunks` (char-balanced, blocks never split);
+  `prepass.py` builds/validates the pre-pass task and caches the briefing;
+  `chunk.py` owns `ChunkTranslation`, its validator, the batch run and the
+  rebuild/merge; `prompt.py` only assembles prompts; `assets.py` samples
+  frames and slices audio for both steps.
+- `core/briefing.py` owns `Briefing`; `core/id_coverage.py` the id coverage
+  check shared with live-chat batches.
 
-One call over the **whole** film (full SRT + program title, description, and
-user `translation_hint` as separate sections + full audio for
-audio-capable backends (agy) + 20-40 SRT-start-aligned representative frames + the
-whole fixed glossary as a reference table (the model decides which entries
-occur; no per-episode filter) + optional parent context). Produces a `PrePassResult` briefing:
-character roster, proper nouns / ASR-correction dict, catchphrase fixed
-translations, tone notes, and per-segment summaries with explicit
-`from_index`/`to_index` matching the chunk boundaries. Persisted to
-`.pre_pass/pre_pass.json` — the explicit hand-off to the chunk stage.
-`proper_nouns` entries must be honorific-free and same-span (alias → that
-alias's own rendering, never the full name; alias identity goes in `role_note`)
-— chunk workers apply them verbatim, so a violating entry propagates globally.
+## Artifacts (`project/layout.py` is the only path authority)
 
-**Segment coverage is enforced, not hoped for.** `segment_summaries` is a plain
-list, so a briefing covering only the opening chunk is schema-valid — and long
-episodes really do come back that way, leaving every other chunk to translate
-with an empty `segment_summary`. `_segment_coverage_validator` is handed to
-`run_inference(validate=...)` so the shared repair loop re-prompts with the
-missing ranges, and the boundary block is the **last** thing in the user message
-(after the full SRT) so the requirement sits next to the output point. A chunk
-whose range is still unmatched logs a warning in `chunk_worker`.
+- `work/08_prepass/briefing.json` (+ `frames/`, `session/`).
+- `work/09_chunks/<from>-<to>/` (`chunk_range_name`, `0001-0119`): `frames/`,
+  `audio.ogg`, `translation.json`, `session/`; the dir is also the agent cwd.
+- `work/09_chunks/merged.srt` — renumbered 1..N on Japanese timecodes (refine input).
+- The chunks stage and a serial parent's briefing read
+  `layout.effective_briefing()` (the glossary stage's copy wins when present).
 
-**Program instructions** from `config.json` (see **project-architecture**)
-arrive pre-rendered for the running stage as
-`TranslationRequest.program_instruction` and are appended to the pre-pass or
-chunk system instruction; like every other input they do not touch cache
-reuse.
+## Invariants
 
-**`pre_pass.json` never self-invalidates**: once it exists it is reused as-is
-(no model call), regardless of backend/model/prompt changes. To re-run the pre-pass,
-delete `.pre_pass/`.
+- **Chunk-boundary determinism.** Both stages call `stages._common.split_source`
+  → the same `split_into_chunks` on the same SRT and limit. Segment summaries
+  and chunk caches are keyed by exact index ranges; never chunk elsewhere.
+- **Caches hit on fixed filename existence, never self-invalidate.**
+  Briefing, translations, stills and audio slices are reused regardless of
+  model/prompt/config changes (stage `params` are display-only); re-run with
+  `grill reset <id> --from|--only`. A cached `translation.json` that no longer
+  covers its chunk fails loudly (validated once on read).
+- **All agent calls go through `AgentRunner`**: `run` for the pre-pass,
+  `run_jobs` for chunks (`[agents] max_concurrent`). Each job's `accept`
+  writes `translation.json` at once, so finished chunks survive failures and
+  Ctrl-C; failures raise one `TranslateError` after the batch.
+- **Python owns timecodes.** The agent returns `{blocks: [{index, text}]}`
+  only; `rebuild_blocks` puts cleaned text under each source block's index and
+  timecode. `clean_text` drops blank and dash-only (`-`) lines; validation
+  judges the cleaned text, so a debris-only block is "empty".
+- `ja.srt` stays the sole block/timecode scaffold; official CC is a wording
+  reference only (pre-pass gets all of it, a chunk the blocks overlapping its
+  time range ±2 s).
 
-## Official CC reference (optional input to both stages)
+## Contracts
 
-When `TranslationRequest.official_subtitle_path` points at an existing
-`video.official.ja.srt` (platform CC fetched at download, see
-**project-architecture**), the facade injects it as a ground-truth reference:
-pre-pass gets the full text plus the `official_subtitle.md` instruction block;
-each chunk worker gets the CC blocks overlapping its time range (±2 s padding,
-`_slice_official_subtitle`). It is a **content/wording reference only** — the
-ASR SRT remains the sole block/timecode scaffold, and its presence or absence
-does not touch chunk cache keys or `pre_pass.json` reuse. Corollary: a
-`pre_pass.json` generated before the CC existed is still reused as-is — delete
-`.pre_pass/` to fold CC evidence in. A corrupt official file is ignored with a
-warning (best-effort), never a stage failure.
+- `Briefing` (strict JSON, all fields required, no free-key maps): `summary`,
+  `characters[{name_jp,name_zh,role_note}]`, `proper_nouns` and `glossary` as
+  `TermMapping{source,target}` lists (conflicting targets for one source are
+  rejected), `catchphrases[{phrase_jp,phrase_zh,note}]`, `tone_notes`,
+  `segment_summaries[{from_index,to_index,summary}]`. Prompts see
+  `render_for_prompt()`: term lists folded to `{source: target}`; with
+  `chunk=` the list becomes that range's single `segment_summary`.
+- Pre-pass: `Role.PREPASS`, `SchemaOutput(Briefing)`, requires `WEB_SEARCH`;
+  `segment_coverage_validator` demands one summary per chunk range (repair
+  names the missing ranges); the boundary block stays last in the message.
+- Chunk: `Role.CHUNK`, `SchemaOutput(ChunkTranslation)`, `attempts =
+  chunk_attempts`; `chunk_validator` reports missing/duplicate/unknown/empty
+  indexes via `id_coverage`.
+- Media: pre-pass gets 20-40 stills at SRT block starts (+0.2 s), a chunk one
+  per `chunk_frame_interval_s` of its span; audio (full track / chunk slice)
+  only when `accepts_audio(role)` reports `AUDIO_INPUT`. `get_frames` is
+  scoped to 0..last block end (pre-pass) or the chunk's time range.
 
-## Chunk translation (stage 8) — `chunk_worker.translate_chunk`
+## Prompts (`translate/prompts/*.md`; wording lives only in `.md`)
 
-Per chunk, concurrently (semaphore-bounded by `agent_concurrency`; each call
-spawns a heavy local agent process). The worker is a cache-and-repair
-ladder:
+- Audio variants are fragments: `pre_pass.md` / `chunk.md` mark audio spans
+  with `{{audio:<name>}}`; `<stem>_audio.md` and `<stem>_no_audio.md` each hold
+  one `<!-- <name> -->` section per slot. Both must define exactly the
+  template's slots or rendering raises — add/rename slots in all three files.
+- Pre-pass instruction order: audio-rendered `pre_pass.md`, then conditional
+  `official_source_metadata.md` (talents), `official_subtitle.md` (CC),
+  `fixed_glossary.md`, `parent_pre_pass.md` (parent), program instruction,
+  `frames_guidance(pre_pass_frames.md)`, `pre_pass_web_search.md`.
+  Chunk instruction: audio-rendered `chunk.md`, program instruction,
+  `frames_guidance()`.
+- `core/prompts.py`: `load_prompt`, strict-slot `render_template`,
+  `render_program_instruction`, `frames_guidance` (shared
+  `core/prompts/frames_tool.md` + stage fragment). User-message headings are
+  `PromptSection` constants shared by both steps.
 
-1. **Raw cache** (`chunk_XXXX-YYYY.raw.srt`) keyed on the chunk range only — an
-   existing file skips the model call entirely. Caches never self-invalidate:
-   changing backend/model/prompt/settings mid-project requires manually
-   deleting `.chunks/` (and `.pre_pass/` for the pre-pass).
-2. Build the user message: pre-pass briefing (global + this segment's summary)
-   + the chunk's frame timestamps + the SRT slice. Call `run_inference`
-   (`schema=None`, free-form SRT out), retried up to `chunk_max_retries`
-   (fixed `_RETRY_DELAY_SECONDS` pause; quota and not-installed errors fail the
-   chunk at once).
-3. **Strict structural validation** (`validate_chunk_structure`): every source
-   timecode appears exactly once, no unexpected or duplicate timecodes, block
-   count matches, every output block has non-empty translated text.
-4. On validation failure, the **agent fix layer** (`fix_chunk_structure`) hands
-   raw output + the source skeleton + the error to an agent backend that
-   self-validates until it passes. It may translate a genuinely missing block
-   from `source.srt` but must preserve the source skeleton and cannot leave
-   blank placeholder blocks. Result cached as `chunk_XXXX-YYYY.fixed.srt`.
+## Config (`grill.toml`, `config/model.py`)
 
-`facade._translate_chunks_async` gathers all chunks (per-chunk failures are
-collected and raised together as one `TranslationError` after every chunk
-task finished, so successful chunks keep their caches), runs
-`normalizer.normalize_translated_blocks` (which **only** strips empty
-speaker-dash lines), then the facade itself **reindexes to contiguous 1..N**
-before writing `video.cht.srt`.
-
-## Prompts
-
-Prompt wording lives in the `.md` files; `prompts.py` is assembly logic only.
-The pre-pass and chunk instructions have audio-conditioned variants:
-`build_*_instruction(has_audio=...)` applies verbatim find/replace pairs to
-strip audio references for non-audio backends. When editing `chunk.md` or
-`pre_pass.md`, keep the strings the no-audio substitution searches for intact —
-`tests/test_translate_prompts.py` asserts they still occur.
+- `[agents.roles] prepass`, `chunk` — `backend/model[/effort]`.
+- `[translate]`: `chunk_char_limit` (6000; changing it moves every boundary),
+  `chunk_attempts` (3), `prepass_frame_interval_s` (60),
+  `chunk_frame_interval_s` (30), `frame_max_side` (768).
+- `[programs.series|channel."<name>".instruction]` keys `common`, `prepass`,
+  `chunks` reach the prompts as `SourceContext.program_instruction`.

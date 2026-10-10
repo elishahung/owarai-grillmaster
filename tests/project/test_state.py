@@ -144,7 +144,7 @@ def test_open_ended_sections_are_valid():
 
 def test_assignment_is_validated(state: ProjectState):
     with pytest.raises(ValidationError):
-        state.platform = "niconico"  # pyright: ignore[reportAttributeAccessIssue]
+        state.platform = "niconico"  # pyright: ignore[reportAttributeAccessIssue] - an invalid value on purpose
 
 
 def test_side_task_completion(state: ProjectState):

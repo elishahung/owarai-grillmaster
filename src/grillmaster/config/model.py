@@ -136,7 +136,7 @@ class AgentsConfig(BaseModel):
     timeout_minutes: int = Field(
         default=40,
         ge=1,
-        description="Wall-clock limit for a single agent session.",
+        description="Wall-clock limit for one agent turn (each repair round gets its own).",
     )
     max_concurrent: int = Field(
         default=5,

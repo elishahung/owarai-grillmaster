@@ -67,7 +67,7 @@ def row_line(state: PipelineState, key: str) -> int | None:
 def _row(state: PipelineState, step: StepView, *, selected: bool) -> Text:
     icon, style = STATE_ICON[step.state]
     text = Text()
-    text.append("❯" if selected else " ", style="bold cyan")  # noqa: RUF001
+    text.append("❯" if selected else " ", style="bold cyan")  # noqa: RUF001 - selection marker glyph
     text.append(f"{icon} ", style=style)
     if step.state is ItemState.RUNNING:
         name_style = "bold white"

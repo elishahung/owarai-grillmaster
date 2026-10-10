@@ -180,7 +180,7 @@ src/grillmaster/
 │   ├── context.py       # contextvars：目前 stage / task 範圍
 │   └── sinks.py         # ConsoleSink（loguru）、JsonlSink（logs/events-*.jsonl）
 ├── agents/              # §6
-│   ├── task.py  runner.py  events.py  errors.py  roles.py  schema.py  process.py
+│   ├── task.py  runner.py  events.py  errors.py  prompt.py  schema.py  process.py
 │   └── adapters/  base.py  agy.py  codex.py  claude.py
 ├── agent_tools/         # §7：MCP stdio server
 │   ├── __main__.py  server.py  frames.py  srt_check.py
@@ -262,12 +262,12 @@ grillmaster.core | grillmaster.events
 - **ACP 沒有結構化輸出**，D6/D8 依賴的原生 schema 用不到。
 - 三個 CLI 本身已提供我們需要的一切：串流事件（agy `stream-json`、codex `--json`、Claude SDK message stream）、原生 schema、MCP、session resume。再包一層協定只是多一個會壞的元件。
 
-結論：自建一個薄層，**事件詞彙沿用 ACP**（`thought` / `tool_call` / `tool_result` / `message` / `usage`）。
+結論：自建一個薄層，**事件詞彙沿用 ACP**（`thought` / `tool_call` / `tool_result` / `message`；token 用量不是事件，隨每回合的 `FinalOutput.usage` 回報）。
 
 ### 6.2 核心概念
 
 ```python
-class Role(StrEnum):  # 由 grill.toml [agents.roles] 對應到 ModelSpec
+class Role(StrEnum):  # 在 core/model_spec.py；由 grill.toml [agents.roles] 對應到 ModelSpec
     PREPASS = "prepass"
     CHUNK = "chunk"
     POSTPROCESS = "postprocess"
@@ -285,13 +285,14 @@ class AgentTask[T]:
     session_dir: Path  # session 紀錄位置（§6.6），由呼叫的 stage 決定
     workdir: (
         Path | None
-    )  # agent 的 cwd 與可寫根目錄；None = 拋棄式暫存目錄（date research、titles）
+    )  # agent 的 cwd 與可寫根目錄；None = 拋棄式暫存目錄（date research、titles）；同時執行的 task 不可共用（runner 拒絕）
     images: tuple[Path, ...] = ()
     audio: tuple[Path, ...] = ()  # 需要 capability AUDIO_INPUT
-    tools: frozenset[ToolName] = frozenset()  # grill MCP 工具，§7
-    tool_scope: ToolScope | None = None  # 時間窗、參考 SRT 等
-    output: Output[T]  # TextOutput | SchemaOutput(model) | FilesOutput(paths)
+    tools: ToolSession | None = None  # grill MCP 工具與各自的時間窗/參考 SRT（§7）；runner 寫成 session/tools.json
+    add_dirs: tuple[Path, ...] = ()  # 額外可讀根目錄（例如專案根目錄）
+    output: OutputSpec[T]  # TextOutput | SchemaOutput(model) | FilesOutput(paths)
     validate: Callable[[T], None] | None = None  # 丟 ValidationFailure(msg)
+    requires: frozenset[Capability] = frozenset()  # 輸入推不出的需求：IMAGE_GENERATION、WEB_SEARCH
     max_repairs: int = 3  # resume 修復回合
     attempts: int = 1  # 全新 session 的重試次數（暫時性錯誤）
 
@@ -316,13 +317,13 @@ class AgentRunner:
 | `IMAGE_GENERATION` | （不使用） | ✅ | ❌ |
 | `NATIVE_SCHEMA` | ✅ `--json-schema` | ✅ `--output-schema` | ✅ `output_format` |
 | `RESUME` | ✅ `--conversation` | ✅ `exec resume` | ✅ `resume=` |
-| `MCP` | ⚠ 見 spike S2 | ✅ `-c mcp_servers.*` | ✅ `mcp_servers=` |
-| `MCP_IMAGE_RESULT` | ⚠ S3 | ⚠ S3 | ⚠ S3 |
-| `WEB_SEARCH` | ✅ | ✅（`tools.web_search=true`） | ✅ |
+| `MCP` | ✅ `<workdir>/.agents/mcp_config.json` | ✅ `-c mcp_servers.*` | ✅ `mcp_servers=` |
+| `MCP_IMAGE_RESULT` | ✅ | ✅ | ✅ |
+| `WEB_SEARCH` | ✅ | ✅（task 要求時才加 `tools.web_search=true`） | ✅ |
 
-effort 在各家的表達不同，正規化仍在 adapter 內：agy 的 model id 把 effort 內嵌在名稱裡（`agy models` 列出 `gemini-3.1-pro-high`、`gemini-3.1-pro-low`），adapter 把 `ModelSpec(model="gemini-3.1-pro", effort="high")` 組成 `gemini-3.1-pro-high`，並對照 `agy models --output-format json` 的實際清單驗證（每次執行快取一次），不存在就直接報錯並列出可用組合。這取代手寫的 `_AGY_MODEL_BASES` / `_AGY_VALID_EFFORTS` 表。codex、claude 維持現有的 effort 對照（`extra`→`xhigh` 等）。
+effort 在各家的表達不同，正規化仍在 adapter 內：agy 的 model id 把 effort 內嵌在名稱裡（`agy models` 列出 `gemini-3.1-pro-high`、`gemini-3.1-pro-low`），adapter 把 `ModelSpec(model="gemini-3.1-pro", effort="high")` 組成 `gemini-3.1-pro-high`，並對照 `agy models`（每行 `<id>	<顯示名稱>`；沒有 JSON 輸出）的實際清單驗證（每次執行快取一次），不存在就直接報錯並列出可用組合。這取代手寫的 `_AGY_MODEL_BASES` / `_AGY_VALID_EFFORTS` 表。codex、claude 維持現有的 effort 對照（`extra`→`xhigh` 等）。
 
-`Role.IMAGE`（cover）由 config 指定 spec，但 runner 會要求 `IMAGE_GENERATION`，所以實質上只能是 codex，取代目前寫死 `Backend.CODEX` 的做法。
+runner 要求的 capability = task 的 `requires` 加上由輸入推導的部分（images → `IMAGE_INPUT`、audio → `AUDIO_INPUT`、schema → `NATIVE_SCHEMA`、frames 工具 → `MCP_IMAGE_RESULT`）。cover 的 `Role.IMAGE` 由 config 指定 spec，但 cover task 宣告 `requires={IMAGE_GENERATION}`，所以實質上只能是 codex，取代目前寫死 `Backend.CODEX` 的做法；date research、titles 宣告 `WEB_SEARCH`。
 
 ### 6.3 執行流程
 
@@ -354,19 +355,21 @@ run(task)
 class AgentAdapter(Protocol):
     backend: Backend
     capabilities: frozenset[Capability]
+    media_delivery: MediaDelivery  # ATTACHED（旗標/內容區塊）| VIEW_FILE（prompt 列路徑，runner 寫 view_file 指示）
 
-    def start(self, task, spec, mcp) -> SessionHandle: ...
-    # 同一組參數再加上前一個 handle：修復回合是「同 session、同工具、同 schema、新的使用者訊息」，
+    # TurnRequest：runner 組好的使用者訊息、spec、workdir、session 目錄、schema、媒體、MCP、逾時、raw sink。
+    def start(self, request: TurnRequest) -> SessionHandle: ...
+    # 修復回合是「同 session、同工具、同 schema、新的使用者訊息」：同一個 TurnRequest 換掉 message，
     # 每家 resume 都要重新帶 cwd / MCP / schema / model 參數。
-    def resume(
-        self, previous: SessionHandle, task, spec, mcp, prompt: str
-    ) -> SessionHandle: ...
+    def resume(self, session_id: str, request: TurnRequest) -> SessionHandle: ...
 
 
 class SessionHandle(Protocol):
     def events(self) -> Iterator[AgentEvent]: ...  # 串流、阻塞到結束
-    def result(self) -> FinalOutput: ...  # text、structured、session_id、usage
+    def result(self) -> FinalOutput: ...  # text、structured、session_id、usage、defects
 ```
+
+`defects` 是 adapter 自己發現的瑕疵（例如 agy 沒用 `view_file` 開啟的音訊）：修復訊息由 adapter 撰寫並附上要重送的媒體，runner 用同一個修復迴圈處理，不認得任何 backend 專屬的細節。
 
 | | agy | codex | claude |
 |---|---|---|---|
@@ -1099,13 +1102,14 @@ lint/types 從 report-only 轉成強制並清到零、清掉理由不明的 `noq
 |---|---|---|
 | S1 | ✅ agy 1.3.2 非 TTY 下 `-p --output-format stream-json` 輸出正常（`init` / `step_update` / `result`，`result.structured_output`）。`--input-format stream-json` 需搭配 `-p=`（空 prompt），stdin 訊息形狀 `{"event":"user","message":{"content":"…"}}`，**只支援 text 區塊**。agy 不會自動把文字裡的 `@path` 圖片附上，模型會改用 `view_file` 開啟。`--model gemini-3.1-pro-high` 這種 id 形式可用 | 移除 pty、`pywinpty`、ANSI 清理與答案標記；prompt 經 stdin；圖片與音訊一律列絕對路徑並要求 `view_file` 開啟 |
 | S2 | ✅ agy 讀工作目錄的 `.agents/mcp_config.json`（`{"mcpServers":{name:{command,args}}}`），工具呼叫在事件中是 `call_mcp_tool`；agy 的環境變數會傳給 MCP 子行程 | agy 採路線 (a)：在 agent 工作目錄寫 `.agents/mcp_config.json`，session manifest 以 `--session` 參數傳 |
-| S3 | ✅ agy、codex 都把 MCP image content 交給模型（答對顏色）。Claude 無法驗證（見下） | `get_frames` 直接回傳 image content |
+| S3 | ✅ agy、codex、Claude 都把 MCP image content 交給模型（答對顏色） | `get_frames` 直接回傳 image content |
 | S4 | ✅ agy `--json-schema`、codex `--output-schema` 皆接受含 nested object array 的 strict schema，輸出位於 `structured_output` / 最後一則 `agent_message` | 依設計 |
 | S5 | ✅ agy `--conversation <id>`（同 id 續接、記得前文）、codex `exec resume <thread_id>`（重帶 `-c mcp_servers.*` 與 `--output-schema`，記得前文） | 依設計 |
 | S6 | ✅ agy 事件流有 `view_file` 對音檔絕對路徑的 `DONE` step | 聽音驗證改用事件流，不再讀 agy 內部 transcript |
 | S7 | ✅ 目前 yt-dlp 不需 patch 即可抓 Bilibili 1080p | 刪除 monkey-patch |
 | S8 | ✅ agy 六份、codex 兩份原始事件已錄製為 fixture | 契約測試 |
-| — | ❌ Claude：本機 Claude Code 未登入（OAuth 過期），S2–S5 無法 live 驗證。codex 的 MCP server **不會**繼承父行程環境變數 | Claude adapter 依 SDK 型別實作，fixture 由 SDK 型別合成；登入後跑 `pytest -m live` 驗證。session manifest 一律用 `--session` 參數傳，不用環境變數 |
+| — | ✅ Claude（登入後補驗，SDK 0.2.135 內建 CLI）：`output_format` 經 `StructuredOutput` 工具回到 `ResultMessage.structured_output`、MCP 圖片、`resume=` 皆通過，fixture 為真實 SDK 訊息。codex 的 MCP server **不會**繼承父行程環境變數 | session manifest 一律用 `--session` 參數傳，不用環境變數 |
+| — | agy 在沒有呼叫 `finish` 的回合，`result.structured_output` 仍是上一回合的舊值 | adapter 只在同回合出現 `finish` step 時採用 structured output；修復提示不得叫 agent「不要呼叫工具」 |
 
 ---
 

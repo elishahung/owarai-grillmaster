@@ -102,9 +102,10 @@ class JsonlSink:
     the event's fields.
 
     `stage` / `task` come from the emitting thread's scopes (sinks run
-    synchronously there); an event's own `stage` / `task` fields win. Lines
-    are flushed as written so the file can be tailed or replayed after
-    a crash. Thread-safe; call `close` (or use it as a context manager), after
+    synchronously there); an event's own `stage` / `task` fields win. Every
+    event except the high-volume `AgentActivity` flushes the file, so it can
+    be tailed or replayed after a crash with at most trailing activity lines
+    lost. Thread-safe; call `close` (or use it as a context manager), after
     which events are dropped.
     """
 
@@ -134,7 +135,8 @@ class JsonlSink:
             if self._handle.closed:
                 return
             self._handle.write(line + "\n")
-            self._handle.flush()
+            if not isinstance(event, AgentActivity):
+                self._handle.flush()
 
     def close(self) -> None:
         with self._lock:

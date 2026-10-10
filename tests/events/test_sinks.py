@@ -184,6 +184,19 @@ def test_jsonl_sink_drops_events_after_close(tmp_path: Path):
     assert len(path.read_text(encoding="utf-8").splitlines()) == 1
 
 
+def test_jsonl_sink_lifecycle_events_flush_buffered_activity(tmp_path: Path):
+    path = tmp_path / "events.jsonl"
+    with JsonlSink(path) as sink:
+        sink.emit(AgentActivity("refine", ActivityKind.THOUGHT, "thinking"))
+        sink.emit(AgentSessionFinished("refine", SessionOutcome.OK, 1.0, 0))
+        # Readable before close: the session-end event flushed both lines.
+        types = [
+            json.loads(line)["type"]
+            for line in path.read_text(encoding="utf-8").splitlines()
+        ]
+    assert types == ["AgentActivity", "AgentSessionFinished"]
+
+
 def test_jsonl_sink_default_clock_is_utc(tmp_path: Path):
     path = tmp_path / "events.jsonl"
     with JsonlSink(path) as sink:

@@ -45,6 +45,7 @@ packages = ["src/grillmaster"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 markers = ["live: calls real agent CLIs and spends subscription quota"]
 addopts = "-ra --strict-markers --import-mode=importlib -m 'not live'"
 
@@ -86,6 +87,7 @@ allowed-confusables = ["，", "。", "（", "）", "：", "；", "、", "「", "
 "scripts/**" = ["T20", "INP001"]
 "src/grillmaster/cli/**" = ["TC"]
 "src/grillmaster/agents/adapters/__init__.py" = ["PLC0415"]
+"src/grillmaster/core/process.py" = ["TID251"]
 "src/grillmaster/media/ffmpeg.py" = ["TID251"]
 "src/grillmaster/agents/process.py" = ["TID251"]
 "src/grillmaster/agents/adapters/claude.py" = ["TID251"]

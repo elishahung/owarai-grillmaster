@@ -23,6 +23,10 @@ type = forbidden
 source_modules =
     grillmaster.core
     grillmaster.events
+    grillmaster.media
+    grillmaster.subtitles
+    grillmaster.agent_tools
+    grillmaster.agents
 forbidden_modules =
     grillmaster.project
     grillmaster.config

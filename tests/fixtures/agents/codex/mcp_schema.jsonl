@@ -1,0 +1,9 @@
+{"type":"thread.started","thread_id":"01a1233e-ac1a-7111-a4ca-9c25b6431053"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"我會呼叫 grill MCP 的兩個工具，並確認圖片顏色。\n"}}
+{"type":"item.started","item":{"id":"item_1","type":"mcp_tool_call","server":"grill","tool":"session_info","arguments":{},"result":null,"error":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"grill","tool":"session_info","arguments":{},"result":{"content":[{"type":"text","text":"SESSION=<none> ARGV=--session codex-arg"}],"structured_content":{"result":"SESSION=<none> ARGV=--session codex-arg"}},"error":null,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_2","type":"mcp_tool_call","server":"grill","tool":"secret_picture","arguments":{},"result":null,"error":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_2","type":"mcp_tool_call","server":"grill","tool":"secret_picture","arguments":{},"result":{"content":[{"type":"image","data":"iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAACXBIWXMAAAABAAAAAQBPJcTWAAAAfUlEQVR4nNXOMQ0AMAzAsEwK71IfiB5VjMCPIU3iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJE7iJM7rwNYHEZIBfbOTowcAAAAASUVORK5CYII=","mimeType":"image/png"}],"structured_content":null},"error":null,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"{\"answer\":\"SESSION=<none> ARGV=--session codex-arg | 綠色\",\"items\":[{\"source\":\"a\",\"target\":\"b\"}]}"}}
+{"type":"turn.completed","usage":{"input_tokens":46024,"cached_input_tokens":30208,"cache_write_input_tokens":0,"output_tokens":213,"reasoning_output_tokens":0}}

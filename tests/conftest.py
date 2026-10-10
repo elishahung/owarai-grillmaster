@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 from unittest.mock import patch
 
 import pytest
+from tests.fakes import FakeFfmpeg
 
 from grillmaster.legacy.services.program_config import config as program_config
 
@@ -16,3 +19,8 @@ def _isolate_program_config(tmp_path):
         program_config, "config_path", return_value=tmp_path / "config.json"
     ):
         yield
+
+
+@pytest.fixture
+def fake_ffmpeg() -> FakeFfmpeg:
+    return FakeFfmpeg()

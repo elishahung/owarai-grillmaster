@@ -158,25 +158,39 @@ def archived_candidates(archived_root: Path, video_id: str) -> Iterator[Path]:
         rf"(?P<date>\d{{{_STEM_DATE_DIGITS}}}{_NAME_SEPARATOR})?"
         rf"{re.escape(video_id)}(?:{_NAME_SEPARATOR}|$)"
     )
+    for entry, dated in _archived_entries(archived_root):
+        found = name.match(entry.name)
+        if found is not None and (found["date"] is not None) == dated:
+            yield Path(entry.path)
 
-    def matching(parent: Path, *, dated: bool) -> Iterator[Path]:
+
+def archived_dirs(archived_root: Path) -> Iterator[Path]:
+    """Every directory under `archived_root`'s groups that may be an archived
+    project, staging and backup directories excluded. Callers confirm each
+    by its `project.json`."""
+    for entry, _ in _archived_entries(archived_root):
+        yield Path(entry.path)
+
+
+def _archived_entries(archived_root: Path) -> Iterator[tuple[os.DirEntry[str], bool]]:
+    """`(entry, dated)` for each non-staging directory in the archive groups,
+    in name order."""
+
+    def projects(parent: Path) -> Iterator[os.DirEntry[str]]:
         for entry in _subdirs(parent):
-            found = name.match(entry.name)
-            if (
-                found is not None
-                and (found["date"] is not None) == dated
-                and not entry.name.endswith(_NOT_PROJECT_SUFFIXES)
-            ):
-                yield Path(entry.path)
+            if not entry.name.endswith(_NOT_PROJECT_SUFFIXES):
+                yield entry
 
     # Dated groups are two levels deep (`_GROUP_FORMATS`: YY, then MM).
     for group in _subdirs(archived_root):
         if group.name == _UNDATED_GROUP:
-            yield from matching(Path(group.path), dated=False)
+            for entry in projects(Path(group.path)):
+                yield entry, False
         elif group.name.isdigit():
             for month in _subdirs(Path(group.path)):
                 if month.name.isdigit():
-                    yield from matching(Path(month.path), dated=True)
+                    for entry in projects(Path(month.path)):
+                        yield entry, True
 
 
 def _subdirs(path: Path) -> list[os.DirEntry[str]]:

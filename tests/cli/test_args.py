@@ -6,7 +6,8 @@ import pytest
 
 from grillmaster.cli.args import (
     DEFAULT_POOL,
-    expand_bare_remix,
+    PICK_PARENT_FLAG,
+    expand_bare_options,
     looks_like_path,
     parse_section_time,
     reject_directory_source,
@@ -33,8 +34,46 @@ if TYPE_CHECKING:
         pytest.param(["ep1", "--chat"], ["ep1", "--chat"], id="absent"),
     ],
 )
-def test_expand_bare_remix(args: list[str], expected: list[str]):
-    assert expand_bare_remix(args) == expected
+def test_expand_bare_options(args: list[str], expected: list[str]):
+    assert expand_bare_options(args) == expected
+
+
+@pytest.mark.parametrize(
+    ("args", "expected"),
+    [
+        pytest.param(["ep1", "--parent"], ["ep1", PICK_PARENT_FLAG], id="last"),
+        pytest.param(
+            ["--parent", "ep1", "hint"], [PICK_PARENT_FLAG, "ep1", "hint"], id="source"
+        ),
+        pytest.param(
+            ["ep1", "--parent", "--chat"],
+            ["ep1", PICK_PARENT_FLAG, "--chat"],
+            id="before-option",
+        ),
+        pytest.param(
+            ["ep1", "--parent", "nas/ep0"],
+            ["ep1", "--parent", "nas/ep0"],
+            id="path-value",
+        ),
+        pytest.param(
+            ["ep1", "--parent=nas/ep0"], ["ep1", "--parent=nas/ep0"], id="equals"
+        ),
+    ],
+)
+def test_expand_bare_parent(args: list[str], expected: list[str]):
+    assert expand_bare_options(args) == expected
+
+
+def test_a_directory_after_parent_is_its_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    (tmp_path / "ep0").mkdir()
+    monkeypatch.chdir(tmp_path)
+    assert expand_bare_options(["--parent", "ep0", "ep1"]) == [
+        "--parent",
+        "ep0",
+        "ep1",
+    ]
 
 
 @pytest.mark.parametrize(

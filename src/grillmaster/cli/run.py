@@ -3,7 +3,6 @@ options `grill serial` shares."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -16,22 +15,10 @@ from grillmaster.cli.args import (
 )
 from grillmaster.cli.common import fail, load_or_exit, pipeline_from
 from grillmaster.cli.live import run_or_exit
+from grillmaster.cli.parent import ParentOption, PickParentOption, resolve_parent
 from grillmaster.core.stage_key import StageKey
 from grillmaster.live_chat.layout import DEFAULT_CHAT_LAYOUT, ChatLayout
 
-ParentOption = Annotated[
-    Path | None,
-    typer.Option(
-        "--parent",
-        help=(
-            "Project directory (archived ones too) whose briefing seeds this "
-            "new project's pre-pass for cross-episode consistency."
-        ),
-        exists=True,
-        file_okay=False,
-        show_default=False,
-    ),
-]
 CoverOption = Annotated[
     bool, typer.Option("--cover", help="Generate a cover image this run.")
 ]
@@ -114,6 +101,7 @@ def run_command(
         ),
     ] = None,
     parent: ParentOption = None,
+    pick_parent: PickParentOption = False,
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
     chat: ChatOption = False,
@@ -146,6 +134,7 @@ def run_command(
     from grillmaster.stages.base import RunOptions
 
     loaded = load_or_exit()
+    parent = resolve_parent(parent, pick=pick_parent, loaded=loaded)
     try:
         reject_directory_source(source)
         source_id = parse_source(source)

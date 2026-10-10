@@ -246,14 +246,17 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 
 ## CLI (`cli/`)
 
-`grill <src> [HINT]` = `grill run`; options `--break-after <key>`, `--parent`,
+`grill <src> [HINT]` = `grill run`; options `--break-after <key>`, `--parent [dir]`,
 `--cover`, `--date-research`, `--chat`, `--chat-layout`, `--remix [pool]`,
 `--start`, `--to`. Also `serial`, `package <dir|id>`, `archive <id>`,
 `reset <id> --from|--only <key>`, `status [<id>]`, `doctor`. `package`,
 `archive` and `status` resolve an ID locally only (pass an archived
 project's directory). Commands import
 heavy modules inside the function so `--help` stays fast; a bare `--remix`
-is expanded in `cli/args.py`. On a TTY the run goes through
+or `--parent` is expanded in `cli/args.py` (`expand_bare_options`). A bare
+`--parent` (run, serial; TTY only) becomes the hidden `--pick-parent`:
+`cli/parent.py` lists `store.recent_archived` (latest ledger `completed_at`
+within 10 days) in the searchable `tui.picker` before the run starts. On a TTY the run goes through
 `tui.run_with_tui`, else a `ConsoleSink`.
 
 ## Invariants

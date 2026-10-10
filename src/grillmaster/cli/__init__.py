@@ -12,7 +12,7 @@ from __future__ import annotations
 import sys
 
 from grillmaster.cli.app import app
-from grillmaster.cli.args import expand_bare_remix
+from grillmaster.cli.args import expand_bare_options
 from grillmaster.cli.common import configure_console_logging
 
 __all__ = ["app", "main"]
@@ -20,5 +20,5 @@ __all__ = ["app", "main"]
 
 def main(argv: list[str] | None = None) -> None:
     configure_console_logging()
-    args = expand_bare_remix(sys.argv[1:] if argv is None else argv)
+    args = expand_bare_options(sys.argv[1:] if argv is None else argv)
     app(args=args, prog_name="grill")

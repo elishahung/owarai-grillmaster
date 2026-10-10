@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from grillmaster.cli import app
-from grillmaster.cli.args import expand_bare_remix
+from grillmaster.cli.args import expand_bare_options
 from grillmaster.config.load import CONFIG_FILE_NAME
 from grillmaster.core.stage_key import StageKey
 from grillmaster.project.layout import ProjectLayout
@@ -31,7 +31,7 @@ def test_no_arguments_shows_help(cli: CliRunner):
         pytest.param(["epnew1"], id="shortcut"),
         pytest.param(["run", "epnew1"], id="explicit"),
         pytest.param(["--chat", "epnew1", "提示"], id="option-first"),
-        pytest.param(expand_bare_remix(["epnew1", "--remix"]), id="bare-remix"),
+        pytest.param(expand_bare_options(["epnew1", "--remix"]), id="bare-remix"),
     ],
 )
 def test_run_dispatch_creates_the_project(

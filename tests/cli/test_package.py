@@ -6,7 +6,7 @@ import pytest
 from tests.pipeline.fakes import Journal, fake_delivery
 
 from grillmaster.cli import app
-from grillmaster.cli.args import expand_bare_remix
+from grillmaster.cli.args import expand_bare_options
 from grillmaster.config.load import CONFIG_FILE_NAME
 from grillmaster.live_chat.layout import ChatLayout
 from grillmaster.pipeline.registry import Pipeline
@@ -105,7 +105,7 @@ def test_remix_names_the_pool(
     args: list[str],
     pool: str,
 ):
-    argv = expand_bare_remix(["package", layout.root.name, *args])
+    argv = expand_bare_options(["package", layout.root.name, *args])
 
     result = cli.invoke(app, argv, obj=pipeline)
 

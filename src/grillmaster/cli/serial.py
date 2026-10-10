@@ -10,12 +10,12 @@ from loguru import logger
 from grillmaster.cli.args import reject_directory_source, resolve_remix
 from grillmaster.cli.common import fail, load_or_exit, pipeline_from
 from grillmaster.cli.live import run_or_exit
+from grillmaster.cli.parent import ParentOption, PickParentOption, resolve_parent
 from grillmaster.cli.run import (
     ChatLayoutOption,
     ChatOption,
     CoverOption,
     DateResearchOption,
-    ParentOption,
     RemixOption,
 )
 from grillmaster.live_chat.layout import DEFAULT_CHAT_LAYOUT
@@ -38,6 +38,7 @@ def serial_command(
     ],
     *,
     parent: ParentOption = None,
+    pick_parent: PickParentOption = False,
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
     chat: ChatOption = False,
@@ -50,6 +51,7 @@ def serial_command(
     from grillmaster.stages.base import RunOptions
 
     loaded = load_or_exit()
+    parent = resolve_parent(parent, pick=pick_parent, loaded=loaded)
     try:
         for source in sources:
             reject_directory_source(source)

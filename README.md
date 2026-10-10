@@ -82,7 +82,7 @@ grill reset <專案 ID> --from refine
 grill status [專案 ID]
 ```
 
-其他選項：`--cover`（產生封面）、`--date-research`（查不到播出日時上網找）、`--chat`（翻譯 YouTube 聊天室並燒進畫面，`--chat-layout side|overlay|none`）、`--remix [素材池]`、`--parent <專案資料夾>`。完整說明見 `grill --help`
+其他選項：`--cover`（產生封面）、`--date-research`（查不到播出日時上網找）、`--chat`（翻譯 YouTube 聊天室並燒進畫面，`--chat-layout side|overlay|none`）、`--remix [素材池]`、`--parent <專案資料夾>`（不帶值時，從最近十天處理完的 archived 專案中搜尋挑選）。完整說明見 `grill --help`
 
 可以同時開多個 `grill` 處理不同影片：每個 agent 工具伺服器都是各自獨立的子行程，互不衝突；同一個 ID 同時只能有一個 `grill` 在處理，第二個會直接報錯
 

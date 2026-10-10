@@ -198,6 +198,14 @@ class ProjectState(StrictModel):
         self.asr_cost_usd += amount_usd
 
 
+class _CompletionStamp(BaseModel):
+    """The one ledger field a listing reads (see `ProjectSummary`)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    completed_at: AwareDatetime
+
+
 class ProjectSummary(BaseModel):
     """The `project.json` fields a project listing shows; everything else is
     ignored, so one project with a stale field cannot hide the others."""
@@ -206,4 +214,9 @@ class ProjectSummary(BaseModel):
 
     id: str
     name: str | None = None
-    stages: dict[str, object] = Field(default_factory=dict)
+    stages: dict[str, _CompletionStamp] = Field(default_factory=dict)
+
+    @property
+    def last_completed_at(self) -> datetime | None:
+        """When the latest ledger stage completed; `None` before any did."""
+        return max((s.completed_at for s in self.stages.values()), default=None)

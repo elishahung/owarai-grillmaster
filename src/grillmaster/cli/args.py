@@ -11,23 +11,37 @@ from grillmaster.core.source_id import is_url
 DEFAULT_POOL = ""
 
 _REMIX_FLAG = "--remix"
+_PARENT_FLAG = "--parent"
+# What a bare `--parent` becomes: pick a recent archived project on screen.
+PICK_PARENT_FLAG = "--pick-parent"
 
 
-def expand_bare_remix(args: list[str]) -> list[str]:
-    """Let `--remix` stand alone, meaning `package.remix_pool`.
+def expand_bare_options(args: list[str]) -> list[str]:
+    """Let `--remix` and `--parent` stand alone.
 
-    Typer has no optional-value options, so a bare flag (last, or followed
-    by another option) gets `DEFAULT_POOL` inserted before parsing.
+    Typer has no optional-value options, so a bare flag is rewritten before
+    parsing. `--remix` is bare when it is last or followed by another option,
+    and gets `DEFAULT_POOL` inserted. `--parent` is bare unless followed by
+    a directory or something that reads as a path (a mistyped one still fails
+    as a value), so `grill --parent <source>` works too; it becomes
+    `PICK_PARENT_FLAG`.
     """
     expanded: list[str] = []
     for index, arg in enumerate(args):
-        expanded.append(arg)
-        if arg != _REMIX_FLAG:
-            continue
         following = args[index + 1] if index + 1 < len(args) else None
-        if following is None or following.startswith("-"):
+        if arg == _PARENT_FLAG and not _is_parent_value(following):
+            expanded.append(PICK_PARENT_FLAG)
+            continue
+        expanded.append(arg)
+        if arg == _REMIX_FLAG and (following is None or following.startswith("-")):
             expanded.append(DEFAULT_POOL)
     return expanded
+
+
+def _is_parent_value(text: str | None) -> bool:
+    if text is None or text.startswith("-"):
+        return False
+    return Path(text).is_dir() or looks_like_path(text)
 
 
 def resolve_remix(value: str | None, default_pool: str) -> str | None:

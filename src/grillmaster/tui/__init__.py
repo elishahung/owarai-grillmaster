@@ -2,7 +2,8 @@
 
 `run_with_tui(work)` runs `work(sink)` on a worker thread under the Textual
 app and returns its result. `TuiSink` queues events from any thread;
-`PipelineState` is the pure reducer the app renders from.
+`PipelineState` is the pure reducer the app renders from. `picker.pick` is
+a searchable single-choice list a command may show before any run.
 The package never imports the pipeline, stages, project or config.
 """
 

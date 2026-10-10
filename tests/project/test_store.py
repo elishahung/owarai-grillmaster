@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from contextlib import contextmanager
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -17,7 +17,7 @@ from grillmaster.project.errors import (
     ProjectNotFoundError,
 )
 from grillmaster.project.layout import ProjectLayout
-from grillmaster.project.state import ProjectState
+from grillmaster.project.state import ProjectState, now
 from grillmaster.project.store import (
     LOCKS_DIR_NAME,
     ProjectLocation,
@@ -27,6 +27,7 @@ from grillmaster.project.store import (
     load_state,
     locate_project,
     project_lock,
+    recent_archived,
     save_state,
 )
 
@@ -403,3 +404,49 @@ def test_a_locked_project_archives_without_its_lock(
     assert not layout.root.exists()
     assert sorted(path.name for path in archived.root.iterdir()) == ["project.json"]
     assert (projects / LOCKS_DIR_NAME / f"{state.id}.lock").is_file()
+
+
+def _archived_at(
+    archive_root: Path, relative: str, video_id: str, completed: datetime | None
+) -> ProjectLayout:
+    """A project saved under `archive_root/relative`, its last stage
+    completed at `completed` (no stage when `None`)."""
+    state = ProjectState.create(SourceId(Platform.TVER, video_id))
+    if completed is not None:
+        state.mark_done(StageKey.METADATA, elapsed_s=1.0)
+        state.stages[StageKey.METADATA].completed_at = completed - timedelta(hours=1)
+        state.mark_done(StageKey.FINALIZE, elapsed_s=1.0)
+        state.stages[StageKey.FINALIZE].completed_at = completed
+    layout = ProjectLayout(archive_root / relative)
+    save_state(layout, state)
+    return layout
+
+
+def test_recent_archived_lists_newest_first_since_the_cutoff(tmp_path: Path):
+    archive_root = tmp_path / "archive"
+    since = now() - timedelta(days=10)
+    older = _archived_at(
+        archive_root, "26/05/260503_ep1", "ep1", since + timedelta(days=1)
+    )
+    newer = _archived_at(archive_root, "etc/ep2_show", "ep2", since + timedelta(days=5))
+    _archived_at(archive_root, "26/01/260101_ep3", "ep3", since - timedelta(days=1))
+    _archived_at(archive_root, "26/05/260504_ep4", "ep4", None)
+    _archived_at(
+        archive_root, "26/05/260505_ep5.partial", "ep5", since + timedelta(days=2)
+    )
+    (archive_root / "26/05/260506_leftover").mkdir()
+
+    found = recent_archived(archive_root, since=since)
+
+    assert [project.layout for project in found] == [newer, older]
+    assert found[0].completed_at == since + timedelta(days=5)
+
+
+def test_recent_archived_fails_on_an_unreadable_project(tmp_path: Path):
+    archive_root = tmp_path / "archive"
+    broken = _archived_at(archive_root, "etc/ep1", "ep1", None)
+    broken.project_json.write_text("not json", encoding="utf-8")
+
+    with pytest.raises(ValidationError):
+        recent_archived(archive_root, since=now())
+    assert recent_archived(tmp_path / "missing", since=now()) == []

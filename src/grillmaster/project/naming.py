@@ -80,9 +80,8 @@ PROJECT_INNER_PATH_RESERVE = _project_inner_path_reserve()
 
 def deliverable_stem(state: ProjectState) -> str:
     """`YYMMDD_<id>`, or `<id>` when the broadcast date is unknown."""
-    if state.broadcast_date is None:
-        return state.id
-    return f"{state.broadcast_date:%y%m%d}_{state.id}"
+    aired = state.effective_broadcast_date
+    return state.id if aired is None else f"{aired:%y%m%d}_{state.id}"
 
 
 def deliverable_name(state: ProjectState) -> str:
@@ -93,9 +92,8 @@ def deliverable_name(state: ProjectState) -> str:
 
 def archive_group(state: ProjectState) -> Path:
     """Shared parents under the archive root: `YY/MM`, or `etc` when undated."""
-    if state.broadcast_date is None:
-        return Path("etc")
-    return Path(f"{state.broadcast_date:%y}") / f"{state.broadcast_date:%m}"
+    aired = state.effective_broadcast_date
+    return Path("etc") if aired is None else Path(f"{aired:%y}") / f"{aired:%m}"
 
 
 def _fit_deliverable_dir(state: ProjectState, parent: Path, reserve: int) -> Path:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import inspect
+import re
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
@@ -8,11 +10,12 @@ from tests.pipeline.fakes import Journal, fake_delivery, fake_side_task, fake_st
 
 from grillmaster.core.stage_key import SideTaskKey, StageKey
 from grillmaster.events.types import PlanEntry, PlanKind
-from grillmaster.pipeline.registry import Pipeline
+from grillmaster.pipeline.registry import STAGES, Pipeline
+from grillmaster.pipeline.stage import no_clear
 
 if TYPE_CHECKING:
     from grillmaster.config.load import LoadedConfig
-    from grillmaster.pipeline.stage import RunOptions
+    from grillmaster.pipeline.stage import RunOptions, StageDef
 
 
 def test_out_of_order_stages_are_rejected():
@@ -123,3 +126,23 @@ def test_stage_lookup():
     pipeline = Pipeline((stage,))
     assert pipeline.stage(StageKey.ASR) is stage
     assert pipeline.stage(StageKey.AUDIO) is None
+
+
+# Stages whose state writes deliberately survive a reset: ASR adds to the
+# cumulative `asr_cost_usd`, and money paid stays paid.
+KEEPS_STATE_ON_RESET = (StageKey.ASR,)
+_STATE_WRITE = re.compile(r"ctx\.update\(|ctx\.state\.[\w.]+\s*=[^=]")
+
+
+@pytest.mark.parametrize("stage", STAGES, ids=lambda stage: stage.key)
+def test_a_stage_writing_state_clears_it_on_reset(stage: StageDef):
+    module = inspect.getmodule(stage.run)
+    assert module is not None
+    writes_state = _STATE_WRITE.search(inspect.getsource(module)) is not None
+
+    if stage.key in KEEPS_STATE_ON_RESET:
+        assert writes_state, f"{stage.key} is exempt but writes no state"
+    elif writes_state:
+        assert stage.clear_state is not no_clear, (
+            f"{stage.key} writes ProjectState but declares no clear_state"
+        )

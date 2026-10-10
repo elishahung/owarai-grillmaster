@@ -9,9 +9,9 @@ from typing import TYPE_CHECKING, Any, cast, override
 
 from grillmaster.agents.adapters import load_adapter
 from grillmaster.agents.adapters.base import Capability
-from grillmaster.agents.errors import AgentError, AgentOutputError, ValidationFailure
+from grillmaster.agents.errors import AgentOutputError, ValidationFailure
 from grillmaster.agents.runner import AgentRunner
-from grillmaster.agents.task import AgentResult
+from grillmaster.agents.task import AgentResult, FilesOutput
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec
 from grillmaster.core.srt import SrtBlock
 from grillmaster.core.timecode import format_timecode_line
@@ -65,6 +65,7 @@ class FakeFfmpeg:
         timeout: float | None = None,
         cwd: Path | None = None,
         on_progress: ProgressCallback | None = None,
+        abort: threading.Event | None = None,
     ) -> str:
         with self._lock:
             self._calls.append(list(argv))
@@ -177,8 +178,10 @@ class FakeAgentRunner(AgentRunner):
     taking the task and returning either, or `Rounds(...)`. Every output goes
     through the task's validator like a real session: a rejected output is a
     repair round (the next of `Rounds`), and running out of rounds or
-    `max_repairs` raises `AgentOutputError`. An unscripted name fails the
-    test. `run_many` runs the tasks one by one, in order.
+    `max_repairs` raises `AgentOutputError`. Declared `FilesOutput` files
+    are deleted first, like a fresh attempt. An unscripted name fails the
+    test. The inherited `run_jobs` (one worker) runs the jobs one by one, in
+    order.
     """
 
     def __init__(
@@ -225,6 +228,9 @@ class FakeAgentRunner(AgentRunner):
         with self._lock:
             self._tasks.append(task)
         assert task.name in self.script, f"unscripted agent task {task.name!r}"
+        if isinstance(task.output, FilesOutput) and task.workdir is not None:
+            for path in task.output.declared(task.workdir):
+                path.unlink(missing_ok=True)
         entry = self.script[task.name]
         if callable(entry):
             entry = cast("Callable[[AgentTask[Any]], object]", entry)(task)
@@ -249,15 +255,3 @@ class FakeAgentRunner(AgentRunner):
                 session_dir=task.session_dir,
             )
         raise AgentOutputError(f"{task.name}: scripted output never passed validation")
-
-    @override
-    def run_many[T](
-        self, tasks: Sequence[AgentTask[T]]
-    ) -> list[AgentResult[T] | AgentError]:
-        results: list[AgentResult[T] | AgentError] = []
-        for task in tasks:
-            try:
-                results.append(self.run(task))
-            except AgentError as error:
-                results.append(error)
-        return results

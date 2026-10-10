@@ -24,6 +24,7 @@ from grillmaster.project.naming import (
     inner_path_units,
     package_destination,
 )
+from grillmaster.project.state import DateResearchRecord, now
 
 if TYPE_CHECKING:
     from grillmaster.project.state import ProjectState
@@ -99,6 +100,19 @@ def test_destinations(state: ProjectState, tmp_path: Path):
     assert package_destination(state, tmp_path / "package", reserve=24) == (
         tmp_path / "package/260503_epabc123_demo_show"
     )
+
+
+def test_a_researched_date_names_an_undated_project(
+    state: ProjectState, tmp_path: Path
+):
+    state.side_tasks.date_research = DateResearchRecord(
+        completed_at=now(),
+        elapsed_s=1.0,
+        verdict="found",
+        broadcast_date=date(2026, 5, 3),
+    )
+    assert deliverable_stem(state) == "260503_epabc123"
+    assert archive_group(state) == Path("26") / "05"
 
 
 def test_long_names_are_trimmed_to_the_budget(state: ProjectState, tmp_path: Path):

@@ -42,7 +42,7 @@ def describe_project(layout: ProjectLayout, state: ProjectState) -> list[str]:
     lines = [
         f"{state.id} ({state.platform})  {state.name or '(unnamed)'}",
         f"  directory      {layout.root}",
-        f"  broadcast date {state.broadcast_date or 'unknown'}",
+        f"  broadcast date {state.effective_broadcast_date or 'unknown'}",
         f"  ASR cost       ${state.asr_cost_usd:.4f}",
     ]
     if state.parent is not None:

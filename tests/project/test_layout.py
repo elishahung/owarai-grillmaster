@@ -36,7 +36,7 @@ _NAMED_PATHS: list[tuple[Callable[[ProjectLayout], Path], str]] = [
     (lambda p: p.logs_dir, "logs"),
     (lambda p: p.metadata_info, "work/01_metadata/info.json"),
     (lambda p: p.download_parts_dir, "work/02_download/parts"),
-    (lambda p: p.combined_full_video, "work/03_combine/full.mp4"),
+    (lambda p: p.full_video, "work/02_download/full.mp4"),
     (lambda p: p.chat_raw, "work/04_chat_fetch/live_chat.jsonl"),
     (lambda p: p.chat_messages, "work/04_chat_fetch/messages.json"),
     (lambda p: p.audio, "work/05_audio/audio.ogg"),

@@ -291,7 +291,7 @@ class AgentTask[T]:
     audio: tuple[Path, ...] = ()  # 需要 capability AUDIO_INPUT
     tools: ToolSession | None = None  # grill MCP 工具與各自的時間窗/參考 SRT（§7）；runner 寫成 session/tools.json
     add_dirs: tuple[Path, ...] = ()  # 額外可讀根目錄（例如專案根目錄）
-    output: OutputSpec[T]  # TextOutput | SchemaOutput(model) | FilesOutput(paths)
+    output: OutputSpec[T]  # TextOutput | SchemaOutput(model) | FilesOutput(required, optional)；runner 每次全新 attempt 前刪掉所有宣告的檔案
     validate: Callable[[T], None] | None = None  # 丟 ValidationFailure(msg)
     requires: frozenset[Capability] = frozenset()  # 輸入推不出的需求：IMAGE_GENERATION、WEB_SEARCH
     max_repairs: int = 3  # resume 修復回合
@@ -300,9 +300,13 @@ class AgentTask[T]:
 
 class AgentRunner:
     def run(self, task: AgentTask[T]) -> AgentResult[T]: ...
-    def run_many(
-        self, tasks: Sequence[AgentTask[T]]
-    ) -> list[AgentResult[T] | AgentError]: ...
+    def run_jobs(self, jobs: Sequence[AgentJob[T]]) -> list[JobFailure]: ...
+
+
+# prepare 在 pool thread 取 slot 前建 task（含媒體準備）；accept 在成功後立刻於同一 worker
+# 落地結果（寫快取）。每個 job 的例外都被收集成 JobFailure；KeyboardInterrupt 等 in-flight
+# accept 跑完後才往外丟。呼叫端（stage）在整批結束後再 fail loudly。
+AgentJob(name, prepare: Callable[[], AgentTask[T]], accept: Callable[[AgentResult[T]], None])
 ```
 
 `AgentRunner` 由 pipeline 建立一次並放進 `StageContext`，持有：role→spec 對照（由 pipeline 從 config 建好傳入，`agents` 不讀 config）、全域併發上限、EventBus。
@@ -418,12 +422,12 @@ work/09_chunks/0001-0119/session/
 
 ### 6.7 併發
 
-整個 pipeline 只用 **thread**，移除領域碼中的 asyncio（chunk facade 的 `asyncio.run` + semaphore、structural fix 的 `to_thread`）。`AgentRunner` 持有全域 semaphore（`agents.max_concurrent`，原 `agent_concurrency`），所以 chunk fan-out、live-chat batch、背景 cover/date research 共用同一個上限，不會互相疊加爆量。`run_many` 用 ThreadPoolExecutor，並以 `contextvars.copy_context()` 把 stage/task 範圍帶進 worker（§8.2）。Claude adapter 在自己的 worker thread 內 `asyncio.run`，對外仍是同步介面。
+整個 pipeline 只用 **thread**，移除領域碼中的 asyncio（chunk facade 的 `asyncio.run` + semaphore、structural fix 的 `to_thread`）。`AgentRunner` 持有全域 semaphore（`agents.max_concurrent`，原 `agent_concurrency`），所以 chunk fan-out、live-chat batch、背景 cover/date research 共用同一個上限，不會互相疊加爆量。`run_jobs` 用 ThreadPoolExecutor（以限時 `wait` 輪詢，讓 Windows 上的 Ctrl-C 可中斷），並以 `contextvars.copy_context()` 把 stage/task 範圍帶進 worker（§8.2）。Claude adapter 在自己的 worker thread 內 `asyncio.run`，對外仍是同步介面。
 
 規則：
 
 - 一個 session（含它的所有修復回合）從開始到結束持有一個 slot；attempt 之間的等待與新 attempt 前會釋放 slot。
-- 不允許巢狀：持有 slot 的程式碼不得再呼叫 `run`/`run_many`（runner 以 contextvar 偵測並直接報錯），所以不會死鎖。
+- 不允許巢狀：持有 slot 的程式碼不得再呼叫 `run`/`run_jobs`（runner 以 contextvar 偵測並直接報錯），所以不會死鎖。
 - `agents.timeout_minutes` 是**每一回合**的上限，不是整個 session 的總和（一次 40 分鐘的 pre-pass 加三次修復要能完成）。
 - 背景 side task 可能在 chunk 階段排隊很久：`StepStarted(kind=side_task)` 在派發時發出，`AgentSessionStarted` 在拿到 slot 時發出，TUI 顯示「排隊中」。side task 的 join 逾時從拿到 slot 起算，不從派發起算。
 
@@ -498,7 +502,7 @@ chunk 專用事件（`chunk_started/finished/failed`）不再需要：chunk boar
 
 ### 8.2 用 contextvars 歸屬，取代 thread 名稱
 
-`events/context.py` 提供 `stage_scope(key)`、`task_scope(name)` context manager。runner 進入 stage 時設定；`run_many` 與 side task executor 以 `copy_context()` 傳遞。loguru 用 `logger.patch` 把目前範圍寫進 record，TUI sink 依此分欄。`owner_key_for_thread_name` 刪除。
+`events/context.py` 提供 `stage_scope(key)`、`task_scope(name)` context manager。runner 進入 stage 時設定；`run_jobs` 與 side task executor 以 `copy_context()` 傳遞。loguru 用 `logger.patch` 把目前範圍寫進 record，TUI sink 依此分欄。`owner_key_for_thread_name` 刪除。
 
 ### 8.3 TUI 呈現
 
@@ -532,12 +536,14 @@ class StageDef:
         None  # 例：section 參數在續跑時被忽略的警告
     )
     params: Callable[[AppConfig], dict[str, str]] = no_params  # TUI 顯示 + ledger 快照
+    clear_state: Callable[[ProjectState], None] = no_clear  # reset 時清掉本 stage 寫的 state 欄位
+    preflight: Callable[[AppConfig, Secrets], None] = no_preflight  # 開跑前檢查（例：ASR key）
 
 
 STAGES: tuple[
     StageDef, ...
 ] = ...  # 必須與 core.stage_key.StageKey 的順序一致（registry 載入時斷言）
-SIDE_TASKS: tuple[SideTaskDef, ...] = (cover, date_research)
+SIDE_TASKS: tuple[SideTaskDef[Any], ...] = (cover, date_research)
 DELIVERY: tuple[DeliveryStepDef, ...] = (package,)  # 非 stage，但 label/weight 也在這裡
 ```
 
@@ -558,9 +564,11 @@ for stage in STAGES:
 
 `--break-after` 接受 stage key（`--break-after asr`），不再是 `is_asr_completed`。
 
+開跑前 `Pipeline.check(options, config, secrets, state=)` 對本次會執行的 stage（啟用、未完成、在 break-after 之內）呼叫 `preflight`，失敗時什麼都不建立（缺 ElevenLabs key 會在下載前失敗）。stage 讀上游成品一律經 `require(path, produced_by)`，缺檔時丟 `MissingArtifactError` 並指出該跑的 `grill reset <id> --from <stage>`。
+
 ### 9.3 Side tasks
 
-`SideTaskDef(key, start_after: StageKey, enabled, run)`。`SideTaskManager` 依 `start_after` 自動在對應 stage 後啟動，仍在 finally join、仍在 `--break-after` 時整個跳過。date research 的「已付費結果在停用時仍套用」規則保留，寫在 `stages/date_research.py`。
+`SideTaskDef[T](key, start_after: StageKey, enabled, run, record=, describe=)`：`run` 只回傳 payload，manager 在 state lock 下寫紀錄（預設 `TaskRecord`，elapsed/usage 取自 `StepOutcome`；date research 自訂 `record` 寫 `DateResearchRecord`）。`SideTaskManager` 依 `start_after` 自動在對應 stage 後啟動，仍在 finally join、仍在 `--break-after` 時整個跳過。date research 的「已付費結果在停用時仍套用」規則保留，寫在 `stages/date_research.py`。
 
 ### 9.4 Delivery
 
@@ -596,8 +604,8 @@ projects/<id>/
 │   └── chat.cht.json          # 翻好的聊天室（--chat 才有）
 ├── work/
 │   ├── 01_metadata/           info.json（yt-dlp）
-│   ├── 02_download/           parts/*.mp4、平台 CC 原檔
-│   ├── 03_combine/            full.mp4（section 執行時）
+│   ├── 02_download/           full.mp4（分段接合後；無 section 時 combine 搬成 video.mp4）、parts/ 平台 CC 原檔
+│   ├── 03_combine/
 │   ├── 04_chat_fetch/         live_chat.jsonl、messages.json
 │   ├── 05_audio/              audio.ogg
 │   ├── 06_asr/                asr.json
@@ -605,7 +613,7 @@ projects/<id>/
 │   ├── 08_prepass/            briefing.json、frames/、session/
 │   ├── 09_chunks/             <from>-<to>/{frames/, audio.ogg, translation.json, session/}、merged.srt
 │   ├── 10_refine/             refined.srt、report.md、frames/、session/
-│   ├── 11_glossary/           checked.srt、briefing.json（僅修正時）、report.md、frames/、session/
+│   ├── 11_glossary/           checked.srt、briefing.json（僅修正時）、report.md、frames/、session/（agent 寫 briefing.candidate.json，驗證通過且有差異才 promote）
 │   ├── 12_finalize/
 │   ├── 13_chat_translate/     batches/、polish.json、session*/
 │   ├── side/cover/            session/
@@ -633,7 +641,7 @@ projects/<id>/
   "name": "全力脱力タイムズ_…",
   "translation_hint": null,
   "parent": null,
-  "broadcast_date": "2026-10-09",
+  "broadcast_date": "2026-10-09",   // 平台日期；研究找到的日期在 side_tasks.date_research.broadcast_date，讀者用 effective_broadcast_date
   "source": { "title": "...", "description": "...", "series": "...", "channel": "...",
               "broadcast_label": "...", "talents": [ ... ] },
   "section": { "start": null, "end": null },
@@ -653,7 +661,7 @@ projects/<id>/
 
 ### 10.3 有效 briefing
 
-pre-pass 寫 `work/08_prepass/briefing.json`。glossary check 若修正 briefing，寫到**自己的** `work/11_glossary/briefing.json`，不碰 pre-pass 的檔案（取代 `pre_pass.raw.json` 備份機制）。下游一律呼叫：
+pre-pass 寫 `work/08_prepass/briefing.json`。glossary check 若修正 briefing，寫成 `briefing.candidate.json`，結果被接受且與 pre-pass 版不同時才 atomic promote 到**自己的** `work/11_glossary/briefing.json`，不碰 pre-pass 的檔案（取代 `pre_pass.raw.json` 備份機制）。下游一律呼叫：
 
 ```python
 layout.effective_briefing() -> Path   # glossary 版存在就用它，否則 pre-pass 版
@@ -671,10 +679,10 @@ layout.effective_briefing() -> Path   # glossary 版存在就用它，否則 pre
 
 | 舊 | 新 |
 |---|---|
-| `project.json` 的 `is_*`、`is_cover_generated`、`is_broadcast_date_researched` | `stages` ledger、`side_tasks` |
+| `project.json` 的 `is_*`、`is_cover_generated`、`is_broadcast_date_researched` | `stages` ledger、`side_tasks`（研究過且 found 時，`broadcast_date` 搬進 `side_tasks.date_research.broadcast_date`） |
 | `video.ja.srt` / `video.official.ja.srt` / `video.cht.finalized.srt` / `video.cht.ass` / `chat.cht.json` | `subs/ja.srt` / `subs/ja.official.srt` / `subs/cht.srt` / `subs/cht.ass` / `subs/chat.cht.json` |
 | `poster.cover.png` | `cover.png` |
-| `metadata.info.json`、下載的分段 mp4 與 CC 原檔、`video.full.mp4` | `work/01_metadata/info.json`、`work/02_download/`、`work/03_combine/full.mp4` |
+| `metadata.info.json`、下載的分段 mp4 與 CC 原檔、`video.full.mp4` | `work/01_metadata/info.json`、`work/02_download/`、`work/02_download/full.mp4` |
 | `.asr/audio.ogg`、`.asr/asr.json` | `work/05_audio/`、`work/06_asr/` |
 | `.pre_pass/pre_pass.raw.json`（若有）與 `pre_pass.json` | 有 raw：raw → `work/08_prepass/briefing.json`、現版 → `work/11_glossary/briefing.json`；沒有：現版 → prepass。dict 欄位轉成 `TermMapping` list |
 | `.chunks/responses/*.raw.srt`（或 `.fixed.srt`） | 解析成 `work/09_chunks/<range>/translation.json`；`video.cht.srt` → `work/09_chunks/merged.srt` |
@@ -818,7 +826,7 @@ class MediaPool:
 ### 12.8 其他
 
 - `asr/`：`_extract_word_items` 的重複合併；`ElevenLabsASR` 改吃 `AsrOptions` + 金鑰，不讀全域設定。
-- `live_chat/`：依 `layout` 取路徑；渲染常數從 `subtitles.ass` 取；translate 改用 `AgentRunner.run_many`。
+- `live_chat/`：依 `layout` 取路徑；渲染常數從 `subtitles.ass` 取；translate 改用 `AgentRunner.run_jobs`（每批完成即寫快取）。
 - 移除所有 lazy `__getattr__` 套件；重依賴（`claude_agent_sdk`）只在 adapter 模組 import，adapter 由 registry 延遲載入。
 
 ---

@@ -15,6 +15,12 @@ layers =
     (grillmaster.project) | (grillmaster.config)
     (grillmaster.media) | (grillmaster.glossary)
     grillmaster.core | grillmaster.events
+# Stage modules build their definitions from the pipeline's definition types.
+ignore_imports =
+    grillmaster.stages.** -> grillmaster.pipeline.stage
+    grillmaster.stages.** -> grillmaster.pipeline.side_tasks
+    grillmaster.stages.** -> grillmaster.pipeline.delivery
+    grillmaster.stages.** -> grillmaster.pipeline.steps
 
 [importlinter:contract:domain-purity]
 # Extend source_modules as each new domain package lands.
@@ -27,6 +33,15 @@ source_modules =
     grillmaster.subtitles
     grillmaster.agent_tools
     grillmaster.agents
+    grillmaster.glossary
+    grillmaster.live_chat
+    grillmaster.asr
+    grillmaster.sources
+    grillmaster.translate
+    grillmaster.postprocess
+    grillmaster.extras
+    grillmaster.package
+    grillmaster.tui
 forbidden_modules =
     grillmaster.project
     grillmaster.config
@@ -49,3 +64,23 @@ source_modules =
 forbidden_modules =
     grillmaster.events
     grillmaster.legacy
+
+[importlinter:contract:tui-events-only]
+name = tui consumes events only (design §8)
+type = forbidden
+source_modules =
+    grillmaster.tui
+forbidden_modules =
+    grillmaster.stages
+    grillmaster.translate
+    grillmaster.postprocess
+    grillmaster.extras
+    grillmaster.package
+    grillmaster.live_chat
+    grillmaster.agent_tools
+    grillmaster.sources
+    grillmaster.asr
+    grillmaster.subtitles
+    grillmaster.agents
+    grillmaster.media
+    grillmaster.glossary

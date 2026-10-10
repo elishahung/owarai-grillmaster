@@ -18,6 +18,14 @@ if TYPE_CHECKING:
     from grillmaster.project.state import ProjectState
 
 
+def existing_state(projects_root: Path, options: RunOptions) -> ProjectState | None:
+    """The state of `options.source`'s project, or `None` before its first run."""
+    try:
+        return load_state(ProjectLayout.for_id(projects_root, options.source.video_id))
+    except ProjectNotFoundError:
+        return None
+
+
 def open_project(
     projects_root: Path, options: RunOptions
 ) -> tuple[ProjectLayout, ProjectState]:

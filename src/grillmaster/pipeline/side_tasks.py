@@ -15,13 +15,14 @@ import contextvars
 import threading
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
 from grillmaster.events.types import PlanKind, SkipReason, StepSkipped
 from grillmaster.pipeline.stage import no_params
 from grillmaster.pipeline.steps import UsageCollector, execute_step
+from grillmaster.project.state import TaskRecord, now
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -31,6 +32,7 @@ if TYPE_CHECKING:
     from grillmaster.core.stage_key import SideTaskKey, StageKey
     from grillmaster.events.bus import EventSink
     from grillmaster.pipeline.stage import RunOptions, StageContext
+    from grillmaster.pipeline.steps import StepOutcome
     from grillmaster.project.state import ProjectState
 
 # How long an interrupted run (Ctrl-C) waits for running side tasks before it
@@ -38,26 +40,35 @@ if TYPE_CHECKING:
 INTERRUPT_WAIT_S = 2.0
 
 
+def describe(value: object) -> str | None:
+    """`SideTaskDef.describe` default: the payload as text, if any."""
+    return None if value is None else str(value)
+
+
 @dataclass(frozen=True, slots=True)
-class SideTaskDef:
+class SideTaskDef[T]:
     """One side task.
 
-    `run` does the work on a worker thread and records its own outcome in
-    `state.side_tasks` through `StageContext.update` (the record shape is
-    task-specific); its return value is the `StepCompleted` result text.
-    `enabled` combines the run flag with `[features]`. `is_done` overrides
-    the default completion check (`state.side_tasks.is_done(key)`), e.g.
-    date research is moot once the metadata found a date. `on_skip` runs on
-    the pipeline thread whenever the task is not started at its start point,
-    with the reason.
+    `run` does the work on a worker thread and returns only its payload;
+    the manager then writes the task's record into `state.side_tasks` under
+    the state lock: `record(state, outcome)` when given (a task-specific
+    record shape), else a plain `TaskRecord` of the step's elapsed time and
+    agent usage. `describe` turns the payload into the `StepCompleted`
+    result text. `enabled` combines the run flag with `[features]`.
+    `is_done` overrides the default completion check
+    (`state.side_tasks.is_done(key)`), e.g. date research is moot once the
+    metadata found a date. `on_skip` runs on the pipeline thread whenever
+    the task is not started at its start point, with the reason.
     """
 
     key: SideTaskKey
     label: str
     weight: int
     start_after: StageKey
-    run: Callable[[StageContext], str | None]
+    run: Callable[[StageContext], T]
     enabled: Callable[[RunOptions, AppConfig], bool]
+    record: Callable[[ProjectState, StepOutcome[T]], None] | None = None
+    describe: Callable[[T], str | None] = describe
     is_done: Callable[[ProjectState], bool] | None = None
     on_skip: Callable[[StageContext, SkipReason], None] | None = None
     params: Callable[[AppConfig], dict[str, str]] = no_params
@@ -67,21 +78,35 @@ class SideTaskDef:
             return self.is_done(state)
         return state.side_tasks.is_done(self.key)
 
+    def store(self, state: ProjectState, outcome: StepOutcome[T]) -> None:
+        """Write the record of a finished run (see `record`)."""
+        if self.record is not None:
+            self.record(state, outcome)
+            return
+        state.side_tasks.record(
+            self.key,
+            TaskRecord(
+                completed_at=now(),
+                elapsed_s=outcome.elapsed,
+                agent_usage=outcome.usage,
+            ),
+        )
+
 
 class SideTaskManager:
     """Starts side tasks as the pipeline passes their stage; joins them on exit.
 
     Use as a context manager around the stage loop so the join happens
     whatever the loop raises. An interrupt (`KeyboardInterrupt` and other
-    non-`Exception` errors) waits only briefly. Usage is taken per task and
-    dropped: a task's record is written by the task itself.
+    non-`Exception` errors) waits only briefly. A finished task's record
+    (elapsed time by the injected clock, agent usage) is written here.
     """
 
     def __init__(
         self,
-        tasks: Sequence[SideTaskDef],
+        tasks: Sequence[SideTaskDef[Any]],
         *,
-        context: Callable[[SideTaskDef], StageContext],
+        context: Callable[[SideTaskDef[Any]], StageContext],
         options: RunOptions,
         config: AppConfig,
         events: EventSink,
@@ -127,7 +152,7 @@ class SideTaskManager:
                 logger.warning(f"{thread.name} is still running; not waiting for it")
         self._threads.clear()
 
-    def _dispatch(self, task: SideTaskDef) -> None:
+    def _dispatch(self, task: SideTaskDef[Any]) -> None:
         ctx = self._context(task)
         if not self._options.complete_run:
             self._skip(task, ctx, SkipReason.BREAKPOINT)
@@ -149,12 +174,18 @@ class SideTaskManager:
         self._threads.append(thread)
         thread.start()
 
-    def _skip(self, task: SideTaskDef, ctx: StageContext, reason: SkipReason) -> None:
+    def _skip(
+        self, task: SideTaskDef[Any], ctx: StageContext, reason: SkipReason
+    ) -> None:
         if task.on_skip is not None:
             task.on_skip(ctx, reason)
         self._events.emit(StepSkipped(task.key, PlanKind.SIDE_TASK, reason))
 
-    def _work(self, task: SideTaskDef, ctx: StageContext) -> None:
+    def _work[T](self, task: SideTaskDef[T], ctx: StageContext) -> None:
+        def finish(outcome: StepOutcome[T]) -> str | None:
+            ctx.update(lambda state: task.store(state, outcome))
+            return task.describe(outcome.value)
+
         # Already logged and reported by `execute_step`; never fails the run.
         with contextlib.suppress(Exception):
             execute_step(
@@ -164,5 +195,5 @@ class SideTaskManager:
                 events=self._events,
                 clock=self._clock,
                 usage=self._usage,
-                finish=lambda outcome: outcome.value,
+                finish=finish,
             )

@@ -7,6 +7,10 @@ step and record it in the ledger with an atomic save. The run stops after the
 disabled. Side tasks start as the loop passes their stage and are joined when
 the loop ends, however it ends. Then come the delivery steps, the project's
 logs close, and the archive move (when one is wired) runs last.
+
+`run_project` is the `grill run` entry (archive wired from `[paths] archive`);
+`deliver_project` runs only the delivery steps on an existing project
+(`grill package`).
 """
 
 from __future__ import annotations
@@ -30,12 +34,13 @@ from grillmaster.events.types import (
 )
 from grillmaster.pipeline.delivery import run_archive, run_delivery
 from grillmaster.pipeline.logs import ProjectLogs
-from grillmaster.pipeline.projects import open_project
-from grillmaster.pipeline.registry import PIPELINE
+from grillmaster.pipeline.projects import existing_state, open_project
+from grillmaster.pipeline.registry import PIPELINE, Pipeline
 from grillmaster.pipeline.side_tasks import SideTaskManager
 from grillmaster.pipeline.stage import StageContext, StateStore
 from grillmaster.pipeline.steps import UsageCollector, execute_step
 from grillmaster.project.state import now as local_now
+from grillmaster.project.store import archive_project, load_state
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -45,7 +50,6 @@ if TYPE_CHECKING:
     from grillmaster.config.load import LoadedConfig
     from grillmaster.events.bus import EventSink
     from grillmaster.pipeline.delivery import Archive
-    from grillmaster.pipeline.registry import Pipeline
     from grillmaster.pipeline.stage import RunOptions, StageDef
     from grillmaster.pipeline.steps import StepOutcome
     from grillmaster.project.layout import ProjectLayout
@@ -61,31 +65,81 @@ def run_project(
     sinks: Sequence[EventSink],
     pipeline: Pipeline = PIPELINE,
 ) -> ProjectLayout:
-    """Check `options`, open (or create) the project and run it; returns the
+    """Check the run, open (or create) the project and run it; returns the
     project's final layout.
 
-    Rejected options create nothing. The agent runner is built from
-    `[agents]`; events go to `sinks` (plus the project's JSONL log).
+    A rejected run (`Pipeline.check`, against the existing state if any)
+    creates nothing. The agent runner is built from `[agents]`; events go
+    to `sinks` (plus the project's JSONL log). With `[paths] archive` set,
+    a complete run ends by moving the project there.
     """
-    pipeline.check(options)
+    pipeline.check(
+        options,
+        loaded.config,
+        loaded.secrets,
+        state=existing_state(loaded.projects_root, options),
+    )
     layout, state = open_project(loaded.projects_root, options)
     events = EventBus(sinks)
-    settings = loaded.config.agents
-    agents = AgentRunner(
-        settings.roles.specs(),
-        AdapterRegistry(),
-        max_concurrent=settings.max_concurrent,
-        timeout_s=settings.timeout_minutes * _SECONDS_PER_MINUTE,
-        events=events,
-    )
+    archive_root = loaded.config.paths.archive
+    if archive_root is None:
+        logger.info("[paths] archive is not set; the project stays in place")
     return run_pipeline(
         layout,
         state,
         loaded=loaded,
         options=options,
-        agents=agents,
+        agents=_agent_runner(loaded, events),
         events=events,
         pipeline=pipeline,
+        archive=archive_to(archive_root) if archive_root is not None else None,
+    )
+
+
+def deliver_project(
+    loaded: LoadedConfig,
+    layout: ProjectLayout,
+    state: ProjectState,
+    options: RunOptions,
+    *,
+    sinks: Sequence[EventSink],
+    pipeline: Pipeline = PIPELINE,
+) -> ProjectLayout:
+    """Run only `pipeline`'s delivery steps on an existing project, local or
+    archived; no stage, side task or archive move runs."""
+    events = EventBus(sinks)
+    return run_pipeline(
+        layout,
+        state,
+        loaded=loaded,
+        options=options,
+        agents=_agent_runner(loaded, events),
+        events=events,
+        pipeline=Pipeline((), delivery=pipeline.delivery),
+    )
+
+
+def archive_to(archived_root: Path) -> Archive:
+    """The archive move into `archived_root` (`project.store.archive_project`).
+
+    The state is read back from `project.json` at move time, so the
+    destination name reflects everything the run recorded.
+    """
+
+    def move(layout: ProjectLayout) -> ProjectLayout:
+        return archive_project(layout, load_state(layout), archived_root)
+
+    return move
+
+
+def _agent_runner(loaded: LoadedConfig, events: EventBus) -> AgentRunner:
+    settings = loaded.config.agents
+    return AgentRunner(
+        settings.roles.specs(),
+        AdapterRegistry(),
+        max_concurrent=settings.max_concurrent,
+        timeout_s=settings.timeout_minutes * _SECONDS_PER_MINUTE,
+        events=events,
     )
 
 
@@ -109,7 +163,7 @@ def run_pipeline(
     or the archive raised, after the side tasks are joined and
     `RunFinished(failed)` is emitted.
     """
-    pipeline.check(options)
+    pipeline.check(options, loaded.config, loaded.secrets, state=state)
     run = _Run(
         pipeline=pipeline,
         store=StateStore(layout, state),

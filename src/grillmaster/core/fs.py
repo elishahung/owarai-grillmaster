@@ -13,6 +13,12 @@ _REPLACE_ATTEMPTS = 5
 _REPLACE_BACKOFF_S = 0.05
 
 
+def partial_path(path: Path) -> Path:
+    """The dot-prefixed temporary name a tool writes `path` under before
+    renaming it into place (`.<name>.partial`)."""
+    return path.with_name(f".{path.name}.partial")
+
+
 def atomic_write_text(path: Path, text: str) -> None:
     """Write `text` so readers never observe a partial file."""
     path.parent.mkdir(parents=True, exist_ok=True)

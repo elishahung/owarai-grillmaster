@@ -9,17 +9,37 @@ run yet.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from grillmaster.events.types import PlanEntry, PlanKind
 from grillmaster.pipeline.delivery import archive_entry
+from grillmaster.stages import (
+    asr,
+    audio,
+    chat_fetch,
+    chat_translate,
+    chunks,
+    combine,
+    cover,
+    date_research,
+    download,
+    finalize,
+    glossary,
+    metadata,
+    package,
+    prepass,
+    refine,
+    transcript,
+)
 
 if TYPE_CHECKING:
     from grillmaster.config.model import AppConfig
+    from grillmaster.config.secrets import Secrets
     from grillmaster.core.stage_key import StageKey
     from grillmaster.pipeline.delivery import DeliveryStepDef
     from grillmaster.pipeline.side_tasks import SideTaskDef
     from grillmaster.pipeline.stage import RunOptions, StageDef
+    from grillmaster.project.state import ProjectState
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,7 +47,7 @@ class Pipeline:
     """A validated set of definitions; tests build their own from fakes."""
 
     stages: tuple[StageDef, ...]
-    side_tasks: tuple[SideTaskDef, ...] = ()
+    side_tasks: tuple[SideTaskDef[Any], ...] = ()
     delivery: tuple[DeliveryStepDef, ...] = ()
 
     def __post_init__(self) -> None:
@@ -50,12 +70,27 @@ class Pipeline:
     def stage(self, key: StageKey) -> StageDef | None:
         return next((stage for stage in self.stages if stage.key == key), None)
 
-    def check(self, options: RunOptions) -> None:
-        """Reject options this pipeline cannot honour, before anything runs."""
+    def check(
+        self,
+        options: RunOptions,
+        config: AppConfig,
+        secrets: Secrets,
+        *,
+        state: ProjectState | None = None,
+    ) -> None:
+        """Reject a run that cannot finish, before anything runs: options this
+        pipeline cannot honour, then the `preflight` of every stage the run
+        would execute (enabled, not complete in `state`, up to
+        `--break-after`)."""
         if options.break_after is not None and self.stage(options.break_after) is None:
             raise ValueError(
                 f"--break-after {options.break_after}: that stage is not registered"
             )
+        for stage in self.stages:
+            if stage.enabled(options) and not (state and state.is_done(stage.key)):
+                stage.preflight(config, secrets)
+            if stage.key == options.break_after:
+                return
 
     def plan(
         self, options: RunOptions, config: AppConfig, *, archive: bool = False
@@ -95,7 +130,7 @@ class Pipeline:
 
 
 def _entry(
-    definition: StageDef | DeliveryStepDef | SideTaskDef,
+    definition: StageDef | DeliveryStepDef | SideTaskDef[Any],
     kind: PlanKind,
     config: AppConfig,
     *,
@@ -116,8 +151,22 @@ def _check_unique(kind: str, keys: list[str]) -> None:
         raise ValueError(f"Duplicate {kind} keys: {', '.join(duplicates)}")
 
 
-STAGES: tuple[StageDef, ...] = ()
-SIDE_TASKS: tuple[SideTaskDef, ...] = ()
-DELIVERY: tuple[DeliveryStepDef, ...] = ()
+STAGES: tuple[StageDef, ...] = (
+    metadata.STAGE,
+    download.STAGE,
+    combine.STAGE,
+    chat_fetch.STAGE,
+    audio.STAGE,
+    asr.STAGE,
+    transcript.STAGE,
+    prepass.STAGE,
+    chunks.STAGE,
+    refine.STAGE,
+    glossary.STAGE,
+    finalize.STAGE,
+    chat_translate.STAGE,
+)
+SIDE_TASKS: tuple[SideTaskDef[Any], ...] = (cover.TASK, date_research.TASK)
+DELIVERY: tuple[DeliveryStepDef, ...] = (package.STEP,)
 
 PIPELINE = Pipeline(STAGES, SIDE_TASKS, DELIVERY)

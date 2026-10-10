@@ -63,16 +63,24 @@ class SchemaOutput[M: BaseModel](OutputSpec[M]):
 
 @dataclass(frozen=True, slots=True)
 class FilesOutput(OutputSpec[tuple[Path, ...]]):
-    """Files the agent must write; relative paths resolve against the workdir.
+    """Files the agent writes; relative paths resolve against the workdir.
 
-    The runner deletes them before every fresh attempt, so an accepted file
-    always comes from the session that was judged.
+    `required` must exist for the output to be accepted (they are the parsed
+    value); `optional` may be written (a report, a correction). The runner
+    deletes both before every fresh attempt, so every file present after an
+    accepted session was written by that session.
     """
 
-    paths: tuple[Path, ...]
+    required: tuple[Path, ...]
+    optional: tuple[Path, ...] = ()
 
     def resolve(self, workdir: Path) -> tuple[Path, ...]:
-        return tuple(workdir / path for path in self.paths)
+        """The required files under `workdir`."""
+        return tuple(workdir / path for path in self.required)
+
+    def declared(self, workdir: Path) -> tuple[Path, ...]:
+        """Every file the agent may write, required then optional."""
+        return tuple(workdir / path for path in (*self.required, *self.optional))
 
     @override
     def parse(self, final: FinalOutput, workdir: Path) -> tuple[Path, ...]:
@@ -132,3 +140,31 @@ class AgentResult[T]:
     elapsed_s: float
     session_dir: Path
     usage: Mapping[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class AgentJob[T]:
+    """One unit of `AgentRunner.run_jobs`.
+
+    `prepare` builds the task (media preparation included) on the worker
+    thread before the session takes a slot; `accept` persists the accepted
+    result on that worker right after the session, so a finished result
+    survives a later failure or interrupt of the batch.
+    """
+
+    # Names the job in failures before its task exists.
+    name: str
+    prepare: Callable[[], AgentTask[T]]
+    accept: Callable[[AgentResult[T]], None]
+
+
+@dataclass(frozen=True, slots=True)
+class JobFailure:
+    """A job whose `prepare`, session or `accept` raised."""
+
+    name: str
+    error: Exception
+
+    @override
+    def __str__(self) -> str:
+        return f"{self.name}: {self.error}"

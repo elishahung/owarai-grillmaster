@@ -301,7 +301,9 @@ def test_apply_writes_a_valid_state(
     assert state.id == "epabc12345"
     assert state.platform is Platform.TVER
     assert state.created_at.tzinfo is not None
-    assert state.broadcast_date == date(2026, 9, 28)
+    # The legacy date came from research: the record owns it now.
+    assert state.broadcast_date is None
+    assert state.effective_broadcast_date == date(2026, 9, 28)
     assert state.translation_hint == "漫才特集"
     assert state.asr_cost_usd == pytest.approx(0.37)
     assert state.source.broadcast_label == "2026年放送"
@@ -312,6 +314,29 @@ def test_apply_writes_a_valid_state(
     research = state.side_tasks.date_research
     assert research is not None
     assert (research.verdict, research.trust) == ("found", "high")
+    assert research.broadcast_date == date(2026, 9, 28)
+
+
+@pytest.mark.parametrize(
+    "researched", [False, True], ids=["unresearched", "researched-unknown"]
+)
+def test_a_date_research_did_not_find_stays_the_platforms(
+    migrate_archive: ModuleType, tmp_path: Path, *, researched: bool
+):
+    root = tmp_path / "archive"
+    project = make_legacy_project(root / "p", is_broadcast_date_researched=researched)
+    (project / ".artifacts" / "date_research.json").write_text(
+        json.dumps({"status": "unknown"}), encoding="utf-8"
+    )
+
+    migrate_archive.main([str(root), "--apply"])
+
+    state = ProjectState.model_validate_json(
+        (project / "project.json").read_text("utf-8")
+    )
+    assert state.broadcast_date == date(2026, 9, 28)
+    research = state.side_tasks.date_research
+    assert research is None or research.broadcast_date is None
 
 
 def test_apply_is_idempotent(migrate_archive: ModuleType, archive: Path, project: Path):
@@ -562,3 +587,13 @@ def test_unknown_patterns_collapse_digits_and_hashes(migrate_archive: ModuleType
         )
         == "chunks/responses/chunk_N-N_<hash>.raw.srt"
     )
+
+
+def test_the_legacy_full_video_lands_in_the_download_dir(
+    migrate_archive: ModuleType, tmp_path: Path
+):
+    layout = ProjectLayout(tmp_path / "p")
+
+    destinations = migrate_archive.move_destinations(layout)
+
+    assert destinations["video.full.mp4"] == layout.full_video

@@ -94,12 +94,14 @@ class StageRecord(TaskRecord):
 class DateResearchRecord(TaskRecord):
     """Research outcome; the evidence lives in `work/side/date_research/`.
 
-    A found date is applied to `ProjectState.broadcast_date`; `unknown` is
-    recorded too so a resume does not pay for the research again.
+    `broadcast_date` is the adopted date (`ProjectState.
+    effective_broadcast_date` falls back to it); `unknown` is recorded too
+    so a resume does not pay for the research again.
     """
 
     verdict: Literal["found", "unknown"]
     trust: Literal["high", "medium", "low"] | None = None
+    broadcast_date: date | None = None
 
 
 class SideTasks(_Strict):
@@ -112,6 +114,16 @@ class SideTasks(_Strict):
                 return self.cover is not None
             case SideTaskKey.DATE_RESEARCH:
                 return self.date_research is not None
+
+    def record(self, key: SideTaskKey, record: TaskRecord) -> None:
+        """Store `record` as `key`'s completion (validated for the field)."""
+        match key:
+            case SideTaskKey.COVER:
+                self.cover = record
+            case SideTaskKey.DATE_RESEARCH:
+                if not isinstance(record, DateResearchRecord):
+                    raise TypeError("date research records a DateResearchRecord")
+                self.date_research = record
 
 
 class ProjectState(_Strict):
@@ -126,6 +138,8 @@ class ProjectState(_Strict):
     # Root of the parent project (possibly archived) whose briefing seeds this
     # one's pre-pass for cross-episode consistency.
     parent: Path | None = None
+    # The platform's date (metadata stage, its only writer); readers use
+    # `effective_broadcast_date`.
     broadcast_date: date | None = None
     source: SourceInfo = Field(default_factory=SourceInfo)
     section: Section = Field(default_factory=Section)
@@ -153,6 +167,14 @@ class ProjectState(_Strict):
     @property
     def source_id(self) -> SourceId:
         return SourceId(self.platform, self.id)
+
+    @property
+    def effective_broadcast_date(self) -> date | None:
+        """The platform's date, else the one date research adopted."""
+        if self.broadcast_date is not None:
+            return self.broadcast_date
+        research = self.side_tasks.date_research
+        return research.broadcast_date if research is not None else None
 
     # --- ledger -------------------------------------------------------------
 

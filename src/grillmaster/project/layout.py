@@ -194,9 +194,10 @@ class ProjectLayout:
         return self.work_dir(StageKey.DOWNLOAD) / "parts"
 
     @property
-    def combined_full_video(self) -> Path:
-        """The uncut combined video, kept on section runs."""
-        return self.work_dir(StageKey.COMBINE) / "full.mp4"
+    def full_video(self) -> Path:
+        """The downloaded parts joined, uncut; combine cuts it (keeping it)
+        or moves it to `video`."""
+        return self.work_dir(StageKey.DOWNLOAD) / "full.mp4"
 
     @property
     def chat_raw(self) -> Path:
@@ -260,8 +261,14 @@ class ProjectLayout:
 
     @property
     def glossary_briefing(self) -> Path:
-        """The glossary check's corrected briefing; only written on a fix."""
+        """The glossary check's corrected briefing; written only when an
+        accepted run fixed the pre-pass one."""
         return self.work_dir(StageKey.GLOSSARY) / "briefing.json"
+
+    @property
+    def glossary_briefing_candidate(self) -> Path:
+        """The agent's correction before acceptance; never read downstream."""
+        return self.work_dir(StageKey.GLOSSARY) / "briefing.candidate.json"
 
     @property
     def glossary_report(self) -> Path:

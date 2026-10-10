@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import tomllib
 from typing import TYPE_CHECKING
 
@@ -9,8 +10,10 @@ import pytest
 from grillmaster.config.model import validate_config
 from grillmaster.core.model_spec import ModelSpec, Role
 from grillmaster.core.stage_key import StageKey
+from grillmaster.package.pools import MediaPool
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
     from types import ModuleType
 
@@ -163,3 +166,122 @@ def test_a_lossy_rendering_is_refused(
 
     with pytest.raises(ValueError, match="round-trip the program rules"):
         migrate_config.build(legacy_root)
+
+
+# --- pools -------------------------------------------------------------------
+
+
+@pytest.fixture
+def legacy_package(tmp_path: Path) -> Path:
+    """`noise/default` (000..002, cursor at file 2 + 30 s), `noise/sleep`
+    (no cursor) and `placeholder` (001..003, next clip 3)."""
+    package = tmp_path / "package"
+    default = package / "noise" / "default"
+    default.mkdir(parents=True)
+    for index in range(3):
+        (default / f"{index:03d}.mp4").write_text(f"default {index}", "utf-8")
+    (default / "state.json").write_text(
+        json.dumps({"next_index": 2, "next_seconds": 30}), encoding="utf-8"
+    )
+    sleep = package / "noise" / "sleep"
+    sleep.mkdir()
+    (sleep / "000.mkv").write_text("sleep 0", "utf-8")
+    placeholder = package / "placeholder"
+    placeholder.mkdir()
+    for index in range(1, 4):
+        (placeholder / f"{index:03d}.mp4").write_text(f"judge {index}", "utf-8")
+    (placeholder / "state.json").write_text('{"next_index": 3}', encoding="utf-8")
+    return package
+
+
+def tree(root: Path) -> list[str]:
+    return sorted(path.relative_to(root).as_posix() for path in root.rglob("*"))
+
+
+def test_pool_dry_run_prints_the_plan_and_moves_nothing(
+    migrate_config: ModuleType,
+    legacy_package: Path,
+    capsys: pytest.CaptureFixture[str],
+):
+    before = tree(legacy_package)
+
+    assert migrate_config.main(["--pools", str(legacy_package)]) == 0
+
+    out = capsys.readouterr().out
+    assert f"-> {legacy_package / 'pools' / 'default'}" in out
+    assert "renumber 3 file(s): 000.mp4..002.mp4 -> 001.mp4..003.mp4" in out
+    assert "state.json -> .cursor.json (index 2, seconds 30)" in out
+    assert "state.json -> .cursor.json (index 2, seconds 0)" in out
+    assert tree(legacy_package) == before
+
+
+def test_pool_apply_moves_renumbers_and_converts_the_cursors(
+    migrate_config: ModuleType, legacy_package: Path
+):
+    assert migrate_config.main(["--pools", str(legacy_package), "--apply"]) == 0
+
+    pools = legacy_package / "pools"
+    assert tree(legacy_package) == [
+        "pools",
+        "pools/default",
+        "pools/default/.cursor.json",
+        "pools/default/001.mp4",
+        "pools/default/002.mp4",
+        "pools/default/003.mp4",
+        "pools/placeholder",
+        "pools/placeholder/.cursor.json",
+        "pools/placeholder/001.mp4",
+        "pools/placeholder/002.mp4",
+        "pools/placeholder/003.mp4",
+        "pools/sleep",
+        "pools/sleep/001.mkv",
+    ]
+    assert (pools / "default" / "001.mp4").read_text("utf-8") == "default 0"
+    # The new pools resume exactly where the legacy cursors pointed.
+    default = MediaPool(pools / "default")
+    assert json.loads((default.directory / ".cursor.json").read_text("utf-8")) == {
+        "index": 2,
+        "seconds": 30,
+    }
+    assert MediaPool(pools / "placeholder").next_file().read_text("utf-8") == "judge 3"
+    assert MediaPool(pools / "sleep").next_file().name == "001.mkv"
+
+
+@pytest.mark.parametrize(
+    ("next_index", "expected"), [(1, "judge 1"), (3, "judge 3"), (9, "judge 1")]
+)
+def test_placeholder_cursor_converts_from_one_based(
+    migrate_config: ModuleType, legacy_package: Path, next_index: int, expected: str
+):
+    (legacy_package / "placeholder" / "state.json").write_text(
+        json.dumps({"next_index": next_index}), encoding="utf-8"
+    )
+
+    migrate_config.migrate_pools(legacy_package, apply=True)
+
+    pool = MediaPool(legacy_package / "pools" / "placeholder")
+    assert pool.next_file().read_text("utf-8") == expected
+
+
+@pytest.mark.parametrize(
+    ("damage", "message"),
+    [
+        (lambda p: (p / "noise/default/001.mp4").unlink(), "without gaps"),
+        (lambda p: (p / "noise/default/notes.txt").write_text("x"), "unexpected"),
+        (lambda p: (p / "noise/default/state.json").write_text("{}x"), "cursor"),
+        (lambda p: (p / "pools/sleep").mkdir(parents=True), "already exists"),
+        (lambda p: shutil.copytree(p / "noise/sleep", p / "noise/placeholder"), "two"),
+    ],
+)
+def test_pool_migration_refuses_before_moving_anything(
+    migrate_config: ModuleType,
+    legacy_package: Path,
+    damage: Callable[[Path], object],
+    message: str,
+):
+    damage(legacy_package)
+    before = tree(legacy_package)
+
+    with pytest.raises(ValueError, match=message):
+        migrate_config.migrate_pools(legacy_package, apply=True)
+    assert tree(legacy_package) == before

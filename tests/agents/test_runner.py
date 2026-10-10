@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import _thread
 import contextlib
 import json
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -22,6 +24,8 @@ from grillmaster.agents.errors import (
 from grillmaster.agents.events import Message, Thought, ToolCall, ToolResult
 from grillmaster.agents.runner import AgentRunner, SessionRecord
 from grillmaster.agents.task import (
+    AgentJob,
+    AgentResult,
     AgentTask,
     FilesOutput,
     OutputSpec,
@@ -463,6 +467,29 @@ def test_files_output_missing_file_is_repaired_and_stale_files_removed(
     assert "refined.srt" in adapter.calls[1].request.message
 
 
+def test_files_output_optional_files_are_removed_before_an_attempt(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    workdir = tmp_path / "refine" / "work"
+    workdir.mkdir(parents=True)
+    stale_report = workdir / "report.md"
+    stale_report.write_text("old", encoding="utf-8")
+
+    def write_srt(request: Any) -> None:
+        (request.workdir / "refined.srt").write_text("new", encoding="utf-8")
+
+    task = make_task(
+        tmp_path,
+        FilesOutput((Path("refined.srt"),), optional=(Path("report.md"),)),
+    )
+    result = make_runner(FakeAdapter([Turn(final=final(), on_start=write_srt)])).run(
+        task
+    )
+
+    assert result.output == (workdir.resolve() / "refined.srt",)
+    assert not stale_report.exists()
+
+
 def test_adapter_defects_are_repaired_resending_their_media(
     tmp_path: Path,
     make_runner: Callable[..., AgentRunner],
@@ -587,7 +614,20 @@ def test_transient_error_during_repair_retries_from_a_fresh_session(
 # --- concurrency -----------------------------------------------------------------------
 
 
-def test_run_many_respects_the_global_limit_and_keeps_order(
+def jobs_of[T](
+    tasks: list[AgentTask[T]], accepted: list[AgentResult[T]]
+) -> list[AgentJob[T]]:
+    return [
+        AgentJob(task.name, prepare=lambda task=task: task, accept=accepted.append)
+        for task in tasks
+    ]
+
+
+def last_line(call: Call) -> str:
+    return call.request.message.split("\n")[-1]
+
+
+def test_run_jobs_respects_the_global_limit_and_accepts_each_result(
     tmp_path: Path, make_runner: Callable[..., AgentRunner]
 ):
     lock = threading.Lock()
@@ -605,22 +645,23 @@ def test_run_many_respects_the_global_limit_and_keeps_order(
             with lock:
                 active -= 1
 
-        name = call.request.message.split("\n")[-1]
-        return Turn(final=final(name), on_start=enter)
+        return Turn(final=final(last_line(call)), on_start=enter)
 
     tasks = [
         make_task(tmp_path, TextOutput(), name=f"chunks/{i}", prompt=f"chunk-{i}")
         for i in range(6)
     ]
-    results = make_runner(FakeAdapter(script=script), max_concurrent=2).run_many(tasks)
+    accepted: list[AgentResult[str]] = []
+    runner = make_runner(FakeAdapter(script=script), max_concurrent=2)
 
+    assert runner.run_jobs(jobs_of(tasks, accepted)) == []
     assert peak == 2
-    assert [r.output for r in results if not isinstance(r, AgentError)] == [
+    assert sorted(result.output for result in accepted) == [
         f"chunk-{i}" for i in range(6)
     ]
 
 
-def test_run_many_returns_failures_in_place(
+def test_run_jobs_returns_failures_in_order_and_keeps_the_rest(
     tmp_path: Path, make_runner: Callable[..., AgentRunner]
 ):
     def script(call: Call) -> Turn:
@@ -629,16 +670,105 @@ def test_run_many_returns_failures_in_place(
         return Turn(final=final("ok"))
 
     tasks = [
-        make_task(tmp_path, TextOutput(), name="a", prompt="good"),
-        make_task(tmp_path, TextOutput(), name="b", prompt="bad"),
+        make_task(tmp_path, TextOutput(), name="a", prompt="bad"),
+        make_task(tmp_path, TextOutput(), name="b", prompt="good"),
     ]
-    first, second = make_runner(FakeAdapter(script=script)).run_many(tasks)
-    assert not isinstance(first, AgentError)
-    assert first.output == "ok"
-    assert isinstance(second, AgentQuotaError)
+    accepted: list[AgentResult[str]] = []
+    failures = make_runner(FakeAdapter(script=script)).run_jobs(
+        jobs_of(tasks, accepted)
+    )
+
+    assert [failure.name for failure in failures] == ["a"]
+    assert isinstance(failures[0].error, AgentQuotaError)
+    assert str(failures[0]) == "a: 429"
+    assert [result.output for result in accepted] == ["ok"]
 
 
-def test_run_many_carries_the_stage_scope_into_workers(
+def test_a_failing_prepare_fails_only_its_job(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    def broken_prepare() -> AgentTask[str]:
+        raise OSError("ffmpeg crashed")
+
+    accepted: list[AgentResult[str]] = []
+    good = make_task(tmp_path, TextOutput(), name="good")
+    jobs = [
+        AgentJob("broken", prepare=broken_prepare, accept=accepted.append),
+        *jobs_of([good], accepted),
+    ]
+    adapter = FakeAdapter(script=lambda call: Turn(final=final("ok")))
+
+    failures = make_runner(adapter).run_jobs(jobs)
+
+    assert [(f.name, type(f.error)) for f in failures] == [("broken", OSError)]
+    assert [result.output for result in accepted] == ["ok"]
+    assert len(adapter.calls) == 1
+
+
+def test_a_failing_accept_fails_only_its_job(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    accepted: list[str] = []
+
+    def accept(result: AgentResult[str]) -> None:
+        if result.output == "bad":
+            raise ValueError("disk full")
+        accepted.append(result.output)
+
+    tasks = [
+        make_task(tmp_path, TextOutput(), name=name, prompt=name)
+        for name in ("bad", "good")
+    ]
+    jobs = [AgentJob(t.name, prepare=lambda t=t: t, accept=accept) for t in tasks]
+    adapter = FakeAdapter(script=lambda call: Turn(final=final(last_line(call))))
+
+    failures = make_runner(adapter).run_jobs(jobs)
+
+    assert [(f.name, str(f.error)) for f in failures] == [("bad", "disk full")]
+    assert accepted == ["good"]
+
+
+def test_an_interrupt_propagates_after_the_running_job_is_accepted(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    """A Ctrl-C reaching the waiting thread cancels the jobs not yet started
+    and propagates once the running job has accepted its result."""
+    started = threading.Event()
+    accepted: list[str] = []
+    tasks = [
+        make_task(tmp_path, TextOutput(), name=name, prompt=name)
+        for name in ("first", "second")
+    ]
+
+    def enter(request: Any) -> None:
+        started.set()
+        time.sleep(1.0)
+
+    adapter = FakeAdapter(
+        script=lambda call: Turn(final=final(last_line(call)), on_start=enter)
+    )
+    jobs = [
+        AgentJob(
+            t.name,
+            prepare=lambda t=t: t,
+            accept=lambda result: accepted.append(result.output),
+        )
+        for t in tasks
+    ]
+
+    def interrupt() -> None:
+        started.wait(5)
+        _thread.interrupt_main()
+
+    threading.Thread(target=interrupt).start()
+    with pytest.raises(KeyboardInterrupt):
+        make_runner(adapter, max_concurrent=1).run_jobs(jobs)
+
+    assert accepted == ["first"]
+    assert len(adapter.calls) == 1
+
+
+def test_run_jobs_carries_the_stage_scope_into_workers(
     tmp_path: Path,
     make_runner: Callable[..., AgentRunner],
     recording_sink: RecordingSink,
@@ -646,7 +776,7 @@ def test_run_many_carries_the_stage_scope_into_workers(
     adapter = FakeAdapter(script=lambda call: Turn(final=final()))
     tasks = [make_task(tmp_path, TextOutput(), name=f"t{i}") for i in range(3)]
     with stage_scope("chunks"):
-        make_runner(adapter).run_many(tasks)
+        make_runner(adapter).run_jobs(jobs_of(tasks, []))
     stages = {
         e.stage for e in recording_sink.events if isinstance(e, AgentSessionStarted)
     }
@@ -669,8 +799,8 @@ def test_concurrent_tasks_may_not_share_a_workdir(
 
         return Turn(final=final("ok"), on_start=enter)
 
-    results = make_runner(FakeAdapter(script=script)).run_many(tasks)
-    errors = [r for r in results if isinstance(r, AgentConfigError)]
+    failures = make_runner(FakeAdapter(script=script)).run_jobs(jobs_of(tasks, []))
+    errors = [f.error for f in failures if isinstance(f.error, AgentConfigError)]
     assert len(errors) == 1
     assert "is in use by another running agent task" in str(errors[0])
     # Released afterwards: a later run may reuse it.
@@ -691,7 +821,9 @@ def test_slot_is_held_across_repair_rounds(
         return Turn(final=final("fixed", session_id=call.session_id or ""))
 
     tasks = [make_task(tmp_path, TextOutput(), name=name, prompt=name) for name in "ab"]
-    make_runner(FakeAdapter(script=script), max_concurrent=1).run_many(tasks)
+    make_runner(FakeAdapter(script=script), max_concurrent=1).run_jobs(
+        jobs_of(tasks, [])
+    )
     # Each session's repair runs before the other session starts.
     assert order in (
         ["start:a", "resume:a", "start:b", "resume:b"],

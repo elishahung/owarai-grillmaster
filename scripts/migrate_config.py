@@ -2,6 +2,8 @@
 
     uv run python scripts/migrate_config.py [--root DIR]           # print TOML
     uv run python scripts/migrate_config.py [--root DIR] --apply   # write it
+    uv run python scripts/migrate_config.py --pools PACKAGE_DIR    # print plan
+    uv run python scripts/migrate_config.py --pools PACKAGE_DIR --apply
 
 Reads the legacy program rules (`config.json`) and settings (`.env`) from
 `--root` (default: the current directory) and renders a `grill.toml`
@@ -10,6 +12,12 @@ stdout (dry run) or to `<root>/grill.toml` (`--apply`, which refuses to
 overwrite an existing file); notes go to stderr. `.env` is never rewritten:
 only `ELEVENLABS_API_KEY` stays there, and the notes list the keys that are
 no longer read. Secret values are never printed.
+
+`--pools` instead migrates the media folders under the legacy `PACKAGE_PATH`
+to `pools/<name>`: each `noise/<name>` set (files `000..` renumbered to
+`001..`) and `placeholder`, with their `state.json` cursor converted to
+`.cursor.json`. The whole plan is checked before anything moves; the dry run
+prints it.
 
 Delete this script once the real `grill.toml` exists.
 """
@@ -21,15 +29,17 @@ import io
 import json
 import sys
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import tomlkit
 from dotenv import dotenv_values
-from pydantic import TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from grillmaster.config.model import validate_config
 from grillmaster.core.model_spec import Backend, ModelSpec
+from grillmaster.package.pools import CURSOR_FILE_NAME, POOLS_DIR_NAME, MediaPool
 
 CONFIG_JSON = "config.json"
 ENV_FILE = ".env"
@@ -77,6 +87,8 @@ INSTRUCTION_KEYS = {
 # Legacy packaging folders under PACKAGE_PATH; the new code reads pools/<name>.
 LEGACY_PLACEHOLDER_DIR = "placeholder"
 LEGACY_NOISE_DIR = "noise"
+LEGACY_STATE_FILE = "state.json"
+_STEM_DIGITS = 3
 
 
 def _convert(key: str, value: str, kind: type) -> object:
@@ -137,16 +149,173 @@ def package_table(package_root: Path | None, notes: list[str]) -> dict[str, Any]
         else []
     )
     notes.extend(
-        f"move noise set {noise_root / name} -> {pools / name}" for name in noise_sets
+        f"noise set {noise_root / name} -> {pools / name} (run --pools)"
+        for name in noise_sets
     )
     if not placeholder.is_dir():
         return None
-    notes.append(f"move {placeholder} -> {pools / LEGACY_PLACEHOLDER_DIR}")
+    notes.append(f"{placeholder} -> {pools / LEGACY_PLACEHOLDER_DIR} (run --pools)")
     return {
         "inserts": [
             {"pool": LEGACY_PLACEHOLDER_DIR, "output": "judge", "when": "remix"}
         ]
     }
+
+
+class _NoiseState(BaseModel):
+    """Legacy `noise/<name>/state.json`: a 0-based file and a seconds offset."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    next_index: int = Field(default=0, ge=0)
+    next_seconds: int = Field(default=0, ge=0)
+
+
+class _PlaceholderState(BaseModel):
+    """Legacy `placeholder/state.json`: the 1-based next clip."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    next_index: int = Field(default=1, ge=1)
+
+
+@dataclass(frozen=True, slots=True)
+class PoolMove:
+    """One legacy folder becoming `pools/<name>`.
+
+    `renames` run in order inside the moved folder (highest index first, so
+    no name collides); `cursor` is the converted `(index, seconds)`, `None`
+    when the folder had no `state.json`.
+    """
+
+    source: Path
+    target: Path
+    renames: tuple[tuple[str, str], ...]
+    cursor: tuple[int, int] | None
+
+    def describe(self) -> list[str]:
+        lines = [f"move {self.source} -> {self.target}"]
+        if self.renames:
+            first, last = self.renames[-1], self.renames[0]
+            lines.append(
+                f"  renumber {len(self.renames)} file(s): "
+                f"{first[0]}..{last[0]} -> {first[1]}..{last[1]}"
+            )
+        if self.cursor is not None:
+            index, seconds = self.cursor
+            lines.append(
+                f"  {LEGACY_STATE_FILE} -> {CURSOR_FILE_NAME} "
+                f"(index {index}, seconds {seconds})"
+            )
+        return lines
+
+    def apply(self) -> None:
+        self.target.parent.mkdir(parents=True, exist_ok=True)
+        self.source.rename(self.target)
+        for old, new in self.renames:
+            (self.target / old).rename(self.target / new)
+        if self.cursor is not None:
+            index, seconds = self.cursor
+            (self.target / CURSOR_FILE_NAME).write_text(
+                json.dumps({"index": index, "seconds": seconds}, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            (self.target / LEGACY_STATE_FILE).unlink()
+        MediaPool(self.target).files()  # numbered 001..N, or raise
+
+
+def _numbered_files(directory: Path, first: int) -> list[Path]:
+    """The folder's `NNN.*` files, contiguous from `first`; anything else
+    but `state.json` is refused."""
+    files: list[Path] = []
+    unexpected: list[str] = []
+    for path in directory.iterdir():
+        if path.is_file() and path.stem.isdigit() and len(path.stem) == _STEM_DIGITS:
+            files.append(path)
+        elif path.name != LEGACY_STATE_FILE:
+            unexpected.append(path.name)
+    if unexpected:
+        raise ValueError(f"{directory}: unexpected entries {sorted(unexpected)}")
+    files.sort(key=lambda path: path.stem)
+    expected = [f"{index:03d}" for index in range(first, first + len(files))]
+    if not files or [path.stem for path in files] != expected:
+        raise ValueError(
+            f"{directory}: files must be numbered {first:03d}.. without gaps"
+        )
+    return files
+
+
+def _read_state[M: BaseModel](directory: Path, model: type[M]) -> M | None:
+    path = directory / LEGACY_STATE_FILE
+    if not path.exists():
+        return None
+    try:
+        return model.model_validate_json(path.read_text(encoding="utf-8-sig"))
+    except ValidationError as error:
+        raise ValueError(f"{path}: unreadable legacy cursor") from error
+
+
+def _noise_move(source: Path, target: Path) -> PoolMove:
+    files = _numbered_files(source, first=0)
+    renames = tuple(
+        (path.name, f"{index + 1:03d}{path.suffix}")
+        for index, path in reversed(list(enumerate(files)))
+    )
+    state = _read_state(source, _NoiseState)
+    cursor = None if state is None else (state.next_index, state.next_seconds)
+    return PoolMove(source, target, renames, cursor)
+
+
+def _placeholder_move(source: Path, target: Path) -> PoolMove:
+    files = _numbered_files(source, first=1)
+    state = _read_state(source, _PlaceholderState)
+    cursor = None
+    if state is not None:
+        # Legacy wrapped an out-of-range clip number back to the first clip.
+        index = state.next_index - 1 if state.next_index <= len(files) else 0
+        cursor = (index, 0)
+    return PoolMove(source, target, (), cursor)
+
+
+def plan_pools(package_root: Path) -> list[PoolMove]:
+    """Every legacy folder under `package_root` to move; raises `ValueError`
+    on anything the migration cannot convert exactly."""
+    if not package_root.is_dir():
+        raise ValueError(f"package folder not found: {package_root}")
+    pools = package_root / POOLS_DIR_NAME
+    moves: list[PoolMove] = []
+    noise_root = package_root / LEGACY_NOISE_DIR
+    if noise_root.is_dir():
+        for entry in sorted(noise_root.iterdir()):
+            if not entry.is_dir():
+                raise ValueError(f"{noise_root}: unexpected file {entry.name}")
+            moves.append(_noise_move(entry, pools / entry.name))
+    placeholder = package_root / LEGACY_PLACEHOLDER_DIR
+    if placeholder.is_dir():
+        moves.append(_placeholder_move(placeholder, pools / LEGACY_PLACEHOLDER_DIR))
+    targets = [move.target for move in moves]
+    for target in targets:
+        if target.exists():
+            raise ValueError(f"pool already exists: {target}")
+        if targets.count(target) > 1:
+            raise ValueError(f"two legacy folders would become {target}")
+    return moves
+
+
+def migrate_pools(package_root: Path, *, apply: bool) -> list[str]:
+    """Plan (and with `apply`, perform) the pool migration; returns the plan
+    lines. An emptied `noise/` folder is removed."""
+    moves = plan_pools(package_root)
+    lines = [line for move in moves for line in move.describe()]
+    if not moves:
+        lines.append(f"nothing to migrate under {package_root}")
+    if apply:
+        for move in moves:
+            move.apply()
+        noise_root = package_root / LEGACY_NOISE_DIR
+        if noise_root.is_dir() and not any(noise_root.iterdir()):
+            noise_root.rmdir()
+    return lines
 
 
 def program_tables(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -261,11 +430,25 @@ def main(argv: list[str] | None = None) -> int:
         description="Convert config.json + .env to grill.toml"
     )
     parser.add_argument("--root", type=Path, default=Path(), help="legacy working root")
-    parser.add_argument("--apply", action="store_true", help=f"write {GRILL_TOML}")
+    parser.add_argument(
+        "--apply", action="store_true", help=f"write {GRILL_TOML} / move the pools"
+    )
+    parser.add_argument(
+        "--pools",
+        type=Path,
+        metavar="PACKAGE_DIR",
+        help="migrate the legacy media folders under PACKAGE_DIR instead",
+    )
     args = parser.parse_args(argv)
     for stream in (sys.stdout, sys.stderr):
         if isinstance(stream, io.TextIOWrapper):
             stream.reconfigure(encoding="utf-8")
+    if args.pools is not None:
+        for line in migrate_pools(args.pools.absolute(), apply=args.apply):
+            print(line)
+        if args.apply:
+            print("moved the pools", file=sys.stderr)
+        return 0
     root: Path = args.root.absolute()
     target = root / GRILL_TOML
     if args.apply and target.exists():

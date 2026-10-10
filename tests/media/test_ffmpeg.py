@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 from typing import TYPE_CHECKING
 
@@ -116,3 +117,57 @@ def test_failing_progress_callback_kills_the_process(runner: SubprocessFfmpegRun
 def test_progress_needs_an_ffmpeg_argv(runner: SubprocessFfmpegRunner):
     with pytest.raises(ValueError, match="needs an ffmpeg argv"):
         runner.run(ffprobe("-version"), on_progress=lambda _seconds: None)
+
+
+def _buffering() -> list[str]:
+    """A real-time stream whose output time never advances: `areverse`
+    holds every sample until an end that never comes."""
+    return ffmpeg(
+        "-re", "-f", "lavfi", "-i", "anullsrc", "-af", "areverse", "-f", "null", "-"
+    )
+
+
+def test_a_stalled_progress_run_is_killed():
+    runner = SubprocessFfmpegRunner(stall_timeout=0.5)
+    started = time.monotonic()
+    with pytest.raises(MediaError, match=r"stalled: no progress for 0\.5s"):
+        runner.run(_buffering(), on_progress=lambda _seconds: None)
+    assert time.monotonic() - started < 10
+
+
+def test_an_advancing_run_is_not_a_stall(media_fixture: Path):
+    runner = SubprocessFfmpegRunner(stall_timeout=5.0)
+    seen: list[float] = []
+    runner.run(
+        ffmpeg("-re", "-i", str(media_fixture), "-f", "null", "-"),
+        on_progress=seen.append,
+    )
+    assert seen
+
+
+def test_stall_watch_needs_progress():
+    # Without progress there is no output clock to watch: only `timeout` ends it.
+    runner = SubprocessFfmpegRunner(stall_timeout=0.1)
+    with pytest.raises(MediaError, match=r"timed out after 1\.0s"):
+        runner.run(_buffering(), timeout=1.0)
+
+
+def test_setting_abort_kills_the_run(runner: SubprocessFfmpegRunner):
+    abort = threading.Event()
+    threading.Timer(0.3, abort.set).start()
+    started = time.monotonic()
+    with pytest.raises(MediaError, match="aborted"):
+        runner.run(_endless(), on_progress=lambda _seconds: None, abort=abort)
+    assert time.monotonic() - started < 10
+
+
+def test_a_set_abort_starts_nothing(runner: SubprocessFfmpegRunner, tmp_path: Path):
+    abort = threading.Event()
+    abort.set()
+    output = tmp_path / "out.wav"
+    with pytest.raises(MediaError, match="aborted before start"):
+        runner.run(
+            ffmpeg("-f", "lavfi", "-i", "anullsrc", "-t", "1", str(output)),
+            abort=abort,
+        )
+    assert not output.exists()

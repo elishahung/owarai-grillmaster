@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+from contextlib import contextmanager
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -18,6 +20,7 @@ from grillmaster.project.store import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     from grillmaster.project.state import ProjectState
@@ -139,3 +142,52 @@ def test_archive_replacement_leaves_no_backup(
     stale.mkdir(parents=True)
     archive_project(layout, state, tmp_path / "archive")
     assert sorted(path.name for path in stale.parent.iterdir()) == ["epabc123"]
+
+
+@contextmanager
+def locked(path: Path) -> Iterator[None]:
+    """Make `path` undeletable while the block runs: an open handle on
+    Windows, a read-only parent directory on POSIX."""
+    if sys.platform == "win32":
+        with path.open("rb"):
+            yield
+        return
+    parent = path.parent
+    mode = parent.stat().st_mode
+    parent.chmod(0o500)
+    try:
+        yield
+    finally:
+        parent.chmod(mode)
+
+
+def test_a_locked_source_keeps_the_complete_archive(
+    layout: ProjectLayout, state: ProjectState, tmp_path: Path
+):
+    layout.ja_srt.parent.mkdir()
+    layout.ja_srt.write_text("1\n", encoding="utf-8")
+
+    with locked(layout.ja_srt):
+        archived = archive_project(layout, state, tmp_path / "archive")
+
+    # The copy was verified before the swap, so the failed cleanup of the
+    # local project neither raises nor rolls the archive back.
+    assert archived.root == tmp_path / "archive/etc/epabc123"
+    assert archived.ja_srt.read_text(encoding="utf-8") == "1\n"
+    assert load_state(archived) == state
+    assert layout.ja_srt.exists()
+    assert sorted(path.name for path in archived.root.parent.iterdir()) == ["epabc123"]
+
+
+def test_a_stale_staging_copy_is_replaced(
+    layout: ProjectLayout, state: ProjectState, tmp_path: Path
+):
+    stale = tmp_path / "archive/etc/epabc123.partial"
+    stale.mkdir(parents=True)
+    (stale / "half_copied.mp4").write_bytes(b"crash")
+
+    archived = archive_project(layout, state, tmp_path / "archive")
+
+    assert not (archived.root / "half_copied.mp4").exists()
+    assert not stale.exists()
+    assert not layout.root.exists()

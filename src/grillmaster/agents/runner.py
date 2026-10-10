@@ -20,12 +20,13 @@ import tempfile
 import threading
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_EXCEPTION, ThreadPoolExecutor, wait
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO
 
+from loguru import logger
 from pydantic import BaseModel
 
 from grillmaster.agents import prompt
@@ -50,7 +51,12 @@ from grillmaster.agents.events import (
     summarize_final,
 )
 from grillmaster.agents.schema import StrictSchemaError, strict_json_schema
-from grillmaster.agents.task import AgentResult, FilesOutput, SchemaOutput
+from grillmaster.agents.task import (
+    AgentResult,
+    FilesOutput,
+    JobFailure,
+    SchemaOutput,
+)
 from grillmaster.core.fs import atomic_write_text
 from grillmaster.core.json_artifact import write_model
 from grillmaster.events.context import current_stage, task_scope
@@ -72,13 +78,15 @@ if TYPE_CHECKING:
     )
     from grillmaster.agents.events import AgentEvent
     from grillmaster.agents.schema import JsonSchema
-    from grillmaster.agents.task import AgentTask
+    from grillmaster.agents.task import AgentJob, AgentTask
     from grillmaster.core.model_spec import Backend, ModelSpec, Role
     from grillmaster.events.bus import EventSink
 
 # The MCP tool server; the runner appends `--session <tools.json>`.
 DEFAULT_TOOL_SERVER = (sys.executable, "-m", "grillmaster.agent_tools")
 DEFAULT_RETRY_DELAY_S = 30.0
+# How often `run_jobs` wakes up to let a pending Ctrl-C through.
+_INTERRUPT_POLL_S = 0.1
 
 PROMPT_FILE = "prompt.md"
 TOOLS_FILE = "tools.json"
@@ -206,33 +214,56 @@ class AgentRunner:
                 self._sleep(self._retry_delay_s)
                 attempt += 1
 
-    def run_many[T](
-        self, tasks: Sequence[AgentTask[T]]
-    ) -> list[AgentResult[T] | AgentError]:
-        """Run `tasks` concurrently (bounded by the global slots); results keep
-        the input order, and each failure is returned in its task's place."""
+    def run_jobs[T](self, jobs: Sequence[AgentJob[T]]) -> list[JobFailure]:
+        """Run `jobs` concurrently (bounded by the global slots) and return
+        the failures in input order.
+
+        Each job prepares its task, runs it and accepts the result on one
+        worker; any exception in those steps fails only that job. An
+        interrupt while waiting cancels the jobs not yet started, lets the
+        running ones finish (accepting what succeeds), then propagates.
+        """
         if _holding_slot.get():
-            raise AgentConfigError("nested agent run_many while holding a slot")
-        if not tasks:
+            raise AgentConfigError("nested agent run_jobs while holding a slot")
+        if not jobs:
             return []
 
-        def run_one(task: AgentTask[T]) -> AgentResult[T] | AgentError:
+        def run_one(job: AgentJob[T]) -> JobFailure | None:
             try:
-                return self.run(task)
-            except AgentError as error:
-                return error
+                job.accept(self.run(job.prepare()))
+            except Exception as error:  # noqa: BLE001 - reported per job
+                logger.opt(exception=True).debug(f"{job.name} traceback")
+                logger.error(f"{job.name} failed: {error}")
+                return JobFailure(job.name, error)
+            return None
 
-        workers = min(len(tasks), self._max_concurrent)
-        with ThreadPoolExecutor(
-            max_workers=workers, thread_name_prefix="agent"
-        ) as pool:
-            # One context copy per task: a Context cannot be entered by two
+        pool = ThreadPoolExecutor(
+            max_workers=min(len(jobs), self._max_concurrent),
+            thread_name_prefix="agent",
+        )
+        try:
+            # One context copy per job: a Context cannot be entered by two
             # threads at once.
             futures = [
-                pool.submit(contextvars.copy_context().run, run_one, task)
-                for task in tasks
+                pool.submit(contextvars.copy_context().run, run_one, job)
+                for job in jobs
             ]
-            return [future.result() for future in futures]
+            pending = set(futures)
+            while pending:
+                # A timed wait: an untimed one would hold Ctrl-C back until
+                # a job finished (lock waits are not interruptible on Windows).
+                done, pending = wait(
+                    pending, timeout=_INTERRUPT_POLL_S, return_when=FIRST_EXCEPTION
+                )
+                for future in done:
+                    # Re-raises what `run_one` lets through (an interrupt).
+                    future.result()
+            outcomes = [future.result() for future in futures]
+        except BaseException:
+            pool.shutdown(wait=True, cancel_futures=True)
+            raise
+        pool.shutdown(wait=True)
+        return [failure for failure in outcomes if failure is not None]
 
     # -- preparation ---------------------------------------------------------
 
@@ -308,7 +339,7 @@ class AgentRunner:
         session_dir = _session_dir(task.session_dir, attempt)
         files = self._prepare_session_dir(prepared, session_dir)
         if isinstance(task.output, FilesOutput):
-            for path in task.output.resolve(workdir):
+            for path in task.output.declared(workdir):
                 path.unlink(missing_ok=True)
 
         with task_scope(task.name), self._slot():

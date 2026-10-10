@@ -180,7 +180,7 @@ def move_destinations(layout: ProjectLayout) -> dict[str, Path]:
         "chat.cht.json": layout.chat_cht_json,
         "poster.cover.png": layout.cover,
         "metadata.info.json": layout.metadata_info,
-        "video.full.mp4": layout.combined_full_video,
+        "video.full.mp4": layout.full_video,
         # `.opus` is the same Ogg Opus stream under its older extension.
         ".asr/audio.ogg": layout.audio,
         ".asr/audio.opus": layout.audio,
@@ -790,11 +790,15 @@ def _side_tasks(
         if not isinstance(result, dict):
             plan.warnings.append(("date research without result", "verdict unknown"))
             result = {}
+        verdict = "found" if result.get("status") == "found" else "unknown"
         side.date_research = DateResearchRecord(
             completed_at=_completed_at(found, (layout.date_research_result,), fallback),
             elapsed_s=0,
-            verdict="found" if result.get("status") == "found" else "unknown",
+            verdict=verdict,
             trust=result.get("trust"),
+            # Legacy research ran only without a platform date and wrote what
+            # it adopted into `broadcast_date`; the record owns it now.
+            broadcast_date=data.get("broadcast_date") if verdict == "found" else None,
         )
     return side
 
@@ -828,7 +832,9 @@ def _build_state(plan: ProjectPlan, data: dict[str, Any], found: _Sources) -> No
             name=data.get("name"),
             translation_hint=hint,
             parent=Path(parent) if parent else None,
-            broadcast_date=data.get("broadcast_date"),
+            broadcast_date=None
+            if side.date_research is not None and side.date_research.broadcast_date
+            else data.get("broadcast_date"),
             source=source,
             section=Section(
                 start=data.get("section_start"), end=data.get("section_end")

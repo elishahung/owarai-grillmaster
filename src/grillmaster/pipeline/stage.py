@@ -77,6 +77,31 @@ def no_clear(_state: ProjectState) -> None:
     """`StageDef.clear_state` default: the stage writes no state fields."""
 
 
+def no_preflight(_config: AppConfig, _secrets: Secrets) -> None:
+    """`StageDef.preflight` default: nothing to check before the run."""
+
+
+class MissingArtifactError(Exception):
+    """An upstream artifact a stage reads is gone; names the reset that
+    produces it again."""
+
+    def __init__(self, path: Path, produced_by: StageKey) -> None:
+        super().__init__(
+            f"{path} is missing; run `grill reset <id> --from {produced_by}` "
+            "to produce it again"
+        )
+        self.path = path
+        self.produced_by = produced_by
+
+
+def require(path: Path, produced_by: StageKey) -> Path:
+    """`path`, which stage `produced_by` writes; `MissingArtifactError`
+    when it does not exist."""
+    if not path.exists():
+        raise MissingArtifactError(path, produced_by)
+    return path
+
+
 @dataclass(frozen=True, slots=True)
 class StageDef:
     """One resumable pipeline stage.
@@ -89,6 +114,8 @@ class StageDef:
     runs when a resume skips the stage as already complete (e.g. warn that
     `--start` / `--to` no longer apply). `params` is the display snapshot
     shown in the plan and stored in the ledger, never a cache key.
+    `preflight` raises when the configuration cannot carry the stage (a
+    missing API key); `Pipeline.check` runs it before any stage does work.
     """
 
     key: StageKey
@@ -100,6 +127,7 @@ class StageDef:
     on_skip: Callable[[StageContext], None] | None = None
     params: Callable[[AppConfig], dict[str, str]] = no_params
     clear_state: Callable[[ProjectState], None] = no_clear
+    preflight: Callable[[AppConfig, Secrets], None] = no_preflight
 
     def __post_init__(self) -> None:
         if self.weight < 1:

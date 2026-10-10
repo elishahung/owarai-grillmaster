@@ -42,7 +42,7 @@ from grillmaster.pipeline.runner import run_pipeline, run_project
 from grillmaster.pipeline.stage import RunOptions
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.state import TaskRecord, now
-from grillmaster.project.store import load_state
+from grillmaster.project.store import load_state, save_state
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -52,6 +52,8 @@ if TYPE_CHECKING:
 
     from grillmaster.agents.runner import AgentRunner
     from grillmaster.config.load import LoadedConfig
+    from grillmaster.config.model import AppConfig
+    from grillmaster.config.secrets import Secrets
     from grillmaster.events.bus import EventBus
     from grillmaster.events.types import Event
     from grillmaster.pipeline.delivery import Archive
@@ -215,6 +217,56 @@ def test_resume_skips_completed_stages(
         "metadata", PlanKind.STAGE, SkipReason.ALREADY_COMPLETE
     )
     assert state.stages[StageKey.METADATA].elapsed_s == 3.0
+
+
+def refusing(journal: Journal, key: StageKey) -> Callable[[AppConfig, Secrets], None]:
+    def preflight(config: AppConfig, secrets: Secrets) -> None:
+        journal.add(f"preflight:{key}")
+        raise StageFailedError(f"{key} cannot run")
+
+    return preflight
+
+
+def test_a_failed_preflight_stops_the_run_before_any_work(
+    run: Runner, journal: Journal, recording_sink: RecordingSink
+):
+    asr = fake_stage(StageKey.ASR, journal)
+    pipeline = Pipeline(
+        (
+            fake_stage(StageKey.METADATA, journal),
+            replace(asr, preflight=refusing(journal, StageKey.ASR)),
+        )
+    )
+
+    with pytest.raises(StageFailedError, match="asr cannot run"):
+        run(pipeline)
+
+    assert journal.entries == ["preflight:asr"]
+    assert recording_sink.events == []
+
+
+def test_preflight_covers_only_the_stages_the_run_executes(
+    run: Runner, journal: Journal, state: ProjectState
+):
+    state.mark_done(StageKey.METADATA, elapsed_s=1.0)
+    stages = (
+        fake_stage(StageKey.METADATA, journal),
+        fake_stage(StageKey.DOWNLOAD, journal),
+        fake_stage(StageKey.CHAT_FETCH, journal, enabled=False),
+        fake_stage(StageKey.ASR, journal),
+    )
+    pipeline = Pipeline(
+        tuple(
+            stage
+            if stage.key is StageKey.DOWNLOAD
+            else replace(stage, preflight=refusing(journal, stage.key))
+            for stage in stages
+        )
+    )
+
+    run(pipeline, break_after=StageKey.DOWNLOAD)
+
+    assert journal.entries == ["on_skip:metadata", "run:download@download"]
 
 
 def test_disabled_stage_is_not_recorded(
@@ -584,3 +636,36 @@ def test_run_project_checks_options_before_creating_anything(
         )
     assert not loaded.projects_root.exists()
     assert recording_sink.events == []
+
+
+def test_run_project_preflights_before_creating_anything(
+    loaded: LoadedConfig, journal: Journal
+):
+    asr = fake_stage(StageKey.ASR, journal)
+    with pytest.raises(StageFailedError):
+        run_project(
+            loaded,
+            RunOptions(source=SourceId(Platform.TVER, "epnew1")),
+            sinks=[],
+            pipeline=Pipeline(
+                (replace(asr, preflight=refusing(journal, StageKey.ASR)),)
+            ),
+        )
+    assert not loaded.projects_root.exists()
+
+
+def test_run_project_skips_the_preflight_of_completed_stages(
+    loaded: LoadedConfig, journal: Journal, state: ProjectState, layout: ProjectLayout
+):
+    state.mark_done(StageKey.ASR, elapsed_s=1.0)
+    save_state(layout, state)
+    asr = fake_stage(StageKey.ASR, journal)
+
+    run_project(
+        loaded,
+        RunOptions(source=state.source_id),
+        sinks=[],
+        pipeline=Pipeline((replace(asr, preflight=refusing(journal, StageKey.ASR)),)),
+    )
+
+    assert journal.entries == ["on_skip:asr"]

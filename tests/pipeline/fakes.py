@@ -87,7 +87,7 @@ def fake_side_task(
     *,
     action: Callable[[StageContext], str | None] | None = None,
     enabled: bool = True,
-) -> SideTaskDef:
+) -> SideTaskDef[str | None]:
     def run(ctx: StageContext) -> str | None:
         journal.add(f"side:{key}@{current_stage()}")
         return action(ctx) if action is not None else None

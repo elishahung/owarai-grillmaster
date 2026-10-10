@@ -121,7 +121,9 @@ def _captured_download_opts(progress) -> dict:
         ydl.extract_info.return_value = {"title": "t"}
         return ydl
 
-    with patch("grillmaster.services.ytdlp.download.yt_dlp.YoutubeDL", side_effect=fake_ydl):
+    with patch(
+        "grillmaster.services.ytdlp.download.yt_dlp.YoutubeDL", side_effect=fake_ydl
+    ):
         download_video("https://example.com/v", Path("out"), progress=progress)
     return captured
 
@@ -184,7 +186,9 @@ class AbemaAuthCacheResetTests(unittest.TestCase):
             ydl.extract_info.return_value = {"title": "t"}
             return ydl
 
-        with patch("grillmaster.services.ytdlp.download.yt_dlp.YoutubeDL", side_effect=factory):
+        with patch(
+            "grillmaster.services.ytdlp.download.yt_dlp.YoutubeDL", side_effect=factory
+        ):
             download_video(url, Path("out"))
 
     def _seed_token_cache(self):

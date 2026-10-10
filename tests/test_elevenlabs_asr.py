@@ -28,7 +28,9 @@ class ElevenLabsASRTests(unittest.TestCase):
         audio_path.write_bytes(b"audio")
 
         with (
-            patch("grillmaster.services.elevenlabs.asr.settings.elevenlabs_api_key", "key"),
+            patch(
+                "grillmaster.services.elevenlabs.asr.settings.elevenlabs_api_key", "key"
+            ),
             patch("grillmaster.services.elevenlabs.asr.ElevenLabs") as client_cls,
         ):
             client = client_cls.return_value

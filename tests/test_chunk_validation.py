@@ -9,7 +9,13 @@ from grillmaster.services.srt import parse_srt
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _VALIDATOR = (
-    _REPO_ROOT / "src" / "grillmaster" / "services" / "translate" / "chunk" / "validate_chunk.py"
+    _REPO_ROOT
+    / "src"
+    / "grillmaster"
+    / "services"
+    / "translate"
+    / "chunk"
+    / "validate_chunk.py"
 )
 
 # Three source blocks with distinct timecodes. Validation matches by timecode

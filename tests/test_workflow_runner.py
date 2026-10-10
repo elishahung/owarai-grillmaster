@@ -36,7 +36,9 @@ class WorkflowRunnerTests(unittest.TestCase):
         )
 
         with (
-            patch("grillmaster.workflow.runner.perf_counter", side_effect=[10.0, 72.345]),
+            patch(
+                "grillmaster.workflow.runner.perf_counter", side_effect=[10.0, 72.345]
+            ),
             patch("grillmaster.workflow.runner.logger") as logger,
         ):
             should_stop = runner.run(_spec(), action)
@@ -120,7 +122,9 @@ class SideTaskManagerTests(unittest.TestCase):
                 "grillmaster.workflow.side_tasks.research_broadcast_date",
                 return_value=result,
             ) as research,
-            patch("grillmaster.workflow.side_tasks.apply_date_research_result") as apply_result,
+            patch(
+                "grillmaster.workflow.side_tasks.apply_date_research_result"
+            ) as apply_result,
             patch(
                 "grillmaster.workflow.side_tasks.perf_counter",
                 side_effect=[3.0, 4.0, 4.0],

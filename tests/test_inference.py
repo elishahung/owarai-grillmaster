@@ -398,7 +398,9 @@ class ClaudeCommandTests(unittest.TestCase):
         self.assertEqual(captured["effort"], "xhigh")
 
     def test_claude_max_maps_to_max_and_ultra_clamps_to_max(self):
-        from grillmaster.services.inference.claude_sdk import resolve_claude_reasoning_effort
+        from grillmaster.services.inference.claude_sdk import (
+            resolve_claude_reasoning_effort,
+        )
 
         self.assertEqual(resolve_claude_reasoning_effort("max"), "max")
         self.assertEqual(resolve_claude_reasoning_effort("ultra"), "max")

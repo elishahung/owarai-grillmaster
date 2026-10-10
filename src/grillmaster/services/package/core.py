@@ -21,7 +21,11 @@ from grillmaster.project import (
     VIDEO_FILE_NAME,
     Project,
 )
-from grillmaster.services.live_chat import DEFAULT_CHAT_LAYOUT, ChatLayout, chat_burn_plan
+from grillmaster.services.live_chat import (
+    DEFAULT_CHAT_LAYOUT,
+    ChatLayout,
+    chat_burn_plan,
+)
 from grillmaster.services.media import MediaProcessor
 from grillmaster.services.package.constants import DEFAULT_NOISE_NAME
 from grillmaster.services.package.cover import copy_cover

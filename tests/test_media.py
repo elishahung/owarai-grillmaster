@@ -16,7 +16,9 @@ from grillmaster.services.media import (
 class FindAudioGapsTests(unittest.TestCase):
     def _gaps(self, stdout: str):
         completed = MagicMock(stdout=stdout)
-        with patch("grillmaster.services.media.subprocess.run", return_value=completed) as run:
+        with patch(
+            "grillmaster.services.media.subprocess.run", return_value=completed
+        ) as run:
             gaps = MediaProcessor.find_audio_gaps(Path("in.mp4"))
         self.assertIn("a:0", run.call_args.args[0])
         return gaps

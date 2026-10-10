@@ -87,7 +87,9 @@ class TranslateAssetsTests(unittest.TestCase):
                 "grillmaster.services.translate.assets.MediaProcessor.get_media_duration",
                 return_value=255.0,
             ),
-            patch("grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"),
+            patch(
+                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+            ),
         ):
             assets = prepare_pre_pass_media_assets(
                 video_path=root / "video.mp4",
@@ -121,7 +123,9 @@ class TranslateAssetsTests(unittest.TestCase):
                 "grillmaster.services.translate.assets.MediaProcessor.get_media_duration",
                 return_value=45.0,
             ),
-            patch("grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"),
+            patch(
+                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+            ),
         ):
             assets = prepare_pre_pass_media_assets(
                 video_path=root / "video.mp4",
@@ -156,7 +160,9 @@ class TranslateAssetsTests(unittest.TestCase):
                 "grillmaster.services.translate.assets.MediaProcessor.get_media_duration",
                 return_value=190.1,
             ),
-            patch("grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"),
+            patch(
+                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+            ),
         ):
             assets = prepare_pre_pass_media_assets(
                 video_path=root / "video.mp4",
@@ -206,8 +212,12 @@ class TranslateAssetsTests(unittest.TestCase):
         audio_path = root / "audio.ogg"
 
         with (
-            patch("grillmaster.services.translate.assets.MediaProcessor.extract_audio_segment"),
-            patch("grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"),
+            patch(
+                "grillmaster.services.translate.assets.MediaProcessor.extract_audio_segment"
+            ),
+            patch(
+                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+            ),
         ):
             assets = prepare_chunk_media_assets(
                 video_path=video_path,
@@ -264,8 +274,12 @@ class TranslateAssetsTests(unittest.TestCase):
         audio_path = root / "audio.ogg"
 
         with (
-            patch("grillmaster.services.translate.assets.MediaProcessor.extract_audio_segment"),
-            patch("grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"),
+            patch(
+                "grillmaster.services.translate.assets.MediaProcessor.extract_audio_segment"
+            ),
+            patch(
+                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+            ),
         ):
             assets = prepare_chunk_media_assets(
                 video_path=video_path,
@@ -307,7 +321,9 @@ class TranslateAssetsTests(unittest.TestCase):
             patch(
                 "grillmaster.services.translate.assets.MediaProcessor.extract_audio_segment"
             ) as extract_audio,
-            patch("grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"),
+            patch(
+                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+            ),
         ):
             assets = prepare_chunk_media_assets(
                 video_path=video_path,
@@ -341,8 +357,12 @@ class TranslateAssetsTests(unittest.TestCase):
         audio_path = root / "audio.ogg"
 
         with (
-            patch("grillmaster.services.translate.assets.MediaProcessor.extract_audio_segment"),
-            patch("grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"),
+            patch(
+                "grillmaster.services.translate.assets.MediaProcessor.extract_audio_segment"
+            ),
+            patch(
+                "grillmaster.services.translate.assets.MediaProcessor.extract_video_frame"
+            ),
         ):
             assets = prepare_chunk_media_assets(
                 video_path=video_path,

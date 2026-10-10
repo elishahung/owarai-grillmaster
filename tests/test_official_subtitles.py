@@ -16,7 +16,9 @@ from grillmaster.services.translate.chunk.chunk_worker import (
 from grillmaster.services.translate.pre_pass.pre_pass import (
     _build_user_message as build_pre_pass_user_message,
 )
-from grillmaster.services.translate.pre_pass.prompts import OFFICIAL_SUBTITLE_INSTRUCTION
+from grillmaster.services.translate.pre_pass.prompts import (
+    OFFICIAL_SUBTITLE_INSTRUCTION,
+)
 from grillmaster.services.translate.pre_pass.schema import PrePassResult, SegmentSummary
 from grillmaster.services.ytdlp import normalize_official_subtitle
 

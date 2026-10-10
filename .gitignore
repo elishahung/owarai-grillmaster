@@ -228,3 +228,4 @@ node_modules
 
 .claude/settings.local.json
 _migration/
+tmp_test_artifacts/

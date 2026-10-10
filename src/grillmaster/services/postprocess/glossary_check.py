@@ -21,7 +21,9 @@ from loguru import logger
 from grillmaster.project import Project
 from grillmaster.settings import settings
 from grillmaster.services.inference import Backend, run_inference
-from grillmaster.services.inference.tools import build_glossary_check_frame_tool_instruction
+from grillmaster.services.inference.tools import (
+    build_glossary_check_frame_tool_instruction,
+)
 from grillmaster.services.fixed_glossary.fixed_glossary import (
     FIXED_GLOSSARY_PATH,
     load_fixed_glossary,

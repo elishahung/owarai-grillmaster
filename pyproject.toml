@@ -46,6 +46,71 @@ testpaths = ["tests"]
 markers = ["live: calls real agent CLIs and spends subscription quota"]
 addopts = "-ra --strict-markers -m 'not live'"
 
+[tool.poe.tasks]
+fmt = "ruff format"
+fmt-check = "ruff format --check"
+lint = "ruff check"
+types = "basedpyright"
+layers = "lint-imports"
+test = "pytest"
+# lint and types join `check` once the refactor reaches zero warnings.
+check = ["fmt-check", "test"]
+
 [tool.ruff]
 target-version = "py313"
 line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W", "F", "I", "N", "UP", "B", "A", "C4", "DTZ", "T10", "T20", "ISC",
+    "ICN", "PIE", "PT", "RET", "SIM", "TID", "TC", "ARG", "PTH", "ERA", "PL",
+    "TRY", "FLY", "PERF", "FURB", "LOG", "RUF", "S", "BLE", "FBT001", "FBT002",
+    "SLF", "INP", "Q",
+]
+ignore = [
+    "E501",    # the formatter owns line length; long prompt strings are fine
+    "ISC001",  # conflicts with the formatter
+    "TRY003",  # exception messages carry context on purpose
+    "PLR0913", # argument bundles are collapsed into Inputs dataclasses instead
+    "S603", "S607",  # external CLIs run on purpose, only via the two process modules
+]
+# Full-width punctuation in Chinese strings is content, not a confusable.
+allowed-confusables = ["，", "。", "（", "）", "：", "；", "、", "「", "」", "！", "？", "～", "－"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR2004", "ARG", "FBT", "SLF001", "INP001"]
+"scripts/**" = ["T20", "INP001"]
+"src/grillmaster/cli/**" = ["TC"]
+"src/grillmaster/agents/adapters/__init__.py" = ["PLC0415"]
+"src/grillmaster/media/ffmpeg.py" = ["TID251"]
+"src/grillmaster/agents/process.py" = ["TID251"]
+"src/grillmaster/agents/adapters/claude.py" = ["TID251"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["grillmaster"]
+required-imports = ["from __future__ import annotations"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "parents"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"subprocess.run".msg = "Use grillmaster.media.ffmpeg or grillmaster.agents.process"
+"subprocess.Popen".msg = "Use grillmaster.media.ffmpeg or grillmaster.agents.process"
+"subprocess.call".msg = "Use grillmaster.media.ffmpeg or grillmaster.agents.process"
+"subprocess.check_output".msg = "Use grillmaster.media.ffmpeg or grillmaster.agents.process"
+"asyncio.run".msg = "Pipeline code is thread-based; only agents.adapters.claude runs an event loop"
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = ["pydantic.BaseModel", "pydantic_settings.BaseSettings"]
+
+[tool.ruff.lint.pylint]
+max-branches = 15
+max-returns = 8
+
+[tool.basedpyright]
+typeCheckingMode = "standard"
+pythonVersion = "3.13"
+include = ["src", "tests"]
+reportMissingTypeStubs = false
+reportUnknownMemberType = false

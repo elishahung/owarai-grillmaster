@@ -19,12 +19,8 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture
-def isolated_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """`tmp_path` as the working directory, with no `GRILL_HOME` and no
-    ElevenLabs key from the developer's environment."""
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("GRILL_HOME", raising=False)
-    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+def isolated_cwd(tmp_path: Path) -> Path:
+    """The working directory the root conftest isolates every test in."""
     return tmp_path
 
 

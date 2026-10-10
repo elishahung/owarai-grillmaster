@@ -10,7 +10,7 @@
 ## 說明
 
 - 目標是 one shot 即可直接觀看，不想校準 (避免被暴雷)
-- 1 小時左右的影片成本大概 $20 台幣 (ASR $6 + 翻譯 $14)，處理時間約 15 分鐘，如果使用訂閱方式那就只有 ASR 成本
+- 1 小時左右的影片成本大概 $20 台幣 (ASR $6 + 翻譯 $14)，處理時間約 15 分鐘；現在三種 agent backend 都走訂閱，只剩 ElevenLabs ASR 計費
 - 設定偏好都是個人主觀，如需修改請自行 fork
 - 更詳細請[查看心得](docs/article.md)
 
@@ -75,7 +75,7 @@ grill package <專案 ID 或資料夾>
 # 打包成功但歸檔失敗時，只重做歸檔
 grill archive <專案 ID>
 
-# 從某個 stage 起重跑（會刪掉該 stage 之後的結果）
+# 從某個 stage 起重跑（清掉該 stage 及之後的結果）；--only 只清單一 stage
 grill reset <專案 ID> --from refine
 
 # 查看專案進度、模型與成本

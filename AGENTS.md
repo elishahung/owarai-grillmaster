@@ -59,7 +59,10 @@ uv run pytest -k chunk              # by keyword
 ```
 
 `uv run poe check` must pass before a change is done; there is no CI. Tests are
-offline and fast; `-m live` tests call real agent CLIs and spend quota.
+offline and fast; `uv run pytest -m live` (tests/agents/test_live.py) calls the
+real agent CLIs and spends quota; `scripts/record_agent_fixture.py` re-records
+the adapter contract fixtures. The rationale behind the architecture (decisions
+D1–D9, referenced by `.importlinter`) is in `docs/design/refactor-2026-10.md`.
 
 ## Keep the docs current (important)
 

@@ -78,7 +78,8 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
 - Chunk: `Role.CHUNK`, `SchemaOutput(ChunkTranslation)`, `attempts =
   chunk_attempts`; `chunk_validator` reports missing/duplicate/unknown/empty
   indexes via `id_coverage`.
-- Media: pre-pass gets 20-40 stills at SRT block starts (+0.2 s), a chunk one
+- Media: pre-pass gets one still per `prepass_frame_interval_s` of SRT
+  (clamped to 20-40 and the block count) at block starts (+0.2 s), a chunk one
   per `chunk_frame_interval_s` of its span; audio (full track / chunk slice)
   only when `accepts_audio(role)` reports `AUDIO_INPUT`. `get_frames` is
   scoped to 0..last block end (pre-pass) or the chunk's time range.

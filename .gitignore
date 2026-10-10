@@ -228,4 +228,3 @@ data
 node_modules
 
 .claude/settings.local.json
-_migration/

@@ -57,7 +57,7 @@ members is a layout change. `pipeline/registry.py` holds the only lists:
 
 | # | key | writes (besides `work/NN_<key>/`) |
 |---|---|---|
-| 1 | `metadata` | state: name, broadcast date, `source` (title, series, channel, talents, label) |
+| 1 | `metadata` | state: name, broadcast date, `source` (title, series, channel, talents, broadcast_label) |
 | 2 | `download` | `poster.jpg`; `work/02_download/{parts/,full.mp4}`; appends new programs to `grill.toml` |
 | 3 | `combine` | `video.mp4` (cut to the section, else `full.mp4` moved), `subs/ja.official.srt`; state `section` |
 | 4 | `chat_fetch` | `--chat` only (see live-chat) |
@@ -218,15 +218,17 @@ is expanded in `cli/args.py`. On a TTY the run goes through
 - Every agent call goes through `AgentRunner`; only ElevenLabs is metered.
 - Windows MAX_PATH 260: generated directory names go through the path budget.
 - Agent-written SRTs may carry a BOM; read them with `core.srt.read_srt_file`.
-- No compatibility code: old formats fail loudly (migration scripts live in
-  `scripts/`).
+- No compatibility code: old formats fail loudly.
 
 ## Making a change
 
 - New stage: add the `StageKey` member in order (renumbers later work dirs),
   write `stages/<key>.py` exporting `STAGE`, add it to `STAGES`, add layout
   paths, declare `outputs` / `clear_state`.
-- New side task: `SideTaskKey`, `stages/<key>.py` `TASK`, a `SideTasks` field.
+- New side task: `SideTaskKey`, `stages/<key>.py` `TASK`, a `SideTasks` field,
+  add it to `SIDE_TASKS`; `start_after` must name a registered stage.
+- New delivery step: `stages/<key>.py` exporting a `DeliveryStepDef`, add it
+  to `DELIVERY` (runs after the stages, before archive).
 - New platform: `sources/` + `core/source_id.py` only.
 - New backend, capability or agent tool: agent-orchestration.
 - Done means `uv run poe check` (fmt-check, ruff, basedpyright, import-linter,

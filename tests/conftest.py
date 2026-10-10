@@ -11,7 +11,18 @@ from grillmaster.project.state import ProjectState
 from grillmaster.stages.base import Externals
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from grillmaster.asr.client import SpeechToText, SpeechToTextFactory
+
+
+@pytest.fixture(autouse=True)
+def _isolated_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run every test in `tmp_path` with no `GRILL_HOME` and no ElevenLabs
+    key, so the developer's own `grill.toml` and `.env` are never found."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("GRILL_HOME", raising=False)
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
 
 
 @pytest.fixture

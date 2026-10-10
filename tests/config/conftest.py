@@ -26,9 +26,3 @@ def write_toml() -> Callable[[Path, str], Path]:
         return path
 
     return write
-
-
-@pytest.fixture(autouse=True)
-def _no_real_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep the developer's own ElevenLabs key out of config tests."""
-    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)

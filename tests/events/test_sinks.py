@@ -130,6 +130,7 @@ def test_jsonl_sink_writes_type_fields_and_timestamp(tmp_path: Path):
                     "kind": "stage",
                     "enabled": True,
                     "params": {"cc": "on"},
+                    "weight": 1,
                 }
             ],
         },

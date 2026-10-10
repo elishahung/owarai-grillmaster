@@ -25,7 +25,6 @@ if TYPE_CHECKING:
 
     from grillmaster.agents.events import AgentEvent
     from grillmaster.agents.process import ProcessSpec
-    from grillmaster.events.types import Event
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "agents"
 # The cheapest model of each backend: the live tests run on these, and the
@@ -40,26 +39,6 @@ SPECS = {
 def fixture_lines(backend: str, name: str) -> list[str]:
     path = FIXTURES / backend / f"{name}.jsonl"
     return path.read_text(encoding="utf-8").splitlines()
-
-
-# --- events ------------------------------------------------------------------
-
-
-class RecordingSink:
-    """Collects every emitted event, in order; thread-safe."""
-
-    def __init__(self) -> None:
-        self._lock = threading.Lock()
-        self._events: list[Event] = []
-
-    def emit(self, event: Event) -> None:
-        with self._lock:
-            self._events.append(event)
-
-    @property
-    def events(self) -> list[Event]:
-        with self._lock:
-            return list(self._events)
 
 
 # --- process fakes (agy, codex) ------------------------------------------------

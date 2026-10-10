@@ -10,24 +10,6 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture
-def roles() -> dict[str, str]:
-    return {
-        "prepass": "agy/gemini-3.1-pro/high",
-        "chunk": "agy/gemini-3.1-pro",
-        "postprocess": "codex/gpt-5.6-sol/medium",
-        "utility": "codex/gpt-5.5/medium",
-        "image": "codex/gpt-5.5/high",
-    }
-
-
-@pytest.fixture
-def roles_toml(roles: dict[str, str]) -> str:
-    """`[agents.roles]` text equal to the `roles` fixture."""
-    lines = [f'{role} = "{spec}"' for role, spec in roles.items()]
-    return "\n".join(["[agents.roles]", *lines]) + "\n"
-
-
-@pytest.fixture
 def minimal_data(roles: dict[str, str]) -> dict[str, Any]:
     """The smallest valid `grill.toml` content: only the required roles."""
     return {"agents": {"roles": roles}}

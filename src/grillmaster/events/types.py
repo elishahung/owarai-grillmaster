@@ -25,6 +25,8 @@ class PlanKind(StrEnum):
 class SkipReason(StrEnum):
     ALREADY_COMPLETE = "already-complete"
     DISABLED = "disabled"
+    # A `--break-after` run stops before side tasks and delivery.
+    BREAKPOINT = "breakpoint"
 
 
 class RunOutcome(StrEnum):
@@ -53,13 +55,18 @@ class SessionOutcome(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class PlanEntry:
-    """One row of the run plan announced by `RunStarted`."""
+    """One row of the run plan announced by `RunStarted`.
+
+    `weight` is the step's share of the overall progress bar; it travels in
+    the plan because the TUI never imports the pipeline registry.
+    """
 
     key: str
     label: str
     kind: PlanKind
     enabled: bool = True
     params: Mapping[str, str] = field(default_factory=dict)
+    weight: int = 1
 
 
 # --- run lifecycle ---------------------------------------------------------
@@ -91,7 +98,8 @@ class BatchItemStarted:
 
 @dataclass(frozen=True, slots=True)
 class StepStarted:
-    """A side task emits this on dispatch; its session may still queue."""
+    """Emitted inside the step's scope, on its own thread for a side task;
+    an agent session the step starts may still queue for a slot."""
 
     key: str
     kind: PlanKind

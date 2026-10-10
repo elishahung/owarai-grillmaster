@@ -283,6 +283,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "claude-agent-sdk" },
+    { name = "click" },
     { name = "elevenlabs" },
     { name = "ffmpeg-python" },
     { name = "loguru" },
@@ -311,6 +312,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "claude-agent-sdk", specifier = ">=0.2.135" },
+    { name = "click", specifier = ">=8.1.8" },
     { name = "elevenlabs", specifier = ">=2.24.0" },
     { name = "ffmpeg-python", specifier = ">=0.2.0" },
     { name = "loguru", specifier = ">=0.7.3" },

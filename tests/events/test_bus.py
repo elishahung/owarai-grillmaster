@@ -11,8 +11,8 @@ from grillmaster.events.types import LogLine, PlanKind, StepCompleted, StepStart
 
 if TYPE_CHECKING:
     from loguru import Message, Record
+    from tests.fakes import RecordingSink
 
-    from conftest import RecordingSink
     from grillmaster.events.types import Event
 
 STAGE = PlanKind.STAGE

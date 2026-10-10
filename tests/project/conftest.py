@@ -4,18 +4,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from grillmaster.core.source_id import Platform, SourceId
 from grillmaster.project.layout import ProjectLayout
-from grillmaster.project.state import ProjectState
 from grillmaster.project.store import save_state
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-
-@pytest.fixture
-def state() -> ProjectState:
-    return ProjectState.create(SourceId(Platform.TVER, "epabc123"))
+    from grillmaster.project.state import ProjectState
 
 
 @pytest.fixture

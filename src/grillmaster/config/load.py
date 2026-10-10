@@ -18,7 +18,6 @@ from pydantic import ValidationError
 
 from grillmaster.config.errors import ConfigError, ConfigNotFoundError
 from grillmaster.config.model import validate_config
-from grillmaster.config.secrets import load_secrets
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -28,6 +27,7 @@ if TYPE_CHECKING:
 
 CONFIG_FILE_NAME = "grill.toml"
 HOME_ENV_VAR = "GRILL_HOME"
+PROJECTS_DIR_NAME = "projects"
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +39,11 @@ class LoadedConfig:
     @property
     def path(self) -> Path:
         return self.root / CONFIG_FILE_NAME
+
+    @property
+    def projects_root(self) -> Path:
+        """Where project directories live until they are archived."""
+        return self.root / PROJECTS_DIR_NAME
 
 
 def find_config(
@@ -70,6 +75,10 @@ def load_config(
     start: Path | None = None, env: Mapping[str, str] | None = None
 ) -> LoadedConfig:
     """Find, parse and validate `grill.toml`, and read the sibling `.env`."""
+    # pydantic-settings is slow to import; commands that only need the
+    # working root (`find_config`) never pay for it.
+    from grillmaster.config.secrets import load_secrets  # noqa: PLC0415
+
     path = find_config(start, env)
     return LoadedConfig(
         root=path.parent, config=read_config(path), secrets=load_secrets(path.parent)

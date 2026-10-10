@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from pydantic import BaseModel
-from tests.agents.fakes import Call, FakeAdapter, RecordingSink, Turn, final
+from tests.agents.fakes import Call, FakeAdapter, Turn, final
 
 from grillmaster.agents.adapters.base import Capability, MediaDelivery, TurnDefect
 from grillmaster.agents.errors import (
@@ -41,6 +41,8 @@ from grillmaster.events.types import (
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from tests.fakes import RecordingSink
 
 SPEC = ModelSpec(Backend.CODEX, "gpt-test", Effort.HIGH)
 ROLES = dict.fromkeys(Role, SPEC)
@@ -748,3 +750,13 @@ def test_task_rejects_invalid_budgets(tmp_path: Path):
         make_task(tmp_path, TextOutput(), attempts=0)
     with pytest.raises(ValueError, match="max_repairs"):
         make_task(tmp_path, TextOutput(), max_repairs=-1)
+
+
+def test_capabilities_of_a_role_come_from_its_backend(
+    make_runner: Callable[..., AgentRunner],
+):
+    adapter = FakeAdapter([])
+    runner = make_runner(adapter, roles={Role.CHUNK: SPEC})
+    assert runner.capabilities(Role.CHUNK) == adapter.capabilities
+    with pytest.raises(AgentConfigError, match="no model configured"):
+        runner.capabilities(Role.PREPASS)

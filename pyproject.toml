@@ -9,6 +9,7 @@ description = "Japanese variety show transcription"
 requires-python = ">=3.13"
 dependencies = [
     "claude-agent-sdk>=0.2.135",
+    "click>=8.1.8",
     "elevenlabs>=2.24.0",
     "ffmpeg-python>=0.2.0",
     "loguru>=0.7.3",
@@ -80,12 +81,12 @@ ignore = [
     "S603", "S607",  # external CLIs run on purpose, only via the two process modules
 ]
 # Full-width punctuation in Chinese strings is content, not a confusable.
-allowed-confusables = ["，", "。", "（", "）", "：", "；", "、", "「", "」", "！", "？", "～", "－"]
+allowed-confusables = ["，", "。", "（", "）", "：", "；", "、", "「", "」", "！", "？", "～", "－", "〔", "〕"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "PLR2004", "ARG", "FBT", "SLF001", "INP001"]
 "scripts/**" = ["T20", "INP001"]
-"src/grillmaster/cli/**" = ["TC"]
+"src/grillmaster/cli/**" = ["TC", "PLC0415"]  # Typer annotations; lazy imports keep --help fast
 "src/grillmaster/agents/adapters/__init__.py" = ["PLC0415"]
 "src/grillmaster/core/process.py" = ["TID251"]
 "src/grillmaster/media/ffmpeg.py" = ["TID251"]

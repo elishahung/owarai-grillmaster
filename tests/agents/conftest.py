@@ -4,7 +4,6 @@ import json
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from tests.agents.fakes import RecordingSink
 
 from grillmaster.agents.adapters.base import TurnRequest
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec
@@ -12,11 +11,6 @@ from grillmaster.core.model_spec import Backend, Effort, ModelSpec
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
-
-
-@pytest.fixture
-def recording_sink() -> RecordingSink:
-    return RecordingSink()
 
 
 @pytest.fixture

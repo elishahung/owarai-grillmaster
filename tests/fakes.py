@@ -3,15 +3,28 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast, override
 
+from grillmaster.agents.adapters import load_adapter
+from grillmaster.agents.adapters.base import Capability
+from grillmaster.agents.errors import AgentError, AgentOutputError, ValidationFailure
+from grillmaster.agents.runner import AgentRunner
+from grillmaster.agents.task import AgentResult
+from grillmaster.core.model_spec import Backend, Effort, ModelSpec
 from grillmaster.core.srt import SrtBlock
 from grillmaster.core.timecode import format_timecode_line
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Mapping, Sequence
+    from typing import BinaryIO
 
+    from grillmaster.agents.adapters.base import AgentAdapter
+    from grillmaster.agents.task import AgentTask
+    from grillmaster.core.model_spec import Role
+    from grillmaster.events.bus import EventSink
+    from grillmaster.events.types import Event
     from grillmaster.media.ffmpeg import ProgressCallback
 
 # What `FakeFfmpeg` writes as each ffmpeg output: a JPEG SOI marker and filler.
@@ -70,3 +83,181 @@ def make_blocks(count: int) -> list[SrtBlock]:
         SrtBlock(i, format_timecode_line(i * 2.0, i * 2.0 + 1.5), f"line {i}")
         for i in range(1, count + 1)
     ]
+
+
+class Recorder[T]:
+    """Items in arrival order; thread-safe."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._items: list[T] = []
+
+    def add(self, item: T) -> None:
+        with self._lock:
+            self._items.append(item)
+
+    @property
+    def items(self) -> list[T]:
+        with self._lock:
+            return list(self._items)
+
+
+class RecordingSink(Recorder["Event"]):
+    """An `EventSink` collecting every emitted event, in order; thread-safe."""
+
+    def emit(self, event: Event) -> None:
+        self.add(event)
+
+    @property
+    def events(self) -> list[Event]:
+        return self.items
+
+
+class FakeSpeechToText:
+    """An ElevenLabs `SpeechToText` returning `response`; also its factory.
+
+    Pass `fake.connect` as the `SpeechToTextFactory`: it records each API key
+    it is handed. Each `convert` records its keyword arguments, with the
+    uploaded file's bytes under `file`.
+    """
+
+    def __init__(self, response: object) -> None:
+        self.response = response
+        self.api_keys: list[str] = []
+        self.calls: list[dict[str, object]] = []
+
+    def connect(self, api_key: str) -> FakeSpeechToText:
+        self.api_keys.append(api_key)
+        return self
+
+    def convert(
+        self,
+        *,
+        model_id: str,
+        file: BinaryIO,
+        language_code: str,
+        timestamps_granularity: str,
+        diarize: bool,
+    ) -> object:
+        self.calls.append(
+            {
+                "model_id": model_id,
+                "file": file.read(),
+                "language_code": language_code,
+                "timestamps_granularity": timestamps_granularity,
+                "diarize": diarize,
+            }
+        )
+        return self.response
+
+
+# The spec `FakeAgentRunner` reports for a role it was given no spec for.
+FAKE_SPEC = ModelSpec(Backend.AGY, "fake-model", Effort.HIGH)
+
+
+@dataclass(frozen=True, slots=True)
+class Rounds:
+    """Scripted outputs for successive rounds of one session: each one the
+    task's validator rejects costs a repair round."""
+
+    outputs: tuple[object, ...]
+
+    def __init__(self, *outputs: object) -> None:
+        object.__setattr__(self, "outputs", outputs)
+
+
+def _no_adapter(backend: Backend) -> AgentAdapter:
+    raise AssertionError(f"FakeAgentRunner starts no real agent ({backend})")
+
+
+class FakeAgentRunner(AgentRunner):
+    """An `AgentRunner` scripted by task name; records every task, in order.
+
+    `script[name]` is the task's output, an exception to raise, a callable
+    taking the task and returning either, or `Rounds(...)`. Every output goes
+    through the task's validator like a real session: a rejected output is a
+    repair round (the next of `Rounds`), and running out of rounds or
+    `max_repairs` raises `AgentOutputError`. An unscripted name fails the
+    test. `run_many` runs the tasks one by one, in order.
+    """
+
+    def __init__(
+        self,
+        script: Mapping[str, object] | None = None,
+        *,
+        roles: Mapping[Role, ModelSpec] | None = None,
+        events: EventSink | None = None,
+    ) -> None:
+        super().__init__(
+            roles or {},
+            _no_adapter,
+            max_concurrent=1,
+            timeout_s=1.0,
+            events=events or RecordingSink(),
+        )
+        self.script: dict[str, object] = dict(script or {})
+        self._spec_by_role = dict(roles or {})
+        self._lock = threading.Lock()
+        self._tasks: list[AgentTask[Any]] = []
+
+    @property
+    def tasks(self) -> list[AgentTask[Any]]:
+        with self._lock:
+            return list(self._tasks)
+
+    @override
+    def capabilities(self, role: Role) -> frozenset[Capability]:
+        """The real backend's capabilities for a configured role; every
+        capability for a role without a spec."""
+        spec = self._spec_by_role.get(role)
+        if spec is None:
+            return frozenset(Capability)
+        return load_adapter(spec.backend).capabilities
+
+    def task(self, name: str) -> AgentTask[Any]:
+        """The recorded task called `name`."""
+        matches = [task for task in self.tasks if task.name == name]
+        assert matches, f"no task named {name!r}; got {[t.name for t in self.tasks]}"
+        return matches[-1]
+
+    @override
+    def run[T](self, task: AgentTask[T]) -> AgentResult[T]:
+        with self._lock:
+            self._tasks.append(task)
+        assert task.name in self.script, f"unscripted agent task {task.name!r}"
+        entry = self.script[task.name]
+        if callable(entry):
+            entry = cast("Callable[[AgentTask[Any]], object]", entry)(task)
+        if isinstance(entry, BaseException):
+            raise entry
+        rounds = entry.outputs if isinstance(entry, Rounds) else (entry,)
+        for repairs, output in enumerate(rounds):
+            if repairs > task.max_repairs:
+                break
+            if task.validate is not None:
+                try:
+                    task.validate(cast("T", output))
+                except ValidationFailure:
+                    continue
+            return AgentResult(
+                output=cast("T", output),
+                session_id=f"fake-{task.name}",
+                spec=self._spec_by_role.get(task.role, FAKE_SPEC),
+                repairs=repairs,
+                attempt=1,
+                elapsed_s=0.0,
+                session_dir=task.session_dir,
+            )
+        raise AgentOutputError(f"{task.name}: scripted output never passed validation")
+
+    @override
+    def run_many[T](
+        self, tasks: Sequence[AgentTask[T]]
+    ) -> list[AgentResult[T] | AgentError]:
+        results: list[AgentResult[T] | AgentError] = []
+        for task in tasks:
+            try:
+                results.append(self.run(task))
+            except AgentError as error:
+                results.append(error)
+        return results

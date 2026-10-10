@@ -58,9 +58,14 @@ def parse_source(text: str) -> SourceId:
     for host, platform in _HOSTS:
         if host in text:
             return SourceId(platform, _id_from_url(text, platform))
-    if text.startswith(_URL_SCHEMES):
+    if is_url(text):
         raise ValueError(f"Invalid video source: {text}")
     return SourceId(platform_of(text), text)
+
+
+def is_url(text: str) -> bool:
+    """Whether `text` is an http(s) URL rather than a bare ID or a path."""
+    return text.startswith(_URL_SCHEMES)
 
 
 def platform_of(video_id: str) -> Platform:

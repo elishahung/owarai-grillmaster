@@ -16,17 +16,28 @@ from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.project.errors import ProjectExistsError, ProjectNotFoundError
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.naming import archive_destination
-from grillmaster.project.state import ProjectState
+from grillmaster.project.state import ProjectState, ProjectSummary
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    from pydantic import BaseModel
 
     from grillmaster.core.source_id import SourceId
 
 
 def load_state(layout: ProjectLayout) -> ProjectState:
+    return _read(layout, ProjectState)
+
+
+def load_summary(layout: ProjectLayout) -> ProjectSummary:
+    """The listing fields of `project.json` (see `ProjectSummary`)."""
+    return _read(layout, ProjectSummary)
+
+
+def _read[M: BaseModel](layout: ProjectLayout, model: type[M]) -> M:
     try:
-        return read_model(layout.project_json, ProjectState)
+        return read_model(layout.project_json, model)
     except FileNotFoundError as error:
         raise ProjectNotFoundError(f"No project.json in {layout.root}") from error
 

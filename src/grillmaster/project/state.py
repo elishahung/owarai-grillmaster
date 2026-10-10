@@ -72,6 +72,10 @@ class Section(_Strict):
             raise ValueError(f"Section end {self.end} is not after start {self.start}")
         return self
 
+    @property
+    def is_cut(self) -> bool:
+        return self.start is not None or self.end is not None
+
 
 class TaskRecord(_Strict):
     """Completion of a stage or side task."""
@@ -181,3 +185,14 @@ class ProjectState(_Strict):
         if amount_usd < 0:
             raise ValueError(f"ASR cost must be non-negative: {amount_usd}")
         self.asr_cost_usd += amount_usd
+
+
+class ProjectSummary(BaseModel):
+    """The `project.json` fields a project listing shows; everything else is
+    ignored, so one project with a stale field cannot hide the others."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    name: str | None = None
+    stages: dict[str, object] = Field(default_factory=dict)

@@ -170,6 +170,13 @@ class AgentRunner:
         self._active_workdirs: set[Path] = set()
         self._workdirs_lock = threading.Lock()
 
+    def capabilities(self, role: Role) -> frozenset[Capability]:
+        """What the backend configured for `role` can do (e.g. hear audio)."""
+        spec = self._roles.get(role)
+        if spec is None:
+            raise AgentConfigError(f"no model configured for role {role}")
+        return self._adapters(spec.backend).capabilities
+
     def run[T](self, task: AgentTask[T]) -> AgentResult[T]:
         """Run `task` to an accepted output or raise the classified `AgentError`."""
         if _holding_slot.get():

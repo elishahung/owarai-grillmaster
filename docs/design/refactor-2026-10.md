@@ -189,7 +189,8 @@ src/grillmaster/
 │   ├── registry.py      # 唯一的 stage 清單（順序、編號、權重、啟用條件）
 │   ├── runner.py        # 跑 stage、記 ledger、break-after
 │   ├── side_tasks.py    # cover / date research 的啟動與 join
-│   ├── delivery.py      # archive + package
+│   ├── steps.py         # 單一 step 執行器（Started/Completed/Failed、token 用量）
+│   ├── delivery.py      # package 等 delivery step，與最後的 archive 搬移
 │   └── serial.py
 ├── stages/              # 每個 stage 一個模組：從 layout 組輸入 → 呼叫領域 → 寫輸出
 │   ├── metadata.py download.py combine.py chat_fetch.py audio.py asr.py
@@ -537,10 +538,7 @@ STAGES: tuple[
     StageDef, ...
 ] = ...  # 必須與 core.stage_key.StageKey 的順序一致（registry 載入時斷言）
 SIDE_TASKS: tuple[SideTaskDef, ...] = (cover, date_research)
-DELIVERY: tuple[DeliveryStepDef, ...] = (
-    archive,
-    package,
-)  # 非 stage，但 label/weight 也在這裡
+DELIVERY: tuple[DeliveryStepDef, ...] = (package,)  # 非 stage，但 label/weight 也在這裡
 ```
 
 `StageKey` 放在 `core/stage_key.py`，順序即執行順序；`ProjectLayout`（work 目錄編號）與遷移腳本在 registry 存在之前就能用它。
@@ -566,7 +564,7 @@ for stage in STAGES:
 
 ### 9.4 Delivery
 
-archive → package 仍是 pipeline 之後的步驟（不是 stage），行為不變。`serial` 改用 `pipeline` 的公開 API，parent 的 briefing 透過 `ProjectLayout(parent_dir).effective_briefing()` 讀取。
+順序改為 stages → delivery step（package）→ 關閉 run log 與 JSONL → archive → `RunFinished`（#32 package→archive）。package 因此只讀本地專案、不讀 NAS 上的歸檔；archive 不是 `DeliveryStepDef`，由 runner 在 log 關閉後以注入的 `archive(layout) -> layout` 執行（只有注入時才出現在 plan），其事件只到 console/TUI。`serial` 改用 `pipeline` 的公開 API（`pipeline.runner.run_project`），parent 的 briefing 透過 `ProjectLayout(parent_dir).effective_briefing()` 讀取。
 
 ### 9.5 新指令 `grill reset`
 
@@ -575,7 +573,7 @@ grill reset <id> --from refine     # 清掉 refine 之後所有 stage 的 ledger
 grill reset <id> --only chunks     # 只清 chunks（下游不動，使用者自負）
 ```
 
-刪除範圍完全由 `StageDef.outputs` 與 work 目錄決定，沒有另外的清單要維護。
+刪除範圍完全由 `StageDef.outputs`、`StageDef.clear_state`（該 stage 寫入的 state 欄位）與 work 目錄決定，沒有另外的清單要維護。
 
 這是使用者主動、顯式的失效，不違反「快取不自我失效」。取代現在 skill 裡「刪 `.pre_pass/` 再把 `is_prepass_completed` 改 false」的手動流程。
 

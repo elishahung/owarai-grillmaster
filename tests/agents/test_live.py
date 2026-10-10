@@ -27,7 +27,7 @@ from grillmaster.core.tool_session import FramesTool, ToolSession
 from grillmaster.events.types import ActivityKind, AgentActivity
 
 if TYPE_CHECKING:
-    from tests.agents.fakes import RecordingSink
+    from tests.fakes import RecordingSink
 
 pytestmark = pytest.mark.live
 

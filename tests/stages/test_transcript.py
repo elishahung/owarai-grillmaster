@@ -42,6 +42,29 @@ def test_builds_the_japanese_srt(make_context: MakeContext, layout: ProjectLayou
     assert not layout.work_dir(StageKey.TRANSCRIPT).exists()
 
 
+def test_applies_the_asr_models_srt_options(
+    make_context: MakeContext, layout: ProjectLayout
+):
+    # The default model is scribe_v2, whose late sentence tail is not
+    # allowed to stretch the block across the silence.
+    write_response(
+        layout,
+        {
+            "words": [
+                {"text": "何を言うて", "start": 0.0, "end": 0.5, "speaker_id": "a"},
+                {"text": "ま", "start": 0.5, "end": 0.6, "speaker_id": "a"},
+                {"text": "すの。", "start": 60.0, "end": 60.2, "speaker_id": "a"},
+            ]
+        },
+    )
+
+    transcript.STAGE.run(make_context(StageKey.TRANSCRIPT))
+
+    [block] = read_srt_file(layout.ja_srt)
+    assert block.text == "何を言うてますの。"
+    assert block.time_range.end < 3.0
+
+
 def test_response_without_words_fails(make_context: MakeContext, layout: ProjectLayout):
     write_response(layout, {"text": "", "words": []})
 

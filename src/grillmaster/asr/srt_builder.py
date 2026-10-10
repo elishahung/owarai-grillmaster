@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from itertools import pairwise
 from typing import TYPE_CHECKING
 
 from grillmaster.asr.errors import AsrError
@@ -73,7 +74,8 @@ _SHORT_WRAP_LINE = 6
 
 @dataclass(frozen=True, slots=True)
 class SrtFormatOptions:
-    """The tunable formatting knobs; production always uses the defaults.
+    """The tunable formatting knobs. Production uses the defaults, except
+    for a model compensation from `srt_compensation.srt_options_for_model`.
 
     They are fine-tuned against real ASR output, not user settings; tests
     and tuning experiments override single fields. Re-validate against
@@ -112,6 +114,11 @@ class SrtFormatOptions:
     max_lines_per_block: int = 2
     subtitle_hold_after_end_s: float = 0.5
     min_inter_subtitle_gap_s: float = 0.08
+    # A silence inside an utterance longer than this counts only as
+    # `inner_silence_kept_s` toward the utterance's end; 0 disables it.
+    # A model compensation, off by default (see `srt_compensation`).
+    inner_silence_limit_s: float = 0.0
+    inner_silence_kept_s: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -145,8 +152,9 @@ def build_srt_blocks(
 ) -> list[SrtBlock]:
     """Subtitle blocks, numbered from 1, for an ElevenLabs response.
 
-    Production passes no `options`; overrides are for tests and tuning
-    experiments. Raises `AsrError` when the response has no timed words.
+    Production passes the model's `srt_options_for_model`; other overrides
+    are for tests and tuning experiments. Raises `AsrError` when the
+    response has no timed words.
     """
     tokens = _extract_tokens(payload)
     if not tokens:
@@ -240,7 +248,7 @@ def _build_utterances(
             current, joined, token, tokens=tokens, token_index=index, options=options
         )
         if split_index is not None:
-            utterances.append(_tokens_to_utterance(current[:split_index]))
+            utterances.append(_tokens_to_utterance(current[:split_index], options))
             current = [*current[split_index:], token]
             joined = _join_raw(current)
         elif _should_start_new_utterance(
@@ -251,7 +259,7 @@ def _build_utterances(
             token_index=index,
             options=options,
         ):
-            utterances.append(_tokens_to_utterance(current))
+            utterances.append(_tokens_to_utterance(current, options))
             current = [token]
             joined = token.text
         else:
@@ -259,7 +267,7 @@ def _build_utterances(
             joined = _join_text_parts(joined, token.text)
 
     if current:
-        utterances.append(_tokens_to_utterance(current))
+        utterances.append(_tokens_to_utterance(current, options))
 
     return [utterance for utterance in utterances if utterance.text]
 
@@ -392,15 +400,28 @@ def _would_create_short_orphan_tail(tokens: list[WordToken], start_index: int) -
     return len(text) <= MAX_ORPHAN_TAIL_CHARS
 
 
-def _tokens_to_utterance(tokens: list[WordToken]) -> Utterance:
+def _tokens_to_utterance(
+    tokens: list[WordToken], options: SrtFormatOptions
+) -> Utterance:
     start = tokens[0].start
-    end = max(tokens[-1].end, start + MIN_SEGMENT_DURATION_S)
+    end = tokens[-1].end - _excess_inner_silence(tokens, options)
+    end = max(end, start + MIN_SEGMENT_DURATION_S)
     return Utterance(
         speaker_id=tokens[0].speaker_id,
         start=start,
         end=end,
         text=_join_token_texts(tokens).strip(),
     )
+
+
+def _excess_inner_silence(tokens: list[WordToken], options: SrtFormatOptions) -> float:
+    """How much of the utterance's inner silences `inner_silence_limit_s` drops."""
+    limit = options.inner_silence_limit_s
+    if limit <= 0:
+        return 0.0
+    kept = min(options.inner_silence_kept_s, limit)
+    gaps = (after.start - before.end for before, after in pairwise(tokens))
+    return sum(gap - kept for gap in gaps if gap > limit)
 
 
 def _merge_utterances_to_blocks(

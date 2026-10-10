@@ -36,7 +36,8 @@ chat = "codex/gpt-6.1-sol/medium"            # live-chat replay; omit to use uti
 image = "codex/gpt-6.1-sol/medium"           # cover; needs image generation (codex)
 
 [asr]
-# ElevenLabs speech-to-text model and language hint.
+# ElevenLabs speech-to-text model and language hint. scribe_v2 output gets
+# an SRT timing compensation for late sentence tails; other models do not.
 model = "scribe_v2"
 language = "jpn"
 

@@ -10,6 +10,7 @@ from loguru import logger
 
 from grillmaster.asr.payload import read_payload
 from grillmaster.asr.srt_builder import build_srt_blocks
+from grillmaster.asr.srt_compensation import srt_options_for_model
 from grillmaster.core.srt import write_srt_file
 from grillmaster.core.stage_key import StageKey
 from grillmaster.stages.base import StageDef, require
@@ -24,7 +25,8 @@ if TYPE_CHECKING:
 
 def _run(ctx: StageContext) -> None:
     layout = ctx.layout
-    blocks = build_srt_blocks(read_payload(require(layout.asr_json, StageKey.ASR)))
+    payload = read_payload(require(layout.asr_json, StageKey.ASR))
+    blocks = build_srt_blocks(payload, srt_options_for_model(ctx.config.asr.model))
     write_srt_file(layout.ja_srt, blocks)
     logger.success(f"Wrote {len(blocks)} Japanese subtitle blocks: {layout.ja_srt}")
 

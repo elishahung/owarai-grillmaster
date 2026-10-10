@@ -851,6 +851,77 @@ def test_silence_split_still_fires_when_upcoming_tail_is_long():
     assert "\nさ\n" in srt.rstrip("\n") + "\n"
 
 
+# Test values, deliberately not the scribe_v2 ones in `srt_compensation`.
+INNER_SILENCE = SrtFormatOptions(inner_silence_limit_s=2.0, inner_silence_kept_s=0.5)
+
+
+def test_inner_silence_limit_shortens_only_the_end():
+    # The guards keep the late 「すの。」 in its sentence; the block used to
+    # span the 75 s silence. Grouping and start times must not change.
+    payload = {
+        "words": [
+            word("何を", 517.9, 518.1),
+            word("言うて", 518.1, 518.4),
+            word("ま", 518.4, 518.5),
+            word("す", 594.08, 594.22),
+            word("の", 594.22, 594.3),
+            word("。", 594.3, 594.3),
+            word("ええわけない。", 595.4, 596.0),
+        ]
+    }
+
+    limited = build_srt_blocks(payload, INNER_SILENCE)
+    plain = build_srt_blocks(payload)
+
+    assert [b.text for b in limited] == [b.text for b in plain]
+    assert [b.time_range.start for b in limited] == [b.time_range.start for b in plain]
+    assert limited[0].text == "何を言うてますの。"
+    assert plain[0].time_range.end > 594.0
+    assert limited[0].time_range.end < 521.0
+
+
+def test_inner_silence_limit_never_extends_an_end():
+    # Off (0) leaves the ASR end; a kept silence above the limit is clamped
+    # to it, so no utterance ends later than its last word.
+    payload = {
+        "words": [
+            word("何を", 0.0, 0.2),
+            word("言うて", 0.2, 0.5),
+            word("ま", 0.5, 0.6),
+            word("すの。", 4.0, 4.2),
+        ]
+    }
+
+    plain = build_srt_blocks(payload)
+    off = build_srt_blocks(payload, SrtFormatOptions(inner_silence_limit_s=0))
+    clamped = build_srt_blocks(
+        payload, SrtFormatOptions(inner_silence_limit_s=2.0, inner_silence_kept_s=9.0)
+    )
+
+    assert off == plain
+    assert clamped[0].time_range.end <= plain[0].time_range.end
+
+
+def test_inner_silence_limit_keeps_start_after_length_split():
+    # 「の」 cannot start an utterance, so it joins across the silence; the
+    # length cap then splits at 「、」. The second utterance keeps its start.
+    tail = (
+        "ことなんですけどそれからあれがこうなってこうなって、"
+        "それでまたこうなってこんな感じでしたっていう話をずっとしてたんですよね本当に"
+    )
+    words = [word("何を言うて", 0.0, 1.0), word("の", 40.0, 40.1)]
+    words += [word(c, 40.1 + 0.08 * i, 40.18 + 0.08 * i) for i, c in enumerate(tail)]
+    words.append(word("。", 45.22, 45.22))
+    payload = {"words": words}
+
+    limited = build_srt_blocks(payload, INNER_SILENCE)
+    plain = build_srt_blocks(payload)
+
+    assert len(plain) == len(limited) == 2
+    assert [b.time_range.start for b in limited] == [b.time_range.start for b in plain]
+    assert limited[0].time_range.end < 5.0 < plain[0].time_range.end
+
+
 def test_wrap_does_not_split_alphanumeric_run():
     # A run of digits near the natural midpoint must stay intact.
     text = "短い前置きですが12345という数字を含む長い文章である"

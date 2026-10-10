@@ -7,8 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-from services.inference import agy as agy_mod
-from services.inference.agy import (
+from grillmaster.services.inference import agy as agy_mod
+from grillmaster.services.inference.agy import (
     AgyError,
     AgyNotInstalledError,
     AgyQuotaError,

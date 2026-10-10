@@ -2,7 +2,7 @@ import unittest
 import tempfile
 from pathlib import Path
 
-from services.ytdlp.client import (
+from grillmaster.services.ytdlp.client import (
     _BILIBILI_PLAYURL_FALLBACK_URL,
     _apply_bilibili_412_playurl_patch,
     get_ytdlp_download_options_for_url,

@@ -1,0 +1,965 @@
+"""Project management for video captioning workflow.
+
+This module defines the Project model and related enums for tracking the progress
+of video processing tasks through various stages including download, transcription,
+and translation.
+"""
+
+from pydantic import BaseModel, Field
+from pathlib import Path
+from datetime import date, datetime
+import json
+import shutil
+from enum import Enum
+from loguru import logger
+from grillmaster.settings import settings
+import re
+from urllib.parse import urlparse, parse_qs
+from grillmaster.services.paths import fit_dir_name
+from grillmaster.services.program_config import ProgramRules, load_program_rules
+from grillmaster.services.ytdlp.broadcast_date import parse_broadcast_label_year
+from grillmaster.services.ytdlp.info import (
+    SourceProgramInfo,
+    SourceTalentInfo,
+    YtDlpVideoInfo,
+)
+
+PROJECT_ROOT_NAME = "projects"
+PROJECT_FILE_NAME = "grillmaster.project.json"
+METADATA_INFO_FILE_NAME = "metadata.info.json"
+VIDEO_FILE_NAME = "video.mp4"
+FULL_VIDEO_FILE_NAME = "video.full.mp4"
+AUDIO_FILE_NAME = "audio.ogg"
+ASR_FILE_NAME = "asr.json"
+SRT_FILE_NAME = "video.ja.srt"
+OFFICIAL_SUBTITLE_FILE_NAME = "video.official.ja.srt"
+TRANSLATED_FILE_NAME = "video.cht.srt"
+REFINED_SRT_FILE_NAME = "video.cht.refined.srt"
+FINALIZED_SRT_FILE_NAME = "video.cht.finalized.srt"
+ASS_FILE_NAME = "video.cht.ass"
+POSTER_FILE_NAME = "poster.jpg"
+POSTER_COVER_FILE_NAME = "poster.cover.png"
+PRE_PASS_FILE_NAME = "pre_pass.json"
+PRE_PASS_RAW_FILE_NAME = "pre_pass.raw.json"
+REFINE_REPORT_FILE_NAME = "report.md"
+GLOSSARY_CHECKED_SRT_FILE_NAME = "video.cht.glossary_checked.srt"
+GLOSSARY_CHECK_REPORT_FILE_NAME = "report.md"
+DATE_RESEARCH_FILE_NAME = "date_research.json"
+TITLES_FILE_NAME = "titles.json"
+INFO_FILE_NAME = "info.json"
+ARTIFACTS_DIR_NAME = ".artifacts"
+ASR_CACHE_DIR_NAME = ".asr"
+CHUNKS_CACHE_DIR_NAME = ".chunks"
+PRE_PASS_CACHE_DIR_NAME = ".pre_pass"
+REFINE_CACHE_DIR_NAME = ".refine"
+GLOSSARY_CHECK_CACHE_DIR_NAME = ".glossary_check"
+TITLES_DIR_NAME = ".titles"
+LIVE_CHAT_CACHE_DIR_NAME = ".live_chat"
+LIVE_CHAT_RAW_FILE_NAME = "live_chat.json"
+LIVE_CHAT_MESSAGES_FILE_NAME = "messages.json"
+LIVE_CHAT_BATCHES_DIR_NAME = "batches"
+LIVE_CHAT_POLISH_FILE_NAME = "polish.json"
+CHAT_TRANSLATED_FILE_NAME = "chat.cht.json"
+CHAT_ASS_FILE_NAME = "video.chat.ass"
+
+# Path units to keep free inside a project directory for its own contents,
+# counting the leading separator. The deepest artifact is the structural-fix
+# workspace (`/.chunks/responses/chunk_0001-0042_fix/source.srt`, ~49 units);
+# the rest is headroom for files the repair agent writes in that workspace.
+PROJECT_INNER_PATH_RESERVE = 80
+
+# Package output is flat — the longest entry is `/poster.cover.png`.
+PACKAGE_INNER_PATH_RESERVE = 24
+
+
+def _raise_if_local_directory_source(source_str: str) -> None:
+    """Reject an existing local directory passed as a video source.
+
+    Bare IDs are never treated as paths, even if a cwd folder shares the
+    name (e.g. `grill ep123` run from `projects/`). `grill package <dir>`
+    is the command for an already-finalized project directory.
+    """
+    if source_str.startswith(("https://", "http://")):
+        return
+    if "/" not in source_str and "\\" not in source_str:
+        return
+    if Path(source_str).is_dir():
+        raise ValueError(
+            f"Local directory is not a video source: {source_str}. "
+            "Use a video ID or URL, or run 'grill package <dir>' "
+            "to package an existing project."
+        )
+
+
+class ProgressStage(str, Enum):
+    """Enum representing different stages in the video processing workflow.
+
+    Each value corresponds to a boolean field in the Project model that tracks
+    whether that stage has been completed.
+    """
+
+    METADATA_FETCHED = "is_metadata_fetched"
+    DOWNLOADED = "is_downloaded"
+    VIDEO_PROCESSED = "is_video_processed"
+    CHAT_FETCHED = "is_chat_fetched"
+    AUDIO_PROCESSED = "is_audio_processed"
+    ASR_COMPLETED = "is_asr_completed"
+    SRT_COMPLETED = "is_srt_completed"
+    PREPASS_COMPLETED = "is_prepass_completed"
+    CHUNK_TRANSLATED = "is_chunk_translated"
+    SRT_REFINED = "is_srt_refined"
+    GLOSSARY_CHECKED = "is_glossary_checked"
+    FINALIZED = "is_finalized"
+    CHAT_TRANSLATED = "is_chat_translated"
+
+
+class VideoSource(str, Enum):
+    """Enum representing supported video source platforms."""
+
+    BILIBILI = "bilibili"
+    TVER = "tver"
+    ABEMA = "abema"
+    YOUTUBE = "youtube"
+
+
+class SourceTalent(BaseModel):
+    """Person or group metadata supplied by the video source."""
+
+    id: str
+    name: str
+    name_kana: str | None = None
+    roles: list[str] = Field(default_factory=list)
+
+
+class SourceMetadata(BaseModel):
+    """Optional metadata collected from the source platform."""
+
+    talents: list[SourceTalent] = Field(default_factory=list)
+    title: str | None = None
+    description: str | None = None
+    series: str | None = None
+    channel: str | None = None
+    broadcast_date_label: str | None = None
+
+
+class Project(BaseModel):
+    """Represents a video captioning project with progress tracking.
+
+    This class manages project metadata, progress through various processing stages,
+    and file paths for all intermediate and final outputs.
+
+    Attributes:
+        id: Unique identifier for the project (often a video source).
+        name: Human-readable name for the project (defaults to "video").
+        translation_hint: Optional per-run hint from the user (CLI `HINT`),
+            kept apart from the source title/description in `source_metadata`.
+        is_metadata_fetched: Whether video metadata has been retrieved.
+        is_downloaded: Whether video has been downloaded.
+        is_video_processed: Whether video segments have been combined.
+        is_chat_fetched: Whether the optional live-chat replay has been downloaded and normalized.
+        is_audio_processed: Whether audio has been extracted.
+        is_asr_completed: Whether speech recognition has been completed.
+        is_srt_completed: Whether SRT subtitle file has been generated.
+        is_prepass_completed: Whether the Gemini pre-pass briefing has been completed.
+        is_chunk_translated: Whether concurrent chunk translation has been completed.
+        is_srt_refined: Whether the agent SRT refinement has been completed.
+        is_glossary_checked: Whether the agent fixed-glossary localization check has been completed.
+        is_finalized: Whether the final ASS + SRT outputs have been generated.
+        is_chat_translated: Whether the optional live-chat replay has been translated.
+        is_cover_generated: Whether the optional Codex-driven cover image has been generated.
+        is_broadcast_date_researched: Whether the optional agent-driven broadcast-date research has completed (found or not).
+    """
+
+    id: str
+    created_at: datetime = Field(default_factory=datetime.now)
+    name: str = Field(default="video")
+    translation_hint: str | None = None
+    parent_project_path: Path | None = None
+    broadcast_date: date | None = None
+    source_metadata: SourceMetadata = Field(default_factory=SourceMetadata)
+    # ElevenLabs ASR spend, the only metered service (model stages run on
+    # subscription agents).
+    asr_cost: float = 0.0
+    # Source-timeline bounds `video.mp4` was cut to (--start/--to), recorded
+    # when the video is processed so later stages can rebase source-timed
+    # data (live chat) without the flags being repeated on resume.
+    section_start: float | None = None
+    section_end: float | None = None
+
+    # Progress
+    is_metadata_fetched: bool = False
+    is_downloaded: bool = False
+    is_video_processed: bool = False
+    is_chat_fetched: bool = False
+    is_audio_processed: bool = False
+    is_asr_completed: bool = False
+    is_srt_completed: bool = False
+    is_prepass_completed: bool = False
+    is_chunk_translated: bool = False
+    is_srt_refined: bool = False
+    is_glossary_checked: bool = False
+    is_finalized: bool = False
+    is_chat_translated: bool = False
+    is_cover_generated: bool = False
+    is_broadcast_date_researched: bool = False
+
+    @staticmethod
+    def parse_source_str(source_str: str) -> str:
+        """Parse a video source string to extract the video ID.
+
+        Handles various input formats including direct IDs and full URLs.
+        Supports: Bilibili (URL/BV), TVer (URL/ID), Abema (URL/ID),
+        YouTube (URL or `v=<id>` prefixed form). Existing local directories
+        are rejected — those belong to `grill package <dir>`, not process.
+
+        Args:
+            source_str: Video source as ID or URL.
+
+        Returns:
+            The extracted video ID.
+
+        Raises:
+            ValueError: If the URL format is not recognized, or if the
+                string names an existing local directory.
+        """
+        _raise_if_local_directory_source(source_str)
+
+        # 1. Handle Bilibili (Most distinct format)
+        bv_match = re.search(r"(BV[a-zA-Z0-9]+)", source_str)
+        if bv_match:
+            return bv_match.group(1)
+
+        # 2. Handle YouTube: already-prefixed `v=<id>` passes through unchanged
+        # so re-parsing a stored ID is idempotent.
+        if source_str.startswith("v="):
+            return source_str
+
+        # 3. Handle YouTube URLs: youtube.com/watch?v=ID, youtu.be/ID,
+        # youtube.com/shorts/ID, youtube.com/live/ID, m.youtube.com/...
+        if "youtube.com" in source_str or "youtu.be" in source_str:
+            parsed = urlparse(source_str)
+            qs = parse_qs(parsed.query)
+            if "v" in qs and qs["v"]:
+                return f"v={qs['v'][0]}"
+            parts = parsed.path.strip("/").split("/")
+            if parts and parts[-1]:
+                return f"v={parts[-1]}"
+            raise ValueError(f"Invalid YouTube URL: {source_str}")
+
+        # 4. Handle URLs (Bilibili & TVer & Abema)
+        # Using urlparse is safer for handling query parameters
+        if (
+            "bilibili.com" in source_str
+            or "tver.jp" in source_str
+            or "abema.tv" in source_str
+        ):
+            try:
+                path = urlparse(source_str).path
+                parts = path.strip("/").split("/")
+                if parts:
+                    # Abema: /video/episode/90-979_s1_p123 -> 90-979_s1_p123
+                    #        /channels/<ch>/slots/DGzv6KEKhRHpe3 -> DGzv6KEKhRHpe3
+                    # TVer: /episodes/ep12345 -> ep12345
+                    # Bilibili: /video/BV1ZArvBaEqL -> BV1ZArvBaEqL
+                    return parts[-1]
+            except Exception:
+                pass  # Fall through to error if parsing fails
+
+        # 5. Reject unknown URLs
+        # If it looks like a URL but wasn't caught above, it's invalid/unsupported
+        if source_str.startswith(("https://", "http://")):
+            raise ValueError(f"Invalid video source: {source_str}")
+
+        # 6. Return as Direct ID
+        return source_str
+
+    @classmethod
+    def from_source_str(
+        cls,
+        source_str: str,
+        translation_hint: str | None = None,
+        parent_project_path: str | Path | None = None,
+    ) -> "Project":
+        """Load an existing project from disk or create a new one.
+
+        Args:
+            source_str: The video source, id or url (e.g., 'BV1ZArvBaEqL', 'https://www.bilibili.com/video/BV1ZArvBaEqL').
+            translation_hint: Optional translation hint for new projects.
+            parent_project_path: Optional filesystem path to a parent project
+                directory whose pre_pass.json will seed this project's pre-pass
+                for cross-episode consistency. Accepts paths under `projects/`
+                or anywhere else (e.g., archived locations) since the parent
+                may have been archived.
+
+        Returns:
+            A Project instance loaded from the saved JSON file, or a new
+            Project if no saved file exists.
+
+        Raises:
+            ValidationError: If the saved project data is invalid.
+            JSONDecodeError: If the project file is corrupted.
+        """
+        id = cls.parse_source_str(source_str)
+        resolved_parent_path = (
+            Path(parent_project_path) if parent_project_path is not None else None
+        )
+
+        logger.debug(f"Loading project: {id}")
+        json_path = Path(PROJECT_ROOT_NAME) / id / PROJECT_FILE_NAME
+
+        if not json_path.exists():
+            logger.info(f"Creating new project: {id}")
+            return cls(
+                id=id,
+                translation_hint=translation_hint,
+                parent_project_path=resolved_parent_path,
+            )
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                project_data = json.load(f)
+            project = cls.model_validate(project_data)
+            logger.info(f"Loaded existing project: {id} (name: {project.name})")
+            project._split_legacy_hint()
+
+            if translation_hint is not None:
+                if project.is_prepass_completed:
+                    logger.warning(
+                        "Translation hint ignored: the pre-pass already ran "
+                        "(delete .pre_pass/ and reset is_prepass_completed "
+                        "to apply one)"
+                    )
+                else:
+                    project.translation_hint = translation_hint
+                    project.save()
+                    logger.info("Translation hint updated for existing project")
+            if resolved_parent_path is not None:
+                logger.warning("Parent project is not supported for existing projects")
+
+            return project
+        except Exception as e:
+            logger.error(f"Failed to load project {id}: {e}")
+            raise
+
+    def update_from_video_info(self, video_info: YtDlpVideoInfo) -> None:
+        """Update project from video information.
+
+        Records the file name and the source title/description. The user's
+        translation hint is a separate field and is never derived from these.
+
+        Args:
+            video_info: The video information from yt-dlp.
+        """
+        self.name = video_info.filename
+        self._record_source_text(video_info.title, video_info.description)
+        self.save()
+
+    def _record_source_text(self, title: str | None, description: str | None) -> None:
+        self.source_metadata.title = title or None
+        # Bilibili descriptions are uploader notes rather than program
+        # information, so only the title is kept for that platform.
+        self.source_metadata.description = (
+            None if self.source == VideoSource.BILIBILI else description or None
+        )
+
+    def _split_legacy_hint(self) -> None:
+        """Separate the auto-filled hint of a project made before the split.
+
+        Such projects stored the source title (plus description) in
+        `translation_hint` and never recorded them on their own. Recover both
+        from yt-dlp's info JSON, and drop the hint when it is exactly that
+        auto-filled text; a hint the user typed is kept.
+        """
+        if (
+            self.source_metadata.title is not None
+            or self.translation_hint is None
+            or not self.metadata_info_path.exists()
+        ):
+            return
+        try:
+            info = json.loads(self.metadata_info_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        title = info.get("title") if isinstance(info, dict) else None
+        if not isinstance(title, str) or not title:
+            return
+        description = info.get("description")
+        if not isinstance(description, str):
+            description = None
+        self._record_source_text(title, description)
+        if self.translation_hint in {title, f"{title} - {description}"}:
+            self.translation_hint = None
+        logger.info(
+            f"Split the legacy translation hint of {self.id} into the "
+            f"source title/description"
+        )
+        self.save()
+
+    def update_section(
+        self, section_start: float | None, section_end: float | None
+    ) -> None:
+        """Persist the source-timeline bounds `video.mp4` is cut to."""
+        self.section_start = section_start
+        self.section_end = section_end
+        self.save()
+
+    def update_broadcast_date(self, broadcast_date: date) -> None:
+        """Persist the announced broadcast/publication date."""
+        self.broadcast_date = broadcast_date
+        self.save()
+
+    def update_from_source_program(self, program: SourceProgramInfo) -> None:
+        """Persist the program and broadcast channel names from the source.
+
+        Absent fields leave the stored values alone: platforms expose one, the
+        other, or neither, and a later re-download must not erase what an
+        earlier one captured.
+        """
+        if program.series is not None:
+            self.source_metadata.series = program.series
+        if program.channel is not None:
+            self.source_metadata.channel = program.channel
+        self.save()
+
+    def update_from_source_broadcast_date_label(self, label: str) -> None:
+        """Persist the platform's raw on-air label (e.g. "2018年放送").
+
+        Kept even when it yields no exact date: a year-only archive label is
+        the only evidence of the original broadcast year, and the research
+        agent uses it to reject re-upload dates.
+        """
+        self.source_metadata.broadcast_date_label = label
+        self.save()
+
+    @property
+    def source_broadcast_year(self) -> int | None:
+        """Original broadcast year stated by the source, if it stated one."""
+        return parse_broadcast_label_year(self.source_metadata.broadcast_date_label)
+
+    def update_from_source_talents(self, talents: list[SourceTalentInfo]) -> None:
+        """Persist source-provided talent metadata on the project."""
+        self.source_metadata.talents = [
+            SourceTalent(
+                id=talent.id,
+                name=talent.name,
+                name_kana=talent.name_kana,
+                roles=talent.roles,
+            )
+            for talent in talents
+        ]
+        self.save()
+
+    def program_rules(self) -> ProgramRules:
+        """This program's `config.json` rules, read fresh on every call."""
+        return load_program_rules(
+            series=self.source_metadata.series,
+            channel=self.source_metadata.channel,
+        )
+
+    def source_metadata_context(self) -> str | None:
+        """Return source metadata formatted for Gemini prompt context."""
+        if not self.source_metadata.talents:
+            return None
+
+        lines = ["Official source cast/talent metadata:"]
+        for talent in self.source_metadata.talents:
+            role_text = f" ({', '.join(talent.roles)})" if talent.roles else ""
+            kana_text = f" / {talent.name_kana}" if talent.name_kana else ""
+            lines.append(f"- {talent.name}{kana_text}{role_text}")
+        return "\n".join(lines)
+
+    def save(self) -> None:
+        """Save the current project state to disk as JSON.
+
+        The project is saved to project.json in the project directory.
+        Creates the directory if it doesn't exist.
+
+        Raises:
+            IOError: If the file cannot be written.
+        """
+        logger.debug(f"Saving project: {self.id}")
+        try:
+            self.project_path.mkdir(parents=True, exist_ok=True)
+            with open(self.json_path, "w", encoding="utf-8") as f:
+                f.write(self.model_dump_json(indent=4, ensure_ascii=False))
+            logger.debug(f"Project saved: {self.id}")
+        except Exception as e:
+            logger.error(f"Failed to save project {self.id}: {e}")
+            raise
+
+    def mark_progress(self, stage: ProgressStage) -> None:
+        """Mark a processing stage as completed and save the project.
+
+        Args:
+            stage: The progress stage to mark as complete.
+
+        Raises:
+            IOError: If the project cannot be saved.
+        """
+        field_name = stage.value
+        logger.info(f"Project {self.id}: Marking stage complete - {stage.name}")
+        setattr(self, field_name, True)
+        self.save()
+
+    def add_asr_cost(self, amount: float) -> None:
+        """Accumulate non-negative ASR spend and persist it."""
+        if amount < 0:
+            raise ValueError("Cost amount must be non-negative")
+        if amount == 0:
+            return
+
+        self.asr_cost += amount
+        logger.info(
+            f"Project {self.id}: Added ${amount:.4f} ASR cost "
+            f"(project ASR total ${self.asr_cost:.4f})"
+        )
+        self.save()
+
+    def archive(self) -> Path | None:
+        """Archive the entire project by moving it to the archived directory.
+
+        Returns the new path on success, or None if archived_path is not configured.
+
+        Raises:
+            FileNotFoundError: If the project directory doesn't exist.
+            IOError: If the directory cannot be moved.
+        """
+        if settings.archived_path is None:
+            logger.warning("Archived path is not set, skipping archiving")
+            return None
+
+        archived_path = self.archive_dir(settings.archived_path)
+
+        if not self.project_path.exists():
+            logger.error(f"Project directory does not exist: {self.project_path}")
+            raise FileNotFoundError(f"Project directory not found: {self.project_path}")
+
+        # Create the YY/MM (or etc) parent directories if they don't exist
+        archived_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # If archived path already exists, remove it first (leaf dir only —
+        # never the shared YY/MM or etc parents)
+        if archived_path.exists():
+            logger.warning(
+                f"Archived project already exists, removing: {archived_path}"
+            )
+            shutil.rmtree(archived_path)
+
+        logger.info(f"Archiving project {self.id} to {archived_path}")
+        shutil.move(str(self.project_path), str(archived_path))
+        logger.info(f"Project {self.id} archived successfully")
+        return archived_path
+
+    # Source management
+    @property
+    def source(self) -> VideoSource:
+        """Determine the video source platform based on the project ID.
+
+        Returns:
+            The VideoSource enum value for this project.
+        """
+        # Bilibili: Always starts with BV
+        if self.id.startswith("BV"):
+            return VideoSource.BILIBILI
+
+        # YouTube: stored with the `v=` prefix to disambiguate from the Abema
+        # fallback (their character sets overlap).
+        if self.id.startswith("v="):
+            return VideoSource.YOUTUBE
+
+        # TVer: IDs typically start with 'ep' (episode) or 'sh' (series)
+        # and contain ONLY alphanumeric characters (no hyphens/underscores).
+        if self.id.startswith(("ep", "sh")) and self.id.isalnum():
+            return VideoSource.TVER
+
+        # Abema: IDs often contain '_', '-', or start with numbers.
+        # We treat Abema as the fallback for non-TVer IDs.
+        return VideoSource.ABEMA
+
+    @property
+    def source_url(self) -> str:
+        """Get the full URL for the video source.
+
+        Returns:
+            The complete URL to the video on its source platform.
+        """
+        if self.source == VideoSource.BILIBILI:
+            return f"https://www.bilibili.com/video/{self.id}"
+
+        if self.source == VideoSource.TVER:
+            return f"https://tver.jp/episodes/{self.id}"
+
+        if self.source == VideoSource.ABEMA:
+            # Slot (live archive) IDs are pure alphanumeric (e.g.
+            # DGzv6KEKhRHpe3); episode IDs always contain '-'/'_' (e.g.
+            # 194-25_s2_p1). yt-dlp's slot extractor never reads the channel
+            # segment, so a placeholder channel is fine.
+            if self.id.isalnum():
+                return f"https://abema.tv/channels/_/slots/{self.id}"
+            return f"https://abema.tv/video/episode/{self.id}"
+
+        if self.source == VideoSource.YOUTUBE:
+            return f"https://www.youtube.com/watch?v={self.id[2:]}"
+
+        raise ValueError(f"Invalid video source: {self.source}")
+
+    @property
+    def deliverable_stem(self) -> str:
+        """Identity part of the deliverable name: `YYMMDD_{id}`, or `{id}` when undated.
+
+        Never shortened by path fitting, so a deliverable directory always
+        traces back to its source video even under a deep output root.
+        """
+        if self.broadcast_date is None:
+            return self.id
+        return f"{self.broadcast_date:%y%m%d}_{self.id}"
+
+    @property
+    def deliverable_name(self) -> str:
+        """Full directory name for package output and the archive leaf dir.
+
+        Prefixes the announced broadcast date as YYMMDD when known, so
+        deliverables sort chronologically; older projects without the date
+        keep the plain `{id}_{name}` form. This is the untrimmed form — the
+        name actually created on disk comes from `archive_dir` / `package_dir`,
+        which shorten `name` to fit the platform path limit.
+        """
+        return f"{self.deliverable_stem}_{self.name}"
+
+    @property
+    def archive_group_subpath(self) -> Path:
+        """Shared parent directories under ARCHIVED_PATH.
+
+        Dated projects are grouped under YY/MM subdirectories (e.g. 26/05);
+        undated projects fall back to etc. Package output does NOT nest — it
+        stays flat under PACKAGE_PATH.
+        """
+        if self.broadcast_date is None:
+            return Path("etc")
+        return Path(f"{self.broadcast_date:%y}") / f"{self.broadcast_date:%m}"
+
+    def archive_dir(self, archived_root: Path) -> Path:
+        """Archive destination for this project under `archived_root`.
+
+        The leaf directory name is shortened as needed so that the project's
+        own nested artifacts still fit the platform path limit.
+        """
+        parent = archived_root / self.archive_group_subpath
+        return parent / fit_dir_name(
+            parent=parent,
+            keep=self.deliverable_stem,
+            tail=self.name,
+            reserve=PROJECT_INNER_PATH_RESERVE,
+        )
+
+    def package_dir(self, package_root: Path) -> Path:
+        """Package destination for this project (flat under `package_root`)."""
+        return package_root / fit_dir_name(
+            parent=package_root,
+            keep=self.deliverable_stem,
+            tail=self.name,
+            reserve=PACKAGE_INNER_PATH_RESERVE,
+        )
+
+    # Files management
+    @property
+    def project_path(self) -> Path:
+        """Get the project directory path.
+
+        Returns:
+            Path to the project directory.
+        """
+        return Path(PROJECT_ROOT_NAME) / self.id
+
+    @property
+    def json_path(self) -> Path:
+        """Get the path to the project metadata JSON file.
+
+        Returns:
+            Path to project.json.
+        """
+        return self.project_path / PROJECT_FILE_NAME
+
+    @property
+    def metadata_info_path(self) -> Path:
+        """Get the path to the yt-dlp info JSON written at download time.
+
+        Returns:
+            Path to metadata.info.json.
+        """
+        return self.project_path / METADATA_INFO_FILE_NAME
+
+    @property
+    def downloaded_video_paths(self) -> list[Path]:
+        """Get all downloaded video segment files.
+
+        Returns:
+            List of paths to downloaded MP4 files, excluding the final combined video.
+        """
+        return [
+            video_file
+            for video_file in self.project_path.glob("*.mp4")
+            if video_file.is_file()
+            and video_file.name not in (VIDEO_FILE_NAME, FULL_VIDEO_FILE_NAME)
+        ]
+
+    @property
+    def video_path(self) -> Path:
+        """Get the path to the final combined video file.
+
+        Returns:
+            Path to video.mp4.
+        """
+        return self.project_path / VIDEO_FILE_NAME
+
+    @property
+    def full_video_path(self) -> Path:
+        """Get the path to the uncut combined video kept for section runs.
+
+        Returns:
+            Path to video.full.mp4.
+        """
+        return self.project_path / FULL_VIDEO_FILE_NAME
+
+    @property
+    def audio_path(self) -> Path:
+        """Get the path to the extracted audio file.
+
+        Returns:
+            Path to .asr/audio.ogg.
+        """
+        return self.asr_cache_dir / AUDIO_FILE_NAME
+
+    @property
+    def asr_path(self) -> Path:
+        """Get the path to the ASR results JSON file.
+
+        Returns:
+            Path to .asr/asr.json.
+        """
+        return self.asr_cache_dir / ASR_FILE_NAME
+
+    @property
+    def srt_path(self) -> Path:
+        """Get the path to the original subtitle file.
+
+        Returns:
+            Path to srt.srt.
+        """
+        return self.project_path / SRT_FILE_NAME
+
+    @property
+    def official_subtitle_path(self) -> Path:
+        """Get the path to the normalized platform closed-caption SRT.
+
+        Returns:
+            Path to video.official.ja.srt. Only exists when the source
+            platform published closed captions for this program.
+        """
+        return self.project_path / OFFICIAL_SUBTITLE_FILE_NAME
+
+    @property
+    def downloaded_subtitle_paths(self) -> list[Path]:
+        """Get raw subtitle files written by yt-dlp alongside the video parts.
+
+        Returns:
+            List of paths to downloaded `.srt` files, excluding the pipeline's
+            own SRT outputs (source/official/translated and derivatives).
+        """
+        return [
+            subtitle_file
+            for subtitle_file in self.project_path.glob("*.srt")
+            if subtitle_file.is_file() and not subtitle_file.name.startswith("video.")
+        ]
+
+    @property
+    def translated_path(self) -> Path:
+        """Get the path to the translated subtitle file.
+
+        Returns:
+            Path to translated.srt.
+        """
+        return self.project_path / TRANSLATED_FILE_NAME
+
+    @property
+    def ass_path(self) -> Path:
+        """Get the path to the styled ASS subtitle file."""
+        return self.project_path / ASS_FILE_NAME
+
+    @property
+    def refined_srt_path(self) -> Path:
+        """Get the path to the agent-refined Traditional Chinese SRT file."""
+        return self.project_path / REFINED_SRT_FILE_NAME
+
+    @property
+    def finalized_srt_path(self) -> Path:
+        """Path to the finalized, player-friendly SRT (Netflix TC punctuation rules).
+
+        Generated alongside the ASS during the finalize stage so devices that
+        don't support ASS can still consume the same cleaned subtitles.
+        """
+        return self.project_path / FINALIZED_SRT_FILE_NAME
+
+    @property
+    def poster_path(self) -> Path:
+        """Get the path to the source poster image downloaded by yt-dlp."""
+        return self.project_path / POSTER_FILE_NAME
+
+    @property
+    def poster_cover_path(self) -> Path:
+        """Get the path to the Codex-generated stylized cover image."""
+        return self.project_path / POSTER_COVER_FILE_NAME
+
+    @property
+    def pre_pass_path(self) -> Path:
+        """Get the path to the cached Gemini pre-pass briefing JSON.
+
+        Returns:
+            Path to .pre_pass/pre_pass.json.
+        """
+        return self.pre_pass_cache_dir / PRE_PASS_FILE_NAME
+
+    @property
+    def pre_pass_raw_path(self) -> Path:
+        """Get the path to the original pre-pass briefing backup JSON."""
+        return self.pre_pass_cache_dir / PRE_PASS_RAW_FILE_NAME
+
+    @property
+    def parent_pre_pass_path(self) -> Path | None:
+        """Resolve the parent project's pre_pass.json path, if configured.
+
+        Returns:
+            Path to `<parent_project_path>/.pre_pass/pre_pass.json`, or None if
+            no parent project is set.
+        """
+        if self.parent_project_path is None:
+            return None
+        return self.parent_project_path / PRE_PASS_CACHE_DIR_NAME / PRE_PASS_FILE_NAME
+
+    def parent_pre_pass_context(self) -> str | None:
+        """Read the parent project's pre_pass.json content for prompt injection.
+
+        Returns:
+            Raw JSON text of the parent's pre_pass.json, or None if no parent
+            project is configured.
+
+        Raises:
+            FileNotFoundError: If a parent project is configured but its
+                pre_pass.json does not exist on disk. Surfaced early so the
+                pipeline fails before incurring any Gemini cost.
+        """
+        path = self.parent_pre_pass_path
+        if path is None:
+            return None
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Parent project pre_pass.json not found: {path}. "
+                "Ensure the parent project has completed its pre-pass stage, "
+                "or check the --parent-project path."
+            )
+        return path.read_text(encoding="utf-8")
+
+    @property
+    def asr_cache_dir(self) -> Path:
+        """Get the directory for ASR audio and transcription artifacts."""
+        return self.project_path / ASR_CACHE_DIR_NAME
+
+    @property
+    def pre_pass_cache_dir(self) -> Path:
+        """Get the directory for persistent pre-pass multimodal cache assets."""
+        return self.project_path / PRE_PASS_CACHE_DIR_NAME
+
+    @property
+    def chunks_cache_dir(self) -> Path:
+        """Get the directory for persistent per-chunk translation caches."""
+        return self.project_path / CHUNKS_CACHE_DIR_NAME
+
+    @property
+    def refine_cache_dir(self) -> Path:
+        """Get the directory for refinement artifacts (report, etc.)."""
+        return self.project_path / REFINE_CACHE_DIR_NAME
+
+    @property
+    def refine_report_path(self) -> Path:
+        """Get the path to the agent-written refinement summary report."""
+        return self.refine_cache_dir / REFINE_REPORT_FILE_NAME
+
+    @property
+    def glossary_checked_srt_path(self) -> Path:
+        """Path to the glossary-checked Traditional Chinese SRT file.
+
+        Written by the glossary-check stage from the refined SRT (the stage
+        fails without it); finalize reads this file.
+        """
+        return self.project_path / GLOSSARY_CHECKED_SRT_FILE_NAME
+
+    @property
+    def glossary_check_cache_dir(self) -> Path:
+        """Get the directory for glossary-check artifacts (report, etc.)."""
+        return self.project_path / GLOSSARY_CHECK_CACHE_DIR_NAME
+
+    @property
+    def glossary_check_report_path(self) -> Path:
+        """Get the path to the Codex-written glossary-check summary report."""
+        return self.glossary_check_cache_dir / GLOSSARY_CHECK_REPORT_FILE_NAME
+
+    @property
+    def artifacts_dir(self) -> Path:
+        """Get the general-purpose directory for auxiliary analysis artifacts."""
+        return self.project_path / ARTIFACTS_DIR_NAME
+
+    @property
+    def live_chat_cache_dir(self) -> Path:
+        """Get the directory for live-chat replay downloads and batch caches."""
+        return self.project_path / LIVE_CHAT_CACHE_DIR_NAME
+
+    @property
+    def live_chat_raw_path(self) -> Path:
+        """Get the path to the raw yt-dlp live-chat replay (JSON lines)."""
+        return self.live_chat_cache_dir / LIVE_CHAT_RAW_FILE_NAME
+
+    @property
+    def live_chat_messages_path(self) -> Path:
+        """Get the path to the normalized, section-rebased chat messages."""
+        return self.live_chat_cache_dir / LIVE_CHAT_MESSAGES_FILE_NAME
+
+    @property
+    def live_chat_batches_dir(self) -> Path:
+        """Get the directory for per-batch chat translation caches."""
+        return self.live_chat_cache_dir / LIVE_CHAT_BATCHES_DIR_NAME
+
+    @property
+    def live_chat_polish_path(self) -> Path:
+        """Get the path to the cached whole-stream chat polish corrections."""
+        return self.live_chat_cache_dir / LIVE_CHAT_POLISH_FILE_NAME
+
+    @property
+    def chat_translated_path(self) -> Path:
+        """Get the path to the translated live chat consumed by packaging."""
+        return self.project_path / CHAT_TRANSLATED_FILE_NAME
+
+    @property
+    def date_research_path(self) -> Path:
+        """Get the path to the agent-written broadcast-date research result."""
+        return self.artifacts_dir / DATE_RESEARCH_FILE_NAME
+
+
+# Runtime check enum values match field names
+def check_enum_field_sync():
+    """Verify that all ProgressStage enum values correspond to Project fields.
+
+    This function is called at module import time to ensure that the enum
+    values stay synchronized with the actual Project model fields.
+
+    Raises:
+        ValueError: If a ProgressStage enum value doesn't match a Project field name.
+    """
+    project_fields = Project.model_fields.keys()
+    for stage in ProgressStage:
+        if stage.value not in project_fields:
+            raise ValueError(
+                f"Progress stage {stage.value} does not match project field {stage.value}"
+            )
+
+
+check_enum_field_sync()

@@ -48,15 +48,15 @@ Entry point: `main.py` (Typer CLI) → `workflow.submit_project`. Run with
 ### Running tests
 
 ```bash
-uv run --with pytest python -m pytest                       # full suite
-uv run --with pytest python -m pytest tests/test_srt.py     # single file
-uv run --with pytest python -m pytest -k chunk_validation   # by keyword
+uv run pytest                       # full suite
+uv run pytest tests/test_srt.py     # single file
+uv run pytest -k chunk_validation   # by keyword
 ```
 
-Use `python -m pytest` (not bare `pytest`) so the repo root is on `sys.path`.
-pytest is **not** a project dependency — `uv run --with pytest` pulls it in
-ephemerally. Tests are offline (network/model calls mocked) and fast; there is
-no CI, so run them yourself before considering a change done.
+The package lives under `src/grillmaster/` and `uv sync` installs it editable
+together with the `dev` dependency group (pytest, ruff, basedpyright,
+import-linter, poe). Tests are offline (network/model calls mocked) and fast;
+there is no CI, so run them yourself before considering a change done.
 
 ## Keep the docs current (important)
 

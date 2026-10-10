@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import services.translate.chunk.structural_fix as chunk_fix
-from services.translate.chunk.structural_fix import ChunkFixError
+import grillmaster.services.translate.chunk.structural_fix as chunk_fix
+from grillmaster.services.translate.chunk.structural_fix import ChunkFixError
 
 _SOURCE_SRT = "1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n"
 _BROKEN_SRT = "7\n99:99:99,999 --> 99:99:99,999\n你好\n"

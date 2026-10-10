@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from services.media import (
+from grillmaster.services.media import (
     PACKAGE_ENCODE_CONCURRENCY,
     PACKAGE_LEAD_TRIM_SECONDS,
     PACKAGE_MIN_PART_SECONDS,
@@ -16,7 +16,7 @@ from services.media import (
 class FindAudioGapsTests(unittest.TestCase):
     def _gaps(self, stdout: str):
         completed = MagicMock(stdout=stdout)
-        with patch("services.media.subprocess.run", return_value=completed) as run:
+        with patch("grillmaster.services.media.subprocess.run", return_value=completed) as run:
             gaps = MediaProcessor.find_audio_gaps(Path("in.mp4"))
         self.assertIn("a:0", run.call_args.args[0])
         return gaps
@@ -40,7 +40,7 @@ class FindAudioGapsTests(unittest.TestCase):
 
 class CutVideoTests(unittest.TestCase):
     def _run_cut(self, **kwargs) -> tuple[dict, dict]:
-        with patch("services.media.ffmpeg") as ffmpeg_mock:
+        with patch("grillmaster.services.media.ffmpeg") as ffmpeg_mock:
             ffmpeg_mock.input.return_value = MagicMock()
             MediaProcessor.cut_video(Path("in.mp4"), Path("out.mp4"), **kwargs)
             input_kwargs = ffmpeg_mock.input.call_args.kwargs

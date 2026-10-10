@@ -7,18 +7,18 @@ from pathlib import Path
 from contextlib import ExitStack
 from unittest.mock import MagicMock, patch
 
-from services.live_chat import (
+from grillmaster.services.live_chat import (
     ChatTranslationInputs,
     parse_live_chat,
     ChatLayout,
     chat_burn_plan,
     translate_live_chat,
 )
-from services.live_chat import render as chat_render
-from services.live_chat import translate as chat_translate
-from services.media import Box, BurnPlan
-from services.progress import NoopProgressReporter
-from services.live_chat.schema import (
+from grillmaster.services.live_chat import render as chat_render
+from grillmaster.services.live_chat import translate as chat_translate
+from grillmaster.services.media import Box, BurnPlan
+from grillmaster.services.progress import NoopProgressReporter
+from grillmaster.services.live_chat.schema import (
     ChatLog,
     ChatMessage,
     TranslatedChatLog,
@@ -347,8 +347,8 @@ class ChatBurnPlanTests(unittest.TestCase):
 
 class LiveChatWorkflowTests(unittest.TestCase):
     def test_chat_stages_run_after_video_and_after_finalize(self):
-        from project import ProgressStage
-        from workflow import api as workflow_api
+        from grillmaster.project import ProgressStage
+        from grillmaster.workflow import api as workflow_api
 
         project = MagicMock()
         for stage in ProgressStage:
@@ -426,7 +426,7 @@ class LiveChatWorkflowTests(unittest.TestCase):
         )
 
     def test_fetch_rebases_on_recorded_section_and_rejects_unknown_cut(self):
-        from workflow.stages import live_chat as chat_stage
+        from grillmaster.workflow.stages import live_chat as chat_stage
 
         root = _temp_dir(self)
         project = MagicMock()
@@ -455,7 +455,7 @@ class LiveChatWorkflowTests(unittest.TestCase):
         )
 
     def test_process_video_records_the_section(self):
-        from workflow.stages import media as media_stage
+        from grillmaster.workflow.stages import media as media_stage
 
         project = MagicMock()
         project.full_video_path.exists.return_value = True

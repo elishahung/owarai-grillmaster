@@ -6,16 +6,16 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import workflow as workflow_module
-import workflow.api as workflow_api
-import workflow.stages.translation as translation_stage
-from project import SourceMetadata
-from services.program_config import ProgramRules
-from services.translate.chunk.chunk_worker import ChunkTranslationResult
-from services.translate.errors import ChunkTranslationError, TranslationError
-from services.translate.facade import TranslationRequest, _translate_chunks_async
-from services.translate.pre_pass.pre_pass import PrePassResult
-from services.media import (
+import grillmaster.workflow as workflow_module
+import grillmaster.workflow.api as workflow_api
+import grillmaster.workflow.stages.translation as translation_stage
+from grillmaster.project import SourceMetadata
+from grillmaster.services.program_config import ProgramRules
+from grillmaster.services.translate.chunk.chunk_worker import ChunkTranslationResult
+from grillmaster.services.translate.errors import ChunkTranslationError, TranslationError
+from grillmaster.services.translate.facade import TranslationRequest, _translate_chunks_async
+from grillmaster.services.translate.pre_pass.pre_pass import PrePassResult
+from grillmaster.services.media import (
     Box,
     BurnPlan,
     SubtitleLayer,
@@ -31,8 +31,8 @@ from services.media import (
     package_output_duration,
     package_usable_duration,
 )
-from services.progress import NoopProgressReporter, RichProgressReporter
-from services.srt import parse_srt
+from grillmaster.services.progress import NoopProgressReporter, RichProgressReporter
+from grillmaster.services.srt import parse_srt
 from rich.console import Console
 
 
@@ -277,15 +277,15 @@ class ChunkProgressTests(unittest.TestCase):
 
         with (
             patch(
-                "services.translate.facade.split_into_chunks",
+                "grillmaster.services.translate.facade.split_into_chunks",
                 return_value=[[blocks[0]], [blocks[1]]],
             ),
             patch(
-                "services.translate.facade.prepare_chunk_media_assets",
+                "grillmaster.services.translate.facade.prepare_chunk_media_assets",
                 return_value=MagicMock(),
             ),
             patch(
-                "services.translate.facade.translate_chunk",
+                "grillmaster.services.translate.facade.translate_chunk",
                 side_effect=fake_translate,
             ),
         ):
@@ -332,15 +332,15 @@ class ChunkProgressTests(unittest.TestCase):
 
         with (
             patch(
-                "services.translate.facade.split_into_chunks",
+                "grillmaster.services.translate.facade.split_into_chunks",
                 return_value=[[blocks[0]], [blocks[1]]],
             ),
             patch(
-                "services.translate.facade.prepare_chunk_media_assets",
+                "grillmaster.services.translate.facade.prepare_chunk_media_assets",
                 return_value=MagicMock(),
             ),
             patch(
-                "services.translate.facade.translate_chunk",
+                "grillmaster.services.translate.facade.translate_chunk",
                 side_effect=fake_translate,
             ),
         ):
@@ -356,11 +356,11 @@ class ChunkProgressTests(unittest.TestCase):
 
         with (
             patch(
-                "services.translate.facade.split_into_chunks",
+                "grillmaster.services.translate.facade.split_into_chunks",
                 return_value=[[blocks[0]], [blocks[1]]],
             ),
             patch(
-                "services.translate.facade.prepare_chunk_media_assets",
+                "grillmaster.services.translate.facade.prepare_chunk_media_assets",
                 side_effect=RuntimeError("ffmpeg failed"),
             ),
         ):
@@ -446,7 +446,7 @@ class MediaProgressTests(unittest.TestCase):
                 side_effect=[source_duration, expected_duration],
             ),
             patch(
-                "services.media.subprocess.Popen", return_value=FakeProcess()
+                "grillmaster.services.media.subprocess.Popen", return_value=FakeProcess()
             ) as popen,
         ):
             MediaProcessor.burn_in_subtitles(
@@ -535,7 +535,7 @@ class MediaProgressTests(unittest.TestCase):
                 side_effect=[source_duration, expected_duration],
             ),
             patch(
-                "services.media.subprocess.Popen",
+                "grillmaster.services.media.subprocess.Popen",
                 side_effect=lambda *a, **k: FakeProcess(),
             ) as popen,
         ):
@@ -584,7 +584,7 @@ class MediaProgressTests(unittest.TestCase):
 
         with (
             patch.object(MediaProcessor, "get_media_duration", return_value=10.0),
-            patch("services.media.subprocess.Popen", return_value=FakeProcess()),
+            patch("grillmaster.services.media.subprocess.Popen", return_value=FakeProcess()),
         ):
             with self.assertRaises(subprocess.CalledProcessError) as raised:
                 MediaProcessor.burn_in_subtitles(
@@ -608,7 +608,7 @@ class MediaProgressTests(unittest.TestCase):
 
         with (
             patch.object(MediaProcessor, "get_media_duration", return_value=2.0),
-            patch("services.media.subprocess.Popen") as popen,
+            patch("grillmaster.services.media.subprocess.Popen") as popen,
         ):
             with self.assertRaisesRegex(ValueError, "lead trim"):
                 MediaProcessor.burn_in_subtitles(
@@ -640,7 +640,7 @@ class MediaProgressTests(unittest.TestCase):
                 "get_media_duration",
                 side_effect=[20.0, 5.0],
             ),
-            patch("services.media.subprocess.Popen", return_value=FakeProcess()),
+            patch("grillmaster.services.media.subprocess.Popen", return_value=FakeProcess()),
         ):
             with self.assertRaisesRegex(ValueError, "differs from expected"):
                 MediaProcessor.burn_in_subtitles(
@@ -674,7 +674,7 @@ class MediaProgressTests(unittest.TestCase):
                 "get_media_duration",
                 side_effect=[400.0, 400.0],
             ),
-            patch("services.media.subprocess.Popen", return_value=FakeProcess()),
+            patch("grillmaster.services.media.subprocess.Popen", return_value=FakeProcess()),
         ):
             with self.assertRaisesRegex(ValueError, "differs from expected"):
                 MediaProcessor.burn_in_subtitles(
@@ -704,7 +704,7 @@ class MediaProgressTests(unittest.TestCase):
             def wait(self):
                 return 0
 
-        with patch("services.media.subprocess.Popen", return_value=FakeProcess()):
+        with patch("grillmaster.services.media.subprocess.Popen", return_value=FakeProcess()):
             MediaProcessor.encode_subtitled_segment(
                 video,
                 BurnPlan.dialogue(subtitle),
@@ -751,7 +751,7 @@ class MediaProgressTests(unittest.TestCase):
                 return 0
 
         with patch(
-            "services.media.subprocess.Popen", return_value=FakeProcess()
+            "grillmaster.services.media.subprocess.Popen", return_value=FakeProcess()
         ) as popen:
             MediaProcessor.encode_subtitled_segment(
                 video,
@@ -800,7 +800,7 @@ class MediaProgressTests(unittest.TestCase):
             start_seconds: float, end_seconds: float
         ) -> tuple[list[str], list[str]]:
             with patch(
-                "services.media.subprocess.Popen",
+                "grillmaster.services.media.subprocess.Popen",
                 side_effect=lambda *a, **k: FakeProcess(),
             ) as popen:
                 MediaProcessor.encode_subtitled_segment(
@@ -866,7 +866,7 @@ class MediaProgressTests(unittest.TestCase):
                 return 0
 
         with patch(
-            "services.media.subprocess.Popen", return_value=FakeProcess()
+            "grillmaster.services.media.subprocess.Popen", return_value=FakeProcess()
         ) as popen:
             MediaProcessor.encode_noise_segment(
                 cut=NoiseCut(
@@ -915,7 +915,7 @@ class MediaProgressTests(unittest.TestCase):
             def wait(self):
                 return 1
 
-        with patch("services.media.subprocess.Popen", return_value=FakeProcess()):
+        with patch("grillmaster.services.media.subprocess.Popen", return_value=FakeProcess()):
             with self.assertRaises(subprocess.CalledProcessError):
                 MediaProcessor.encode_noise_segment(
                     cut=NoiseCut(
@@ -937,7 +937,7 @@ class MediaProgressTests(unittest.TestCase):
         output = root / "out.mp4"
         progress = FakeProgressReporter()
 
-        with patch("services.media.subprocess.run") as run:
+        with patch("grillmaster.services.media.subprocess.run") as run:
             run.return_value = subprocess.CompletedProcess(
                 args=["ffmpeg"],
                 returncode=0,

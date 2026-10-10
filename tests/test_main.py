@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import main as main_module
-from services.live_chat import ChatLayout
+import grillmaster.main as main_module
+from grillmaster.services.live_chat import ChatLayout
 
 
 class MainCliTests(unittest.TestCase):
@@ -17,7 +17,7 @@ class MainCliTests(unittest.TestCase):
     def test_process_uses_dashboard_on_interactive_terminal(self):
         with (
             patch.object(main_module, "_is_interactive_terminal", return_value=True),
-            patch("services.tui.run_process_ui", return_value=0) as run_ui,
+            patch("grillmaster.services.tui.run_process_ui", return_value=0) as run_ui,
             patch.object(main_module, "submit_project") as submit_project,
         ):
             main_module.main(["process", "demo"])
@@ -35,7 +35,7 @@ class MainCliTests(unittest.TestCase):
     def test_process_falls_back_to_plain_logs_without_terminal(self):
         with (
             patch.object(main_module, "_is_interactive_terminal", return_value=False),
-            patch("services.tui.run_process_ui") as run_ui,
+            patch("grillmaster.services.tui.run_process_ui") as run_ui,
             patch.object(main_module, "submit_project") as submit_project,
         ):
             main_module.main(["process", "demo"])
@@ -48,7 +48,7 @@ class MainCliTests(unittest.TestCase):
     def test_serial_drives_serial_run_under_dashboard(self):
         with (
             patch.object(main_module, "_is_interactive_terminal", return_value=True),
-            patch("services.tui.run_process_ui", return_value=0) as run_ui,
+            patch("grillmaster.services.tui.run_process_ui", return_value=0) as run_ui,
             patch.object(main_module, "SerialRun") as serial_run_cls,
         ):
             main_module.main(
@@ -79,7 +79,7 @@ class MainCliTests(unittest.TestCase):
     def test_serial_runs_plainly_without_terminal(self):
         with (
             patch.object(main_module, "_is_interactive_terminal", return_value=False),
-            patch("services.tui.run_process_ui") as run_ui,
+            patch("grillmaster.services.tui.run_process_ui") as run_ui,
             patch.object(main_module, "SerialRun") as serial_run_cls,
         ):
             main_module.main(["serial", "BV1", "BV2"])

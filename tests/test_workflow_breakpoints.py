@@ -3,20 +3,20 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import workflow as workflow_module
-import workflow.api as workflow_api
-import workflow.stages.media as media_stage
-import workflow.stages.metadata as metadata_stage
-import workflow.stages.postprocess as postprocess_stage
-import workflow.stages.transcription as transcription_stage
-import workflow.stages.translation as translation_stage
-import project as project_module
-from project import Project, SourceMetadata
-from services.program_config import ProgramRules
-from services.elevenlabs.asr import ElevenLabsTranscriptionResult
-from services.progress import NoopProgressReporter
-from services.ytdlp.info import AbemaTalent, TVerTalent, YtDlpVideoInfo
-from services.live_chat import ChatLayout
+import grillmaster.workflow as workflow_module
+import grillmaster.workflow.api as workflow_api
+import grillmaster.workflow.stages.media as media_stage
+import grillmaster.workflow.stages.metadata as metadata_stage
+import grillmaster.workflow.stages.postprocess as postprocess_stage
+import grillmaster.workflow.stages.transcription as transcription_stage
+import grillmaster.workflow.stages.translation as translation_stage
+import grillmaster.project as project_module
+from grillmaster.project import Project, SourceMetadata
+from grillmaster.services.program_config import ProgramRules
+from grillmaster.services.elevenlabs.asr import ElevenLabsTranscriptionResult
+from grillmaster.services.progress import NoopProgressReporter
+from grillmaster.services.ytdlp.info import AbemaTalent, TVerTalent, YtDlpVideoInfo
+from grillmaster.services.live_chat import ChatLayout
 
 
 class WorkflowBreakpointTests(unittest.TestCase):

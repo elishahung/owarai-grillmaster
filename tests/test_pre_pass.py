@@ -6,12 +6,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-from settings import ModelSpec
-from services.translate.pre_pass import pre_pass as pp
-from services.translate.assets import PrePassMediaAssets
-from services.inference.agy import AgyQuotaError
-from services.fixed_glossary import FixedGlossary
-from services.srt import SrtBlock
+from grillmaster.settings import ModelSpec
+from grillmaster.services.translate.pre_pass import pre_pass as pp
+from grillmaster.services.translate.assets import PrePassMediaAssets
+from grillmaster.services.inference.agy import AgyQuotaError
+from grillmaster.services.fixed_glossary import FixedGlossary
+from grillmaster.services.srt import SrtBlock
 
 _VALID_PREPASS_JSON = json.dumps(
     {

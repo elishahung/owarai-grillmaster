@@ -2,9 +2,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
-import workflow.serial as serial
-from services.progress import NoopProgressReporter
-from workflow import SerialRun
+import grillmaster.workflow.serial as serial
+from grillmaster.services.progress import NoopProgressReporter
+from grillmaster.workflow import SerialRun
 
 
 class _Reporter(NoopProgressReporter):

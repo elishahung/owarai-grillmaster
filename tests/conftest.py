@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from services.program_config import config as program_config
+from grillmaster.services.program_config import config as program_config
 
 
 @pytest.fixture(autouse=True)

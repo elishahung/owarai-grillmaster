@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from services.fixed_glossary import (
+from grillmaster.services.fixed_glossary import (
     FixedGlossary,
     TalentUnit,
     format_fixed_glossary_block,

@@ -3,7 +3,7 @@ import shutil
 import unittest
 from pathlib import Path
 
-from services.elevenlabs.srt_builder import (
+from grillmaster.services.elevenlabs.srt_builder import (
     SrtFormatOptions,
     _convert_payload_with_options,
     convert_file,

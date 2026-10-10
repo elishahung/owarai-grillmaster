@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from services.media import MediaProcessor
-from services.inference.tools import (
+from grillmaster.services.media import MediaProcessor
+from grillmaster.services.inference.tools import (
     FRAME_TOOL_SCRIPTS,
     FrameToolStage,
     build_chunk_frame_tool_instruction,
@@ -17,7 +17,7 @@ from services.inference.tools import (
     build_pre_pass_web_search_instruction,
     build_refine_frame_tool_instruction,
 )
-from services.inference.tools import get_frames
+from grillmaster.services.inference.tools import get_frames
 
 
 class ExtractFramesTests(unittest.TestCase):

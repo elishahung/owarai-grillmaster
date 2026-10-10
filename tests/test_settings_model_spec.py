@@ -1,6 +1,6 @@
 import unittest
 
-from settings import ModelSpec, Settings
+from grillmaster.settings import ModelSpec, Settings
 
 
 class ModelSpecParseTests(unittest.TestCase):

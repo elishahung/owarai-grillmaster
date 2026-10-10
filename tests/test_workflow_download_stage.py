@@ -5,11 +5,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import project as project_module
-import workflow.stages.media as media_stage
-from project import Project
-from services.media import TimeRange
-from services.program_config import config as program_config
+import grillmaster.project as project_module
+import grillmaster.workflow.stages.media as media_stage
+from grillmaster.project import Project
+from grillmaster.services.media import TimeRange
+from grillmaster.services.program_config import config as program_config
 
 
 class RecordSourceProgramTests(unittest.TestCase):

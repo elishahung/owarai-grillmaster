@@ -4,14 +4,14 @@ import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from settings import ModelSpec
-from services.inference.agy import AgyQuotaError
-import services.translate.chunk.chunk_worker as cw
-from services.translate.assets import ChunkMediaAssets, FrameSpec
-from services.translate.chunk.chunk_worker import translate_chunk
-from services.translate.pre_pass.schema import PrePassResult, SegmentSummary
-from services.media import TimeRange
-from services.srt import SrtBlock
+from grillmaster.settings import ModelSpec
+from grillmaster.services.inference.agy import AgyQuotaError
+import grillmaster.services.translate.chunk.chunk_worker as cw
+from grillmaster.services.translate.assets import ChunkMediaAssets, FrameSpec
+from grillmaster.services.translate.chunk.chunk_worker import translate_chunk
+from grillmaster.services.translate.pre_pass.schema import PrePassResult, SegmentSummary
+from grillmaster.services.media import TimeRange
+from grillmaster.services.srt import SrtBlock
 
 _CHUNK = [
     SrtBlock(

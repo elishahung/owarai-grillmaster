@@ -2,10 +2,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from services.progress import PlannedStage
-from services.tui.app import GrillMasterApp
-from services.tui.reporter import TuiProgressReporter
-from services.tui.state import PipelineState
+from grillmaster.services.progress import PlannedStage
+from grillmaster.services.tui.app import GrillMasterApp
+from grillmaster.services.tui.reporter import TuiProgressReporter
+from grillmaster.services.tui.state import PipelineState
 
 
 def _stub_project(tmp: Path) -> MagicMock:
@@ -83,7 +83,7 @@ class GrillMasterAppTests(unittest.IsolatedAsyncioTestCase):
             for i in range(30):
                 state.append_log(None, "INFO", f"chunk line {i}")
             app = GrillMasterApp(state)
-            with patch("services.tui.app.put_on_clipboard") as copy:
+            with patch("grillmaster.services.tui.app.put_on_clipboard") as copy:
                 async with app.run_test(size=(120, 40)) as pilot:
                     await pilot.pause()
                     await pilot.press("c")
@@ -100,7 +100,7 @@ class GrillMasterAppTests(unittest.IsolatedAsyncioTestCase):
             app = GrillMasterApp(state)
             with (
                 patch(
-                    "services.tui.app.put_on_clipboard",
+                    "grillmaster.services.tui.app.put_on_clipboard",
                     side_effect=FileNotFoundError("no clip.exe"),
                 ),
                 patch.object(GrillMasterApp, "notify") as notify,

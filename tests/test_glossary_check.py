@@ -4,11 +4,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-import project as project_module
-import services.postprocess.glossary_check as gc
-from project import Project
-from services.fixed_glossary.fixed_glossary import FixedGlossary
-from services.program_config import config as program_config
+import grillmaster.project as project_module
+import grillmaster.services.postprocess.glossary_check as gc
+from grillmaster.project import Project
+from grillmaster.services.fixed_glossary.fixed_glossary import FixedGlossary
+from grillmaster.services.program_config import config as program_config
 
 _FAKE_GLOSSARY = FixedGlossary(
     talents=(),

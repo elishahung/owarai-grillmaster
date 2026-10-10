@@ -7,13 +7,13 @@ from unittest.mock import MagicMock, patch
 
 from pydantic import ValidationError
 
-import project as project_module
-import workflow as workflow_module
-import workflow.api as workflow_api
-import workflow.side_tasks as side_tasks
-import workflow.stages.media as media_stage
-from project import Project
-from services.postprocess.date_research import (
+import grillmaster.project as project_module
+import grillmaster.workflow as workflow_module
+import grillmaster.workflow.api as workflow_api
+import grillmaster.workflow.side_tasks as side_tasks
+import grillmaster.workflow.stages.media as media_stage
+from grillmaster.project import Project
+from grillmaster.services.postprocess.date_research import (
     DateResearchResult,
     apply_date_research_result,
     load_cached_date_research,
@@ -64,7 +64,7 @@ class DateResearchTests(unittest.TestCase):
             project = Project(id="ep123", name="demo")
             project.save()
             with patch(
-                "services.postprocess.date_research.run_inference",
+                "grillmaster.services.postprocess.date_research.run_inference",
                 return_value=DateResearchResult.model_validate_json(
                     _found_result_json()
                 ),
@@ -87,7 +87,7 @@ class DateResearchTests(unittest.TestCase):
             project = Project(id="ep123", name="demo")
             project.save()
             with patch(
-                "services.postprocess.date_research.run_inference",
+                "grillmaster.services.postprocess.date_research.run_inference",
                 return_value=DateResearchResult.model_validate_json(
                     _unknown_result_json()
                 ),
@@ -107,7 +107,7 @@ class DateResearchTests(unittest.TestCase):
                 _found_result_json(), encoding="utf-8"
             )
             with patch(
-                "services.postprocess.date_research.run_inference"
+                "grillmaster.services.postprocess.date_research.run_inference"
             ) as mock_inference:
                 result = research_broadcast_date(project)
 
@@ -121,7 +121,7 @@ class DateResearchTests(unittest.TestCase):
             project.artifacts_dir.mkdir(parents=True, exist_ok=True)
             project.date_research_path.write_text("{ truncated", encoding="utf-8")
             with patch(
-                "services.postprocess.date_research.run_inference",
+                "grillmaster.services.postprocess.date_research.run_inference",
                 return_value=DateResearchResult.model_validate_json(
                     _found_result_json()
                 ),
@@ -157,7 +157,7 @@ class DateResearchTests(unittest.TestCase):
             project.source_metadata.description = "企画の説明"
             project.save()
             with patch(
-                "services.postprocess.date_research.run_inference",
+                "grillmaster.services.postprocess.date_research.run_inference",
                 return_value=DateResearchResult.model_validate_json(
                     _unknown_result_json()
                 ),
@@ -178,7 +178,7 @@ class DateResearchTests(unittest.TestCase):
             project = Project(id="ep123", name="archive_rerun")
             project.update_from_source_broadcast_date_label("2018年放送")
             with patch(
-                "services.postprocess.date_research.run_inference",
+                "grillmaster.services.postprocess.date_research.run_inference",
                 return_value=DateResearchResult.model_validate_json(
                     _unknown_result_json()
                 ),

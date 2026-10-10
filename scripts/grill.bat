@@ -1,9 +1,5 @@
 @echo off
-REM Owarai Grillmaster launcher script
-REM Activates the virtual environment and runs main.py with all arguments
-
-REM Change to project root directory (one level up from scripts/)
+REM Owarai GrillMaster launcher: runs the installed `grill` entry point from the repo root
+REM (projects/, .env and config files resolve relative to it).
 cd /d "%~dp0.."
-
-REM Run main.py with the virtual environment Python
-".venv\Scripts\python.exe" "main.py" %*
+".venv\Scripts\grill.exe" %*

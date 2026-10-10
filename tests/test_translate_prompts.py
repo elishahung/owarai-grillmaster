@@ -1,7 +1,7 @@
 import unittest
 
-from services.translate.chunk import prompts as C
-from services.translate.pre_pass import prompts as P
+from grillmaster.services.translate.chunk import prompts as C
+from grillmaster.services.translate.pre_pass import prompts as P
 
 
 class NoAudioSubstitutionTests(unittest.TestCase):

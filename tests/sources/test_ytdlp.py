@@ -182,7 +182,7 @@ def test_download_failure_propagates_after_one_attempt(tmp_path: Path):
         run_download(tmp_path, ytdlp=ytdlp)
 
 
-def test_a_failed_download_finishes_its_progress_bar(tmp_path: Path):
+def test_a_failed_download_leaves_its_progress_bar_open(tmp_path: Path):
     def fail_midway(options: Mapping[str, Any]) -> None:
         options["progress_hooks"][0](progress_update("0.mp4", 40))
         raise DownloadError("connection reset")
@@ -203,6 +203,27 @@ def test_a_failed_download_finishes_its_progress_bar(tmp_path: Path):
     assert sink.events == [
         ProgressStarted("download:0.mp4", "Downloading 0.mp4", 1.0),
         ProgressAdvanced("download:0.mp4", 0.4),
+    ]
+
+
+def test_a_successful_download_finishes_a_bar_left_open(tmp_path: Path):
+    def no_final_update(options: Mapping[str, Any]) -> None:
+        options["progress_hooks"][0](progress_update("0.mp4", 40))
+
+    sink = RecordingSink()
+    download_video(
+        FakeYtDlp(on_download=no_final_update),
+        "u",
+        parts_dir=tmp_path / "parts",
+        poster=tmp_path / "poster.jpg",
+        options={},
+        captions=False,
+        events=sink,
+        clock=clock(1.0),
+    )
+
+    assert sink.events[-2:] == [
+        ProgressAdvanced("download:0.mp4", 0.6),
         ProgressFinished("download:0.mp4"),
     ]
 

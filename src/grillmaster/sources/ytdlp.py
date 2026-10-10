@@ -256,8 +256,10 @@ def download_video(
                 FFmpegThumbnailsConvertorPP(format="jpg"),  # pyright: ignore[reportArgumentType]
             ),
         )
-    finally:
-        progress.close()
+    except BaseException:
+        progress.abandon()
+        raise
+    progress.close()
     logger.success(f"Downloaded: {info.get('title', url)}")
 
 
@@ -374,10 +376,14 @@ class DownloadProgress:
         self._events.emit(ProgressStarted(self._scope, f"Downloading {filename}", 1.0))
 
     def close(self) -> None:
-        """End an open bar where it stands: a failed download never reports
-        its file finished."""
-        if self._scope is not None:
-            self._events.emit(ProgressFinished(self._scope))
+        """After a successful download: finish a bar yt-dlp left open (no
+        final `finished` update), topped up like any finished file."""
+        self._finish_current()
+
+    def abandon(self) -> None:
+        """After a failed download: leave an open bar where it stopped (no
+        `ProgressFinished`, which would show it complete); the failed step
+        ends it, as with `events.progress.track`."""
         self._reset()
 
     def _finish_current(self) -> None:

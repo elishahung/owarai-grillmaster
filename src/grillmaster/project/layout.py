@@ -29,7 +29,8 @@ _SESSION_DIR_NAME = "session"
 def session_dir(parent: Path, *, label: str = "") -> Path:
     """Session record directory under `parent` for one agent task's first
     attempt; the agent runner puts retries beside it
-    (`core.paths.attempt_path`: `session.2/`, `session.3/`).
+    (`core.paths.attempt_path`: `session.2/`, `session.3/`) and a handoff's
+    sessions next to that (`core.paths.handoff_path`: `session_fix/`).
 
     `label` tells apart several tasks sharing one parent (chat translation
     labels batches by their file stem, `ProjectLayout.chat_batch(i).stem`,

@@ -154,7 +154,8 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   `video.mp4` + `video.cht.{srt,ass}`, `poster.jpg`, `cover.png`, `subs/`
   (`ja.srt`, `ja.official.srt`, `chat.cht.json`), `logs/{run,events}-<ts>`.
   Work: `work/NN_<key>/`, unnumbered `work/side/<task>/` and `work/package/`.
-  Agent sessions: `session/`, `session_<label>/`, retries `session.2/`.
+  Agent sessions: `session/`, `session_<label>/`, retries `session.2/`,
+  handoff `session_fix/` (`core.paths.handoff_path`).
   `effective_briefing()` = glossary's briefing if present, else pre-pass's.
   Add a path here, never inline.
 - `state.py` `ProjectState`: identity (`id`, persisted `platform`), `source`,

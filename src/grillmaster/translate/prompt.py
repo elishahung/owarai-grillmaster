@@ -106,13 +106,13 @@ def render_audio_template(stem: str, *, has_audio: bool) -> str:
 # --- pre-pass ---------------------------------------------------------------
 
 
-def prepass_instruction(inputs: PrepassInputs) -> str:
-    """Base analysis rules (audio variant per `inputs.assets.audio`), the
-    conditional blocks for the inputs present, program rules, then the
-    frame-tool and web-search guidance."""
+def prepass_instruction(inputs: PrepassInputs, *, has_audio: bool) -> str:
+    """Base analysis rules (audio variant), the conditional blocks for the
+    inputs present, program rules, then the frame-tool and web-search
+    guidance."""
     source = inputs.source
     return join_sections(
-        render_audio_template("pre_pass", has_audio=inputs.assets.audio is not None),
+        render_audio_template("pre_pass", has_audio=has_audio),
         load_prompt(__package__, "official_source_metadata.md")
         if source.talents
         else None,

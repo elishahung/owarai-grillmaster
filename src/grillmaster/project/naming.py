@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from grillmaster.core.fs import BACKUP_SUFFIX, STAGING_SUFFIX
-from grillmaster.core.paths import attempt_path, fit_dir_name, measure
+from grillmaster.core.paths import attempt_path, fit_dir_name, handoff_path, measure
 from grillmaster.project.layout import ProjectLayout, session_dir
 
 if TYPE_CHECKING:
@@ -60,15 +60,19 @@ AGENT_FILE_ALLOWANCE = 48
 
 def deepest_project_paths(layout: ProjectLayout) -> tuple[Path, ...]:
     """The longest paths a project directory can contain, per subtree."""
-    # Only chat translation labels its sessions, but applying its longest
-    # label to every parent is a safe upper bound.
+    # Only chat translation labels its sessions and only unlabelled pre-pass
+    # and chunk sessions hand off, but applying either shape to every parent
+    # is a safe upper bound.
     label = layout.chat_batch(SAMPLE_CHAT_BATCH).stem
     return (
         *(frames / SAMPLE_FRAME for frames in layout.frames_dirs(SAMPLE_CHUNK)),
         *(
-            attempt_path(session_dir(parent, label=label), SAMPLE_ATTEMPT)
-            / _LONGEST_SESSION_FILE
+            attempt_path(first, SAMPLE_ATTEMPT) / _LONGEST_SESSION_FILE
             for parent in layout.session_parents(SAMPLE_CHUNK)
+            for first in (
+                session_dir(parent, label=label),
+                handoff_path(session_dir(parent)),
+            )
         ),
         *(
             workspace / ("x" * (AGENT_FILE_ALLOWANCE - 1))

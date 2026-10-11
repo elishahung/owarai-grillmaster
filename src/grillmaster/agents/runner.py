@@ -9,6 +9,11 @@ rounds resume that session with only the repair message. Only
 slot. Every session leaves `prompt.md`, `tools.json`, `schema.json`,
 `raw.jsonl` and `result.json` in its session directory.
 
+A task with a `Handoff` does not repair a validation failure in its own
+session: that session ends (`handed_off`) and the handoff model gets the
+task's no-audio rendition plus the failed output, in `<session_dir>_fix`
+with its own attempts and repair rounds. Both models are checked up front.
+
 Once the process-wide `core.process.ABORT` latch is set (an abort's
 `kill_all`, an interrupt in `run_jobs`) no session or repair turn starts:
 the retry delay wakes up and the next step raises `AgentCancelledError`.
@@ -75,8 +80,9 @@ from grillmaster.agents.task import (
 )
 from grillmaster.core.fs import atomic_write_text
 from grillmaster.core.json_artifact import write_model
-from grillmaster.core.paths import attempt_path
+from grillmaster.core.paths import attempt_path, handoff_path
 from grillmaster.core.process import ABORT, ProcessAbortedError
+from grillmaster.core.prompts import join_sections
 from grillmaster.core.tool_session import take_pending_frames
 from grillmaster.events.context import current_stage, task_scope
 from grillmaster.events.types import (
@@ -98,7 +104,7 @@ if TYPE_CHECKING:
     )
     from grillmaster.agents.events import AgentEvent
     from grillmaster.agents.schema import JsonSchema
-    from grillmaster.agents.task import AgentJob, AgentTask
+    from grillmaster.agents.task import AgentJob, AgentTask, Handoff
     from grillmaster.core.model_spec import Backend, ModelSpec, Role
     from grillmaster.events.bus import EventSink
 
@@ -181,6 +187,17 @@ class _SessionState:
     usage: Counter[str] = field(default_factory=Counter)
 
 
+class _HandedOff(AgentError):  # noqa: N818 - a session ending, not a failure
+    """Ends a session whose output goes to the task's handoff model; caught
+    in `run`, never seen by a caller."""
+
+    outcome = SessionOutcome.HANDED_OFF
+
+    def __init__(self, failed_output: str, failure: str) -> None:
+        super().__init__(failure)
+        self.failed_output = failed_output
+
+
 class AgentRunner:
     def __init__(
         self,
@@ -230,13 +247,12 @@ class AgentRunner:
                 f"{task.name}: nested agent run while holding a slot would deadlock"
             )
         prepared = self._prepare(task)
-        backend = prepared.spec.backend
-        exhausted = self._exhausted.get(backend)
-        if exhausted is not None:
-            raise AgentQuotaError(
-                f"{task.name}: not started: {backend} hit its quota earlier: "
-                f"{exhausted}"
-            )
+        handoff = (
+            None
+            if task.handoff is None
+            else self._prepare(_handoff_task(task, task.handoff))
+        )
+        self._check_quota(prepared)
         with ExitStack() as stack:
             if task.workdir is None:
                 # A CLI descendant may still hold a file open on Windows;
@@ -252,20 +268,46 @@ class AgentRunner:
                 task.workdir.mkdir(parents=True, exist_ok=True)
                 workdir = task.workdir.resolve()
                 stack.enter_context(self._claim_workdir(task.name, workdir))
-            attempt = 1
-            while True:
-                try:
-                    return self._attempt(prepared, workdir, attempt)
-                except AgentQuotaError as error:
-                    self._exhausted.setdefault(backend, error)
+            try:
+                return self._attempts(prepared, workdir)
+            except _HandedOff as handed:
+                if handoff is None:  # raised only for a task with a handoff
                     raise
-                except AgentTransientError:
-                    if attempt >= task.attempts:
-                        raise
-                    # The slot is already released; waiting must not hold one.
-                    # An abort wakes it; the next attempt then refuses to start.
-                    self._abort.wait(self._retry_delay_s)
-                attempt += 1
+                self._check_quota(handoff)
+                section = prompt.handoff_section(handed.failed_output, str(handed))
+                fix = replace(
+                    handoff.task,
+                    prompt=join_sections(handoff.task.prompt, section),
+                )
+                return self._attempts(replace(handoff, task=fix), workdir)
+
+    def _check_quota(self, prepared: _Prepared[Any]) -> None:
+        """Raise the quota error an earlier task of this backend hit."""
+        backend = prepared.spec.backend
+        exhausted = self._exhausted.get(backend)
+        if exhausted is not None:
+            raise AgentQuotaError(
+                f"{prepared.task.name}: not started: {backend} hit its quota "
+                f"earlier: {exhausted}"
+            )
+
+    def _attempts[T](self, prepared: _Prepared[T], workdir: Path) -> AgentResult[T]:
+        """Sessions until one is accepted; only a transient error starts
+        another (`AgentTask.attempts`), after the retry delay."""
+        attempt = 1
+        while True:
+            try:
+                return self._attempt(prepared, workdir, attempt)
+            except AgentQuotaError as error:
+                self._exhausted.setdefault(prepared.spec.backend, error)
+                raise
+            except AgentTransientError:
+                if attempt >= prepared.task.attempts:
+                    raise
+                # The slot is already released; waiting must not hold one.
+                # An abort wakes it; the next attempt then refuses to start.
+                self._abort.wait(self._retry_delay_s)
+            attempt += 1
 
     def run_jobs[T](self, jobs: Sequence[AgentJob[T]]) -> list[JobFailure]:
         """Run `jobs` concurrently (bounded by the global slots) and return
@@ -479,7 +521,8 @@ class AgentRunner:
         it was told to end with a note while waiting (which a `TextOutput`
         would accept), and its output was written before the model saw them.
         Otherwise a defect or a failed validation is answered with a repair
-        round.
+        round; for a task with a `Handoff`, a failed validation ends the
+        session instead (`_HandedOff`).
 
         Audio the backend attached itself (`MediaDelivery.ATTACHED`) did reach
         the model, so its first claim not to hear it is answered by attaching
@@ -527,9 +570,12 @@ class AgentRunner:
             # that skipped its inputs is not worth judging.
             defect = _merge_defects(final.defects) if final.defects else None
             if defect is None:
+                final = self._answer(prepared, final)
                 try:
                     return self._accept(prepared, final, workdir)
                 except ValidationFailure as failure:
+                    if task.handoff is not None:
+                        raise _HandedOff(_output_text(final), str(failure)) from None
                     defect = TurnDefect(str(failure))
             if state.repairs >= task.max_repairs:
                 raise AgentOutputError(
@@ -558,10 +604,8 @@ class AgentRunner:
         if self._abort.is_set():
             raise self._cancelled(task_name, step)
 
-    def _accept[T](
-        self, prepared: _Prepared[T], final: FinalOutput, workdir: Path
-    ) -> T:
-        task = prepared.task
+    def _answer(self, prepared: _Prepared[Any], final: FinalOutput) -> FinalOutput:
+        """`final` with the schema answer a `PROMPT` backend wrote as text."""
         if (
             prepared.schema is not None
             and prepared.adapter.schema_delivery is SchemaDelivery.PROMPT
@@ -570,7 +614,13 @@ class AgentRunner:
             # write prose or leaked reasoning before the closing json block;
             # a repair round for that would resend the whole session.
             answer = json_object_answer(final.text, lead_in=True)
-            final = replace(final, structured=answer)
+            return replace(final, structured=answer)
+        return final
+
+    def _accept[T](
+        self, prepared: _Prepared[T], final: FinalOutput, workdir: Path
+    ) -> T:
+        task = prepared.task
         output = task.output.parse(final, workdir)
         if task.validate is not None:
             task.validate(output)
@@ -748,6 +798,29 @@ def _required_capabilities(
         ):
             required |= {Capability.RESUME, Capability.IMAGE_INPUT}
     return frozenset(required)
+
+
+def _handoff_task[T](task: AgentTask[T], handoff: Handoff) -> AgentTask[T]:
+    """`task` as its handoff role runs it: the handoff's instructions and
+    extra roots, no audio, its session records beside the task's
+    (`core.paths.handoff_path`). `run` appends the failed output to the
+    prompt."""
+    return replace(
+        task,
+        role=handoff.role,
+        instructions=handoff.instructions,
+        session_dir=handoff_path(task.session_dir),
+        audio=(),
+        add_dirs=handoff.add_dirs,
+        handoff=None,
+    )
+
+
+def _output_text(final: FinalOutput) -> str:
+    """The failed output as handed on: the schema answer as JSON, else the text."""
+    if final.structured is not None:
+        return json.dumps(final.structured, ensure_ascii=False)
+    return final.text
 
 
 def _merge_defects(defects: Sequence[TurnDefect]) -> TurnDefect:

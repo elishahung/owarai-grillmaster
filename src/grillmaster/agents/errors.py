@@ -4,7 +4,8 @@ Only `AgentTransientError` is retried, and only by the runner (in a fresh
 session, `AgentTask.attempts` times) unless the run was aborted.
 Everything else fails the task at once.
 `ValidationFailure` is not an `AgentError`: a task's validator raises it, and
-the runner turns it into a repair round in the same session.
+the runner turns it into a repair round in the same session, or hands the
+output to the task's `Handoff` role.
 """
 
 from __future__ import annotations

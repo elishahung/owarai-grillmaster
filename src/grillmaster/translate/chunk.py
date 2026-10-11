@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from grillmaster.agents.errors import ValidationFailure
-from grillmaster.agents.task import AgentJob, AgentTask, SchemaOutput
+from grillmaster.agents.task import AgentJob, AgentTask, Handoff, SchemaOutput
 from grillmaster.core.id_coverage import id_coverage
 from grillmaster.core.json_artifact import load_model, write_model
 from grillmaster.core.model_spec import Role
@@ -211,13 +211,16 @@ def build_chunk_task(
     attempts: int,
 ) -> AgentTask[ChunkTranslation]:
     """The agent call for one chunk: frames, optional audio slice, the
-    `get_frames` tool scoped by the caller, and the coverage validator."""
+    `get_frames` tool scoped by the caller, and the coverage validator. A
+    translation that fails it goes to the `utility` model with the same inputs
+    but no audio."""
     assets = inputs.assets
+    program = inputs.source.program_instruction
     return AgentTask(
         name=task_name(inputs.chunk),
         role=Role.CHUNK,
         instructions=prompt.chunk_instruction(
-            inputs.source.program_instruction, has_audio=assets.audio is not None
+            program, has_audio=assets.audio is not None
         ),
         prompt=prompt.chunk_message(inputs),
         session_dir=session_dir,
@@ -228,6 +231,9 @@ def build_chunk_task(
         tools=tools,
         validate=chunk_validator(inputs.chunk),
         attempts=attempts,
+        handoff=Handoff(
+            Role.UTILITY, prompt.chunk_instruction(program, has_audio=False)
+        ),
     )
 
 

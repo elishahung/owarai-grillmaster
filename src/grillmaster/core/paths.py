@@ -42,6 +42,12 @@ def measure(text: str) -> int:
     return len(text.encode("utf-8"))
 
 
+def handoff_path(first: Path) -> Path:
+    """Where the handoff of something first written at `first` goes: the
+    sibling `<name>_fix` (agent session records of a task's handoff model)."""
+    return first.with_name(f"{first.name}_fix")
+
+
 def attempt_path(first: Path, attempt: int) -> Path:
     """Where attempt `attempt` (1-based) of something first written at
     `first` goes: `first` itself, then siblings `<name>.2`, `<name>.3`, ...

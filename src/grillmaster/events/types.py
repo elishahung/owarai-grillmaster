@@ -54,6 +54,9 @@ class SessionOutcome(StrEnum):
     OUTPUT_ERROR = "output_error"
     INPUT_ERROR = "input_error"
     CANCELLED = "cancelled"
+    # Its output failed validation and went to the task's handoff model,
+    # whose session follows under the same task name.
+    HANDED_OFF = "handed_off"
 
 
 @dataclass(frozen=True, slots=True)

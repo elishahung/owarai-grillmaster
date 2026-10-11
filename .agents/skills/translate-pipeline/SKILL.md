@@ -77,11 +77,14 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
   `render_for_prompt()`: term lists folded to `{source: target}`; with
   `chunk=` the list becomes that range's single `segment_summary`.
 - Pre-pass: `Role.PREPASS`, `SchemaOutput(Briefing)`, requires `WEB_SEARCH`;
-  `segment_coverage_validator` demands one summary per chunk range (repair
-  names the missing ranges); the boundary block stays last in the message.
+  `segment_coverage_validator` demands one summary per chunk range (the
+  failure names the missing ranges); the boundary block stays last in the message.
 - Chunk: `Role.CHUNK`, `SchemaOutput(ChunkTranslation)`, `attempts =
   chunk_attempts`; `chunk_validator` reports missing/duplicate/unknown/empty
   indexes via `id_coverage`.
+- Both tasks carry `Handoff(Role.UTILITY, <has_audio=False instruction>)`:
+  every validation failure is fixed by the utility model (same message,
+  frames, `get_frames`, no audio), never by the audio model resuming.
 - Media: pre-pass gets one still per `prepass_frame_interval_s` of SRT
   (clamped to 20-40 and the block count) at block starts (+0.2 s), a chunk one
   per `chunk_frame_interval_s` of its span; audio (full track / chunk slice)

@@ -192,6 +192,22 @@ def frames_message() -> str:
     return "【畫面】你用 get_frames 要求的畫面已附在這則訊息，請據此繼續完成任務。"
 
 
+def handoff_section(failed_output: str, failure: str) -> str:
+    """What a handoff model is told after the task itself: another model
+    did the task with inputs it lacks, and only the problems are to be fixed.
+    The output's fence outruns any backtick run inside it."""
+    longest = max((len(run) for run in re.findall(r"`+", failed_output)), default=0)
+    fence = "`" * max(3, longest + 1)
+    return (
+        "【交接修正】\n"
+        "另一個模型已依上述要求完成這個任務，它可能看過或聽過你沒有的輸入"
+        "（例如音訊），但它的輸出未通過驗證。請以它的內容為基礎：只修正下列問題，"
+        "其餘內容原樣保留，再以原本要求的方式與格式輸出完整結果。\n\n"
+        f"驗證問題：\n{failure}\n\n"
+        f"上一個模型的輸出：\n{fence}\n{failed_output}\n{fence}"
+    )
+
+
 def repair_message(failure: str) -> str:
     """The whole user message of a repair round: only what was wrong."""
     return (

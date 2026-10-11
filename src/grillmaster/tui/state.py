@@ -169,6 +169,7 @@ class SessionState(StrEnum):
     OK = "ok"
     FAILED = "failed"
     CANCELLED = "cancelled"  # stopped by the run's abort, not by its own failure
+    HANDED_OFF = "handed_off"  # waiting for its handoff session
 
 
 @dataclass(slots=True)
@@ -524,8 +525,10 @@ class PipelineState:
                 span=chunk_range(event.task),
             )
             return
-        # The next attempt of a task whose session failed.
-        session.attempts += 1
+        # The handoff session of the task, or the next attempt of a task
+        # whose session failed.
+        if session.state is not SessionState.HANDED_OFF:
+            session.attempts += 1
         session.state = SessionState.RUNNING
         session.outcome = None
         session.started_at = at
@@ -570,6 +573,7 @@ class PipelineState:
 _SESSION_STATE = {
     SessionOutcome.OK: SessionState.OK,
     SessionOutcome.CANCELLED: SessionState.CANCELLED,
+    SessionOutcome.HANDED_OFF: SessionState.HANDED_OFF,
 }
 
 _SKIP_STATE = {

@@ -131,6 +131,9 @@ def test_build_chunk_task(
     assert task.validate is not None
     with pytest.raises(ValidationFailure):
         task.validate(_translation((1, "一")))
+    assert task.handoff is not None
+    assert task.handoff.role is Role.UTILITY
+    assert "no audio is available for this run" in task.handoff.instructions
 
 
 def test_build_chunk_task_without_audio(

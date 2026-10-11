@@ -300,6 +300,19 @@ def test_session_attempts_accumulate_on_retry(run_state: PipelineState):
     assert session.outcome is SessionOutcome.OK
 
 
+def test_a_handoff_session_is_not_a_retry(run_state: PipelineState):
+    task = "chunks/0001-0040"
+    run_state.apply(_session_started(task))
+    run_state.apply(AgentSessionFinished(task, SessionOutcome.HANDED_OFF, 5.0, 0))
+
+    session = run_state.sessions[task]
+    assert session.state is SessionState.HANDED_OFF
+
+    run_state.apply(_session_started(task), at=200.0)
+    assert session.state is SessionState.RUNNING
+    assert session.retries == 0
+
+
 def test_session_without_stage_takes_the_emitting_scope(run_state: PipelineState):
     run_state.apply(_session_started("cover", stage=None), stage="cover")
     assert run_state.sessions["cover"].stage == "cover"

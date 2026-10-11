@@ -26,7 +26,7 @@ class Role(StrEnum):
     PREPASS = "prepass"
     CHUNK = "chunk"
     POSTPROCESS = "postprocess"
-    UTILITY = "utility"  # titles, date research
+    UTILITY = "utility"  # titles, date research, pre-pass/chunk handoff repairs
     CHAT = "chat"  # live-chat translation
     IMAGE = "image"  # cover generation; needs image-generation capability
 

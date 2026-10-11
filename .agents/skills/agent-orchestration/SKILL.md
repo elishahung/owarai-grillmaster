@@ -44,7 +44,8 @@ description: >-
   `prompt` (sent as ONE user message on every backend), `session_dir`,
   `workdir` (cwd and writable root; `None` = temp dir; concurrent tasks may not
   share one), `output`, `images`, `audio`, `tools`, `add_dirs`, `validate`
-  (raises `ValidationFailure`), `requires`, `max_repairs=3`, `attempts=1`.
+  (raises `ValidationFailure`), `requires`, `max_repairs=3`, `attempts=1`,
+  `handoff` (`Handoff(role, instructions)`, not with `FilesOutput`).
 - Outputs: `TextOutput`, `SchemaOutput(model)` (see `schema_delivery`),
   `FilesOutput(required, optional)` (both deleted before each attempt). A
   failed parse is a `ValidationFailure`, i.e. a repair round.
@@ -158,7 +159,8 @@ only a defect's resends.
 ## Runner loop (`runner.py`)
 
 - Each attempt gets a fresh session dir (`session/` or `session_<label>/`,
-  retries `session.2/`, …; names kept short for MAX_PATH): `prompt.md`,
+  retries `session.2/`, …, a handoff `session_fix/`; names kept short for
+  MAX_PATH): `prompt.md`,
   `tools.json` (with tools), `schema.json` (with a schema), `raw.jsonl`
   (verbatim CLI stream; encoded SDK messages for Claude), `result.json`
   (`SessionRecord`); agy adds `agy.log`. Normalized events go only to the
@@ -168,7 +170,18 @@ only a defect's resends.
   `validate`; a failure resumes the same session
   with only `prompt.repair_message(...)`, so the agent keeps its context
   (heard audio, fetched frames) and the prompt is not resent. Exhausted
-  repairs → `AgentOutputError`. Nested `run`/`run_jobs` inside a slot is
+  repairs → `AgentOutputError`.
+- Handoff: with `task.handoff`, every `ValidationFailure` (parse or
+  `validate`) ends the session as outcome `handed_off` instead of resuming
+  it (a resume resends attached audio, and a resumed gemini shifted a whole
+  chunk by one index). The handoff role then runs the task with the
+  handoff's `instructions` (the no-audio rendition) and `add_dirs` (default
+  none: the task's often exist only to reach the audio), no audio, the same
+  prompt + `prompt.handoff_section(failed output, failure)`, images, tools,
+  output and validator, in `core.paths.handoff_path` (`session_fix/`) with
+  its own attempts and in-session repairs. Both roles are checked before any
+  slot. Adapter defects still repair in the first session.
+  Nested `run`/`run_jobs` inside a slot is
   refused (deadlock). `run_jobs` polls with a timed wait because lock waits
   are not interruptible on Windows.
 - Errors: `AgentConfigError`, `AgentQuotaError` (quota/usage-limit phrase,

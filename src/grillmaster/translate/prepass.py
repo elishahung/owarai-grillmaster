@@ -4,8 +4,8 @@ The agent sees the full SRT, program context, the whole fixed glossary,
 20-40 reference frames, the full audio on audio-capable backends, and the
 chunk boundaries. `segment_summaries` is a plain list, so a briefing that
 summarizes only the opening chunk is schema-valid, and long episodes really
-do come back that way; the coverage validator turns that into a repair round
-naming the missing ranges.
+do come back that way; the coverage validator names the missing ranges for
+the `utility` model, which completes the briefing without resending the audio.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from loguru import logger
 
 from grillmaster.agents.adapters.base import Capability
 from grillmaster.agents.errors import ValidationFailure
-from grillmaster.agents.task import AgentTask, SchemaOutput
+from grillmaster.agents.task import AgentTask, Handoff, SchemaOutput
 from grillmaster.core.briefing import Briefing
 from grillmaster.core.json_artifact import load_model, write_model
 from grillmaster.core.model_spec import Role
@@ -62,12 +62,16 @@ def build_prepass_task(
     tools: ToolSession,
     add_dirs: tuple[Path, ...] = (),
 ) -> AgentTask[Briefing]:
-    """The pre-pass agent call; it may search the web for public facts."""
+    """The pre-pass agent call; it may search the web for public facts. A
+    briefing that fails validation goes to the `utility` model with the same
+    inputs but no audio."""
     assets = inputs.assets
     return AgentTask(
         name=TASK_NAME,
         role=Role.PREPASS,
-        instructions=prompt.prepass_instruction(inputs),
+        instructions=prompt.prepass_instruction(
+            inputs, has_audio=assets.audio is not None
+        ),
         prompt=prompt.prepass_message(inputs),
         session_dir=session_dir,
         workdir=workdir,
@@ -80,6 +84,9 @@ def build_prepass_task(
             [chunk.index_range for chunk in inputs.chunks]
         ),
         requires=frozenset({Capability.WEB_SEARCH}),
+        handoff=Handoff(
+            Role.UTILITY, prompt.prepass_instruction(inputs, has_audio=False)
+        ),
     )
 
 

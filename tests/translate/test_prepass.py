@@ -122,6 +122,9 @@ def test_build_prepass_task(
     with pytest.raises(ValidationFailure):
         task.validate(make_briefing((1, 3)))
     task.validate(make_briefing((1, 3), (4, 6)))
+    assert task.handoff is not None
+    assert task.handoff.role is Role.UTILITY
+    assert "No audio track is available for this run" in task.handoff.instructions
 
 
 def test_build_prepass_task_without_audio(

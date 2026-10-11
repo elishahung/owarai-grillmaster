@@ -110,7 +110,10 @@ class AgentRoles(BaseModel):
     chunk: ModelSpecField = Field(description="Concurrent chunk translation.")
     postprocess: ModelSpecField = Field(description="Refine and glossary check.")
     utility: ModelSpecField = Field(
-        description="Lightweight agents: titles, broadcast-date research."
+        description=(
+            "Lightweight agents: titles, broadcast-date research, and the "
+            "no-audio fix of a pre-pass or chunk output that failed validation."
+        )
     )
     chat: ModelSpecField | None = Field(
         default=None,

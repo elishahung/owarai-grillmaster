@@ -72,7 +72,7 @@ def test_chunk_prompt_asks_for_json_blocks() -> None:
 def test_prepass_instruction_has_only_the_blocks_for_present_inputs(
     prepass_inputs: Callable[..., PrepassInputs],
 ) -> None:
-    text = prompt.prepass_instruction(prepass_inputs())
+    text = prompt.prepass_instruction(prepass_inputs(), has_audio=True)
     assert "### FIXED GLOSSARY" in text
     assert "## On-demand video frames" in text
     # The window is stated with the tool list; the pre-pass says what it is.
@@ -98,7 +98,7 @@ def test_prepass_instruction_adds_conditional_blocks(
         official_subtitles=(SrtBlock(1, "00:00:01,000 --> 00:00:02,000", "CC"),),
         parent_briefing=make_briefing(),
     )
-    text = prompt.prepass_instruction(prepass_inputs(source=source))
+    text = prompt.prepass_instruction(prepass_inputs(source=source), has_audio=True)
     sections = [
         "### OFFICIAL SOURCE METADATA",
         "### OFFICIAL CLOSED CAPTIONS",
@@ -116,7 +116,7 @@ def test_prepass_instruction_adds_conditional_blocks(
 def test_prepass_instruction_without_audio(
     prepass_inputs: Callable[..., PrepassInputs],
 ) -> None:
-    text = prompt.prepass_instruction(prepass_inputs(audio=False))
+    text = prompt.prepass_instruction(prepass_inputs(), has_audio=False)
     assert "Full Source Audio" not in text
 
 

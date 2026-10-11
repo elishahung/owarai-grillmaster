@@ -41,15 +41,22 @@ from grillmaster.agents.errors import (
 )
 from grillmaster.agents.events import Message, Thought, ToolCall, ToolResult
 from grillmaster.agents.prompt import AUDIO_UNAVAILABLE_MARKER, audio_recheck_message
-from grillmaster.agents.runner import MAX_FRAME_TURNS, AgentRunner, SessionRecord
+from grillmaster.agents.runner import (
+    MAX_FRAME_TURNS,
+    RESULT_FILE,
+    AgentRunner,
+    SessionRecord,
+)
 from grillmaster.agents.task import (
     AgentJob,
     AgentResult,
     AgentTask,
     FilesOutput,
+    Handoff,
     SchemaOutput,
     TextOutput,
 )
+from grillmaster.core.json_artifact import read_model
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec, Role
 from grillmaster.core.process import ABORT, ProcessAbortedError, kill_all
 from grillmaster.core.tool_session import (
@@ -78,6 +85,10 @@ SPEC = RUNNER_SPEC
 
 class Answer(BaseModel):
     color: str
+
+
+def _record(session_dir: Path) -> SessionRecord:
+    return read_model(session_dir / RESULT_FILE, SessionRecord)
 
 
 class WaitLog(threading.Event):
@@ -205,9 +216,7 @@ def test_session_directory_contents(
     assert "10.000 秒與70.500 秒之間" in message
     assert ToolSession.load(session / "tools.json") == tools
     assert (session / "raw.jsonl").read_text(encoding="utf-8") == '{"a":1}\n{"b":2}\n'
-    record = SessionRecord.model_validate_json(
-        (session / "result.json").read_text(encoding="utf-8")
-    )
+    record = _record(session)
     assert record.outcome is SessionOutcome.OK
     assert record.session_id == "sess-1"
     assert (record.backend, record.model, record.effort) == (
@@ -600,9 +609,7 @@ def test_frame_turns_are_recorded_in_the_session_record(
     )
     task = make_task(tmp_path, TextOutput(), tools=_frames_tools(tmp_path))
     make_runner(adapter).run(task)
-    record = SessionRecord.model_validate_json(
-        (tmp_path / "refine" / "session" / "result.json").read_text(encoding="utf-8")
-    )
+    record = _record(tmp_path / "refine" / "session")
     assert (record.frame_turns, record.repairs) == (1, 0)
 
 
@@ -701,9 +708,7 @@ def test_the_audio_unavailable_marker_stops_the_session(
     assert turn.stopped
     assert [call.kind for call in adapter.calls] == ["start"]
     assert AUDIO_UNAVAILABLE_MARKER in adapter.calls[0].request.message
-    record = SessionRecord.model_validate_json(
-        (tmp_path / "refine" / "session" / "result.json").read_text(encoding="utf-8")
-    )
+    record = _record(tmp_path / "refine" / "session")
     assert record.outcome is SessionOutcome.INPUT_ERROR
     assert (
         ActivityKind.MESSAGE,
@@ -733,9 +738,7 @@ def test_attached_audio_claimed_unheard_is_attached_again(
     recheck = adapter.calls[1].request
     assert recheck.message == audio_recheck_message()
     assert (recheck.audio, recheck.images) == ((audio,), ())
-    record = SessionRecord.model_validate_json(
-        (tmp_path / "refine" / "session" / "result.json").read_text(encoding="utf-8")
-    )
+    record = _record(tmp_path / "refine" / "session")
     assert (record.audio_rechecks, record.repairs) == (1, 0)
 
 
@@ -758,10 +761,112 @@ def test_attached_audio_claimed_unheard_twice_stops_the_session(
         make_runner(adapter).run(task)
 
     assert [call.kind for call in adapter.calls] == ["start", "resume"]
-    record = SessionRecord.model_validate_json(
-        (tmp_path / "refine" / "session" / "result.json").read_text(encoding="utf-8")
-    )
+    record = _record(tmp_path / "refine" / "session")
     assert (record.outcome, record.audio_rechecks) == (SessionOutcome.INPUT_ERROR, 1)
+
+
+# --- handoff -----------------------------------------------------------------------
+
+
+_HANDOFF = Handoff(Role.UTILITY, "FIX INSTRUCTIONS")
+
+
+def _not_red(answer: Answer) -> None:
+    if answer.color == "red":
+        raise ValidationFailure("red is not allowed")
+
+
+def test_a_failed_output_goes_to_the_handoff_role_without_audio(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    audio = tmp_path / "chunk.ogg"
+    image = tmp_path / "frame.jpg"
+    audio.write_bytes(b"x")
+    image.write_bytes(b"x")
+    adapter = FakeAdapter(
+        [
+            Turn(final=final(structured={"color": "red"})),
+            Turn(final=final(structured={"color": "blue"}, session_id="sess-2")),
+        ]
+    )
+    task = make_task(
+        tmp_path,
+        SchemaOutput(Answer),
+        images=(image,),
+        audio=(audio,),
+        add_dirs=(tmp_path / "audio",),
+        validate=_not_red,
+        handoff=_HANDOFF,
+    )
+
+    result = make_runner(adapter).run(task)
+
+    assert result.output == Answer(color="blue")
+    assert [call.kind for call in adapter.calls] == ["start", "start"]
+    fix = adapter.calls[1].request
+    assert (fix.images, fix.audio, fix.add_dirs) == ((image.resolve(),), (), ())
+    assert fix.message.startswith("FIX INSTRUCTIONS")
+    for part in ("PROMPT", "【交接修正】", "red is not allowed", '{"color": "red"}'):
+        assert part in fix.message
+    assert AUDIO_UNAVAILABLE_MARKER not in fix.message
+    base = tmp_path / "refine"
+    assert _record(base / "session").outcome is SessionOutcome.HANDED_OFF
+    assert _record(base / "session_fix").outcome is SessionOutcome.OK
+    assert result.session_dir == (base / "session_fix").resolve()
+
+
+def test_a_missing_answer_is_handed_off_as_text(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    adapter = FakeAdapter(
+        [
+            Turn(final=final("half an answer")),
+            Turn(final=final(structured={"color": "blue"})),
+        ]
+    )
+    task = make_task(tmp_path, SchemaOutput(Answer), handoff=_HANDOFF)
+
+    result = make_runner(adapter).run(task)
+
+    assert result.output == Answer(color="blue")
+    assert [call.kind for call in adapter.calls] == ["start", "start"]
+    assert "half an answer" in adapter.calls[1].request.message
+
+
+def test_the_handoff_model_repairs_in_its_own_session(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    adapter = FakeAdapter(
+        [
+            Turn(final=final(structured={"color": "red"})),
+            Turn(final=final(structured={"color": "red"})),
+            Turn(final=final(structured={"color": "blue"})),
+        ]
+    )
+    task = make_task(
+        tmp_path, SchemaOutput(Answer), validate=_not_red, handoff=_HANDOFF
+    )
+
+    result = make_runner(adapter).run(task)
+
+    assert result.output == Answer(color="blue")
+    assert [call.kind for call in adapter.calls] == ["start", "start", "resume"]
+    assert result.repairs == 1
+
+
+def test_an_unconfigured_handoff_role_fails_before_any_session(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    adapter = FakeAdapter([])
+    task = make_task(
+        tmp_path, SchemaOutput(Answer), validate=_not_red, handoff=_HANDOFF
+    )
+    runner = make_runner(adapter, roles={Role.POSTPROCESS: SPEC})
+
+    with pytest.raises(AgentConfigError, match="role utility"):
+        runner.run(task)
+
+    assert adapter.calls == []
 
 
 def test_the_audio_marker_means_nothing_without_audio(
@@ -796,9 +901,7 @@ def test_transient_errors_retry_in_a_fresh_session_after_a_delay(
     assert result.session_dir == (tmp_path / "refine" / "session.2").resolve()
     assert [call.kind for call in adapter.calls] == ["start", "start"]
     assert sleeps == [7.0]
-    first = SessionRecord.model_validate_json(
-        (tmp_path / "refine" / "session" / "result.json").read_text(encoding="utf-8")
-    )
+    first = _record(tmp_path / "refine" / "session")
     assert first.outcome is SessionOutcome.TRANSIENT_ERROR
     assert first.error == "AgentTransientError: timed out"
     outcomes = [
@@ -1192,9 +1295,7 @@ def test_an_abort_starts_no_repair_turn(
     with pytest.raises(AgentCancelledError, match="before a repair"):
         runner.run(make_task(tmp_path, TextOutput()))
     assert [call.kind for call in adapter.calls] == ["start"]
-    record = SessionRecord.model_validate_json(
-        (tmp_path / "refine" / "session" / "result.json").read_text(encoding="utf-8")
-    )
+    record = _record(tmp_path / "refine" / "session")
     assert record.error is not None
     assert record.error.startswith("AgentCancelledError")
     assert record.outcome is SessionOutcome.CANCELLED

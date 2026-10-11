@@ -8,6 +8,7 @@ from grillmaster.agents.adapters.base import ToolImageDelivery
 from grillmaster.agents.prompt import (
     AUDIO_UNAVAILABLE_MARKER,
     audio_unavailable,
+    handoff_section,
     tools_section,
 )
 from grillmaster.core.tool_session import FramesTool, ToolSession
@@ -77,3 +78,14 @@ def test_the_frames_line_says_how_the_images_arrive(
 )
 def test_audio_unavailable_reads_only_a_marker_line(text: str, expected: str | None):
     assert audio_unavailable(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("output", "fence"),
+    [('{"a": 1}', "```"), ('note\n```json\n{"a": 1}\n```', "````")],
+)
+def test_handoff_section_fences_the_output_beyond_its_backticks(
+    output: str, fence: str
+):
+    text = handoff_section(output, "problem")
+    assert text.endswith(f"\n{fence}\n{output}\n{fence}")

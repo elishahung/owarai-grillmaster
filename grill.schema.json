@@ -24,7 +24,7 @@
           "type": "string"
         },
         "utility": {
-          "description": "Lightweight agents: titles, broadcast-date research.",
+          "description": "Lightweight agents: titles, broadcast-date research, and the no-audio fix of a pre-pass or chunk output that failed validation.",
           "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
           "title": "Utility",
           "type": "string"

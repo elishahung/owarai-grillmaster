@@ -4,7 +4,7 @@ The output spec decides how a turn's `FinalOutput` becomes the typed value:
 the final text, a pydantic model from the native schema channel, or files
 the agent wrote. A failed parse raises `ValidationFailure`, which the runner
 answers with a repair round in the same session, exactly like a failed
-`validate`.
+`validate`, or hands to the task's `Handoff`.
 """
 
 from __future__ import annotations
@@ -92,6 +92,24 @@ class FilesOutput(OutputSpec[tuple[Path, ...]]):
 
 
 @dataclass(frozen=True, slots=True)
+class Handoff:
+    """Who finishes a task whose output failed validation.
+
+    Instead of a repair round that resends the whole session (attached
+    audio included), the runner ends that session and starts one on `role`
+    with `instructions` (the task written for a model without the audio),
+    the task's prompt, images and tools, and the failed output with its
+    problems; output, validator, workdir and repair rounds stay the task's.
+    `add_dirs` replaces the task's extra roots, which often exist only to
+    reach the audio.
+    """
+
+    role: Role
+    instructions: str
+    add_dirs: tuple[Path, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class AgentTask[T]:
     # Names the task in events and logs, e.g. "chunks/0001-0119", "refine".
     name: str
@@ -121,12 +139,17 @@ class AgentTask[T]:
     max_repairs: int = 3
     # Fresh sessions tried for transient errors.
     attempts: int = 1
+    # Who finishes the task when its output fails validation; `None`
+    # repairs in the same session.
+    handoff: Handoff | None = None
 
     def __post_init__(self) -> None:
         if self.max_repairs < 0:
             raise ValueError(f"max_repairs must be >= 0: {self.max_repairs}")
         if self.attempts < 1:
             raise ValueError(f"attempts must be >= 1: {self.attempts}")
+        if self.handoff is not None and isinstance(self.output, FilesOutput):
+            raise ValueError(f"{self.name}: a files output cannot be handed off")
 
 
 @dataclass(frozen=True, slots=True)

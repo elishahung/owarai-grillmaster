@@ -1,4 +1,5 @@
-"""One CLI turn whose stdout is a JSONL event stream (agy, codex)."""
+"""One CLI turn whose stdout is a JSONL event stream (agy, codex); gemini's
+ACP stream (`_acp.py`) reads its lines with `read_record` too."""
 
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from grillmaster.agents.adapters.base import Turn
 from grillmaster.agents.errors import AgentConfigError
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterable
+    from collections.abc import Callable, Generator, Iterable
 
     from grillmaster.agents.adapters.base import FinalOutput, TurnRequest
     from grillmaster.agents.events import AgentEvent
@@ -57,14 +58,8 @@ class JsonlTurn(Turn):
         try:
             with contextlib.closing(self._process.lines()) as lines:
                 for line in lines:
-                    if not line.strip():
-                        continue
-                    self._request.raw(line)
-                    try:
-                        record = json.loads(line)
-                    except ValueError:
-                        continue  # stray log line; kept in raw.jsonl only
-                    if isinstance(record, dict):
+                    record = read_record(line, self._request.raw)
+                    if record is not None:
                         yield from self._parser.feed(record)
                     if self._parser.done:
                         self._process.close_stdin()
@@ -80,6 +75,20 @@ class JsonlTurn(Turn):
     def _finish(self) -> FinalOutput:
         returncode = self._returncode if self._returncode is not None else -1
         return self._parser.finish(returncode, self._process.stderr_tail)
+
+
+def read_record(line: str, raw: Callable[[str], None]) -> dict[str, Any] | None:
+    """A non-blank stdout line, mirrored to `raw`, as a JSON object; `None`
+    for a blank line or anything else (a stray log line stays in raw.jsonl
+    only)."""
+    if not line.strip():
+        return None
+    raw(line)
+    try:
+        record = json.loads(line)
+    except ValueError:
+        return None
+    return record if isinstance(record, dict) else None
 
 
 def resolve_cli(name: str, override: str | None) -> str:

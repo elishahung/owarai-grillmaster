@@ -7,7 +7,7 @@ import json
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, override
 
 import claude_agent_sdk.types as sdk_types
 
@@ -15,6 +15,8 @@ from grillmaster.agents.adapters.base import (
     Capability,
     FinalOutput,
     MediaDelivery,
+    PerTurnAdapter,
+    PerTurnSession,
     SchemaDelivery,
     ToolImageDelivery,
     TurnDefect,
@@ -79,6 +81,10 @@ class FakeProcess:
         self.stdin_closed_after: int | None = None
         # Stdout was closed before its end (the real process kills its tree).
         self.stopped_early = False
+        # What `send` wrote, and each watchdog deadline set after the spawn.
+        self.sent: list[str] = []
+        self.watchdog: list[float | None] = []
+        self.waits = 0
 
     def lines(self) -> Generator[str]:
         try:
@@ -89,11 +95,18 @@ class FakeProcess:
             self.stopped_early = True
             raise
 
+    def send(self, text: str) -> None:
+        self.sent.append(text)
+
+    def restart_watchdog(self, timeout_s: float | None) -> None:
+        self.watchdog.append(timeout_s)
+
     def close_stdin(self) -> None:
         if self.stdin_closed_after is None:
             self.stdin_closed_after = self.lines_read
 
     def wait(self) -> int:
+        self.waits += 1
         return self._returncode
 
     @property
@@ -103,6 +116,37 @@ class FakeProcess:
     @property
     def stderr_tail(self) -> str:
         return self._stderr
+
+
+def acp_response(
+    request_id: int, result: object = None, *, error: dict[str, Any] | None = None
+) -> str:
+    """One JSON-RPC response line of an ACP agent."""
+    outcome = {"error": error} if error is not None else {"result": result}
+    return json.dumps({"jsonrpc": "2.0", "id": request_id, **outcome})
+
+
+def acp_update(update: dict[str, Any], session_id: str = "s1") -> str:
+    """One `session/update` notification line."""
+    params = {"sessionId": session_id, "update": update}
+    return json.dumps({"jsonrpc": "2.0", "method": "session/update", "params": params})
+
+
+def acp_handshake(session_id: str = "s1") -> list[str]:
+    """The answers to `initialize` (id 1) and `session/new` (id 2)."""
+    return [
+        acp_response(1, {"protocolVersion": 1, "agentCapabilities": {}}),
+        acp_response(2, {"sessionId": session_id}),
+    ]
+
+
+def acp_prompt_result(
+    request_id: int, stop: str = "end_turn", *, tokens: tuple[int, int] = (2, 1)
+) -> str:
+    """A `session/prompt` answer with its token counts."""
+    count = {"input_tokens": tokens[0], "output_tokens": tokens[1]}
+    meta = {"quota": {"token_count": count, "model_usage": []}}
+    return acp_response(request_id, {"stopReason": stop, "_meta": meta})
 
 
 class FakeSpawn:
@@ -229,7 +273,19 @@ class FakeHandle:
         return self._turn.final
 
 
-class FakeAdapter:
+class FakeSession(PerTurnSession):
+    """A `PerTurnSession` that records being closed."""
+
+    def __init__(self, adapter: FakeAdapter) -> None:
+        super().__init__(adapter)
+        self.closes = 0
+
+    @override
+    def close(self) -> None:
+        self.closes += 1
+
+
+class FakeAdapter(PerTurnAdapter):
     """Scripted turns per task name (taken from the request's message)."""
 
     def __init__(
@@ -256,6 +312,7 @@ class FakeAdapter:
         self._preflight_error = preflight_error
         self._lock = threading.Lock()
         self.calls: list[Call] = []
+        self.sessions: list[FakeSession] = []
         self.preflights: list[tuple[ModelSpec, tuple[Path, ...], tuple[Path, ...]]] = []
 
     def preflight(
@@ -265,9 +322,18 @@ class FakeAdapter:
         if self._preflight_error is not None:
             raise self._preflight_error
 
+    @override
+    def session(self) -> FakeSession:
+        session = FakeSession(self)
+        with self._lock:
+            self.sessions.append(session)
+        return session
+
+    @override
     def start(self, request: TurnRequest) -> FakeHandle:
         return self._handle(Call("start", request))
 
+    @override
     def resume(self, session_id: str, request: TurnRequest) -> FakeHandle:
         return self._handle(Call("resume", request, session_id))
 

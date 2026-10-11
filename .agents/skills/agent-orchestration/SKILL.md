@@ -36,7 +36,7 @@ description: >-
   `projects/`), so a surrounding checkout's dev rules never reach a task.
 - A thin layer of our own over the four CLIs, not ACP or an agent framework:
   agy has no native ACP and ACP has no structured output. The event vocabulary
-  borrows ACP's.
+  borrows ACP's; only the gemini adapter speaks ACP to its CLI (`_acp.py`).
 
 ## Task API (`task.py`, `schema.py`)
 
@@ -91,9 +91,12 @@ tool images: `INLINE`, `VIEW_FILE`, or `NEXT_MESSAGE`: the runner writes
 tells the model to submit through `finish`, agy otherwise prints the JSON and
 its own nag costs a full-context turn; `PROMPT`: the runner states the schema
 and reads the answer from `FinalOutput.text` with
-`schema.json_object_answer(lead_in=True)`), `preflight`, `start`/`resume(session_id, TurnRequest)` → `SessionHandle` →
-`FinalOutput(session_id, text, structured, usage, defects)`. Closing
-`events()` early stops the turn (the CLI tree is killed). A resume repeats
+`schema.json_object_answer(lead_in=True)`), `preflight`, `session()` →
+`AgentSession` (`start`/`resume(session_id, TurnRequest)` → `SessionHandle` →
+`FinalOutput(session_id, text, structured, usage, defects)`; `close`, called
+by the runner when the session ends). agy, codex and claude are
+`PerTurnAdapter`s (each turn its own process); gemini keeps one process per
+session. Closing `events()` early stops the turn (the CLI tree is killed). A resume repeats
 model, workdir, tools and schema with a new `message`; its images/audio are
 only a defect's resends.
 
@@ -111,28 +114,32 @@ only a defect's resends.
   is a tool. MCP image results reach the model only as offloaded files it
   must `view_file` (one more turn), so the prompt says so.
 - **gemini** (gemini-cli; Code Assist login, needs `GOOGLE_CLOUD_PROJECT`):
-  `--output-format stream-json --skip-trust --approval-mode yolo
-  --allowed-mcp-server-names grill --prompt=`, message on stdin. Input media
-  go as quoted `@"<abs path>"` lines appended to the message plus
-  `--include-directories` (the token cost of agy's `view_file` turns is the
-  reason this backend exists); `preflight` refuses files over 20 MB. The CLI
-  parses every `@` (files, subagents, MCP resources; respacing the text once
-  a file attaches), so the message's own `@` are sent as U+FF20. Image tool results are broken through Code Assist (400 on
+  one `gemini --acp --skip-trust --approval-mode yolo
+  --allowed-mcp-server-names grill` process per session (JSON-RPC on
+  stdin/stdout: `initialize`, `session/new`, one `session/prompt` per turn,
+  the watchdog restarted per turn). Not `--resume`: a resumed process
+  estimates the stored history counting audio by base64 length (3.8 MB ≈
+  1.27M tokens), so it compresses the audio away or refuses every later turn
+  without a model call. Media go inline as base64 `image`/`audio` blocks (the
+  token cost of agy's `view_file` turns is the reason this backend exists);
+  `preflight` refuses unknown suffixes and over 20 MB of attachments. ACP text is not
+  parsed for `@`. Image tool results are broken through Code Assist (400 on
   3.5/3.8-flash, garbled text after the image on 3.1-pro/flash-lite, the
   nested format drops the image), hence `NEXT_MESSAGE`; `SchemaDelivery.PROMPT`.
-  agy and gemini share `_google.py` (key stripping, `mcpServers` entry,
-  readable roots). Effort → `thinkingLevel` (`thinkingBudget` for
-  `gemini-2.5*`), the MCP server and `model.compressionThreshold: 1000` go
-  into `<workdir>/.gemini/settings.json` (rewritten every turn). Without the
-  last one a resumed turn estimates audio by base64 length, passes the 0.5
-  default and compresses the attached audio out of the history (prepass then
-  ended `GRILL_AUDIO_UNAVAILABLE`). Model ids are gemini-cli's (`gemini-3.1-pro-preview`,
-  not agy's `gemini-3.1-pro`); with media attached, an unknown id or an
-  oversized request ends in a `success` result with empty `stats.models` (no
-  model call, no saved session), which the parser raises as `AgentConfigError`.
-  Resume `--resume <id>` (sessions are per cwd). Same
-  API-key stripping as agy; the user's `~/.gemini` settings and `GEMINI.md`
-  still load.
+  agy and gemini share `_google.py` (key stripping, `mcpServers` entry).
+  Effort → `thinkingLevel` (`thinkingBudget` for
+  `gemini-2.5*`), the MCP server, `model.compressionThreshold: 1000` (a
+  compression would summarize the audio away) and
+  `context.includeDirectoryTree: false` (a listed `audio.ogg` lured a model
+  into ffmpeg via the shell and a false `GRILL_AUDIO_UNAVAILABLE`; the
+  shell stays on, glossary check copies files with it) go into
+  `<workdir>/.gemini/settings.json`, read at `session/new`. Model ids are
+  gemini-cli's (`gemini-3.1-pro-preview`, not agy's `gemini-3.1-pro`); with
+  media attached, an unknown id or an oversized request ends with
+  `stopReason: max_tokens` (no model call) → `AgentConfigError`. Tool calls
+  arrive titled `name(arg: value)` without raw arguments. JSON-RPC error
+  codes are HTTP statuses (500 = none). Same API-key stripping as agy; the
+  user's `~/.gemini` settings and `GEMINI.md` still load.
 - **codex**: `codex exec --json … -`, `--ignore-user-config`, sandbox bypassed,
   `--image` on the start turn only, `--output-schema` (last `agent_message`),
   `-c mcp_servers.grill.*`, `-c tools.web_search=true` only when required.

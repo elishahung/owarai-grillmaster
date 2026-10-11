@@ -34,13 +34,14 @@ pytestmark = pytest.mark.live
 
 RECORD_ENV_VAR = "GRILL_RECORD_FIXTURES"
 TOOL_SERVER = (sys.executable, str(Path(__file__).with_name("live_tool_server.py")))
-# A record that opens each turn's stream, per backend.
+# A record that opens each turn's stream, per backend. Gemini's one ACP
+# stream has none: its turns end with their prompt's response instead.
 TURN_MARKERS = {
     Backend.AGY: ('"event"', '"init"'),
-    Backend.GEMINI: ('"type"', '"init"'),
     Backend.CODEX: ('"type"', '"thread.started"'),
     Backend.CLAUDE: ('"SystemMessage"', '"init"'),
 }
+TURN_END_MARKER = '"stopReason"'
 
 
 class LiveAnswer(BaseModel):
@@ -107,13 +108,34 @@ def test_schema_mcp_image_and_resume(
 
 
 def _record(backend: Backend, raw: Path) -> None:
-    turns: list[list[str]] = []
-    for line in raw.read_text(encoding="utf-8").splitlines():
-        if all(marker in line for marker in TURN_MARKERS[backend]) or not turns:
-            turns.append([])
-        turns[-1].append(line)
+    lines = raw.read_text(encoding="utf-8").splitlines()
+    turns = (
+        _split_after_ends(lines)
+        if backend is Backend.GEMINI
+        else _split_at_starts(lines, TURN_MARKERS[backend])
+    )
     target = FIXTURES / backend
     target.mkdir(exist_ok=True)
     for name, lines in zip(LIVE_TURNS[backend], turns, strict=True):
         json.loads(lines[0])  # fail loudly on a garbled recording
         (target / f"{name}.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _split_at_starts(lines: list[str], markers: tuple[str, ...]) -> list[list[str]]:
+    """Turns that each open with a line holding every marker."""
+    turns: list[list[str]] = []
+    for line in lines:
+        if all(marker in line for marker in markers) or not turns:
+            turns.append([])
+        turns[-1].append(line)
+    return turns
+
+
+def _split_after_ends(lines: list[str]) -> list[list[str]]:
+    """Turns that each end with their prompt's response."""
+    turns: list[list[str]] = [[]]
+    for line in lines:
+        turns[-1].append(line)
+        if TURN_END_MARKER in line:
+            turns.append([])
+    return [turn for turn in turns if turn]

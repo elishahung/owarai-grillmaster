@@ -62,9 +62,11 @@ from claude_agent_sdk._internal.transport.subprocess_cli import (
 )
 
 from grillmaster.agents.adapters.base import (
+    IMAGE_MEDIA_TYPES,
     Capability,
     FinalOutput,
     MediaDelivery,
+    PerTurnAdapter,
     SchemaDelivery,
     ToolImageDelivery,
     Turn,
@@ -125,13 +127,7 @@ EFFORTS: dict[Effort, EffortLevel] = {
 }
 STRUCTURED_OUTPUT_TOOL = "StructuredOutput"
 _LOGIN_HINT = "run `claude auth login --claudeai`"
-_IMAGE_MEDIA_TYPES = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".gif": "image/gif",
-    ".webp": "image/webp",
-}
+_IMAGE_MEDIA_TYPES = {**IMAGE_MEDIA_TYPES, ".gif": "image/gif"}
 _USAGE_NAMES = {
     "input_tokens": "input_tokens",
     "output_tokens": "output_tokens",
@@ -140,7 +136,7 @@ _USAGE_NAMES = {
 _STDERR_TAIL_LINES = 40
 
 
-class ClaudeAdapter:
+class ClaudeAdapter(PerTurnAdapter):
     backend = Backend.CLAUDE
     capabilities = frozenset(
         {

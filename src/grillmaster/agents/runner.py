@@ -91,6 +91,7 @@ if TYPE_CHECKING:
 
     from grillmaster.agents.adapters.base import (
         AgentAdapter,
+        AgentSession,
         FinalOutput,
         SessionHandle,
     )
@@ -428,7 +429,10 @@ class AgentRunner:
                 ) as raw:
                     request = self._request(prepared, workdir, session_dir, files, raw)
                     try:
-                        output = self._session(prepared, request, workdir, state)
+                        with closing(prepared.adapter.session()) as session:
+                            output = self._session(
+                                prepared, session, request, workdir, state
+                            )
                     except ProcessAbortedError as aborted:
                         raise self._cancelled(task.name, "a turn") from aborted
             except BaseException as caught:
@@ -458,6 +462,7 @@ class AgentRunner:
     def _session[T](
         self,
         prepared: _Prepared[T],
+        session: AgentSession,
         request: TurnRequest,
         workdir: Path,
         state: _SessionState,
@@ -468,9 +473,9 @@ class AgentRunner:
         would accept), and its output was written before the model saw them.
         Otherwise a defect or a failed validation is answered with a repair
         round."""
-        task, adapter = prepared.task, prepared.adapter
+        task = prepared.task
         pending_frames = request.session_dir / PENDING_FRAMES_FILE
-        handle = adapter.start(request)
+        handle = session.start(request)
         while True:
             final = self._consume(task.name, handle, audio=bool(prepared.audio))
             state.session_id = final.session_id or state.session_id
@@ -487,7 +492,7 @@ class AgentRunner:
                 self._activity(task.name, ActivityKind.TOOL_RESULT, summary)
                 message = prompt.frames_message()
                 turn = replace(request, message=message, images=frames, audio=())
-                handle = adapter.resume(final.session_id, turn)
+                handle = session.resume(final.session_id, turn)
                 continue
             # The adapter's own findings come first: the output of a turn
             # that skipped its inputs is not worth judging.
@@ -505,7 +510,7 @@ class AgentRunner:
             self._check_resumable(task.name, final, "a repair")
             state.repairs += 1
             self._activity(task.name, ActivityKind.REPAIR, first_line(defect.message))
-            handle = adapter.resume(
+            handle = session.resume(
                 final.session_id,
                 replace(
                     request,

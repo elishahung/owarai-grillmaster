@@ -49,6 +49,33 @@ def test_stdin_can_stay_open_until_closed_explicitly():
     assert list(lines) == ["eof"]
 
 
+def test_send_writes_more_to_the_open_stdin_in_order():
+    code = "[print(line.strip().upper(), flush=True) for line in sys.stdin]"
+    process = spawn(_python(code, stdin="a\n", keep_stdin_open=True))
+    lines = process.lines()
+    assert next(lines) == "A"
+    process.send("b\n")
+    process.send("c\n")
+    assert [next(lines), next(lines)] == ["B", "C"]
+    process.close_stdin()
+    assert list(lines) == []
+    assert process.wait() == 0
+
+
+def test_restarting_the_watchdog_moves_the_deadline():
+    code = "sys.stdin.readline(); print('late', flush=True); sys.stdin.read()"
+    process = spawn(_python(code, timeout_s=0.5, keep_stdin_open=True))
+    process.restart_watchdog(None)
+    time.sleep(1.0)
+    process.send("go\n")
+    lines = process.lines()
+    assert next(lines) == "late"
+    process.restart_watchdog(0.5)
+    assert list(lines) == []
+    process.wait()
+    assert process.timed_out
+
+
 def test_stderr_tail_and_exit_code():
     process = spawn(_python("sys.stderr.write('bad\\nworse\\n'); sys.exit(3)"))
     assert list(process.lines()) == []

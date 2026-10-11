@@ -27,22 +27,19 @@ module is built on (agy 1.3.2):
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 from typing import TYPE_CHECKING, Any
 
 from grillmaster.agents import process
-from grillmaster.agents.adapters._google import (
-    mcp_servers,
-    path_key,
-    readable_roots,
-    subscription_env,
-)
+from grillmaster.agents.adapters._google import mcp_servers, subscription_env
 from grillmaster.agents.adapters._jsonl import JsonlTurn, resolve_cli
 from grillmaster.agents.adapters.base import (
     Capability,
     FinalOutput,
     MediaDelivery,
+    PerTurnAdapter,
     SchemaDelivery,
     ToolImageDelivery,
     TurnDefect,
@@ -96,7 +93,7 @@ _USAGE_NAMES = {
 }
 
 
-class AgyAdapter:
+class AgyAdapter(PerTurnAdapter):
     backend = Backend.AGY
     capabilities = frozenset(
         {
@@ -359,3 +356,22 @@ def _write_mcp_config(request: TurnRequest) -> None:
         return
     config = {"mcpServers": mcp_servers(request.mcp)}
     atomic_write_text(path, json.dumps(config, indent=2))
+
+
+def readable_roots(request: TurnRequest) -> list[Path]:
+    """The workdir first, then the extra roots and the media folders the CLI
+    must be allowed to read, each once (case-insensitively on Windows)."""
+    roots = [
+        request.workdir,
+        *request.add_dirs,
+        *(path.parent for path in (*request.images, *request.audio)),
+    ]
+    unique: dict[str, Path] = {}
+    for root in roots:
+        unique.setdefault(path_key(str(root)), root)
+    return list(unique.values())
+
+
+def path_key(path: str) -> str:
+    """`path` normalized for comparison."""
+    return os.path.normcase(os.path.normpath(path))

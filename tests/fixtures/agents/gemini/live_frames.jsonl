@@ -1,6 +1,4 @@
-{"type":"init","timestamp":"2026-10-10T23:00:16.202Z","session_id":"addef1aa-b716-42de-8d3d-a6c4d8ce77ff","model":"gemini-3.8-flash"}
-{"type":"message","timestamp":"2026-10-10T23:00:16.234Z","role":"user","content":"【畫面】你用 get_frames 要求的畫面已附在這則訊息，請據此繼續完成任務。\r\n\r\n@\"C:\\Users\\eli\\AppData\\Local\\Temp\\pytest-of-eli\\pytest-531\\test_schema_mcp_image_and_resu0\\frames\\frame_green.png\""}
-{"type":"message","timestamp":"2026-10-10T23:00:18.728Z","role":"assistant","content":"```json","delta":true}
-{"type":"message","timestamp":"2026-10-10T23:00:18.786Z","role":"assistant","content":"\n{\n  \"color\": \"green\",\n  \"word\": \"hello\"","delta":true}
-{"type":"message","timestamp":"2026-10-10T23:00:18.835Z","role":"assistant","content":"\n}\n```","delta":true}
-{"type":"result","timestamp":"2026-10-10T23:00:18.908Z","status":"success","stats":{"total_tokens":12164,"input_tokens":12140,"output_tokens":24,"cached":0,"input":12140,"duration_ms":2711,"tool_calls":0,"models":{"gemini-3.8-flash":{"total_tokens":12164,"input_tokens":12140,"output_tokens":24,"cached":0,"input":12140}}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"65708cae-9e4e-44f9-a63a-fdd9b732ecd2","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"```json"}}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"65708cae-9e4e-44f9-a63a-fdd9b732ecd2","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"\n{\n  \"color\": \"green\",\n  \"word\": \"hello\"\n}"}}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"65708cae-9e4e-44f9-a63a-fdd9b732ecd2","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"\n```"}}}}
+{"jsonrpc":"2.0","id":4,"result":{"stopReason":"end_turn","_meta":{"quota":{"token_count":{"input_tokens":12110,"output_tokens":24},"model_usage":[{"model":"gemini-3.8-flash","token_count":{"input_tokens":12110,"output_tokens":24}}]}}}}

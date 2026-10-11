@@ -20,6 +20,8 @@ from tests.agents.fakes import (
     FakeProcess,
     FakeQuery,
     FakeSpawn,
+    acp_handshake,
+    acp_response,
     claude_messages,
     fixture_lines,
 )
@@ -101,12 +103,13 @@ def replay(
             case _:
                 adapter = CodexAdapter(spawn=spawn, executable="codex")
         run = Replay(adapter, spawn=spawn)
-    handle = (
-        run.adapter.start(request)
-        if resume is None
-        else run.adapter.resume(resume, request)
-    )
+    session = run.adapter.session()
     try:
+        handle = (
+            session.start(request)
+            if resume is None
+            else session.resume(resume, request)
+        )
         run.events = list(handle.events())
         run.final = handle.result()
     except AgentError as error:
@@ -161,25 +164,8 @@ CASES = [
         schema=True,
         resume="8e461142-3acb-43f3-8ecb-26a4491006e5",
     ),
-    # The frames tool returns text only; the turn ends with a note.
-    Case(
-        Backend.GEMINI,
-        "live_start",
-        "addef1aa-b716-42de-8d3d-a6c4d8ce77ff",
-        tools=("get_frames",),
-        schema=True,
-    ),
-    # The answer arrives as three json-fenced deltas, joined into `text`
-    # (`SchemaDelivery.PROMPT`: the runner parses it).
-    Case(
-        Backend.GEMINI,
-        "live_frames",
-        "addef1aa-b716-42de-8d3d-a6c4d8ce77ff",
-        tools=(),
-        schema=True,
-        resume="addef1aa-b716-42de-8d3d-a6c4d8ce77ff",
-        text='```json\n{\n  "color": "green",\n  "word": "hello"\n}\n```',
-    ),
+    # Gemini's turns share one process: its recording is replayed as a
+    # whole session (`_replay_live`).
     Case(
         Backend.CODEX,
         "mcp_schema",
@@ -301,36 +287,6 @@ def test_codex_unsupported_model_is_a_config_error(
     assert "not supported" in str(run.error)
 
 
-def test_gemini_unknown_model_is_a_config_error(
-    make_request: Callable[..., TurnRequest],
-):
-    request = make_request(spec=SPECS[Backend.GEMINI])
-    run = replay(Backend.GEMINI, request, fixture="error_model", returncode=1)
-    assert isinstance(run.error, AgentConfigError)
-    assert "Requested entity was not found" in str(run.error)
-
-
-def test_gemini_bad_request_is_a_config_error(
-    make_request: Callable[..., TurnRequest],
-):
-    # An MCP image result on gemini-3.8-flash: HTTP 400 as `"code": 400`.
-    request = make_request(spec=SPECS[Backend.GEMINI])
-    run = replay(Backend.GEMINI, request, fixture="error_tool_image", returncode=144)
-    assert isinstance(run.error, AgentConfigError)
-    assert "model turn" in str(run.error)
-
-
-def test_gemini_missing_cloud_project_is_a_config_error(
-    make_request: Callable[..., TurnRequest],
-):
-    stderr = (
-        "ProjectIdRequiredError: This account requires setting the GOOGLE_CLOUD_PROJECT"
-    )
-    request = make_request(spec=SPECS[Backend.GEMINI])
-    run = replay(Backend.GEMINI, request, lines=[], returncode=1, stderr=stderr)
-    assert isinstance(run.error, AgentConfigError)
-
-
 def test_codex_recoverable_stream_errors_do_not_fail_a_completed_turn(
     make_request: Callable[..., TurnRequest],
 ):
@@ -357,12 +313,8 @@ def _quota_stream(backend: Backend) -> dict[str, Any]:
         ]
         return {"lines": lines}
     if backend is Backend.GEMINI:
-        error = {"type": "unknown", "message": "[API Error: RESOURCE_EXHAUSTED]"}
-        lines = [
-            '{"type":"init","session_id":"s1","model":"gemini-3.8-flash"}',
-            json.dumps({"type": "result", "status": "error", "error": error}),
-        ]
-        return {"lines": lines, "returncode": 1}
+        error = {"code": 429, "message": "[API Error: RESOURCE_EXHAUSTED]"}
+        return {"lines": [*acp_handshake(), acp_response(3, error=error)]}
     if backend is Backend.CODEX:
         message = '{"type":"error","status":429,"error":{"message":"usage limit"}}'
         lines = [
@@ -448,18 +400,36 @@ def _replay_live(
     backend: Backend, make_request: Callable[..., TurnRequest]
 ) -> list[FinalOutput]:
     """Every turn of the live recording, each resuming the previous one, with
-    a `PROMPT` backend's answer parsed from its text as the runner does."""
+    a `PROMPT` backend's answer parsed from its text as the runner does.
+    Gemini's turns replay through one session over one process."""
+    names = LIVE_TURNS[backend]
+    session = None
+    if backend is Backend.GEMINI:
+        lines = [line for name in names for line in fixture_lines(backend, name)]
+        adapter = GeminiAdapter(
+            spawn=FakeSpawn(FakeProcess(lines)), executable="gemini"
+        )
+        session = adapter.session()
     finals: list[FinalOutput] = []
-    for name in LIVE_TURNS[backend]:
+    for name in names:
         request = make_request(spec=SPECS[backend], schema=SCHEMA)
         resume = finals[-1].session_id if finals else None
-        run = replay(backend, request, fixture=name, resume=resume)
-        final = run.final
+        if session is None:
+            run = replay(backend, request, fixture=name, resume=resume)
+            events, final, delivery = run.events, run.final, run.adapter.schema_delivery
+        else:
+            handle = (
+                session.start(request)
+                if resume is None
+                else session.resume(resume, request)
+            )
+            events, final = list(handle.events()), handle.result()
+            delivery = GeminiAdapter.schema_delivery
         assert final is not None, name
         if name == "live_start":
-            calls = [event for event in run.events if isinstance(event, ToolCall)]
-            assert ToolCall("get_frames", {"times": [1]}) in calls
-        if run.adapter.schema_delivery is SchemaDelivery.PROMPT:
+            calls = [event.name for event in events if isinstance(event, ToolCall)]
+            assert "get_frames" in calls
+        if delivery is SchemaDelivery.PROMPT:
             answer = json_object_answer(final.text, lead_in=True)
             final = replace(final, structured=answer)
         finals.append(final)

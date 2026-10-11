@@ -3,6 +3,9 @@
 The runner owns everything backend-neutral (the user message, session files,
 repair, retries, events); an adapter only turns a `TurnRequest` into a CLI
 invocation and the CLI's stream into `AgentEvent`s plus a `FinalOutput`.
+Each runner session opens an `AgentSession`: agy, codex and claude run every
+turn as a process of its own that resumes the CLI's stored session
+(`PerTurnAdapter`); gemini keeps one process for the whole session.
 Errors leave `start`/`resume`/`result` already classified as `AgentError`;
 configuration errors leave `preflight`, before the runner takes a slot.
 """
@@ -23,6 +26,15 @@ if TYPE_CHECKING:
     from grillmaster.agents.events import AgentEvent
     from grillmaster.agents.schema import JsonSchema
     from grillmaster.core.model_spec import Backend, ModelSpec
+
+
+# Image media types every image-taking backend accepts, by suffix.
+IMAGE_MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
 
 
 class Capability(StrEnum):
@@ -134,13 +146,58 @@ class FinalOutput:
 class SessionHandle(Protocol):
     def events(self) -> Generator[AgentEvent]:
         """Normalized events as they stream; blocks until the turn ends.
-        Closing it early ends a JSONL CLI's process tree (agy, codex); a
-        Claude SDK turn runs on in the background until it finishes."""
+        Closing it early ends the CLI's process tree (agy, codex; gemini's
+        whole session); a Claude SDK turn runs on in the background until it
+        finishes."""
         ...
 
     def result(self) -> FinalOutput:
         """The turn's outcome; drains `events()` first if needed."""
         ...
+
+
+class AgentSession(Protocol):
+    """One runner session (one attempt): a first turn, then turns that resume
+    it with the session id of the previous turn's `FinalOutput`."""
+
+    def start(self, request: TurnRequest) -> SessionHandle: ...
+
+    def resume(self, session_id: str, request: TurnRequest) -> SessionHandle: ...
+
+    def close(self) -> None:
+        """End what the session keeps alive between turns; idempotent."""
+        ...
+
+
+class PerTurnAdapter(ABC):
+    """A backend whose every turn is a process of its own that resumes the
+    CLI's stored session (agy, codex, claude)."""
+
+    @abstractmethod
+    def start(self, request: TurnRequest) -> SessionHandle: ...
+
+    @abstractmethod
+    def resume(self, session_id: str, request: TurnRequest) -> SessionHandle: ...
+
+    def session(self) -> AgentSession:
+        return PerTurnSession(self)
+
+
+class PerTurnSession:
+    """The turns of a `PerTurnAdapter`: nothing outlives a turn, so nothing
+    to close."""
+
+    def __init__(self, adapter: PerTurnAdapter) -> None:
+        self._adapter = adapter
+
+    def start(self, request: TurnRequest) -> SessionHandle:
+        return self._adapter.start(request)
+
+    def resume(self, session_id: str, request: TurnRequest) -> SessionHandle:
+        return self._adapter.resume(session_id, request)
+
+    def close(self) -> None:
+        pass
 
 
 class AgentAdapter(Protocol):
@@ -166,9 +223,9 @@ class AgentAdapter(Protocol):
         model, missing CLI, unsupported media); called before any slot."""
         ...
 
-    def start(self, request: TurnRequest) -> SessionHandle: ...
-
-    def resume(self, session_id: str, request: TurnRequest) -> SessionHandle: ...
+    def session(self) -> AgentSession:
+        """A new session; the runner closes it when the session ends."""
+        ...
 
 
 class Turn(ABC):

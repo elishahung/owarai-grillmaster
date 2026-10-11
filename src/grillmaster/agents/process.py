@@ -10,6 +10,9 @@ tree is held in `core.process.LIVE_PROCESSES` until it is dead, so an abort
 can kill it from another thread; once an abort began, spawning raises
 `core.process.ProcessAbortedError`. Output is decoded as UTF-8 explicitly: the
 Windows locale code page would garble Japanese.
+
+A CLI that serves several turns (gemini's ACP mode) keeps stdin open, gets
+each request through `send` and restarts the watchdog per turn.
 """
 
 from __future__ import annotations
@@ -56,7 +59,8 @@ class ProcessSpec:
     # against a child that is already writing stdout.
     stdin: str = ""
     # Leave stdin open after writing (agy's stream-json input reads further
-    # messages until stdin closes); close it later with `close_stdin`.
+    # messages until stdin closes, gemini's ACP mode further requests); write
+    # more with `send`, close it with `close_stdin`.
     keep_stdin_open: bool = False
 
 
@@ -66,6 +70,16 @@ class LineProcess(Protocol):
     def lines(self) -> Generator[str]:
         """Stdout lines without the newline, until EOF or the timeout kill;
         closing it early kills the tree."""
+        ...
+
+    def send(self, text: str) -> None:
+        """Write `text` to the open stdin after what was written before, on a
+        background thread (see `ProcessSpec.stdin`); lost if the child exited."""
+        ...
+
+    def restart_watchdog(self, timeout_s: float | None) -> None:
+        """Kill the tree `timeout_s` from now instead (`None`: never); a
+        tree that already timed out stays timed out."""
         ...
 
     def close_stdin(self) -> None: ...
@@ -100,14 +114,15 @@ class _PopenLineProcess:
         self._timed_out = threading.Event()
         self._stdin_lock = threading.Lock()
         self._writer = threading.Thread(
-            target=self._write_stdin,
-            args=(spec.stdin, spec.keep_stdin_open),
+            target=self._write,
+            args=(None, spec.stdin, not spec.keep_stdin_open),
             daemon=True,
         )
-        self._watchdog = threading.Timer(spec.timeout_s, self._on_timeout)
-        self._watchdog.daemon = True
+        self._watchdog_lock = threading.Lock()
+        self._released = False
+        self._watchdog: threading.Timer | None = None
         self._writer.start()
-        self._watchdog.start()
+        self.restart_watchdog(spec.timeout_s)
 
     def lines(self) -> Generator[str]:
         stdout = _pipe(self._tree.leader.stdout)
@@ -123,6 +138,24 @@ class _PopenLineProcess:
                 with contextlib.suppress(TimeoutExpired):
                     self._tree.leader.wait(timeout=_EXIT_GRACE_S)
             self._release()
+
+    def send(self, text: str) -> None:
+        previous = self._writer
+        self._writer = threading.Thread(
+            target=self._write, args=(previous, text, False), daemon=True
+        )
+        self._writer.start()
+
+    def restart_watchdog(self, timeout_s: float | None) -> None:
+        with self._watchdog_lock:
+            if self._watchdog is not None:
+                self._watchdog.cancel()
+                self._watchdog = None
+            if timeout_s is None or self._released:
+                return
+            self._watchdog = threading.Timer(timeout_s, self._on_timeout)
+            self._watchdog.daemon = True
+            self._watchdog.start()
 
     def close_stdin(self) -> None:
         self._writer.join()
@@ -152,21 +185,27 @@ class _PopenLineProcess:
     def stderr_tail(self) -> str:
         return self._stderr.text
 
-    def _write_stdin(self, text: str, keep_open: bool) -> None:  # noqa: FBT001 - a Thread target
+    def _write(self, previous: threading.Thread | None, text: str, close: bool) -> None:  # noqa: FBT001 - a Thread target
+        """Write `text` after `previous` wrote its own, then maybe close stdin."""
+        if previous is not None:
+            previous.join()
         stdin = _pipe(self._tree.leader.stdin)
-        try:
+        # Closed (`ValueError`) or the child exited (`OSError`): its exit
+        # code and stdout tell the story.
+        with contextlib.suppress(OSError, ValueError):
             if text:
                 stdin.write(text)
                 stdin.flush()
-        except OSError:
-            return  # the child exited early; its exit code tells the story
-        if not keep_open:
+        if close:
             with self._stdin_lock, contextlib.suppress(OSError):
                 stdin.close()
 
     def _release(self) -> None:
         """Nothing of the tree may outlive this; idempotent."""
-        self._watchdog.cancel()
+        with self._watchdog_lock:
+            self._released = True
+            if self._watchdog is not None:
+                self._watchdog.cancel()
         release(self._tree)
 
     def _on_timeout(self) -> None:

@@ -1,9 +1,10 @@
-"""Re-record the live agent fixtures: `uv run python scripts/record_agent_fixture.py [agy|codex|claude]...`.
+"""Re-record the live agent fixtures: `uv run python scripts/record_agent_fixture.py [agy|gemini|codex|claude]...`.
 
 Runs the `live`-marked tests in `tests/agents/test_live.py` (spends a little
-subscription quota per backend) and saves each backend's raw streams under
-`tests/fixtures/agents/<backend>/live_{start,resume}.jsonl`. With no
-argument every backend is recorded.
+subscription quota per backend) and saves each backend's raw streams per turn
+under `tests/fixtures/agents/<backend>/`, named by `fakes.LIVE_TURNS`
+(`live_start`, gemini's `live_frames`, `live_resume`). With no argument every
+backend is recorded.
 """
 
 from __future__ import annotations

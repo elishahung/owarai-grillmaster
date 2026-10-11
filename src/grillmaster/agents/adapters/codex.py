@@ -28,6 +28,7 @@ from grillmaster.agents.adapters.base import (
     Capability,
     FinalOutput,
     MediaDelivery,
+    PerTurnAdapter,
     SchemaDelivery,
     ToolImageDelivery,
     TurnRequest,
@@ -66,7 +67,7 @@ _USAGE_NAMES = {
 }
 
 
-class CodexAdapter:
+class CodexAdapter(PerTurnAdapter):
     backend = Backend.CODEX
     capabilities = frozenset(
         {

@@ -407,6 +407,9 @@ def test_validation_failure_resumes_the_same_session_with_only_the_message(
     assert (ActivityKind.REPAIR, "color must be UPPERCASE") in activities(
         recording_sink
     )
+    # Both turns ran in one adapter session, closed once it ended.
+    (session,) = adapter.sessions
+    assert session.closes == 1
 
 
 def test_missing_structured_output_is_repaired(
@@ -435,6 +438,7 @@ def test_repairs_exhausted_is_an_output_error_without_a_new_session(
         make_runner(adapter).run(task)
 
     assert [call.kind for call in adapter.calls] == ["start", "resume", "resume"]
+    assert [session.closes for session in adapter.sessions] == [1]
     assert sleeps == []
     finished = recording_sink.events[-1]
     assert isinstance(finished, AgentSessionFinished)

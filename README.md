@@ -10,13 +10,13 @@
 ## 說明
 
 - 目標是 one shot 即可直接觀看，不想校準 (避免被暴雷)
-- 翻譯與後處理都走 agent 訂閱，只有 ElevenLabs ASR 計費：約 $0.22 美元／小時（23 分鐘的節目約 $0.09）。同一集從下載到輸出字幕約 20 多分鐘
+- 翻譯與後處理都走 agent 訂閱，只有 ElevenLabs ASR 計費：$0.22 美元／小時。一集 20 多分鐘節目從下載到輸出字幕約 20 多分鐘
 - 設定偏好都是個人主觀，如需修改請自行 fork
 - 更詳細請[查看心得](docs/article.md)
 
 ## 工具
 
-經過各種嘗試，API、自架等組合後，覺得以下方式最合適
+經過各種嘗試，覺得以下方式最合適
 
 - **ASR**：`ElevenLabs Scribe v2`，一堆人大聲喧嘩、裝傻吐槽沒有間隔也能辨識
 - **翻譯**：`Gemini 3` 系列最能抓住日本綜藝的韻味，也很會看圖聽音檔；潤飾、名詞校對等後處理交給 Codex / Claude，輸出結構出錯時在同一個 session 內要求修正
@@ -35,7 +35,9 @@
 
 ## 安裝
 
-需要 Python 3.13+、FFmpeg（加入 PATH）、uv，以及登入好的 agent CLI（`agy`、`gemini`、`codex`；Claude 走內建的 SDK；`gemini` 的 Code Assist 登入需要環境變數 `GOOGLE_CLOUD_PROJECT`）
+需要 Python 3.13+、FFmpeg（加入 PATH）、uv，以及登入好的 agent CLI（`gemini`、`agy`、`codex`；Claude 走內建的 SDK；`gemini` 的 Code Assist 登入需要環境變數 `GOOGLE_CLOUD_PROJECT`）
+
+> Antigravity 有讀取音檔 cache 不穩定 (Token 用量約 Gemini CLI 五倍)，以及尺度審查較嚴格而拒絕翻譯的問題
 
 ```bash
 uv sync
@@ -98,8 +100,8 @@ archive = 'NAS:\video\ai'          # stage 完成後的歸檔位置（打包前�
 package = 'NAS:\video\package'     # 燒錄字幕後的成品位置
 
 [agents.roles]                      # 各角色模型，格式為 backend/model[/effort]
-prepass = "agy/gemini-3.1-pro/high"  # backend：agy、gemini、claude、codex（皆為訂閱制；agy 與 gemini 能聽音檔）
-chunk = "agy/gemini-3.1-pro/high"
+prepass = "gemini/gemini-3.1-pro-preview/high"  # backend：gemini、agy、claude、codex（皆為訂閱制；agy 與 gemini 能聽音檔）
+chunk = "gemini/gemini-3.1-pro-preview/high"
 postprocess = "codex/gpt-6.1-sol/high"
 utility = "codex/gpt-6.1-sol/medium"
 image = "codex/gpt-6.1-sol/medium"   # 封面，需要能生圖的 codex

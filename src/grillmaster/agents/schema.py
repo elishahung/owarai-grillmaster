@@ -23,26 +23,23 @@ type JsonSchema = dict[str, Any]
 # Annotation-only keywords: no constraint lost, and strict mode rejects some.
 _DROPPED_KEYS = frozenset({"title", "default", "examples"})
 _REF_PREFIX = "#/$defs/"
-# One whole-message ``` / ```json fence around the answer.
-_WHOLE_FENCE_RE = re.compile(r"\A```(?:json)?[ \t]*\n(.*)\n```\Z", re.DOTALL)
-# A ``` / ```json fenced block.
-_FENCE_RE = re.compile(r"```(?:json)?[ \t]*\n(.*?)\n```", re.DOTALL)
+# The ``` / ```json fenced block that closes the message. Its body may not
+# contain a fence line, so it never reaches back across an earlier block
+# (an echoed schema, a ```python sketch) whatever that block's info string.
+_CLOSING_FENCE_RE = re.compile(
+    r"```(?:json)?[ \t]*\r?\n((?:(?!\n```).)*)\n```\Z", re.DOTALL
+)
 
 
 def json_object_answer(text: str, *, lead_in: bool = False) -> dict[str, Any] | None:
     """`text` (inside at most one ``` / ```json fence) as a JSON object, or
     `None`; whether it fits the schema is the output model's call. With
     `lead_in`, the fenced block that closes the message is the answer, and
-    whatever precedes it (stray tokens, leaked reasoning) is ignored."""
+    whatever precedes it (stray tokens, leaked reasoning, an echoed schema
+    block) is ignored."""
     stripped = text.strip()
-    if fenced := _WHOLE_FENCE_RE.match(stripped):
-        stripped = fenced.group(1)
-    elif lead_in and (
-        closing := next(
-            (m for m in _FENCE_RE.finditer(stripped) if m.end() == len(stripped)),
-            None,
-        )
-    ):
+    find = _CLOSING_FENCE_RE.search if lead_in else _CLOSING_FENCE_RE.match
+    if closing := find(stripped):
         stripped = closing.group(1)
     try:
         value = json.loads(stripped)

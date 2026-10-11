@@ -99,6 +99,7 @@ def test_recursive_models_are_rejected():
         ('{"a": 1}', {"a": 1}),
         ('```json\n{"a": 1}\n```\n', {"a": 1}),
         ('```\n{"a": 1}\n```', {"a": 1}),
+        ('```json\n{"a": 0}\n```\n\n```json\n{"a": 1}\n```', None),
         ('Here it is:\n```json\n{"a": 1}\n```', None),
         ("```json\n[1, 2]\n```", None),
         ("blue", None),
@@ -115,6 +116,11 @@ def test_json_object_answer_strips_one_fence(text: str, expected: object):
         ('AN```json\n{"a": 1}\n```', {"a": 1}),
         ('Here it is:\n```json\n{"a": 1}\n```\n', {"a": 1}),
         ('Draft:\n```json\n{"a": 0}\n``````json\n{"a": 1}\n```', {"a": 1}),
+        # A schema echoed in its own block before the answer block.
+        ('```json\n{"type": "object"}\n```\n\n```json\n{"a": 1}\n```', {"a": 1}),
+        # An earlier block whose info string the answer fence does not take.
+        ('```JSON\n{"type": "object"}\n```\n\n```json\n{"a": 1}\n```', {"a": 1}),
+        ('```json\r\n{"a": 1}\r\n```', {"a": 1}),
         ('{"a": 1}', {"a": 1}),
         ('```json\n{"a": 1}\n```\nDone.', None),
     ],

@@ -40,6 +40,7 @@ from grillmaster.agents import prompt
 from grillmaster.agents.adapters.base import (
     Capability,
     McpServer,
+    MediaDelivery,
     SchemaDelivery,
     ToolImageDelivery,
     TurnDefect,
@@ -117,6 +118,9 @@ PENDING_FRAMES_FILE = "frames_pending.txt"
 # Turns of one session that may end asking for frames; a model that keeps
 # asking is stuck, not still reading.
 MAX_FRAME_TURNS = 8
+# Turns that resend audio a backend attached itself after the model claimed
+# not to hear it; a second claim is believed.
+MAX_AUDIO_RECHECKS = 1
 
 # Set while the current context holds a slot; a nested `run` would wait for
 # a slot its own caller holds.
@@ -138,6 +142,8 @@ class SessionRecord(BaseModel):
     repairs: int
     # Turns that delivered requested frames (`ToolImageDelivery.NEXT_MESSAGE`).
     frame_turns: int
+    # Turns that resent attached audio the model claimed not to hear.
+    audio_rechecks: int
     elapsed_s: float
     usage: dict[str, int]
     error: str | None
@@ -170,6 +176,7 @@ class _SessionState:
     session_id: str | None = None
     repairs: int = 0
     frame_turns: int = 0
+    audio_rechecks: int = 0
     # Summed over the session's turns.
     usage: Counter[str] = field(default_factory=Counter)
 
@@ -472,14 +479,36 @@ class AgentRunner:
         it was told to end with a note while waiting (which a `TextOutput`
         would accept), and its output was written before the model saw them.
         Otherwise a defect or a failed validation is answered with a repair
-        round."""
+        round.
+
+        Audio the backend attached itself (`MediaDelivery.ATTACHED`) did reach
+        the model, so its first claim not to hear it is answered by attaching
+        the audio again (`MAX_AUDIO_RECHECKS`); only a later claim raises."""
         task = prepared.task
         pending_frames = request.session_dir / PENDING_FRAMES_FILE
+        attached_audio = (
+            bool(prepared.audio)
+            and prepared.adapter.media_delivery is MediaDelivery.ATTACHED
+        )
         handle = session.start(request)
         while True:
-            final = self._consume(task.name, handle, audio=bool(prepared.audio))
+            recheck = attached_audio and state.audio_rechecks < MAX_AUDIO_RECHECKS
+            final = self._consume(
+                task.name, handle, audio=bool(prepared.audio) and not recheck
+            )
             state.session_id = final.session_id or state.session_id
             state.usage.update(final.usage)
+            if recheck and (reason := prompt.audio_unavailable(final.text)) is not None:
+                self._check_resumable(task.name, final, "an audio recheck")
+                state.audio_rechecks += 1
+                summary = f"audio claimed unheard, attached again: {reason}"
+                self._activity(task.name, ActivityKind.REPAIR, first_line(summary))
+                message = prompt.audio_recheck_message()
+                turn = replace(
+                    request, message=message, images=(), audio=prepared.audio
+                )
+                handle = session.resume(final.session_id, turn)
+                continue
             if frames := take_pending_frames(pending_frames):
                 if state.frame_turns >= MAX_FRAME_TURNS:
                     raise AgentOutputError(
@@ -672,6 +701,7 @@ class AgentRunner:
                 outcome=outcome,
                 repairs=state.repairs,
                 frame_turns=state.frame_turns,
+                audio_rechecks=state.audio_rechecks,
                 elapsed_s=round(elapsed, 3),
                 usage=usage,
                 error=None if error is None else f"{type(error).__name__}: {error}",

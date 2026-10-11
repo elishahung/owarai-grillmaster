@@ -191,8 +191,12 @@ only a defect's resends.
   with audio): `prompt.audio_check_section` offers a
   `GRILL_AUDIO_UNAVAILABLE: <reason>` line; a `Message` carrying it stops the
   turn at once → `AgentInputError` (outcome `input_error`, never repaired or
-  retried; `usage` stays empty). Distinct from the agy defect for audio never
-  opened, which the adapter detects and repairs.
+  retried; `usage` stays empty). Exception: on an `ATTACHED` backend the
+  audio provably reached the model (gemini-3.1-pro once falsely claimed it
+  missing), so the first claim in a final message resumes with
+  `prompt.audio_recheck_message()` + the audio again (`MAX_AUDIO_RECHECKS`,
+  `audio_rechecks` in `result.json`); a second claim raises. Distinct from
+  the agy defect for audio never opened, which the adapter detects and repairs.
 
 ## MCP tools (`agent_tools/`)
 

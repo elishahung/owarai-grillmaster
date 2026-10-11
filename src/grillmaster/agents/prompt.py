@@ -138,7 +138,8 @@ def view_file_section(images: Sequence[Path], audio: Sequence[Path]) -> str:
 
 def audio_check_section() -> str:
     """The way out when the model cannot hear its audio: one marker line,
-    on which the runner stops the session (`audio_unavailable`)."""
+    on which the runner stops the session (`audio_unavailable`), after one
+    `audio_recheck_message` turn when the backend attached the audio."""
     return (
         "【聽不到音訊時】\n"
         "若音訊沒有以聲音進入你的脈絡，不要猜測或改用其他工具，"
@@ -152,6 +153,16 @@ def audio_unavailable(text: str) -> str | None:
     line (possibly empty), else `None`."""
     match = _AUDIO_UNAVAILABLE_RE.search(text)
     return match.group(1).strip(_DECORATION) if match else None
+
+
+def audio_recheck_message() -> str:
+    """The whole user message answering an audio-unavailable claim on a
+    backend that attached the audio itself; the backend attaches it again."""
+    return (
+        "【音訊】你上一輪回報聽不到音訊，但音訊已作為內嵌音訊附在第一則訊息，"
+        "這則訊息再附上一次。請直接聆聽，接著完成原本的任務；"
+        f"若仍然聽不到，再只回覆那一行 {AUDIO_UNAVAILABLE_MARKER}。"
+    )
 
 
 def finish_section() -> str:

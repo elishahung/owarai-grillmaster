@@ -21,6 +21,7 @@ from grillmaster.agents.errors import (
     AgentAuthError,
     AgentConfigError,
     AgentTransientError,
+    AgentUnavailableError,
 )
 from grillmaster.agents.events import Message, Thought, ToolCall, ToolResult
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec
@@ -354,6 +355,15 @@ def test_an_overflow_refusal_is_a_config_error(
         ),
         ({"code": 401, "message": "Unauthorized"}, AgentAuthError, "gemini"),
         ({"code": 500, "message": "socket hang up"}, AgentTransientError, "hang"),
+        (
+            {
+                "code": 429,
+                "message": "No capacity available for model "
+                "gemini-3.1-pro-preview on the server",
+            },
+            AgentUnavailableError,
+            "No capacity",
+        ),
     ],
 )
 def test_prompt_errors_are_classified(

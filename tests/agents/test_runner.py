@@ -36,6 +36,7 @@ from grillmaster.agents.errors import (
     AgentOutputError,
     AgentQuotaError,
     AgentTransientError,
+    AgentUnavailableError,
     ValidationFailure,
     classify_failure,
 )
@@ -43,6 +44,7 @@ from grillmaster.agents.events import Message, Thought, ToolCall, ToolResult
 from grillmaster.agents.prompt import AUDIO_UNAVAILABLE_MARKER, audio_recheck_message
 from grillmaster.agents.runner import (
     MAX_FRAME_TURNS,
+    MAX_UNAVAILABLE_ATTEMPTS,
     RESULT_FILE,
     AgentRunner,
     SessionRecord,
@@ -918,6 +920,37 @@ def test_transient_error_after_the_last_attempt_propagates(
         make_runner(adapter).run(make_task(tmp_path, TextOutput(), attempts=3))
     assert len(adapter.calls) == 3
     assert sleeps == [7.0, 7.0]
+
+
+def test_an_unavailable_server_retries_apart_from_the_task_attempts(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner], sleeps: list[float]
+):
+    busy = Turn(error=AgentUnavailableError("No capacity available"))
+    adapter = FakeAdapter(
+        [
+            busy,
+            busy,
+            Turn(error=AgentTransientError("crash")),
+            busy,
+            Turn(final=final("ok")),
+        ]
+    )
+    result = make_runner(adapter).run(make_task(tmp_path, TextOutput(), attempts=2))
+    assert result.output == "ok"
+    assert result.attempt == 5
+    assert sleeps == [7.0] * 4
+
+
+def test_an_unavailable_server_gives_up_after_its_own_budget(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner], sleeps: list[float]
+):
+    adapter = FakeAdapter(
+        script=lambda call: Turn(error=AgentUnavailableError("No capacity available"))
+    )
+    with pytest.raises(AgentUnavailableError):
+        make_runner(adapter).run(make_task(tmp_path, TextOutput()))
+    assert len(adapter.calls) == MAX_UNAVAILABLE_ATTEMPTS
+    assert len(sleeps) == MAX_UNAVAILABLE_ATTEMPTS - 1
 
 
 @pytest.mark.parametrize(

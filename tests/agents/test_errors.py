@@ -9,6 +9,7 @@ from grillmaster.agents.errors import (
     AgentError,
     AgentQuotaError,
     AgentTransientError,
+    AgentUnavailableError,
     ValidationFailure,
     classify_failure,
 )
@@ -58,6 +59,13 @@ from grillmaster.events.types import SessionOutcome
         ("Resource has been exhausted (e.g. check quota).", None, AgentQuotaError),
         ("Error 429: too many requests", None, AgentTransientError),
         ("authentication_error: invalid token", None, AgentAuthError),
+        # The server's shortage, never ours: no quota latch, the larger budget.
+        (
+            "No capacity available for model gemini-3.1-pro-preview on the server",
+            None,
+            AgentUnavailableError,
+        ),
+        ("RESOURCE_EXHAUSTED: No capacity available", 429, AgentUnavailableError),
         ("Login required.", None, AgentAuthError),
     ],
 )

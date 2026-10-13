@@ -59,6 +59,7 @@ from grillmaster.agents.errors import (
     AgentOutputError,
     AgentQuotaError,
     AgentTransientError,
+    AgentUnavailableError,
     ValidationFailure,
 )
 from grillmaster.agents.events import (
@@ -111,6 +112,9 @@ if TYPE_CHECKING:
 # The MCP tool server; the runner appends `--session <tools.json>`.
 DEFAULT_TOOL_SERVER = (sys.executable, "-m", "grillmaster.agent_tools")
 DEFAULT_RETRY_DELAY_S = 30.0
+# Sessions a task may lose to `AgentUnavailableError` (the server had no
+# capacity), on top of and apart from `AgentTask.attempts`.
+MAX_UNAVAILABLE_ATTEMPTS = 10
 # How often `run_jobs` wakes up to let a pending Ctrl-C through.
 _INTERRUPT_POLL_S = 0.1
 
@@ -293,21 +297,26 @@ class AgentRunner:
 
     def _attempts[T](self, prepared: _Prepared[T], workdir: Path) -> AgentResult[T]:
         """Sessions until one is accepted; only a transient error starts
-        another (`AgentTask.attempts`), after the retry delay."""
-        attempt = 1
+        another (`AgentTask.attempts`; an unavailable server has its own
+        `MAX_UNAVAILABLE_ATTEMPTS`), after the retry delay."""
+        transient = unavailable = 0
         while True:
             try:
-                return self._attempt(prepared, workdir, attempt)
+                return self._attempt(prepared, workdir, 1 + transient + unavailable)
             except AgentQuotaError as error:
                 self._exhausted.setdefault(prepared.spec.backend, error)
                 raise
-            except AgentTransientError:
-                if attempt >= prepared.task.attempts:
+            except AgentUnavailableError:
+                unavailable += 1
+                if unavailable >= MAX_UNAVAILABLE_ATTEMPTS:
                     raise
-                # The slot is already released; waiting must not hold one.
-                # An abort wakes it; the next attempt then refuses to start.
-                self._abort.wait(self._retry_delay_s)
-            attempt += 1
+            except AgentTransientError:
+                transient += 1
+                if transient >= prepared.task.attempts:
+                    raise
+            # The slot is already released; waiting must not hold one.
+            # An abort wakes it; the next attempt then refuses to start.
+            self._abort.wait(self._retry_delay_s)
 
     def run_jobs[T](self, jobs: Sequence[AgentJob[T]]) -> list[JobFailure]:
         """Run `jobs` concurrently (bounded by the global slots) and return

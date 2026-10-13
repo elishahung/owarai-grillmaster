@@ -1,7 +1,8 @@
 """Agent failures, classified by what the caller should do about them.
 
 Only `AgentTransientError` is retried, and only by the runner (in a fresh
-session, `AgentTask.attempts` times) unless the run was aborted.
+session, `AgentTask.attempts` times; its `AgentUnavailableError` subclass on
+a separate, larger budget) unless the run was aborted.
 Everything else fails the task at once.
 `ValidationFailure` is not an `AgentError`: a task's validator raises it, and
 the runner turns it into a repair round in the same session, or hands the
@@ -52,6 +53,11 @@ class AgentTransientError(AgentError):
     outcome = SessionOutcome.TRANSIENT_ERROR
 
 
+class AgentUnavailableError(AgentTransientError):
+    """The server has no capacity for the model right now (gemini-3.1-pro
+    through Code Assist says so often): nothing on our side failed."""
+
+
 class AgentOutputError(AgentError):
     """The output still failed validation after every repair round."""
 
@@ -90,6 +96,7 @@ def _phrases(*patterns: str) -> re.Pattern[str]:
     )
 
 
+_UNAVAILABLE_RE = _phrases("no capacity available")
 _QUOTA_RE = _phrases(
     "quotas?",
     r"resource[ _-]exhausted",
@@ -116,14 +123,17 @@ def classify_failure(
     """Turn a CLI error message into the matching `AgentError`.
 
     Phrases match as whole words ("retries exhausted" and "4291" are not
-    quota). A quota phrase (quota, usage limit, resource exhausted) is a
-    quota error whatever the status. Otherwise an HTTP status (given, or
+    quota). "No capacity available" is the server's shortage, never ours:
+    unavailable, even beside a quota phrase. A quota phrase (quota, usage
+    limit, resource exhausted) is a quota error whatever the status. Otherwise an HTTP status (given, or
     embedded in the message as `"status": 400` or `"code": 400`) decides: 401 is auth, 429 a
     short-lived rate limit (transient), any other 4xx a bad request such as
     an unknown model, so retrying cannot help. Without a status, auth
     phrases decide; rate-limit wording and anything else count as transient.
     `login_hint` is appended to auth failures (e.g. "run `codex login`").
     """
+    if _UNAVAILABLE_RE.search(message):
+        return AgentUnavailableError(message)
     if _QUOTA_RE.search(message):
         return AgentQuotaError(message)
     if status is None:

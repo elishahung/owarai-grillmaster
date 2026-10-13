@@ -39,7 +39,9 @@ one `session/prompt` per turn. Facts this module is built on (gemini-cli
   an oversized session ends with `max_tokens` instead) and
   `context.includeDirectoryTree: false` (the workdir listing showed the
   chunk's `audio.ogg`; a model cut it with ffmpeg through the shell, heard
-  nothing and declared its inline audio missing) go into
+  nothing and declared its inline audio missing) and, for a schema task,
+  `tools.exclude: [run_shell_command]` (a pre-pass searched the web with
+  curl instead of `google_web_search`) go into
   `<workdir>/.gemini/settings.json`, which `session/new` reads because
   `--skip-trust` trusts the workdir. The user's own MCP servers stay off
   through `--allowed-mcp-server-names`. A tool call arrives as a
@@ -125,6 +127,7 @@ THINKING_BUDGETS = {
 # history reaches this multiple of it, so the CLI never compresses a session.
 NEVER_COMPRESS = 1000.0
 SETTINGS_RELPATH = (".gemini", "settings.json")
+SHELL_TOOL = "run_shell_command"
 MAX_MEDIA_BYTES = 20 * 1024 * 1024
 # The audio media types the model takes, by suffix.
 AUDIO_MEDIA_TYPES = {
@@ -221,7 +224,8 @@ class GeminiAdapter:
 
 def write_settings(request: TurnRequest) -> None:
     """The workspace settings of a session: no workdir listing in the
-    context, thinking effort, no history compression, grill MCP server."""
+    context, thinking effort, no history compression, no shell for a schema
+    task, grill MCP server."""
     effort, model = request.spec.effort, request.spec.model
     thinking = (
         {"thinkingBudget": THINKING_BUDGETS[effort]}
@@ -239,6 +243,11 @@ def write_settings(request: TurnRequest) -> None:
             "overrides": [{"match": {"model": model}, "modelConfig": model_config}]
         },
     }
+    # A schema task answers in its final message and needs no shell; with one,
+    # a pre-pass curl'ed Google's search page instead of `google_web_search`.
+    # File-writing tasks keep it: glossary check copies the SRT with it.
+    if request.schema is not None:
+        settings["tools"] = {"exclude": [SHELL_TOOL]}
     if request.mcp is not None:
         settings["mcpServers"] = mcp_servers(request.mcp)
     path = request.workdir.joinpath(*SETTINGS_RELPATH)

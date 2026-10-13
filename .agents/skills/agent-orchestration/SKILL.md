@@ -132,8 +132,10 @@ only a defect's resends.
   `gemini-2.5*`), the MCP server, `model.compressionThreshold: 1000` (a
   compression would summarize the audio away) and
   `context.includeDirectoryTree: false` (a listed `audio.ogg` lured a model
-  into ffmpeg via the shell and a false `GRILL_AUDIO_UNAVAILABLE`; the
-  shell stays on, glossary check copies files with it) go into
+  into ffmpeg via the shell and a false `GRILL_AUDIO_UNAVAILABLE`) and, for
+  a schema task only, `tools.exclude: [run_shell_command]` (a pre-pass
+  curl'ed Google instead of `google_web_search`; file-writing tasks keep the
+  shell, glossary check copies files with it) go into
   `<workdir>/.gemini/settings.json`, read at `session/new`. Model ids are
   gemini-cli's (`gemini-3.1-pro-preview`, not agy's `gemini-3.1-pro`); with
   media attached, an unknown id or an oversized request ends with

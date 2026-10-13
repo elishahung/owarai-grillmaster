@@ -203,6 +203,17 @@ def test_effort_becomes_the_thinking_level_of_the_model(
     assert thinking == {"thinkingLevel": level}
 
 
+def test_only_a_file_writing_task_keeps_the_shell(
+    make_request: Callable[..., TurnRequest],
+):
+    request = make_request(spec=FLASH_LOW, schema={"type": "object"})
+    _first_turn(request)
+    assert _settings(request)["tools"] == {"exclude": ["run_shell_command"]}
+
+    _first_turn(make_request(spec=FLASH_LOW))
+    assert "tools" not in _settings(request)
+
+
 def test_gemini_2_5_gets_a_thinking_budget(make_request: Callable[..., TurnRequest]):
     request = make_request(spec=ModelSpec(Backend.GEMINI, "gemini-2.5-pro", Effort.LOW))
     _first_turn(request)

@@ -6,8 +6,10 @@ attempts. Each attempt is one fresh session holding one slot of the global
 concurrency limit from its first turn through every repair round; repair
 rounds resume that session with only the repair message. Only
 `AgentTransientError` starts another attempt, after a delay spent without a
-slot. Every session leaves `prompt.md`, `tools.json`, `schema.json`,
-`raw.jsonl` and `result.json` in its session directory.
+slot; a turn the server refused for lack of capacity
+(`AgentUnavailableError`) in a session that survived it is taken again in
+that session instead. Every session leaves `prompt.md`, `tools.json`,
+`schema.json`, `raw.jsonl` and `result.json` in its session directory.
 
 A task with a `Handoff` does not repair a validation failure in its own
 session: that session ends (`handed_off`) and the handoff model gets the
@@ -112,7 +114,7 @@ if TYPE_CHECKING:
 # The MCP tool server; the runner appends `--session <tools.json>`.
 DEFAULT_TOOL_SERVER = (sys.executable, "-m", "grillmaster.agent_tools")
 DEFAULT_RETRY_DELAY_S = 30.0
-# Sessions a task may lose to `AgentUnavailableError` (the server had no
+# Turns a task may lose to `AgentUnavailableError` (the server had no
 # capacity), on top of and apart from `AgentTask.attempts`, each after a
 # shorter delay: a shortage clears in seconds. 60 waits of 5 s give the
 # server five minutes.
@@ -157,6 +159,8 @@ class SessionRecord(BaseModel):
     frame_turns: int
     # Turns that resent attached audio the model claimed not to hear.
     audio_rechecks: int
+    # Turns the server refused for lack of capacity, taken again in the session.
+    refused_turns: int
     elapsed_s: float
     usage: dict[str, int]
     error: str | None
@@ -185,11 +189,27 @@ class _SessionFiles:
 
 
 @dataclass(slots=True)
+class _Retries:
+    """A task's retry budgets, spent across its sessions."""
+
+    transient: int = 0
+    unavailable: int = 0
+
+    def refused(self) -> bool:
+        """Count a turn refused for lack of capacity; whether another may follow."""
+        self.unavailable += 1
+        return self.unavailable < MAX_UNAVAILABLE_ATTEMPTS
+
+
+@dataclass(slots=True)
 class _SessionState:
+    # The task's budgets; a refused turn taken again spends from them.
+    retries: _Retries
     session_id: str | None = None
     repairs: int = 0
     frame_turns: int = 0
     audio_rechecks: int = 0
+    refused_turns: int = 0
     # Summed over the session's turns.
     usage: Counter[str] = field(default_factory=Counter)
 
@@ -303,23 +323,26 @@ class AgentRunner:
     def _attempts[T](self, prepared: _Prepared[T], workdir: Path) -> AgentResult[T]:
         """Sessions until one is accepted; only a transient error starts
         another (`AgentTask.attempts`; an unavailable server has its own
-        `MAX_UNAVAILABLE_ATTEMPTS` and a shorter delay), after the retry
-        delay."""
-        transient = unavailable = 0
+        `MAX_UNAVAILABLE_ATTEMPTS`, shared with the turns a surviving
+        session takes again, and a shorter delay), after the retry delay."""
+        retries = _Retries()
+        attempt = 0
         while True:
+            attempt += 1
             try:
-                return self._attempt(prepared, workdir, 1 + transient + unavailable)
+                return self._attempt(prepared, workdir, attempt, retries)
             except AgentQuotaError as error:
                 self._exhausted.setdefault(prepared.spec.backend, error)
                 raise
-            except AgentUnavailableError:
-                unavailable += 1
-                if unavailable >= MAX_UNAVAILABLE_ATTEMPTS:
+            except AgentUnavailableError as error:
+                # A session that survived the refusal let it out only once
+                # its own retries had spent the budget.
+                if error.session_id or not retries.refused():
                     raise
                 delay = self._unavailable_delay_s
             except AgentTransientError:
-                transient += 1
-                if transient >= prepared.task.attempts:
+                retries.transient += 1
+                if retries.transient >= prepared.task.attempts:
                     raise
                 delay = self._retry_delay_s
             # The slot is already released; waiting must not hold one.
@@ -465,7 +488,7 @@ class AgentRunner:
     # -- one attempt = one session ------------------------------------------
 
     def _attempt[T](
-        self, prepared: _Prepared[T], workdir: Path, attempt: int
+        self, prepared: _Prepared[T], workdir: Path, attempt: int, retries: _Retries
     ) -> AgentResult[T]:
         task, spec = prepared.task, prepared.spec
         session_dir = _session_dir(task.session_dir, attempt)
@@ -478,7 +501,7 @@ class AgentRunner:
                 for path in task.output.declared(workdir):
                     path.unlink(missing_ok=True)
             started = self._clock()
-            state = _SessionState()
+            state = _SessionState(retries)
             self._events.emit(
                 AgentSessionStarted(
                     task=task.name,
@@ -533,7 +556,10 @@ class AgentRunner:
         workdir: Path,
         state: _SessionState,
     ) -> T:
-        """Turns until an accepted output. A turn that asked for frames
+        """Turns until an accepted output. A turn the server refused for lack
+        of capacity in a session that survived it is taken again there after
+        the unavailable delay (the slot stays held): continued when the
+        session kept it, else sent again. A turn that asked for frames
         (`ToolImageDelivery.NEXT_MESSAGE`) is answered with them, not judged:
         it was told to end with a note while waiting (which a `TextOutput`
         would accept), and its output was written before the model saw them.
@@ -553,13 +579,18 @@ class AgentRunner:
         handle = session.start(request)
         while True:
             recheck = attached_audio and state.audio_rechecks < MAX_AUDIO_RECHECKS
-            final = self._consume(
-                task.name, handle, audio=bool(prepared.audio) and not recheck
-            )
+            try:
+                final = self._consume(
+                    task.name, handle, audio=bool(prepared.audio) and not recheck
+                )
+            except AgentUnavailableError as refused:
+                turn = self._refused_turn(task.name, refused, state, handle.request)
+                handle = session.resume(refused.session_id, turn)
+                continue
             state.session_id = final.session_id or state.session_id
             state.usage.update(final.usage)
             if recheck and (reason := prompt.audio_unavailable(final.text)) is not None:
-                self._check_resumable(task.name, final, "an audio recheck")
+                self._check_resumable(task.name, final.session_id, "an audio recheck")
                 state.audio_rechecks += 1
                 summary = f"audio claimed unheard, attached again: {reason}"
                 self._activity(task.name, ActivityKind.REPAIR, first_line(summary))
@@ -575,7 +606,7 @@ class AgentRunner:
                         f"{task.name}: still asking for frames after "
                         f"{state.frame_turns} frame turn(s)"
                     )
-                self._check_resumable(task.name, final, "a frames turn")
+                self._check_resumable(task.name, final.session_id, "a frames turn")
                 state.frame_turns += 1
                 summary = f"get_frames: {len(frames)} frame(s) attached"
                 self._activity(task.name, ActivityKind.TOOL_RESULT, summary)
@@ -599,7 +630,7 @@ class AgentRunner:
                     f"{task.name}: output still invalid after "
                     f"{state.repairs} repair round(s): {defect.message}"
                 )
-            self._check_resumable(task.name, final, "a repair")
+            self._check_resumable(task.name, final.session_id, "a repair")
             state.repairs += 1
             self._activity(task.name, ActivityKind.REPAIR, first_line(defect.message))
             handle = session.resume(
@@ -612,9 +643,34 @@ class AgentRunner:
                 ),
             )
 
-    def _check_resumable(self, task_name: str, final: FinalOutput, step: str) -> None:
+    def _refused_turn(
+        self,
+        task_name: str,
+        refused: AgentUnavailableError,
+        state: _SessionState,
+        turn: TurnRequest,
+    ) -> TurnRequest:
+        """The turn to take after the server refused `turn` for lack of
+        capacity, once the unavailable delay passed: the continue message if
+        the session kept `turn`, else `turn` again. Re-raises `refused` when
+        its session did not survive or the unavailable budget is spent."""
+        if not refused.session_id or not state.retries.refused():
+            raise refused
+        state.session_id = refused.session_id
+        state.refused_turns += 1
+        self._abort.wait(self._unavailable_delay_s)
+        if self._abort.is_set():
+            raise self._cancelled(task_name, "a refused turn") from refused
+        if refused.turn_kept:
+            message = prompt.continue_message()
+            turn = replace(turn, message=message, images=(), audio=())
+        how = "continuing the turn" if refused.turn_kept else "sending it again"
+        self._activity(task_name, ActivityKind.RETRY, f"server out of capacity: {how}")
+        return turn
+
+    def _check_resumable(self, task_name: str, session_id: str, step: str) -> None:
         """Raise unless the session can take `step`, another turn."""
-        if not final.session_id:
+        if not session_id:
             raise AgentTransientError(
                 f"{task_name}: no session id to resume for {step}"
             )
@@ -769,6 +825,7 @@ class AgentRunner:
                 repairs=state.repairs,
                 frame_turns=state.frame_turns,
                 audio_rechecks=state.audio_rechecks,
+                refused_turns=state.refused_turns,
                 elapsed_s=round(elapsed, 3),
                 usage=usage,
                 error=None if error is None else f"{type(error).__name__}: {error}",

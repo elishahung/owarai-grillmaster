@@ -57,6 +57,7 @@ ACTIVITY_ICON = {
     ActivityKind.TOOL_RESULT: "↩",
     ActivityKind.MESSAGE: "💬",
     ActivityKind.REPAIR: "🩹",
+    ActivityKind.RETRY: "⏳",
 }
 
 LOG_LEVEL_STYLE = {

@@ -40,6 +40,8 @@ class ActivityKind(StrEnum):
     TOOL_RESULT = "tool_result"
     MESSAGE = "message"
     REPAIR = "repair"
+    # A turn taken again after the server refused it.
+    RETRY = "retry"
 
 
 class SessionOutcome(StrEnum):

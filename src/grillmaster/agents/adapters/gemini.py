@@ -50,6 +50,13 @@ one `session/prompt` per turn. Facts this module is built on (gemini-cli
 * A failed model call answers the prompt with a JSON-RPC error whose code
   is the HTTP status (500 when there is none). Usage comes from the prompt
   result's `_meta.quota.token_count` (input and output only).
+* The process outlives a "no capacity" refusal (the CLI retries it for
+  about 100 s first). What the session keeps depends on the refused
+  request: a prompt's own message is rolled back, but a tool response is
+  not, so a turn refused after a finished tool call stays in the history
+  (its message, model turns and tool results) and the next prompt
+  continues it; the CLI closes the dangling tool response with a
+  placeholder model turn first (`GeminiChat.sendMessageStream`).
 * Paid API-key variables are removed from the environment so the CLI uses
   the subscription login, which needs `GOOGLE_CLOUD_PROJECT` for a Code
   Assist account.
@@ -85,6 +92,7 @@ from grillmaster.agents.errors import (
     AgentConfigError,
     AgentError,
     AgentTransientError,
+    AgentUnavailableError,
     classify_failure,
 )
 from grillmaster.agents.events import (
@@ -341,6 +349,11 @@ class GeminiTurn(Turn):
             yield from self._updates.flush()
         except AcpError as error:
             self._error = _failure(error)
+            if isinstance(self._error, AgentUnavailableError):
+                # The process lives on; the CLI keeps the turn once a tool
+                # round finished (a refused tool response stays in history).
+                self._error.session_id = self._session.session_id
+                self._error.turn_kept = self._updates.tool_done
         except AcpClosed:
             self._error = _ended(self._connection, self._request)
         finally:
@@ -404,6 +417,8 @@ class UpdateReader:
         self._pending: list[str] = []
         self.last_text = ""
         self._tools: dict[str, str] = {}
+        # A tool call of this turn ended, completed or failed.
+        self.tool_done = False
 
     def feed(self, notification: Notification) -> Iterator[AgentEvent]:
         method, params = notification
@@ -435,6 +450,7 @@ class UpdateReader:
                 pass
         status = update.get("status")
         if kind in {"tool_call", "tool_call_update"} and status in _TOOL_DONE:
+            self.tool_done = True
             yield ToolResult(self._tools.get(tool_id, "tool"), ok=status == "completed")
 
     def flush(self) -> Iterator[AgentEvent]:

@@ -141,7 +141,10 @@ only a defect's resends.
   media attached, an unknown id or an oversized request ends with
   `stopReason: max_tokens` (no model call) → `AgentConfigError`. Tool calls
   arrive titled `name(arg: value)` without raw arguments. JSON-RPC error
-  codes are HTTP statuses (500 = none). Same API-key stripping as agy; the
+  codes are HTTP statuses (500 = none). A "no capacity" error leaves the
+  process alive; gemini-cli rolls back a refused prompt but keeps a turn
+  refused after a finished tool call, so the error names the session and
+  `turn_kept` = a tool finished this turn. Same API-key stripping as agy; the
   user's `~/.gemini` settings and `GEMINI.md` still load.
 - **codex**: `codex exec --json … -`, `--ignore-user-config`, sandbox bypassed,
   `--image` on the start turn only, `--output-schema` (last `agent_message`),
@@ -197,8 +200,12 @@ only a defect's resends.
   markers, else transient. Claude's rejected rate-limit event and
   `billing_error` are quota too. The only retry loop is in `run`:
   transient → new session (up to `attempts`) after 30 s without a slot;
-  unavailable counts apart, up to `MAX_UNAVAILABLE_ATTEMPTS` (61) per task,
-  after 5 s each (five minutes of waiting).
+  unavailable counts apart, up to `MAX_UNAVAILABLE_ATTEMPTS` (61) refused
+  turns per task, after 5 s each (five minutes of waiting). An unavailable
+  error carrying `session_id` (the session survived) is retried in that
+  session holding the slot: `turn_kept` → `prompt.continue_message()` without
+  media, else the same turn again (`refused_turns` in `result.json`, a
+  `RETRY` activity).
 - Abort (`kill_all`, a `run_jobs` interrupt) sets `core.process.ABORT` for
   good: the retry wait (`ABORT.wait`) wakes, and no session or repair turn
   starts (`AgentCancelledError`, outcome `cancelled`, never retried). An `AgentQuotaError` latches

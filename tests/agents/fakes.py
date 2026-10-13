@@ -257,6 +257,10 @@ class FakeHandle:
         self._turn = turn
         self._request = request
 
+    @property
+    def request(self) -> TurnRequest:
+        return self._request
+
     def events(self) -> Generator[AgentEvent]:
         for line in self._turn.raw:
             self._request.raw(line)

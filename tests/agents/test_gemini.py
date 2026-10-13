@@ -388,6 +388,68 @@ def test_prompt_errors_are_classified(
         _first_turn(make_request(spec=FLASH_LOW), *lines)
 
 
+_NO_CAPACITY = {
+    "code": 429,
+    "message": "No capacity available for model gemini-3.1-pro-preview on the server",
+}
+
+
+@pytest.mark.parametrize(
+    ("updates", "kept"),
+    [
+        pytest.param([], False, id="before-any-tool"),
+        pytest.param(
+            [
+                {"sessionUpdate": "tool_call", "toolCallId": "t1", "title": "x()"},
+                {
+                    "sessionUpdate": "tool_call_update",
+                    "toolCallId": "t1",
+                    "status": "completed",
+                },
+            ],
+            True,
+            id="after-a-finished-tool",
+        ),
+        pytest.param(
+            [
+                {
+                    "sessionUpdate": "tool_call",
+                    "toolCallId": "t1",
+                    "status": "failed",
+                    "title": "x()",
+                }
+            ],
+            True,
+            id="after-a-failed-tool",
+        ),
+        pytest.param(
+            [{"sessionUpdate": "tool_call", "toolCallId": "t1", "title": "x()"}],
+            False,
+            id="with-a-tool-still-running",
+        ),
+    ],
+)
+def test_a_refusal_for_capacity_leaves_the_session_open(
+    make_request: Callable[..., TurnRequest], updates: list[dict[str, Any]], kept: bool
+):
+    lines = [
+        *acp_handshake(),
+        *(acp_update(update) for update in updates),
+        acp_response(3, error=_NO_CAPACITY),
+        *ANSWER[:1],
+        acp_prompt_result(4),
+    ]
+    session, spawn = _session(*lines)
+    request = make_request(spec=FLASH_LOW)
+    with pytest.raises(AgentUnavailableError) as refused:
+        session.start(request).result()
+
+    assert (refused.value.session_id, refused.value.turn_kept) == ("s1", kept)
+    assert not spawn.processes[0].stopped_early
+    assert session.resume("s1", request).result().text == "ok"
+    assert len(spawn.specs) == 1
+
+
 def test_a_missing_cloud_project_is_a_config_error(
     make_request: Callable[..., TurnRequest],
 ):

@@ -144,6 +144,11 @@ class FinalOutput:
 
 
 class SessionHandle(Protocol):
+    @property
+    def request(self) -> TurnRequest:
+        """What this turn was started or resumed with."""
+        ...
+
     def events(self) -> Generator[AgentEvent]:
         """Normalized events as they stream; blocks until the turn ends.
         Closing it early ends the CLI's process tree (agy, codex; gemini's
@@ -234,6 +239,10 @@ class Turn(ABC):
 
     def __init__(self, request: TurnRequest) -> None:
         self._request = request
+
+    @property
+    def request(self) -> TurnRequest:
+        return self._request
 
     @abstractmethod
     def events(self) -> Generator[AgentEvent]: ...

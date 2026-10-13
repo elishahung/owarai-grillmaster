@@ -41,7 +41,11 @@ from grillmaster.agents.errors import (
     classify_failure,
 )
 from grillmaster.agents.events import Message, Thought, ToolCall, ToolResult
-from grillmaster.agents.prompt import AUDIO_UNAVAILABLE_MARKER, audio_recheck_message
+from grillmaster.agents.prompt import (
+    AUDIO_UNAVAILABLE_MARKER,
+    audio_recheck_message,
+    continue_message,
+)
 from grillmaster.agents.runner import (
     MAX_FRAME_TURNS,
     MAX_UNAVAILABLE_ATTEMPTS,
@@ -951,6 +955,116 @@ def test_an_unavailable_server_gives_up_after_its_own_budget(
         make_runner(adapter).run(make_task(tmp_path, TextOutput()))
     assert len(adapter.calls) == MAX_UNAVAILABLE_ATTEMPTS
     assert len(sleeps) == MAX_UNAVAILABLE_ATTEMPTS - 1
+
+
+def _refused(*, kept: bool = False) -> Turn:
+    """A turn refused for capacity in a session that survives it."""
+    error = AgentUnavailableError("No capacity available")
+    error.session_id, error.turn_kept = "sess-1", kept
+    return Turn(error=error)
+
+
+def test_a_refused_turn_is_sent_again_in_its_surviving_session(
+    tmp_path: Path,
+    make_runner: Callable[..., AgentRunner],
+    recording_sink: RecordingSink,
+    sleeps: list[float],
+):
+    audio = tmp_path / "chunk.ogg"
+    audio.write_bytes(b"x")
+    adapter = FakeAdapter([_refused(), Turn(final=final("ok"))])
+    task = make_task(tmp_path, TextOutput(), audio=(audio,))
+
+    result = make_runner(adapter).run(task)
+
+    assert (result.output, result.attempt) == ("ok", 1)
+    assert len(adapter.sessions) == 1
+    start, again = adapter.calls
+    assert (again.kind, again.session_id) == ("resume", "sess-1")
+    assert again.request == start.request
+    assert sleeps == [3.0]
+    assert activities(recording_sink)[0] == (
+        ActivityKind.RETRY,
+        "server out of capacity: sending it again",
+    )
+    record = _record(tmp_path / "refine" / "session")
+    assert (record.outcome, record.refused_turns) == (SessionOutcome.OK, 1)
+
+
+def test_a_refused_turn_the_session_kept_is_continued(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    audio = tmp_path / "chunk.ogg"
+    audio.write_bytes(b"x")
+    adapter = FakeAdapter([_refused(kept=True), Turn(final=final("ok"))])
+    task = make_task(tmp_path, TextOutput(), audio=(audio,))
+
+    assert make_runner(adapter).run(task).output == "ok"
+
+    resumed = adapter.calls[1].request
+    assert resumed.message == continue_message()
+    assert (resumed.images, resumed.audio) == ((), ())
+
+
+def test_frames_asked_for_before_a_kept_refusal_follow_the_continued_turn(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    frame = tmp_path / "frames" / "f1.jpg"
+    refused = _refused(kept=True)
+    refused.on_start = _ask_for_frames(frame)
+    adapter = FakeAdapter(
+        [refused, Turn(final=final("waiting")), Turn(final=final("seen"))],
+        tool_image_delivery=ToolImageDelivery.NEXT_MESSAGE,
+    )
+    task = make_task(tmp_path, TextOutput(), tools=_frames_tools(tmp_path))
+
+    assert make_runner(adapter).run(task).output == "seen"
+
+    _, resumed, frames_turn = adapter.calls
+    assert resumed.request.message == continue_message()
+    assert frames_turn.request.images == (frame,)
+
+
+def test_a_refused_repair_turn_is_sent_again(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    def not_draft(text: str) -> None:
+        if text == "draft":
+            raise ValidationFailure("still a draft")
+
+    adapter = FakeAdapter(
+        [Turn(final=final("draft")), _refused(), Turn(final=final("ok"))]
+    )
+    task = make_task(tmp_path, TextOutput(), validate=not_draft)
+
+    assert make_runner(adapter).run(task).output == "ok"
+
+    _, repair, again = adapter.calls
+    assert "still a draft" in repair.request.message
+    assert again.request == repair.request
+
+
+def test_refused_turns_share_the_unavailable_budget(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner], sleeps: list[float]
+):
+    adapter = FakeAdapter(script=lambda call: _refused())
+    with pytest.raises(AgentUnavailableError):
+        make_runner(adapter).run(make_task(tmp_path, TextOutput()))
+    assert len(adapter.calls) == MAX_UNAVAILABLE_ATTEMPTS
+    assert [call.kind for call in adapter.calls].count("start") == 1
+    assert len(sleeps) == MAX_UNAVAILABLE_ATTEMPTS - 1
+
+
+def test_an_abort_while_a_refused_turn_waits_cancels_it(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    abort = WaitLog(lambda _: abort.set())
+    adapter = FakeAdapter([_refused()])
+    with pytest.raises(AgentCancelledError):
+        make_runner(adapter, abort=abort).run(make_task(tmp_path, TextOutput()))
+    assert len(adapter.calls) == 1
+    record = _record(tmp_path / "refine" / "session")
+    assert record.outcome is SessionOutcome.CANCELLED
 
 
 @pytest.mark.parametrize(

@@ -2,7 +2,8 @@
 
 Only `AgentTransientError` is retried, and only by the runner (in a fresh
 session, `AgentTask.attempts` times; its `AgentUnavailableError` subclass on
-a separate, larger budget) unless the run was aborted.
+a separate, larger budget, in the same session when that survived) unless
+the run was aborted.
 Everything else fails the task at once.
 `ValidationFailure` is not an `AgentError`: a task's validator raises it, and
 the runner turns it into a repair round in the same session, or hands the
@@ -55,7 +56,15 @@ class AgentTransientError(AgentError):
 
 class AgentUnavailableError(AgentTransientError):
     """The server has no capacity for the model right now (gemini-3.1-pro
-    through Code Assist says so often): nothing on our side failed."""
+    through Code Assist says so often): nothing on our side failed.
+
+    A backend whose session outlives the refusal names it in `session_id`,
+    and the runner takes the turn again in that session. `turn_kept` says
+    the session still holds the refused turn (its message and the tool
+    rounds it finished), so it is continued, not sent again."""
+
+    session_id: str = ""
+    turn_kept: bool = False
 
 
 class AgentOutputError(AgentError):

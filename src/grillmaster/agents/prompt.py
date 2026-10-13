@@ -6,7 +6,8 @@ delivers requested frames on backends whose tool results cannot carry
 images, how to submit a
 schema answer on backends that take it through a `finish` tool or as the
 final message, the
-audio-unavailable protocol, and the repair-round message. Detailed limits
+audio-unavailable protocol, the message continuing a turn the server cut
+off, and the repair-round message. Detailed limits
 stay in each MCP tool's own description.
 """
 
@@ -205,6 +206,15 @@ def handoff_section(failed_output: str, failure: str) -> str:
         "其餘內容原樣保留，再以原本要求的方式與格式輸出完整結果。\n\n"
         f"驗證問題：\n{failure}\n\n"
         f"上一個模型的輸出：\n{fence}\n{failed_output}\n{fence}"
+    )
+
+
+def continue_message() -> str:
+    """The whole user message resuming a turn the server cut off for lack of
+    capacity after some of its tool calls had finished."""
+    return (
+        "【繼續】伺服器暫時沒有容量，中斷了你上一輪的工作；你已完成的工具呼叫"
+        "與結果都還在。請從中斷處接著完成原本的任務，已取得的結果不必重做。"
     )
 
 

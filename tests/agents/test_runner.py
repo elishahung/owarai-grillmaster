@@ -938,7 +938,7 @@ def test_an_unavailable_server_retries_apart_from_the_task_attempts(
     result = make_runner(adapter).run(make_task(tmp_path, TextOutput(), attempts=2))
     assert result.output == "ok"
     assert result.attempt == 5
-    assert sleeps == [7.0] * 4
+    assert sleeps == [3.0, 3.0, 7.0, 3.0]
 
 
 def test_an_unavailable_server_gives_up_after_its_own_budget(

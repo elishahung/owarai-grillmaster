@@ -195,7 +195,8 @@ only a defect's resends.
   markers, else transient. Claude's rejected rate-limit event and
   `billing_error` are quota too. The only retry loop is in `run`:
   transient → new session (up to `attempts`) after 30 s without a slot;
-  unavailable counts apart, up to `MAX_UNAVAILABLE_ATTEMPTS` (10) per task.
+  unavailable counts apart, up to `MAX_UNAVAILABLE_ATTEMPTS` (61) per task,
+  after 5 s each (five minutes of waiting).
 - Abort (`kill_all`, a `run_jobs` interrupt) sets `core.process.ABORT` for
   good: the retry wait (`ABORT.wait`) wakes, and no session or repair turn
   starts (`AgentCancelledError`, outcome `cancelled`, never retried). An `AgentQuotaError` latches

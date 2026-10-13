@@ -113,8 +113,11 @@ if TYPE_CHECKING:
 DEFAULT_TOOL_SERVER = (sys.executable, "-m", "grillmaster.agent_tools")
 DEFAULT_RETRY_DELAY_S = 30.0
 # Sessions a task may lose to `AgentUnavailableError` (the server had no
-# capacity), on top of and apart from `AgentTask.attempts`.
-MAX_UNAVAILABLE_ATTEMPTS = 10
+# capacity), on top of and apart from `AgentTask.attempts`, each after a
+# shorter delay: a shortage clears in seconds. 60 waits of 5 s give the
+# server five minutes.
+MAX_UNAVAILABLE_ATTEMPTS = 61
+DEFAULT_UNAVAILABLE_DELAY_S = 5.0
 # How often `run_jobs` wakes up to let a pending Ctrl-C through.
 _INTERRUPT_POLL_S = 0.1
 
@@ -213,6 +216,7 @@ class AgentRunner:
         events: EventSink,
         tool_server: Sequence[str] = DEFAULT_TOOL_SERVER,
         retry_delay_s: float = DEFAULT_RETRY_DELAY_S,
+        unavailable_delay_s: float = DEFAULT_UNAVAILABLE_DELAY_S,
         clock: Callable[[], float] = time.monotonic,
         abort: threading.Event = ABORT,
     ) -> None:
@@ -228,6 +232,7 @@ class AgentRunner:
         self._events = events
         self._tool_server = tuple(tool_server)
         self._retry_delay_s = retry_delay_s
+        self._unavailable_delay_s = unavailable_delay_s
         self._clock = clock
         self._abort = abort
         # The first quota error of each backend; later tasks fail with it.
@@ -298,7 +303,8 @@ class AgentRunner:
     def _attempts[T](self, prepared: _Prepared[T], workdir: Path) -> AgentResult[T]:
         """Sessions until one is accepted; only a transient error starts
         another (`AgentTask.attempts`; an unavailable server has its own
-        `MAX_UNAVAILABLE_ATTEMPTS`), after the retry delay."""
+        `MAX_UNAVAILABLE_ATTEMPTS` and a shorter delay), after the retry
+        delay."""
         transient = unavailable = 0
         while True:
             try:
@@ -310,13 +316,15 @@ class AgentRunner:
                 unavailable += 1
                 if unavailable >= MAX_UNAVAILABLE_ATTEMPTS:
                     raise
+                delay = self._unavailable_delay_s
             except AgentTransientError:
                 transient += 1
                 if transient >= prepared.task.attempts:
                     raise
+                delay = self._retry_delay_s
             # The slot is already released; waiting must not hold one.
             # An abort wakes it; the next attempt then refuses to start.
-            self._abort.wait(self._retry_delay_s)
+            self._abort.wait(delay)
 
     def run_jobs[T](self, jobs: Sequence[AgentJob[T]]) -> list[JobFailure]:
         """Run `jobs` concurrently (bounded by the global slots) and return

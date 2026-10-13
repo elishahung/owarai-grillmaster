@@ -375,6 +375,7 @@ def make_runner(
         "events": events,
         "tool_server": ("python", "-m", "grillmaster.agent_tools"),
         "retry_delay_s": 7.0,
+        "unavailable_delay_s": 3.0,
         "clock": Clock(),
         "abort": threading.Event(),
     }

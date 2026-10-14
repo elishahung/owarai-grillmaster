@@ -37,7 +37,7 @@
 
 需要 Python 3.13+、FFmpeg（加入 PATH）、uv，以及登入好的 agent CLI（`gemini`、`agy`、`codex`；Claude 走內建的 SDK；`gemini` 的 Code Assist 登入需要環境變數 `GOOGLE_CLOUD_PROJECT`）
 
-> Antigravity 有 Token 用量較高，以及尺度審查較嚴格而拒絕翻譯的問題。而 Gemini CLI 有 Gemini 3.1 Pro 常常會 429 錯誤 (負載過哥) 問題。
+> Antigravity 有 Token 用量較高，以及尺度審查較嚴格而拒絕翻譯的問題。而 Gemini CLI 有 Gemini 3.1 Pro 常常會 429 錯誤 (負載過高) 問題。
 
 ```bash
 uv sync

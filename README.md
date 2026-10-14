@@ -4,40 +4,40 @@
 
 ![](docs/images/tui.png)
 ![](docs/images/image2.jpg)
-![](docs/images/image3.png)
-![](docs/images/image1.png)
+
+截至目前已翻譯 [1020 個項目](https://space.bilibili.com/277428027/upload/video)，流程算滿穩定。
 
 ## 說明
 
 - 目標是 one shot 即可直接觀看，不想校準 (避免被暴雷)
-- 翻譯與後處理都走 agent 訂閱，只有 ElevenLabs ASR 計費：$0.22 美元／小時。一集 20 多分鐘節目從下載到輸出字幕約 20 多分鐘
+- 翻譯與後處理都走 agent 訂閱，只有 ElevenLabs ASR 計費：$0.22 美元／小時。一集 20 多分鐘節目從下載到輸出字幕約 30 分鐘
 - 設定偏好都是個人主觀，如需修改請自行 fork
-- 更詳細請[查看心得](docs/article.md)
+- 更詳細說明請查看以下或直接把這個 repo 丟給你的 agent
+  - [心得1](https://www.bilibili.com/video/BV1ZwRQB5ETf)
+  - [心得2](https://www.bilibili.com/video/BV1X5bu6REDU)
 
-## 工具
+## 模型
 
 經過各種嘗試，覺得以下方式最合適
 
 - **ASR**：`ElevenLabs Scribe v2`，一堆人大聲喧嘩、裝傻吐槽沒有間隔也能辨識
-- **翻譯**：`Gemini 3` 系列最能抓住日本綜藝的韻味，也很會看圖聽音檔；潤飾、名詞校對等後處理交給 Codex / Claude，輸出結構出錯時在同一個 session 內要求修正
-
-翻譯分兩階段：先看完整部片做一份簡報（人物、專有名詞、梗的譯法、語氣），再把字幕切塊平行翻譯。翻譯時會參考音檔，模型也能透過 grill 自帶的 MCP 工具（`get_frames`）自己挑時間點截圖，辨識人物、場景與畫面上的文字
+- **翻譯**：`Gemini 3` 系列最能抓住日本綜藝的韻味，也很會看圖聽音檔
+- **潤飾**：交給 `GPT` / `Claude`，修正 `Gemini` 輸出結構異常與亂用主語的瑕疵，並且會更願意調用工具去上網查詢、截圖驗證字句
 
 ![](docs/images/image4.jpg)
 
-中途失敗可以直接重跑同一個 ID，會從中斷的地方繼續
-
 ## 流程
+先對整部片做一份簡報（人物、專有名詞、梗的譯法、語氣），再把字幕切塊平行翻譯。翻譯時會參考音檔，模型也能透過 grill 自帶的 MCP 工具（`get_frames`）自己挑時間點截圖，辨識人物、場景與畫面上的文字
 
 ```
-下載影片 → 語音辨識 → 全片簡報 → 分塊翻譯 → 潤飾 → 名詞校對 → 輸出 ASS + SRT → 歸檔（可選）→ 燒錄字幕（可選）
+下載影片 → 語音辨識 → 全片簡報 → 分塊翻譯 → 潤飾 → 名詞校對 → 最終審閱（可選）→ 輸出 ASS + SRT → 歸檔（可選）→ 燒錄字幕（可選）
 ```
 
 ## 安裝
 
 需要 Python 3.13+、FFmpeg（加入 PATH）、uv，以及登入好的 agent CLI（`gemini`、`agy`、`codex`；Claude 走內建的 SDK；`gemini` 的 Code Assist 登入需要環境變數 `GOOGLE_CLOUD_PROJECT`）
 
-> Antigravity 有讀取音檔 cache 不穩定 (Token 用量約 Gemini CLI 五倍)，以及尺度審查較嚴格而拒絕翻譯的問題
+> Antigravity 有 Token 用量較高，以及尺度審查較嚴格而拒絕翻譯的問題。而 Gemini CLI 有 Gemini 3.1 Pro 常常會 429 錯誤 (負載過哥) 問題。
 
 ```bash
 uv sync
@@ -84,7 +84,7 @@ grill reset <專案 ID> --from refine
 grill status [專案 ID]
 ```
 
-其他選項：`--cover`（產生封面）、`--date-research`（查不到播出日時上網找）、`--chat`（翻譯 YouTube 聊天室並燒進畫面，`--chat-layout side|overlay|none`）、`--remix [素材池]`、`--parent <專案資料夾>`（不帶值時，從最近十天處理完的 archived 專案中搜尋挑選）。完整說明見 `grill --help`
+其他選項：`--cover`（產生封面）、`--date-research`（查不到播出日時上網找）、`--review`（名詞校對後再跑最終審閱）、`--chat`（翻譯 YouTube 聊天室並燒進畫面，`--chat-layout side|overlay|none`）、`--remix [素材池]`、`--parent <專案資料夾>`（不帶值時，從最近十天處理完的 archived 專案中搜尋挑選）。完整說明見 `grill --help`
 
 可以同時開多個 `grill` 處理不同影片：每個 agent 工具伺服器都是各自獨立的子行程，互不衝突；同一個 ID 同時只能有一個 `grill` 在處理，第二個會直接報錯
 
@@ -103,6 +103,7 @@ package = 'NAS:\video\package'     # 燒錄字幕後的成品位置
 prepass = "gemini/gemini-3.1-pro-preview/high"  # backend：gemini、agy、claude、codex（皆為訂閱制；agy 與 gemini 能聽音檔）
 chunk = "gemini/gemini-3.1-pro-preview/high"
 postprocess = "codex/gpt-6.1-sol/high"
+review = "claude/claude-opus-5-5/high"  # 最終審閱；省略則沿用 postprocess
 utility = "codex/gpt-6.1-sol/medium"
 image = "codex/gpt-6.1-sol/medium"   # 封面，需要能生圖的 codex
 
@@ -110,6 +111,7 @@ image = "codex/gpt-6.1-sol/medium"   # 封面，需要能生圖的 codex
 cover = true                        # 產生風格化封面
 date_research = true                # 查不到播出日時上網找
 title_suggestion = true             # 燒錄時產生候選標題
+review = true                       # 名詞校對後再跑最終審閱（同 --review）
 ```
 
 其他可調參數（切塊大小、併發數、抽圖頻率、remix 素材池等）請見 `grill.example.toml`。併發數 `[agents] max_concurrent` 預設 10，是每個 `grill` 行程各自的上限
@@ -120,7 +122,7 @@ title_suggestion = true             # 燒錄時產生候選標題
 
 - `remix`：`true` 時打包一律用 remix（同 `--remix`）
 - `inserts`：打包時要附上的素材（對應 `[[package.inserts]]`）
-- `instruction`：給各步驟模型的額外指示，鍵為 `prepass`、`chunks`、`refine`、`glossary`；`common` 會加到上述每個步驟。頻道與系列都有設定時兩者都會帶入
+- `instruction`：給各步驟模型的額外指示，鍵為 `prepass`、`chunks`、`refine`、`glossary`、`review`；`common` 會加到上述每個步驟。頻道與系列都有設定時兩者都會帶入
 
 ### `.env`
 

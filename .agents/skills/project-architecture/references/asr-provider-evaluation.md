@@ -12,7 +12,7 @@ whole comparison.
 | xAI Grok Voice Transcribe 2.0 | $0.10/h, keyterms/diarization included | rejected: drops speech |
 | Microsoft MAI-Transcribe-2 (Azure Speech) | $0.10/h promo until 2026-12-31 | not evaluated further: public preview, unknown price after the promo, diarization unreliable on long audio |
 
-An earlier round (see `docs/article.md`) had already ranked Scribe v2 above
+An earlier round had already ranked Scribe v2 above
 Doubao, Fun-ASR, Chirp 3, GPT-4o-transcribe and self-hosted Qwen3-ASR.
 
 ## Method

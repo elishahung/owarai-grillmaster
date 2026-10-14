@@ -122,6 +122,10 @@ Subtitle rules:
   not `好萊塢雜魚師匠`.
 - Intentional proper nouns, official romanized names, service names, titles, or
   quoted terms may legitimately stay non-Chinese.
+- Never romanize a token already written in kanji in the source unless the
+  glossary maps that exact kanji form to romaji. When a name mixes kanji and
+  kana, keep the kanji and romanize only the kana part (`志らく` -> `志Raku`,
+  `岩崎う大` -> `岩崎U大`); an official romaji spelling does not override this.
 
 Pre-pass rules:
 

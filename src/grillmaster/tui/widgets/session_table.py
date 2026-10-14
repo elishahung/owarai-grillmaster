@@ -53,11 +53,11 @@ def render_session_table(
     )
     table.add_column("", width=1)
     table.add_column("task", no_wrap=True)
-    table.add_column("model", style="cyan", no_wrap=True)
+    table.add_column("last activity", ratio=1, no_wrap=True, overflow="ellipsis")
     table.add_column("elapsed", justify="right", no_wrap=True)
     table.add_column("tools", justify="right")
     table.add_column("repairs", justify="right")
-    table.add_column("last activity", ratio=1, no_wrap=True, overflow="ellipsis")
+    table.add_column("model", style="cyan", no_wrap=True)
     now = state.now()
     for session in sessions:
         icon, style = SESSION_ICON[session.state]
@@ -68,10 +68,10 @@ def render_session_table(
         table.add_row(
             Text(icon, style=style),
             task,
-            session.spec,
+            activity_text(last) if last is not None else Text("…", style="grey42"),
             fmt_clock(session.live_elapsed(now)),
             str(session.tool_calls),
             Text(str(session.repairs), style="dark_orange" if session.repairs else ""),
-            activity_text(last) if last is not None else Text("…", style="grey42"),
+            session.spec,
         )
     return table

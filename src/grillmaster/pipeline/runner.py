@@ -378,7 +378,7 @@ class _Run:
         leaves them pending; disabled and already complete ones keep the
         reason a full run would give them."""
         for stage in stages:
-            if not stage.enabled(self._options):
+            if not stage.enabled(self._options, self._loaded.config):
                 reason = SkipReason.DISABLED
             elif self._store.state.is_done(stage.key):
                 reason = SkipReason.ALREADY_COMPLETE
@@ -388,7 +388,7 @@ class _Run:
 
     def _run_stage(self, stage: StageDef) -> None:
         key = stage.key
-        if not stage.enabled(self._options):
+        if not stage.enabled(self._options, self._loaded.config):
             self._events.emit(StepSkipped(key, PlanKind.STAGE, SkipReason.DISABLED))
             return
         ctx = self._context(self._store.layout.work_dir(key))

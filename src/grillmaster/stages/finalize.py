@@ -1,9 +1,10 @@
-"""Finalize stage: `work/11_glossary/checked.srt` into the deliverables
-`video.cht.ass` and `video.cht.srt` beside `video.mp4`, where players pick
-them up (name spacing + Netflix-TC punctuation).
+"""Finalize stage: the effective subtitles (`work/12_review/reviewed.srt`
+after the optional review, else `work/11_glossary/checked.srt`) into the
+deliverables `video.cht.ass` and `video.cht.srt` beside `video.mp4`, where
+players pick them up (name spacing + Netflix-TC punctuation).
 
 Name units come from the effective briefing and the fixed glossary. No
-intermediates, so `work/12_finalize/` is never created. The step result
+intermediates, so `work/13_finalize/` is never created. The step result
 lists the written files, project-relative.
 """
 
@@ -35,7 +36,7 @@ def _run(ctx: StageContext) -> str:
         require(layout.effective_briefing(), StageKey.PREPASS), Briefing
     )
     blocks = write_finalized(
-        read_srt_file(require(layout.glossary_checked_srt, StageKey.GLOSSARY)),
+        read_srt_file(require(layout.effective_subtitles(), StageKey.GLOSSARY)),
         units=name_units(briefing, load_fixed_glossary()),
         ass_path=layout.cht_ass,
         srt_path=layout.cht_srt,

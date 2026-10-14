@@ -68,9 +68,9 @@ def tool_params(name: str) -> Callable[[AppConfig], dict[str, str]]:
 
 
 def flag_or_feature(
-    name: Literal["cover", "date_research"],
+    name: Literal["cover", "date_research", "review"],
 ) -> Callable[[RunOptions, AppConfig], bool]:
-    """`SideTaskDef.enabled`: the run flag `name` or `[features] <name>`."""
+    """`enabled` of an optional step: the run flag `name` or `[features] <name>`."""
 
     def enabled(options: RunOptions, config: AppConfig) -> bool:
         return bool(getattr(options, name)) or bool(getattr(config.features, name))
@@ -78,7 +78,7 @@ def flag_or_feature(
     return enabled
 
 
-def chat_enabled(options: RunOptions) -> bool:
+def chat_enabled(options: RunOptions, _config: AppConfig) -> bool:
     """`StageDef.enabled` of the `--chat` stages."""
     return options.chat
 
@@ -165,6 +165,12 @@ def source_context(
         official_subtitles=tuple(read_srt_file(official)) if official.exists() else (),
         parent_briefing=parent_briefing,
     )
+
+
+def official_srt(layout: ProjectLayout) -> Path | None:
+    """`subs/ja.official.srt`, or `None` when the project has no CC."""
+    official = layout.ja_official_srt
+    return official if official.exists() else None
 
 
 def accepts_audio(agents: AgentRunner, role: Role) -> bool:

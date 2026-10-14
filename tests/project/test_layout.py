@@ -47,8 +47,14 @@ _NAMED_PATHS: list[tuple[Callable[[ProjectLayout], Path], str]] = [
     (lambda p: p.glossary_briefing, "work/11_glossary/briefing.json"),
     (lambda p: p.glossary_report, "work/11_glossary/report.md"),
     (lambda p: p.glossary_frames_dir, "work/11_glossary/frames"),
-    (lambda p: p.chat_batches_dir, "work/13_chat_translate/batches"),
-    (lambda p: p.chat_polish, "work/13_chat_translate/polish.json"),
+    (lambda p: p.review_aligned, "work/12_review/aligned.tsv"),
+    (lambda p: p.review_history, "work/12_review/history.md"),
+    (lambda p: p.reviewed_srt, "work/12_review/reviewed.srt"),
+    (lambda p: p.review_findings, "work/12_review/findings.json"),
+    (lambda p: p.review_report, "work/12_review/report.md"),
+    (lambda p: p.review_frames_dir, "work/12_review/frames"),
+    (lambda p: p.chat_batches_dir, "work/14_chat_translate/batches"),
+    (lambda p: p.chat_polish, "work/14_chat_translate/polish.json"),
     (lambda p: p.date_research_result, "work/side/date_research/result.json"),
     (lambda p: p.package_work_dir, "work/package"),
     (lambda p: p.titles, "work/package/titles.json"),
@@ -62,7 +68,7 @@ _NAMED_PATHS: list[tuple[Callable[[ProjectLayout], Path], str]] = [
         lambda p: p.chunk_translation(120, 240),
         "work/09_chunks/0120-0240/translation.json",
     ),
-    (lambda p: p.chat_batch(7), "work/13_chat_translate/batches/batch_0007.json"),
+    (lambda p: p.chat_batch(7), "work/14_chat_translate/batches/batch_0007.json"),
 ]
 
 
@@ -90,8 +96,9 @@ def test_every_stage_has_a_numbered_work_dir():
         "work/09_chunks",
         "work/10_refine",
         "work/11_glossary",
-        "work/12_finalize",
-        "work/13_chat_translate",
+        "work/12_review",
+        "work/13_finalize",
+        "work/14_chat_translate",
     ]
 
 
@@ -123,7 +130,8 @@ def test_session_and_frames_enumerations():
         "work/09_chunks/0001-0119",
         "work/10_refine",
         "work/11_glossary",
-        "work/13_chat_translate",
+        "work/12_review",
+        "work/14_chat_translate",
         "work/side/cover",
         "work/side/date_research",
         "work/package",
@@ -133,6 +141,7 @@ def test_session_and_frames_enumerations():
         "work/09_chunks/0001-0119/frames",
         "work/10_refine/frames",
         "work/11_glossary/frames",
+        "work/12_review/frames",
     ]
 
 
@@ -145,6 +154,13 @@ def test_effective_briefing_prefers_the_glossary_copy(layout: ProjectLayout):
     layout.glossary_briefing.parent.mkdir(parents=True)
     layout.glossary_briefing.write_text("{}", encoding="utf-8")
     assert layout.effective_briefing() == layout.glossary_briefing
+
+
+def test_effective_subtitles_prefer_the_review_copy(layout: ProjectLayout):
+    assert layout.effective_subtitles() == layout.glossary_checked_srt
+    layout.reviewed_srt.parent.mkdir(parents=True)
+    layout.reviewed_srt.write_text("", encoding="utf-8")
+    assert layout.effective_subtitles() == layout.reviewed_srt
 
 
 def test_layout_never_creates_directories(tmp_path: Path):

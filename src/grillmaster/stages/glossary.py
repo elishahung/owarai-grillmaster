@@ -22,7 +22,12 @@ from grillmaster.glossary.fixed import (
     load_fixed_glossary,
 )
 from grillmaster.postprocess.glossary_check import GlossaryInputs, check_glossary
-from grillmaster.stages._common import frames_tool, program_rules, role_params
+from grillmaster.stages._common import (
+    frames_tool,
+    official_srt,
+    program_rules,
+    role_params,
+)
 from grillmaster.stages.base import StageDef, require
 
 if TYPE_CHECKING:
@@ -31,13 +36,12 @@ if TYPE_CHECKING:
 
 def _run(ctx: StageContext) -> None:
     layout = ctx.layout
-    official = layout.ja_official_srt
     refined = require(layout.refined_srt, StageKey.REFINE)
     inputs = GlossaryInputs(
         refined_srt=refined,
         ja_srt=layout.ja_srt,
         briefing=require(layout.prepass_briefing, StageKey.PREPASS),
-        official_srt=official if official.exists() else None,
+        official_srt=official_srt(layout),
         fixed_glossary=load_fixed_glossary(),
         fixed_glossary_path=FIXED_GLOSSARY_PATH,
         fixed_glossary_guide_path=FIXED_GLOSSARY_GUIDE_PATH,

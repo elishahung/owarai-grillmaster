@@ -29,6 +29,16 @@ DateResearchOption = Annotated[
         help="Research the broadcast date with an agent when metadata has none.",
     ),
 ]
+ReviewOption = Annotated[
+    bool,
+    typer.Option(
+        "--review",
+        help=(
+            "Run the final review stage after the glossary check (role "
+            "review, else postprocess)."
+        ),
+    ),
+]
 ChatOption = Annotated[
     bool,
     typer.Option(
@@ -104,6 +114,7 @@ def run_command(
     pick_parent: PickParentOption = False,
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
+    review: ReviewOption = False,
     chat: ChatOption = False,
     chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
     remix: RemixOption = None,
@@ -151,6 +162,7 @@ def run_command(
         break_after=break_after,
         cover=cover,
         date_research=date_research,
+        review=review,
         chat=chat,
         chat_layout=chat_layout,
         remix=resolve_remix(remix, loaded.config.package.remix_pool),

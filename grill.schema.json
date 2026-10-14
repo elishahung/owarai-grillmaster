@@ -3,7 +3,7 @@
   "$defs": {
     "AgentRoles": {
       "additionalProperties": false,
-      "description": "Model per agent role, as backend/model[/effort]; all but chat are required.",
+      "description": "Model per agent role, as backend/model[/effort]; all but chat and\nreview are required.",
       "properties": {
         "prepass": {
           "description": "Whole-film pre-pass analysis.",
@@ -22,6 +22,21 @@
           "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
           "title": "Postprocess",
           "type": "string"
+        },
+        "review": {
+          "anyOf": [
+            {
+              "description": "backend/model[/effort]; effort defaults to high.",
+              "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Final review after the glossary check; omitted means postprocess.",
+          "title": "Review"
         },
         "utility": {
           "description": "Lightweight agents: titles, broadcast-date research, and the no-audio fix of a pre-pass or chunk output that failed validation.",
@@ -134,6 +149,12 @@
           "default": false,
           "description": "Suggest Traditional Chinese titles at package time when none exist yet.",
           "title": "Title Suggestion",
+          "type": "boolean"
+        },
+        "review": {
+          "default": false,
+          "description": "Run the final review stage after the glossary check (also --review).",
+          "title": "Review",
           "type": "boolean"
         }
       },
@@ -317,6 +338,19 @@
           "default": null,
           "description": "Agent terminology/fact check against the fixed glossary.",
           "title": "Glossary"
+        },
+        "review": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional final review of the checked subtitles ([features] review).",
+          "title": "Review"
         }
       },
       "title": "ProgramInstruction",

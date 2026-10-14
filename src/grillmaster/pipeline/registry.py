@@ -28,6 +28,7 @@ from grillmaster.stages import (
     package,
     prepass,
     refine,
+    review,
     transcript,
 )
 
@@ -90,7 +91,9 @@ class Pipeline:
                 f"--break-after {options.break_after}: that stage is not registered"
             )
         for stage in self.stages:
-            if stage.enabled(options) and not (state and state.is_done(stage.key)):
+            if stage.enabled(options, config) and not (
+                state and state.is_done(stage.key)
+            ):
                 stage.preflight(config, secrets)
             if stage.key == options.break_after:
                 return
@@ -110,7 +113,12 @@ class Pipeline:
         complete = options.complete_run
         return (
             *(
-                _entry(stage, PlanKind.STAGE, config, enabled=stage.enabled(options))
+                _entry(
+                    stage,
+                    PlanKind.STAGE,
+                    config,
+                    enabled=stage.enabled(options, config),
+                )
                 for stage in self.stages
             ),
             *((archive_entry(options),) if archive else ()),
@@ -169,6 +177,7 @@ STAGES: tuple[StageDef, ...] = (
     chunks.STAGE,
     refine.STAGE,
     glossary.STAGE,
+    review.STAGE,
     finalize.STAGE,
     chat_translate.STAGE,
 )

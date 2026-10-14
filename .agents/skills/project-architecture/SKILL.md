@@ -65,8 +65,9 @@ members is a layout change. `pipeline/registry.py` holds the only lists:
 | 6 | `asr` | `work/06_asr/asr.json`; adds `asr_cost_usd` (an existing `asr.json` costs nothing) |
 | 7 | `transcript` | `subs/ja.srt` |
 | 8–11 | `prepass`, `chunks`, `refine`, `glossary` | work dirs only (translate-pipeline, postprocess-and-packaging) |
-| 12 | `finalize` | `video.cht.srt`, `video.cht.ass` (root, `video.mp4`'s stem: players auto-load them; under `subs/` they did not) |
-| 13 | `chat_translate` | `--chat` only: `subs/chat.cht.json` |
+| 12 | `review` | `--review` / `[features] review` only: work dir only (postprocess-and-packaging) |
+| 13 | `finalize` | `video.cht.srt`, `video.cht.ass` (root, `video.mp4`'s stem: players auto-load them; under `subs/` they did not) |
+| 14 | `chat_translate` | `--chat` only: `subs/chat.cht.json` |
 
 Side tasks: `cover` (after `download`), `date_research` (after `metadata`).
 Delivery: `package`. Archive is not a step definition; the runner does it
@@ -75,7 +76,7 @@ between the stages and delivery.
 **Stage API (`stages/base.py`, below `pipeline`):**
 - `StageDef(key, label, weight, run, outputs, enabled, on_skip, params,
   clear_state, preflight, on_reset)`. `run(ctx)` returns optional `StepCompleted` result
-  text. `outputs(layout)` = root deliverables it writes (what `grill reset`
+  text. `enabled(options, config)`, like side tasks and delivery steps. `outputs(layout)` = root deliverables it writes (what `grill reset`
   deletes, with the work dir). `clear_state` resets the state fields it writes.
   `params(config)` is a display/ledger snapshot, **never a cache key**.
   `preflight(config, secrets)` raises before any stage runs (missing ASR key).
@@ -156,7 +157,9 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   Work: `work/NN_<key>/`, unnumbered `work/side/<task>/` and `work/package/`.
   Agent sessions: `session/`, `session_<label>/`, retries `session.2/`,
   handoff `session_fix/` (`core.paths.handoff_path`).
-  `effective_briefing()` = glossary's briefing if present, else pre-pass's.
+  `effective_briefing()` = glossary's briefing if present, else pre-pass's;
+  `effective_subtitles()` (finalize's input) = review's SRT if present, else
+  glossary's.
   Add a path here, never inline.
 - `state.py` `ProjectState`: identity (`id`, persisted `platform`), `source`,
   `section`, `asr_cost_usd` (ElevenLabs is the only metered service), the
@@ -189,7 +192,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   `$GRILL_HOME/grill.toml`; its directory is the root for `projects/`, `.env`
   and relative paths. `AppConfig` (`model.py`) forbids unknown keys
   everywhere. Sections: `paths`, `agents` (+ `roles`: prepass, chunk,
-  postprocess, utility, chat→utility, image), `asr`, `translate`, `features`,
+  postprocess, review→postprocess, utility, chat→utility, image), `asr`, `translate`, `features`,
   `package` (+ `inserts`), `programs.{series,channel}`.
 - Only `cli/`, `pipeline/` and `stages/` see the whole `AppConfig`; stages
   pass domain code only the sections or values it needs. No global settings object.
@@ -200,7 +203,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   fails the ASR preflight.
 - `programs.py` `ProgramRules`: channel then series entries merged (`common`
   text before stage text; stage keys `prepass`, `chunks`, `refine`,
-  `glossary`). `register_program` (download stage) is the only writer of
+  `glossary`, `review`). `register_program` (download stage) is the only writer of
   `grill.toml`, appending empty entries with `tomlkit` under
   `grill.toml.lock`, re-reading the file inside it (concurrent processes).
 
@@ -251,7 +254,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 ## CLI (`cli/`)
 
 `grill <src> [HINT]` = `grill run`; options `--break-after <key>`, `--parent [dir]`,
-`--cover`, `--date-research`, `--chat`, `--chat-layout`, `--remix [pool]`,
+`--cover`, `--date-research`, `--review`, `--chat`, `--chat-layout`, `--remix [pool]`,
 `--start`, `--to`. Also `serial`, `package <dir|id>`, `archive <id>`,
 `reset <id> --from|--only <key>`, `status [<id>]`, `doctor`. `package`,
 `archive` and `status` resolve an ID locally only (pass an archived

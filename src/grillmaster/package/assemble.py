@@ -48,6 +48,7 @@ VIDEO_FILE_NAME = "video.mp4"
 INFO_FILE_NAME = "info.json"
 REFINE_REPORT_NAME = "refine.md"
 GLOSSARY_REPORT_NAME = "glossary_check.md"
+REVIEW_REPORT_NAME = "review.md"
 FIXED_ENTRY_NAMES = (
     VIDEO_FILE_NAME,
     "cover.png",
@@ -55,6 +56,7 @@ FIXED_ENTRY_NAMES = (
     INFO_FILE_NAME,
     REFINE_REPORT_NAME,
     GLOSSARY_REPORT_NAME,
+    REVIEW_REPORT_NAME,
 )
 # Remix parts are numbered from 1; no realistic show reaches 100 parts.
 _LONGEST_REMIX_PART = "99.mp4"

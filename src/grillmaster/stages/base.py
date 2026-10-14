@@ -40,8 +40,8 @@ if TYPE_CHECKING:
 class RunOptions:
     """Everything one `grill run` invocation asks for.
 
-    `cover` / `date_research` are the per-run flags; the side tasks combine
-    them with `[features]`. `remix` is a resolved pool name (a bare `--remix`
+    `cover` / `date_research` / `review` are the per-run flags; their steps
+    combine them with `[features]`. `remix` is a resolved pool name (a bare `--remix`
     already became `package.remix_pool`). `section` is where `--start` /
     `--to` cut the source; it only applies while the combine stage has not
     run.
@@ -53,6 +53,7 @@ class RunOptions:
     break_after: StageKey | None = None
     cover: bool = False
     date_research: bool = False
+    review: bool = False
     chat: bool = False
     chat_layout: ChatLayout = DEFAULT_CHAT_LAYOUT
     remix: str | None = None
@@ -88,13 +89,8 @@ class Externals:
     speech_to_text: SpeechToTextFactory
 
 
-def always(_options: RunOptions) -> bool:
-    """`StageDef.enabled` default: the stage runs on every run."""
-    return True
-
-
-def always_deliver(_options: RunOptions, _config: AppConfig) -> bool:
-    """`DeliveryStepDef.enabled` default."""
+def always(_options: RunOptions, _config: AppConfig) -> bool:
+    """`StageDef.enabled` / `DeliveryStepDef.enabled` default: every run."""
     return True
 
 
@@ -176,7 +172,7 @@ class StageDef:
     weight: int
     run: Callable[[StageContext], str | None]
     outputs: Callable[[ProjectLayout], Sequence[Path]] = no_outputs
-    enabled: Callable[[RunOptions], bool] = always
+    enabled: Callable[[RunOptions, AppConfig], bool] = always
     on_skip: Callable[[StageContext], None] | None = None
     params: Callable[[AppConfig], dict[str, str]] = no_params
     clear_state: Callable[[ProjectState], None] = no_clear
@@ -252,7 +248,7 @@ class DeliveryStepDef:
     weight: int
     run: Callable[[StageContext], str | None]
     workdir: Callable[[ProjectLayout], Path]
-    enabled: Callable[[RunOptions, AppConfig], bool] = always_deliver
+    enabled: Callable[[RunOptions, AppConfig], bool] = always
     params: Callable[[AppConfig], dict[str, str]] = no_params
     preflight: Callable[[RunOptions, AppConfig, ProjectState | None], None] = (
         no_delivery_preflight

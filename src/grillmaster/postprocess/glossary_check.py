@@ -20,7 +20,6 @@ round.
 from __future__ import annotations
 
 import re
-import shutil
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -42,6 +41,8 @@ from grillmaster.postprocess._shared import (
     PROMPTS,
     check_skeleton,
     read_reference,
+    session_copies,
+    session_copy_paths,
     workdir_name,
 )
 from grillmaster.postprocess.errors import PostprocessError
@@ -99,10 +100,10 @@ class GlossaryInputs:
     @property
     def glossary_copies(self) -> tuple[Path, Path]:
         """Where the session's copies of the fixed glossary and its guide go."""
-        return (
-            self.workdir / self.fixed_glossary_path.name,
-            self.workdir / self.fixed_glossary_guide_path.name,
+        glossary, guide = session_copy_paths(
+            self.workdir, self.fixed_glossary_path, self.fixed_glossary_guide_path
         )
+        return glossary, guide
 
 
 @dataclass(frozen=True, slots=True)
@@ -190,15 +191,10 @@ def check_glossary(
     through; the fixed-glossary copies are removed either way.
     """
     task = build_glossary_task(inputs, session_dir=session_dir, tools=tools)
-    copies = inputs.glossary_copies
-    sources = (inputs.fixed_glossary_path, inputs.fixed_glossary_guide_path)
-    try:
-        for source, copy in zip(sources, copies, strict=True):
-            shutil.copyfile(source, copy)
+    with session_copies(
+        inputs.workdir, inputs.fixed_glossary_path, inputs.fixed_glossary_guide_path
+    ):
         agents.run(task)
-    finally:
-        for copy in copies:
-            copy.unlink(missing_ok=True)
     return finish_glossary_check(inputs)
 
 

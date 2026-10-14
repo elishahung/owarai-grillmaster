@@ -31,6 +31,7 @@ def test_no_arguments_shows_help(cli: CliRunner):
         pytest.param(["epnew1"], id="shortcut"),
         pytest.param(["run", "epnew1"], id="explicit"),
         pytest.param(["--chat", "epnew1", "提示"], id="option-first"),
+        pytest.param(["epnew1", "--review"], id="review"),
         pytest.param(expand_bare_options(["epnew1", "--remix"]), id="bare-remix"),
     ],
 )
@@ -164,7 +165,7 @@ def finished(layout: ProjectLayout, state: ProjectState) -> ProjectState:
 def test_reset_from(cli: CliRunner, layout: ProjectLayout, finished: ProjectState):
     result = cli.invoke(app, ["reset", "epabc123", "--from", "refine", "--yes"])
     assert result.exit_code == 0, result.output
-    assert "Reset refine, glossary, finalize, chat_translate of epabc123" in (
+    assert "Reset refine, glossary, review, finalize, chat_translate of epabc123" in (
         result.output
     )
     assert f"removed {layout.work_dir(StageKey.REFINE)}" in result.output

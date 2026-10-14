@@ -16,6 +16,7 @@ def test_declaration_order_is_execution_order():
         "chunks",
         "refine",
         "glossary",
+        "review",
         "finalize",
         "chat_translate",
     ]
@@ -24,7 +25,7 @@ def test_declaration_order_is_execution_order():
 def test_numbers_are_execution_positions():
     assert StageKey.METADATA.number == 1
     assert StageKey.PREPASS.number == 8
-    assert StageKey.CHAT_TRANSLATE.number == 13
+    assert StageKey.CHAT_TRANSLATE.number == 14
 
 
 def test_keys_are_plain_strings():

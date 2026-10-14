@@ -33,6 +33,7 @@ max_concurrent = 10
 prepass = "agy/gemini-3.1-pro/high"      # whole-film analysis
 chunk = "agy/gemini-3.1-pro/high"        # concurrent chunk translation
 postprocess = "codex/gpt-6.1-sol/high" # refine + glossary check
+review = "claude/claude-opus-5-5/high"   # final review (--review); omit to use postprocess
 utility = "codex/gpt-6.1-sol/medium"         # titles, broadcast-date research, prepass/chunk fixes
 chat = "codex/gpt-6.1-sol/medium"            # live-chat replay; omit to use utility
 image = "codex/gpt-6.1-sol/medium"           # cover; needs image generation (codex)
@@ -63,6 +64,9 @@ cover = false
 date_research = false
 # Suggest Traditional Chinese titles at package time when none exist yet.
 title_suggestion = false
+# Final review after the glossary check: another model double-checks names,
+# terms and mistranslations (also --review).
+review = false
 
 [package]
 # Noise pool (<package>/pools/<name>/) for a bare --remix or a remix program.
@@ -88,13 +92,14 @@ remix = true
 inserts = ["judge"]
 
 # Extra model instructions. `common` goes to every stage, ahead of the
-# stage's own text; stages: prepass, chunks, refine, glossary.
+# stage's own text; stages: prepass, chunks, refine, glossary, review.
 [programs.series."水曜日のダウンタウン".instruction]
 common = "Each segment opens with a 説 (hypothesis) title card; keep 説 as 「說」 and render the title cards consistently."
 prepass = "List every 説 title card in proper_nouns with its exact on-screen wording."
 chunks = "The studio panel's commentary is overlaid on VTR footage; keep the panel's quips short."
 refine = "Keep the narrator's deadpan tone; do not add exclamation marks to narration."
 glossary = "Panelist names follow fixed_glossary even when the on-screen caption abbreviates them."
+review = "Check 説 title cards against the frames before any other finding."
 
 [programs.channel."日テレ"]
 remix = true

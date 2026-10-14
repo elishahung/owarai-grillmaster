@@ -101,14 +101,23 @@ class PathsConfig(BaseModel):
     )
 
 
+# Where an omitted optional role goes; required roles are never `None`.
+_ROLE_FALLBACKS = {Role.CHAT: Role.UTILITY, Role.REVIEW: Role.POSTPROCESS}
+
+
 class AgentRoles(BaseModel):
-    """Model per agent role, as backend/model[/effort]; all but chat are required."""
+    """Model per agent role, as backend/model[/effort]; all but chat and
+    review are required."""
 
     model_config = _STRICT
 
     prepass: ModelSpecField = Field(description="Whole-film pre-pass analysis.")
     chunk: ModelSpecField = Field(description="Concurrent chunk translation.")
     postprocess: ModelSpecField = Field(description="Refine and glossary check.")
+    review: ModelSpecField | None = Field(
+        default=None,
+        description="Final review after the glossary check; omitted means postprocess.",
+    )
     utility: ModelSpecField = Field(
         description=(
             "Lightweight agents: titles, broadcast-date research, and the "
@@ -124,9 +133,10 @@ class AgentRoles(BaseModel):
     )
 
     def spec(self, role: Role) -> ModelSpec:
-        """The spec for `role`; only `chat` is optional and falls back to `utility`."""
+        """The spec for `role`; an omitted optional role falls back
+        (`chat` to `utility`, `review` to `postprocess`)."""
         spec: ModelSpec | None = getattr(self, role)
-        return spec or self.utility
+        return spec or self.spec(_ROLE_FALLBACKS[role])
 
     def specs(self) -> dict[Role, ModelSpec]:
         """Every role resolved by `spec`."""
@@ -209,12 +219,16 @@ class FeaturesConfig(BaseModel):
         default=False,
         description="Suggest Traditional Chinese titles at package time when none exist yet.",
     )
+    review: bool = Field(
+        default=False,
+        description="Run the final review stage after the glossary check (also --review).",
+    )
 
 
 # Stems of the deliverable's own entries (`package.assemble`): an insert
 # output must not collide with them, nor with the all-digit remix parts.
 RESERVED_INSERT_STEMS = frozenset(
-    {"video", "cover", "info", "refine", "glossary_check"}
+    {"video", "cover", "info", "refine", "glossary_check", "review"}
 )
 # The deliverable's path reserve counts insert stems up to this length
 # (`package.inserts.INSERT_OUTPUT_MAX_LENGTH`).
@@ -278,6 +292,7 @@ INSTRUCTION_STAGES = (
     StageKey.CHUNKS,
     StageKey.REFINE,
     StageKey.GLOSSARY,
+    StageKey.REVIEW,
 )
 
 
@@ -304,6 +319,10 @@ class ProgramInstruction(BaseModel):
     glossary: str | None = Field(
         default=None,
         description="Agent terminology/fact check against the fixed glossary.",
+    )
+    review: str | None = Field(
+        default=None,
+        description="Optional final review of the checked subtitles ([features] review).",
     )
 
     def stage_text(self, stage: StageKey) -> str | None:

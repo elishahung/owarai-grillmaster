@@ -30,9 +30,12 @@ if TYPE_CHECKING:
 @pytest.mark.parametrize(
     "stage", [chat_fetch.STAGE, chat_translate.STAGE], ids=lambda s: s.key
 )
-def test_chat_stages_run_only_with_chat(stage: StageDef, state: ProjectState):
-    assert stage.enabled(RunOptions(source=state.source_id, chat=True))
-    assert not stage.enabled(RunOptions(source=state.source_id))
+def test_chat_stages_run_only_with_chat(
+    stage: StageDef, state: ProjectState, loaded: LoadedConfig
+):
+    config = loaded.config
+    assert stage.enabled(RunOptions(source=state.source_id, chat=True), config)
+    assert not stage.enabled(RunOptions(source=state.source_id), config)
 
 
 @pytest.mark.parametrize("task", [cover.TASK, date_research.TASK], ids=lambda t: t.key)

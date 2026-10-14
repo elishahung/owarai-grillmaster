@@ -1,9 +1,11 @@
-"""What refine and glossary check share: their prompt package, naming the
-files the agent writes, reading the input SRT and the skeleton check of an
-agent-written SRT."""
+"""What the post-processing passes share: their prompt package, naming the
+files the agent writes, session copies of package files, reading the input
+SRT and the skeleton check of an agent-written SRT."""
 
 from __future__ import annotations
 
+import shutil
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from grillmaster.agents.errors import ValidationFailure
@@ -12,6 +14,7 @@ from grillmaster.postprocess.errors import PostprocessError
 from grillmaster.subtitles.structure import check_aligned, unreadable_problem
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
     from grillmaster.core.srt import SrtBlock
@@ -27,6 +30,26 @@ def workdir_name(path: Path, workdir: Path) -> str:
     if path.parent != workdir:
         raise ValueError(f"{path} is not directly in the agent workdir {workdir}")
     return path.name
+
+
+def session_copy_paths(workdir: Path, *sources: Path) -> tuple[Path, ...]:
+    """Where `session_copies` puts `sources`: by name, directly in `workdir`."""
+    return tuple(workdir / source.name for source in sources)
+
+
+@contextmanager
+def session_copies(workdir: Path, *sources: Path) -> Iterator[None]:
+    """Copy `sources` into `workdir` for one agent session (the package
+    directory is never exposed to the agent); the copies are removed on exit,
+    also when the session fails."""
+    copies = session_copy_paths(workdir, *sources)
+    try:
+        for source, copy in zip(sources, copies, strict=True):
+            shutil.copyfile(source, copy)
+        yield
+    finally:
+        for copy in copies:
+            copy.unlink(missing_ok=True)
 
 
 def read_reference(path: Path, what: str) -> list[SrtBlock]:

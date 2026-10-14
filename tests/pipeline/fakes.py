@@ -64,7 +64,7 @@ def fake_stage(
         weight=key.number,
         run=run,
         outputs=outputs,
-        enabled=lambda options: enabled,
+        enabled=lambda options, config: enabled,
         on_skip=on_skip,
         params=lambda config: dict(params or {}),
         clear_state=clear_state,

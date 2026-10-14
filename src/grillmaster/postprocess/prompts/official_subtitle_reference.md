@@ -11,5 +11,5 @@ Official CC reference (present for this project):
   line when one covers the utterance).
 - CC spellings of names and terms are official. Consult the CC as decisive
   local evidence for proper-noun corrections (including briefing fixes)
-  before reaching for web search or frames, and cite the CC line in the report
-  like any other evidence.
+  before reaching for web search or frames, and cite the CC line wherever you
+  record evidence, like any other evidence.

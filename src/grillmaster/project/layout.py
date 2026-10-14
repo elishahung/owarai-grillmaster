@@ -162,6 +162,7 @@ class ProjectLayout:
             self.chunk_dir(*chunk),
             self.work_dir(StageKey.REFINE),
             self.work_dir(StageKey.GLOSSARY),
+            self.work_dir(StageKey.REVIEW),
             self.work_dir(StageKey.CHAT_TRANSLATE),
             self.side_dir(SideTaskKey.COVER),
             self.side_dir(SideTaskKey.DATE_RESEARCH),
@@ -178,6 +179,7 @@ class ProjectLayout:
             self.chunk_frames_dir(*chunk),
             self.refine_frames_dir,
             self.glossary_frames_dir,
+            self.review_frames_dir,
         )
 
     # --- per-stage artifacts ------------------------------------------------
@@ -279,6 +281,34 @@ class ProjectLayout:
         return self.work_dir(StageKey.GLOSSARY) / "frames"
 
     @property
+    def review_aligned(self) -> Path:
+        """Dossier: every block's Japanese and current Chinese, one row each."""
+        return self.work_dir(StageKey.REVIEW) / "aligned.tsv"
+
+    @property
+    def review_history(self) -> Path:
+        """Dossier: the blocks earlier passes changed, the chunk seams."""
+        return self.work_dir(StageKey.REVIEW) / "history.md"
+
+    @property
+    def reviewed_srt(self) -> Path:
+        """`glossary_checked_srt` with the accepted review findings applied."""
+        return self.work_dir(StageKey.REVIEW) / "reviewed.srt"
+
+    @property
+    def review_findings(self) -> Path:
+        """The review agent's accepted answer, as returned."""
+        return self.work_dir(StageKey.REVIEW) / "findings.json"
+
+    @property
+    def review_report(self) -> Path:
+        return self.work_dir(StageKey.REVIEW) / "report.md"
+
+    @property
+    def review_frames_dir(self) -> Path:
+        return self.work_dir(StageKey.REVIEW) / "frames"
+
+    @property
     def chat_batches_dir(self) -> Path:
         return self.work_dir(StageKey.CHAT_TRANSLATE) / "batches"
 
@@ -319,3 +349,10 @@ class ProjectLayout:
         if self.glossary_briefing.exists():
             return self.glossary_briefing
         return self.prepass_briefing
+
+    def effective_subtitles(self) -> Path:
+        """The checked subtitles finalize reads: the review's copy once that
+        optional stage has run, else the glossary check's."""
+        if self.reviewed_srt.exists():
+            return self.reviewed_srt
+        return self.glossary_checked_srt

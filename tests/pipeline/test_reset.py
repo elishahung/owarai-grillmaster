@@ -57,10 +57,16 @@ def test_reset_from_clears_the_stage_and_everything_after(
     layout: ProjectLayout, finished: ProjectState, pipeline: Pipeline
 ):
     result = reset(layout, finished, stages_from(StageKey.GLOSSARY), pipeline=pipeline)
-    cleared = (StageKey.GLOSSARY, StageKey.FINALIZE, StageKey.CHAT_TRANSLATE)
+    cleared = (
+        StageKey.GLOSSARY,
+        StageKey.REVIEW,
+        StageKey.FINALIZE,
+        StageKey.CHAT_TRANSLATE,
+    )
     assert result.stages == cleared
     assert result.removed == (
         layout.work_dir(StageKey.GLOSSARY),
+        layout.work_dir(StageKey.REVIEW),
         layout.work_dir(StageKey.FINALIZE),
         layout.cht_srt,
         layout.cht_ass,

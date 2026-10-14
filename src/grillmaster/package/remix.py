@@ -1,11 +1,11 @@
-"""Remix packaging: the show split into parts, each headed by a noise cut.
+"""Remix packaging: the show split into parts, each wrapped in noise cuts.
 
-The range after the package lead trim splits into `round_half_up(duration /
-15 min)` parts (at least two) whose cuts snap to subtitle gaps or
-boundaries; each part renders as a noise cut from a media pool followed by
-the subtitled content (`1.mp4`, `2.mp4`, ...). Noise is transcoded at remix
-time with a format-only fit (no look filters) so the concat can stream-copy
-the video. `plan_remix` picks the segments before anything is drawn from a
+The range after the package lead trim splits into the fewest near-equal
+parts (at least two) of at most 10 minutes whose cuts all snap to subtitle
+gaps or boundaries; each part renders as a noise cut from a media pool, the
+subtitled content, then a second noise cut (`1.mp4`, `2.mp4`, ...). Noise
+is transcoded at remix time with a format-only fit (no look filters) so the
+concat can stream-copy the video. `plan_remix` picks the segments before anything is drawn from a
 pool; `render_remix` then reserves the noise before anything renders, and
 spreads every segment's encodes over the shared NVENC sessions.
 """
@@ -56,7 +56,10 @@ if TYPE_CHECKING:
     from grillmaster.package.render import BurnPlan, RenderJob, RenderProgress
 
 NOISE_CUT_SECONDS = 60
-REMIX_TARGET_SEGMENT_SECONDS = 15 * 60
+# Each part has a head and a tail noise cut.
+NOISE_CUTS_PER_SEGMENT = 2
+# Source seconds, so the 1.03x output content is shorter still.
+REMIX_MAX_SEGMENT_SECONDS = 10 * 60
 REMIX_MIN_SEGMENT_COUNT = 2
 REMIX_MIN_SEGMENT_SECONDS = 60
 
@@ -105,17 +108,19 @@ def render_remix(
 ) -> list[Path]:
     """Render the planned remix parts of `video` into `target_dir`; returns them.
 
-    One noise cut per part is reserved from `noise` before any render, so a
-    failed run still consumes it. Every segment's content splits into video
-    parts (`split_range`), and the parts and noise heads of all segments
-    share the NVENC sessions (`EncodeLanes`); each segment's audio renders
-    once. A segment is muxed and concatenated as soon as its own encodes
-    finish, then probed against its expected length (see
+    A head and a tail noise cut per part are reserved from `noise` before
+    any render, so a failed run still consumes them. Every segment's content
+    splits into video parts (`split_range`), and the parts and noise cuts of
+    all segments share the NVENC sessions (`EncodeLanes`); each segment's
+    audio renders once. A segment is muxed and concatenated as soon as its
+    own encodes finish, then probed against its expected length (see
     `check_output_duration`); its scratch files are deleted once it passes.
     """
     check_subtitles_under(video, burn)
     segments = plan.segments
-    cuts = noise.reserve_seconds(NOISE_CUT_SECONDS, count=len(segments), ffmpeg=runner)
+    cuts = noise.reserve_seconds(
+        NOISE_CUT_SECONDS, count=NOISE_CUTS_PER_SEGMENT * len(segments), ffmpeg=runner
+    )
     outputs = [target_dir / f"{index}.mp4" for index in range(1, len(segments) + 1)]
     with tempfile.TemporaryDirectory(
         prefix="grill_remix_", ignore_cleanup_errors=True
@@ -123,7 +128,7 @@ def render_remix(
         remixes = [
             _RemixOutput(
                 runner,
-                head_noise=cut,
+                head_noise=head,
                 content=SubtitledRange(
                     runner,
                     video,
@@ -131,10 +136,11 @@ def render_remix(
                     tuple(split_range(segment, render_part_count(segment.duration))),
                     Path(scratch_root) / str(index),
                 ),
+                tail_noise=tail,
                 output=output,
             )
-            for index, (segment, cut, output) in enumerate(
-                zip(segments, cuts, outputs, strict=True), start=1
+            for index, (segment, head, tail, output) in enumerate(
+                zip(segments, cuts[0::2], cuts[1::2], outputs, strict=True), start=1
             )
         ]
         total = sum(remix.expected_duration for remix in remixes)
@@ -149,44 +155,67 @@ def render_remix(
 
 @dataclass(frozen=True, slots=True)
 class _RemixOutput:
-    """One remix part: a noise head, then the subtitled content segment."""
+    """One remix part: a noise head, the subtitled content segment, then a
+    noise tail."""
 
     runner: FfmpegRunner
     head_noise: Cut
     content: SubtitledRange
+    tail_noise: Cut
     output: Path
 
     @property
     def expected_duration(self) -> float:
-        return self.head_noise.duration + self.content.output_duration
+        return (
+            self.head_noise.duration
+            + self.content.output_duration
+            + self.tail_noise.duration
+        )
 
     def jobs(self, lanes: EncodeLanes, progress: RenderProgress) -> list[RenderJob]:
-        """The noise head and content encodes, then (after the last of them)
-        the finishing concat."""
-        head = lanes.video(
+        """The noise and content encodes, then (after the last of them) the
+        finishing concat."""
+        head = self._noise_job(lanes, progress, self.head_noise, self._head_file)
+        tail = self._noise_job(lanes, progress, self.tail_noise, self._tail_file)
+        return after_all(
+            [
+                head,
+                *self.content.jobs(lanes, progress, f"Remixing {self.output.name}"),
+                tail,
+            ],
+            self._finish,
+        )
+
+    def _noise_job(
+        self, lanes: EncodeLanes, progress: RenderProgress, cut: Cut, output: Path
+    ) -> RenderJob:
+        return lanes.video(
             lambda abort: encode_noise_segment(
                 self.runner,
-                self.head_noise,
-                self._head_file,
+                cut,
+                output,
                 progress=progress,
                 note=f"Noise for {self.output.name}",
                 abort=abort,
             )
-        )
-        return after_all(
-            [head, *self.content.jobs(lanes, progress, f"Remixing {self.output.name}")],
-            self._finish,
         )
 
     @property
     def _head_file(self) -> Path:
         return self.content.scratch / "head.mp4"
 
+    @property
+    def _tail_file(self) -> Path:
+        return self.content.scratch / "tail.mp4"
+
     def _finish(self, abort: threading.Event) -> None:
         target = self.content.scratch / "target.mp4"
         self.content.mux(target, abort)
         concat_remix_segments(
-            self.runner, [self._head_file, target], self.output, abort=abort
+            self.runner,
+            [self._head_file, target, self._tail_file],
+            self.output,
+            abort=abort,
         )
         check_output_duration(self.runner, self.output, self.expected_duration)
         # The parts, head and target of a finished segment are dead weight
@@ -277,9 +306,9 @@ def select_remix_segments(
 ) -> list[TimeRange]:
     """Split `start_seconds`..end into equal parts without cutting subtitles.
 
-    The part count follows the whole video length. Each cut targets an equal
-    share of what is left after the previous snapped cut, so one snap's
-    drift is spread over the remaining parts.
+    Every part lasts `REMIX_MIN_SEGMENT_SECONDS`..`REMIX_MAX_SEGMENT_SECONDS`.
+    The part count starts at `remix_segment_count` and grows until every cut
+    snaps inside its window; a range too short for two parts stays whole.
     """
     ranges = sorted(subtitles, key=lambda item: item.start)
     if not ranges:
@@ -287,32 +316,65 @@ def select_remix_segments(
     if duration_seconds <= start_seconds:
         raise PackageError(f"video duration must exceed the {start_seconds}s start")
 
-    segment_count = remix_segment_count(duration_seconds)
-    splits: list[float] = []
-    hi = duration_seconds - REMIX_MIN_SEGMENT_SECONDS
-    for remaining_parts in range(segment_count, 1, -1):
-        previous = splits[-1] if splits else start_seconds
-        target = previous + (duration_seconds - previous) / remaining_parts
-        lo = previous + REMIX_MIN_SEGMENT_SECONDS
-        snapped = _snap_to_subtitle_break(ranges, duration_seconds, target, lo, hi)
-        if snapped is not None:
-            splits.append(snapped)
+    length = duration_seconds - start_seconds
+    first_count = remix_segment_count(length)
+    last_count = max(first_count, math.floor(length / REMIX_MIN_SEGMENT_SECONDS))
+    for segment_count in range(first_count, last_count + 1):
+        splits = _snapped_splits(ranges, duration_seconds, start_seconds, segment_count)
+        if splits is not None:
+            break
+    else:
+        if length > REMIX_MAX_SEGMENT_SECONDS:
+            raise PackageError(
+                f"cannot split {length:.3f}s at subtitle breaks into parts of "
+                f"at most {REMIX_MAX_SEGMENT_SECONDS}s"
+            )
+        splits = []
 
     boundaries = [start_seconds, *splits, duration_seconds]
-    return [
-        TimeRange(start, end)
-        for start, end in itertools.pairwise(boundaries)
-        if end > start
-    ]
+    return [TimeRange(start, end) for start, end in itertools.pairwise(boundaries)]
 
 
-def remix_segment_count(duration_seconds: float) -> int:
-    """Round the duration to whole target-length parts, at least the minimum.
+def remix_segment_count(length_seconds: float) -> int:
+    """The fewest parts of at most the maximum length, at least the minimum
+    count."""
+    return max(
+        REMIX_MIN_SEGMENT_COUNT, math.ceil(length_seconds / REMIX_MAX_SEGMENT_SECONDS)
+    )
 
-    Rounds half up (not Python's half-to-even), so 37.5 minutes is 3 parts.
+
+def _snapped_splits(
+    ranges: Sequence[TimeRange],
+    duration_seconds: float,
+    start_seconds: float,
+    segment_count: int,
+) -> list[float] | None:
+    """The `segment_count - 1` snapped cuts, or `None` when one cannot snap.
+
+    Each cut targets an equal share of what is left after the previous
+    snapped cut, so one snap's drift is spread over the remaining parts (no
+    short last part). Its window keeps this part and every later one within
+    the minimum and maximum length.
     """
-    rounded = math.floor(duration_seconds / REMIX_TARGET_SEGMENT_SECONDS + 0.5)
-    return max(REMIX_MIN_SEGMENT_COUNT, rounded)
+    splits: list[float] = []
+    previous = start_seconds
+    for remaining_parts in range(segment_count, 1, -1):
+        later_parts = remaining_parts - 1
+        target = previous + (duration_seconds - previous) / remaining_parts
+        lo = max(
+            previous + REMIX_MIN_SEGMENT_SECONDS,
+            duration_seconds - later_parts * REMIX_MAX_SEGMENT_SECONDS,
+        )
+        hi = min(
+            previous + REMIX_MAX_SEGMENT_SECONDS,
+            duration_seconds - later_parts * REMIX_MIN_SEGMENT_SECONDS,
+        )
+        snapped = _snap_to_subtitle_break(ranges, duration_seconds, target, lo, hi)
+        if snapped is None:
+            return None
+        splits.append(snapped)
+        previous = snapped
+    return splits
 
 
 def _snap_to_subtitle_break(
@@ -322,14 +384,16 @@ def _snap_to_subtitle_break(
     lo: float,
     hi: float,
 ) -> float | None:
-    if lo >= hi:
+    """The subtitle break in `lo`..`hi` (inclusive) nearest `target`."""
+    if lo > hi:
         return None
+    target = min(max(target, lo), hi)
 
     candidates: list[float] = []
     for start, end in _positive_gaps(ranges, duration_seconds):
         gap_lo = max(start, lo)
         gap_hi = min(end, hi)
-        if gap_hi <= gap_lo:
+        if gap_hi < gap_lo:
             continue
         if gap_lo <= target <= gap_hi:
             candidates.append(target)
@@ -340,13 +404,12 @@ def _snap_to_subtitle_break(
         boundary
         for time_range in ranges
         for boundary in (time_range.start, time_range.end)
-        if lo < boundary < hi
+        if lo <= boundary <= hi
     )
 
-    usable = [candidate for candidate in candidates if lo < candidate < hi]
-    if not usable:
+    if not candidates:
         return None
-    return min(usable, key=lambda candidate: abs(candidate - target))
+    return min(candidates, key=lambda candidate: abs(candidate - target))
 
 
 def _positive_gaps(

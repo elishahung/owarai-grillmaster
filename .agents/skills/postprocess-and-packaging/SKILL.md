@@ -134,12 +134,15 @@ against usable/1.03 (same length = failed speed-up; short = SMB/VPN truncation).
 - `-copyts -start_at_zero -ss` before `-i`; map video by index (`0:v:0`),
   never bare `0:v` (cover-art mjpeg streams).
 
-**Remix**: the post-trim range splits into a target of `max(2,
-round_half_up(video duration / 15 min))` segments (≥ 60 s) snapped to
-`video.cht.srt` cue gaps (a cut that cannot snap is dropped); `N.mp4` = a
-~60 s noise cut (format-only fit; < 120 s, shorter if the pool file is) +
-content, video stream-copied, audio re-encoded; a segment's scratch
-(parts, head, target) is deleted once it passes its duration check.
+**Remix**: the post-trim range splits into the fewest parts (≥ 2, each
+60 s–10 min of source) whose cuts all snap to `video.cht.srt` cue gaps or
+boundaries: each cut targets an equal share of what remains (no short last
+part), and a cut that cannot snap within its window adds a part; a range
+under two parts stays whole, an unsplittable one (a > 10 min cue) fails.
+`N.mp4` = noise head + content + noise tail (each ~60 s, format-only fit;
+< 120 s, shorter if the pool file is), video stream-copied, audio re-encoded;
+a segment's scratch (parts, head, tail, target) is deleted once it passes
+its duration check.
 
 **Pools** (`pools.py`): `<package>/pools/<name>/` with contiguous `001.*`… and
 `.cursor.json` `{index, seconds}` under `.cursor.lock`. Draws advance the cursor

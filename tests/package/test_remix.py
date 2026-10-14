@@ -63,15 +63,46 @@ def test_falls_back_to_the_nearest_boundary():
 
 
 def test_splits_into_equal_parts():
-    segments = select_remix_segments(spans((0, 890), (910, 1790), (1810, 2700)), 2700.0)
-    assert bounds(segments) == [(0.0, 900.0), (900.0, 1800.0), (1800.0, 2700.0)]
+    segments = select_remix_segments(
+        spans((0, 530), (550, 1070), (1090, 1610), (1630, 2150), (2170, 2700)),
+        2700.0,
+    )
+    assert bounds(segments) == [
+        (0.0, 540.0),
+        (540.0, 1080.0),
+        (1080.0, 1620.0),
+        (1620.0, 2160.0),
+        (2160.0, 2700.0),
+    ]
 
 
 def test_rebalances_after_a_snapped_cut():
-    segments = select_remix_segments(spans((0, 950), (960, 1820), (1830, 2700)), 2700.0)
-    # The first cut snaps late to 950 s, so the second targets the middle of
-    # the remaining 1750 s (1825 s), not the fixed 2/3 mark (1800 s).
-    assert bounds(segments) == [(0.0, 950.0), (950.0, 1825.0), (1825.0, 2700.0)]
+    segments = select_remix_segments(
+        spans((0, 580), (580, 1100), (1120, 1630), (1650, 2160), (2180, 2700)),
+        2700.0,
+    )
+    # The first cut snaps late to 580 s, so the rest split the remaining
+    # 2120 s evenly (1110 s, ...) instead of the fixed fifths (1080 s, ...),
+    # leaving no short last part.
+    assert bounds(segments) == [
+        (0.0, 580.0),
+        (580.0, 1110.0),
+        (1110.0, 1640.0),
+        (1640.0, 2170.0),
+        (2170.0, 2700.0),
+    ]
+
+
+def test_adds_a_part_rather_than_exceed_ten_minutes():
+    segments = select_remix_segments(spans((0, 300), (320, 700), (700, 1150)), 1150.0)
+    # Two parts would need a cut in 550-600 s, where no subtitle breaks.
+    assert bounds(segments) == [(0.0, 320.0), (320.0, 700.0), (700.0, 1150.0)]
+    assert all(segment.duration <= 600.0 for segment in segments)
+
+
+def test_rejects_a_cue_longer_than_ten_minutes():
+    with pytest.raises(PackageError, match="at most 600s"):
+        select_remix_segments(spans((0, 300), (320, 1150)), 1150.0)
 
 
 def test_splits_from_the_start_offset():
@@ -98,9 +129,9 @@ def test_rejects_no_subtitles():
 
 @pytest.mark.parametrize(
     ("minutes", "expected"),
-    [(5, 2), (20, 2), (37, 2), (37.5, 3), (38, 3), (45, 3), (52, 3), (53, 4), (60, 4)],
+    [(5, 2), (10, 2), (20, 2), (20.01, 3), (30, 3), (45, 5), (60, 6)],
 )
-def test_segment_count_rounds_fifteen_minute_parts(minutes: float, expected: int):
+def test_segment_count_is_the_fewest_ten_minute_parts(minutes: float, expected: int):
     assert remix_segment_count(minutes * 60.0) == expected
 
 
@@ -135,7 +166,7 @@ def test_plan_refuses_a_video_inside_the_lead_trim(project: Path):
         plan_remix(fake, video=project / "video.mp4", subtitles=SUBTITLES)
 
 
-def test_renders_noise_headed_parts_and_reserves_the_noise(
+def test_renders_noise_wrapped_parts_and_reserves_the_noise(
     tmp_path: Path, project: Path, noise: MediaPool
 ):
     target = tmp_path / "deliverable"
@@ -144,8 +175,8 @@ def test_renders_noise_headed_parts_and_reserves_the_noise(
         {
             project / "video.mp4": 1000.0,
             noise.directory / "001.mp4": 150.0,
-            target / "1.mp4": 60.0 + PART_SECONDS,
-            target / "2.mp4": 90.0 + PART_SECONDS,
+            target / "1.mp4": 60.0 + PART_SECONDS + 90.0,
+            target / "2.mp4": 60.0 + PART_SECONDS + 60.0,
         }
     )
     sink = RecordingSink()
@@ -169,7 +200,20 @@ def test_renders_noise_headed_parts_and_reserves_the_noise(
         for argv in calls
         if "-af" in argv and "-vf" in argv
     )
-    assert noise_cuts == [("0.000", "60.000"), ("60.000", "90.000")]
+    # A head and a tail per part: 001 runs out after 150 s, then one whole
+    # 60 s file per cut.
+    assert noise_cuts == [
+        ("0.000", "60.000"),
+        ("0.000", "60.000"),
+        ("0.000", "60.000"),
+        ("60.000", "90.000"),
+    ]
+    noise_sources = sorted(
+        Path(arg_after(argv, "-i")).name
+        for argv in calls
+        if "-af" in argv and "-vf" in argv
+    )
+    assert noise_sources == ["001.mp4", "001.mp4", "002.mp4", "003.mp4"]
     # Each segment's content renders as parts sharing the NVENC sessions,
     # with one audio pass per segment.
     trims = sorted(
@@ -202,9 +246,9 @@ def test_renders_noise_headed_parts_and_reserves_the_noise(
     concats = [argv for argv in calls if "aresample=async=1:first_pts=0" in argv]
     assert sorted(argv[-1] for argv in concats) == [str(o) for o in outputs]
     cursor = json.loads((noise.directory / CURSOR_FILE_NAME).read_text("utf-8"))
-    assert cursor == {"index": 1, "seconds": 0}
+    assert cursor == {"index": 3, "seconds": 0}
 
-    total = 2 * PART_SECONDS + 150.0
+    total = 2 * PART_SECONDS + 270.0
     started = sink.events[0]
     assert isinstance(started, ProgressStarted)
     assert (started.scope, started.label) == ("package:remix", "Remixing subtitles")
@@ -237,7 +281,7 @@ def test_a_failed_render_still_consumes_the_reserved_noise(
     # The cursor is a reservation: a concurrent run must never draw the same
     # noise, so a failed render does not give it back.
     cursor = json.loads((noise.directory / CURSOR_FILE_NAME).read_text("utf-8"))
-    assert cursor == {"index": 0, "seconds": 120}
+    assert cursor == {"index": 0, "seconds": 240}
 
 
 def test_a_truncated_part_fails_the_remix(
@@ -250,8 +294,8 @@ def test_a_truncated_part_fails_the_remix(
         {
             project / "video.mp4": 1000.0,
             noise.directory / "001.mp4": 150.0,
-            target / "1.mp4": 60.0 + PART_SECONDS,
-            target / "2.mp4": 60.0 + PART_SECONDS,
+            target / "1.mp4": 60.0 + PART_SECONDS + 90.0,
+            target / "2.mp4": 60.0 + PART_SECONDS + 30.0,
         }
     )
 
@@ -276,8 +320,8 @@ def test_every_part_shares_one_abort_event(
         {
             project / "video.mp4": 1000.0,
             noise.directory / "001.mp4": 150.0,
-            target / "1.mp4": 60.0 + PART_SECONDS,
-            target / "2.mp4": 90.0 + PART_SECONDS,
+            target / "1.mp4": 60.0 + PART_SECONDS + 90.0,
+            target / "2.mp4": 60.0 + PART_SECONDS + 60.0,
         }
     )
 
@@ -291,10 +335,10 @@ def test_every_part_shares_one_abort_event(
         events=RecordingSink(),
     )
 
-    # Noise, three video parts, audio, mux and concat per segment: one
-    # failure anywhere must be able to stop all of them.
+    # Head and tail noise, three video parts, audio, mux and concat per
+    # segment: one failure anywhere must be able to stop all of them.
     events = {id(event) for event in fake.aborts}
-    assert len(fake.aborts) == 14
+    assert len(fake.aborts) == 16
     assert len(events) == 1
     assert None not in fake.aborts
 
@@ -343,8 +387,8 @@ def test_a_finished_segment_deletes_its_scratch_at_once(
         {
             project / "video.mp4": 1000.0,
             noise.directory / "001.mp4": 150.0,
-            target / "1.mp4": 60.0 + PART_SECONDS,
-            target / "2.mp4": 90.0 + PART_SECONDS,
+            target / "1.mp4": 60.0 + PART_SECONDS + 90.0,
+            target / "2.mp4": 60.0 + PART_SECONDS + 60.0,
         },
         second=target / "2.mp4",
     )

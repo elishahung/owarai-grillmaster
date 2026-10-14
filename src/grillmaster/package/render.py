@@ -57,7 +57,7 @@ PACKAGE_FRAME_HEIGHT = 1080
 # One NVENC session tops out well below what the card can do: three encodes
 # running side by side finish in barely more wall time than one. Every render
 # therefore splits into video parts that share this many concurrent ffmpeg
-# encodes: a burn-in's parts, or the parts and noise heads of all remix
+# encodes: a burn-in's parts, or the parts and noise cuts of all remix
 # segments.
 PACKAGE_ENCODE_CONCURRENCY = 3
 # Below this, splitting a range costs more in seeks and muxing than the

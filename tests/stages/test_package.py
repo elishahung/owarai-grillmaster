@@ -145,7 +145,7 @@ def remix_fake(
         start_seconds=PACKAGE_LEAD_TRIM_SECONDS,
     )
     parts = {
-        package_root / STAGING / f"{index}.mp4": noise_seconds
+        package_root / STAGING / f"{index}.mp4": 2 * noise_seconds
         + package_output_duration(segment.duration)
         for index, segment in enumerate(segments, start=1)
     }

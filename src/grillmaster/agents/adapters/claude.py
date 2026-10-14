@@ -2,11 +2,18 @@
 
 Each turn runs the SDK's event loop on its own thread (the pipeline is
 thread-based; this is the only module allowed `asyncio.run`) and hands
-messages over a queue. Facts this module is built on (SDK 0.2.135, verified
+messages over a queue. Facts this module is built on (SDK 0.2.165, verified
 live with the bundled CLI):
 
 * `setting_sources=[]` + `strict_mcp_config=True` keep the user's settings,
   CLAUDE.md files and MCP servers out of the session.
+* `tools` narrows the built-in tools (`base_tools`): the default set (Task,
+  Cron*, Workflow...) inflates every prompt, and with that many tools the CLI
+  defers the MCP and web tools behind ToolSearch, a turn per load.
+  `ENABLE_TOOL_SEARCH=false` loads every remaining tool up front.
+* The system prompt is ours alone (`SYSTEM_PROMPT`; none would send an empty
+  one): it asks for independent tool calls in one turn, since every extra
+  turn re-reads the whole cached context.
 * `output_format` makes the model answer through a `StructuredOutput` tool;
   the value arrives as `ResultMessage.structured_output`.
 * MCP tools are named `mcp__<server>__<tool>` and image results reach the
@@ -16,6 +23,10 @@ live with the bundled CLI):
   `RateLimitEvent` names a subscription window (`five_hour`, `seven_day`...),
   so it is a quota error; a bare 429 is transient unless its text names a
   quota (`classify_failure`).
+* The SDK reads each CLI message as one JSON line, capped at 1 MiB by
+  default; a `get_frames` result carries its stills inline as base64, so
+  `max_buffer_size` is raised (`_MAX_MESSAGE_BYTES`) or a multi-frame call
+  kills the turn.
 
 Raw records are the SDK message dataclasses encoded by `encode_message`
 (`thinking_tokens` progress ticks are dropped before they leave the pump).
@@ -134,6 +145,21 @@ _USAGE_NAMES = {
     "cache_read_input_tokens": "cached_input_tokens",
 }
 _STDERR_TAIL_LINES = 40
+# One CLI message line; eight 768px stills already passed the 1 MiB default.
+_MAX_MESSAGE_BYTES = 64 * 1024 * 1024
+# Reading and the web for every task (prompts ask for web evidence without
+# requiring `WEB_SEARCH`); editing and the shell only for a file-writing task
+# (no schema): a schema task answers in its final message, and with a shell a
+# review read every file through Bash and stalled on the console code page.
+READ_TOOLS = ("Read", "Grep", "Glob", "WebSearch", "WebFetch")
+WRITE_TOOLS = ("Write", "Edit", "Bash")
+_ENV = {"ENABLE_TOOL_SEARCH": "false"}
+SYSTEM_PROMPT = (
+    "You are running a task inside an automated subtitle pipeline; the user "
+    "message holds the whole task. Whenever you need several independent "
+    "operations (reading files, extracting frames, searching), invoke all of "
+    "them in the same turn rather than one after another."
+)
 
 
 class ClaudeAdapter(PerTurnAdapter):
@@ -170,6 +196,13 @@ class ClaudeAdapter(PerTurnAdapter):
         return ClaudeTurn(self._query, request, resume=session_id)
 
 
+def base_tools(request: TurnRequest) -> list[str]:
+    """The built-in tools of a session; MCP tools come on top."""
+    if request.schema is not None:
+        return list(READ_TOOLS)
+    return [*READ_TOOLS, *WRITE_TOOLS]
+
+
 def build_options(
     request: TurnRequest,
     *,
@@ -190,6 +223,9 @@ def build_options(
         permission_mode="bypassPermissions",
         setting_sources=[],
         strict_mcp_config=True,
+        system_prompt=SYSTEM_PROMPT,
+        tools=base_tools(request),
+        env=_ENV,
         mcp_servers=mcp_servers,
         output_format=(
             {"type": "json_schema", "schema": request.schema}
@@ -199,6 +235,7 @@ def build_options(
         add_dirs=list(request.add_dirs),
         resume=resume,
         stderr=stderr,
+        max_buffer_size=_MAX_MESSAGE_BYTES,
     )
 
 

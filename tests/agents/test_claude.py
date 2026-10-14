@@ -21,6 +21,7 @@ from tests.agents.fakes import FakeQuery, claude_messages
 
 from grillmaster.agents.adapters.base import McpServer
 from grillmaster.agents.adapters.claude import (
+    SYSTEM_PROMPT,
     ClaudeAdapter,
     CliProcess,
     RegisteredTransport,
@@ -93,6 +94,13 @@ def test_options_isolate_the_session_and_carry_every_setting(
     }
     assert options.add_dirs == [tmp_path]
     assert options.resume == "prev"
+    # Inline get_frames stills exceed the SDK's 1 MiB default line cap.
+    assert options.max_buffer_size is not None
+    assert options.max_buffer_size >= 16 * 1024 * 1024
+    assert options.system_prompt == SYSTEM_PROMPT
+    assert options.env == {"ENABLE_TOOL_SEARCH": "false"}
+    # A schema task answers in its final message: no editing, no shell.
+    assert options.tools == ["Read", "Grep", "Glob", "WebSearch", "WebFetch"]
 
 
 def test_options_without_tools_or_schema(make_request: Callable[..., TurnRequest]):
@@ -100,6 +108,17 @@ def test_options_without_tools_or_schema(make_request: Callable[..., TurnRequest
     assert options.mcp_servers == {}
     assert options.output_format is None
     assert options.resume is None
+    # A file-writing task edits and may copy files with the shell.
+    assert options.tools == [
+        "Read",
+        "Grep",
+        "Glob",
+        "WebSearch",
+        "WebFetch",
+        "Write",
+        "Edit",
+        "Bash",
+    ]
 
 
 def test_ultra_effort_clamps_to_max(make_request: Callable[..., TurnRequest]):

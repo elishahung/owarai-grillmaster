@@ -156,8 +156,13 @@ only a defect's resends.
 - **claude**: SDK `query()` under `asyncio.run` on a per-turn thread (the only
   module allowed asyncio); `setting_sources=[]` + `strict_mcp_config=True`
   (like codex's `--ignore-user-config`: the user's own settings, MCP servers
-  and CLAUDE.md never reach a grill session), no `system_prompt` (the SDK
-  then sends an empty one), base64 image blocks, `output_format`, `resume=`.
+  and CLAUDE.md never reach a grill session), our one-paragraph
+  `SYSTEM_PROMPT` (batch independent tool calls in one turn), `tools` =
+  Read/Grep/Glob/WebSearch/WebFetch (+ Write/Edit/Bash for a no-schema task)
+  with `ENABLE_TOOL_SEARCH=false` (the default set inflated every prompt and hid
+  MCP/web tools behind ToolSearch turns), `max_buffer_size` 64 MiB (inline
+  `get_frames` stills passed the 1 MiB line cap), base64 image blocks,
+  `output_format`, `resume=`.
   Stream-captured rate-limit and error details win over the SDK's opaque
   exception.
 

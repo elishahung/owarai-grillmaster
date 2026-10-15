@@ -29,7 +29,7 @@ it left off.
 Pipeline at a glance (stage keys, in order; `work/NN_<key>/` per stage with
 intermediates):
 `metadata → download → combine → (chat_fetch) → audio → asr → transcript →
-prepass → chunks → refine → glossary → (review) → finalize → (chat_translate)`, then
+prepass → chunks → refine → glossary → (proofread) → finalize → (chat_translate)`, then
 `(archive)` and delivery `(package)`, which reads the archived copy. Side
 tasks `(cover)` and `(date_research)` run beside the stages. Parentheses
 mark optional steps.

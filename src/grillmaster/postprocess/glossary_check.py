@@ -28,7 +28,7 @@ from loguru import logger
 from grillmaster.agents.errors import ValidationFailure
 from grillmaster.agents.task import AgentTask, FilesOutput
 from grillmaster.core.briefing import Briefing
-from grillmaster.core.json_artifact import read_model, write_model
+from grillmaster.core.json_artifact import read_model
 from grillmaster.core.model_spec import Role
 from grillmaster.core.prompts import (
     frames_guidance,
@@ -43,6 +43,7 @@ from grillmaster.postprocess._shared import (
     read_reference,
     session_copies,
     session_copy_paths,
+    settle_briefing,
     workdir_name,
 )
 from grillmaster.postprocess.errors import PostprocessError
@@ -287,13 +288,13 @@ def finish_glossary_check(inputs: GlossaryInputs) -> GlossaryOutcome:
     """Settle an accepted run: promote the candidate briefing when it differs
     from the pre-pass one, else remove any `corrected_briefing`, so that file
     exists exactly when the accepted run made a real fix."""
-    candidate = _candidate_briefing(inputs)
-    corrected = candidate is not None and candidate != _read_briefing(inputs.briefing)
-    if candidate is not None and corrected:
-        write_model(inputs.corrected_briefing, candidate)
+    corrected = settle_briefing(
+        _candidate_briefing(inputs),
+        _read_briefing(inputs.briefing),
+        inputs.corrected_briefing,
+    )
+    if corrected:
         logger.info(f"Briefing correction promoted to {inputs.corrected_briefing}")
-    else:
-        inputs.corrected_briefing.unlink(missing_ok=True)
     inputs.briefing_candidate.unlink(missing_ok=True)
     return GlossaryOutcome(
         srt_changed=_srt_changed(inputs),

@@ -29,13 +29,13 @@ DateResearchOption = Annotated[
         help="Research the broadcast date with an agent when metadata has none.",
     ),
 ]
-ReviewOption = Annotated[
+ProofreadOption = Annotated[
     bool,
     typer.Option(
-        "--review",
+        "--proofread",
         help=(
-            "Run the final review stage after the glossary check (role "
-            "review, else postprocess)."
+            "Run the final proofread stage after the glossary check (role "
+            "proofread, else postprocess)."
         ),
     ),
 ]
@@ -114,7 +114,7 @@ def run_command(
     pick_parent: PickParentOption = False,
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
-    review: ReviewOption = False,
+    proofread: ProofreadOption = False,
     chat: ChatOption = False,
     chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
     remix: RemixOption = None,
@@ -162,7 +162,7 @@ def run_command(
         break_after=break_after,
         cover=cover,
         date_research=date_research,
-        review=review,
+        proofread=proofread,
         chat=chat,
         chat_layout=chat_layout,
         remix=resolve_remix(remix, loaded.config.package.remix_pool),

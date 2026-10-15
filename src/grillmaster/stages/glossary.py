@@ -40,7 +40,7 @@ def _run(ctx: StageContext) -> None:
     inputs = GlossaryInputs(
         refined_srt=refined,
         ja_srt=layout.ja_srt,
-        briefing=require(layout.prepass_briefing, StageKey.PREPASS),
+        briefing=require(layout.briefing_before(StageKey.GLOSSARY), StageKey.PREPASS),
         official_srt=official_srt(layout),
         fixed_glossary=load_fixed_glossary(),
         fixed_glossary_path=FIXED_GLOSSARY_PATH,

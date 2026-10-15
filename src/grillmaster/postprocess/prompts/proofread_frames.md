@@ -1,0 +1,1 @@
+Check the pre-sampled frames first; fetch new ones only for a moment they do not cover. A name, caption or visual gag that decides a fix deserves a frame; a fluency judgement settled by text does not.

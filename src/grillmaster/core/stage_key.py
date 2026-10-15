@@ -23,7 +23,7 @@ class StageKey(StrEnum):
     CHUNKS = "chunks"
     REFINE = "refine"
     GLOSSARY = "glossary"
-    REVIEW = "review"
+    PROOFREAD = "proofread"
     FINALIZE = "finalize"
     CHAT_TRANSLATE = "chat_translate"
 

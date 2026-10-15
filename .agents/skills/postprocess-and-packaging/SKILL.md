@@ -2,11 +2,11 @@
 name: postprocess-and-packaging
 description: >-
   Agent post-processing and deliverable assembly under `src/grillmaster/`: `postprocess/`
-  (refine, glossary check, optional review), `extras/` (cover, date research, titles), `subtitles/`
+  (refine, glossary check, optional proofread), `extras/` (cover, date research, titles), `subtitles/`
   (skeleton check, finalize to video.cht.srt/.ass), `package/` (folder, NVENC render, remix,
-  pools, inserts) and their glue in `stages/{refine,glossary,review,finalize,cover,date_research,package}.py`,
+  pools, inserts) and their glue in `stages/{refine,glossary,proofread,finalize,cover,date_research,package}.py`,
   `pipeline/side_tasks.py`, `pipeline/delivery.py`. Read this before changing refine, glossary
-  check, review, cover, date research, titles, finalize punctuation, ASS styling, or packaging.
+  check, proofread, cover, date research, titles, finalize punctuation, ASS styling, or packaging.
 ---
 
 # Post-processing, finalize & packaging
@@ -41,26 +41,33 @@ own semantic rules and get `ProgramRules.instruction_text(<stage>)` appended.
   candidate that parses as `Briefing`.
 - **Briefing promotion**: after acceptance `finish_glossary_check` writes the
   candidate to `work/11_glossary/briefing.json` only if it differs from
-  `work/08_prepass/briefing.json` (else removes it), then deletes the candidate.
-  Downstream reads `layout.effective_briefing()` (glossary copy, else pre-pass).
+  `work/08_prepass/briefing.json` (else removes it; `_shared.settle_briefing`,
+  shared with proofread), then deletes the candidate. A correcting stage reads
+  `layout.briefing_before(itself)`; downstream reads
+  `layout.effective_briefing()` (proofread copy, else glossary copy, else
+  pre-pass).
 
-## Review (`postprocess/review.py`, optional)
+## Proofread (`postprocess/proofread.py`, optional)
 
-`--review` / `[features] review`, role `review` (omitted = postprocess), meant
-for a second model family. Read-only: Python builds the dossier
+`--proofread` / `[features] proofread`, role `proofread` (omitted = postprocess), meant
+for a second model family. It edits, but never writes files: Python builds the dossier
 (`aligned.tsv` ja/zh per block; `history.md` earlier versions of changed
-blocks, seams from `split_source`, Latin/kana suspects by number) and sends it
-inline in the prompt (as a file it cost paged-read turns), keeping copies in
-`work/12_review/`; existing frame dirs are listed. The agent (`get_frames`,
-`requires={WEB_SEARCH}`, no `check_srt`) answers `ReviewAnswer` findings
-through the schema. Validation
-(repair round): a finding quotes its block's current text, changes it, no
-empty line, one per block, `name_term` cites evidence. Python then writes
-`findings.json`, `report.md` (rendered from the findings) and `reviewed.srt`
-(checked + findings, deleted at stage start). Briefing notes are reported,
-never applied. Finalize reads `layout.effective_subtitles()` (reviewed, else
-checked); a review reached after finalize ran is recorded as skipped (it
-would never be delivered) with a warning naming `grill reset --from review`.
+blocks, seams from `split_source`, Latin/kana suspects by number; the
+briefing JSON) and sends it inline in the prompt (as a file it cost
+paged-read turns), keeping table copies in `work/12_proofread/`; existing
+frame dirs are listed. The agent (`get_frames`, `requires={WEB_SEARCH}`, no
+`check_srt`) answers `ProofreadAnswer` through the schema: `fixes`, and a
+`BriefingPatch` (a replacement per corrected top-level field, null keeps it;
+only changed fields cost output tokens) with `briefing_changes`
+(`BriefingField` + item/reason/evidence). Validation (repair round): a fix
+quotes its block's current text, changes it, no empty line, one per block,
+`name_term` cites evidence; the patched briefing is valid and its changed
+fields equal the explained ones. Python then writes `answer.json`,
+`report.md` (fixes + Python-computed briefing diff), `proofread.srt`
+(checked + fixes) and `briefing.json` only when changed (both deleted at
+stage start). Finalize reads `layout.effective_subtitles()` (proofread, else
+checked); a proofread reached after finalize ran is recorded as skipped (it
+would never be delivered) with a warning naming `grill reset --from proofread`.
 
 ## Finalize (`subtitles/finalize.py`, `subtitles/ass.py`)
 
@@ -109,7 +116,7 @@ locked old deliverable fails now, not after the render) + `plan_remix`
 **before any cursor moves** → titles → burn plan → `deliverable_dir` (staged
 `<name>.partial`, swapped in only on success). Inside: plain copies first
 (`cover.png`|`cover.jpg`, `info.json` = titles + `briefing.prompt_dict()`,
-the briefing part omitted with a warning when the project has none, `refine.md`/`glossary_check.md`/`review.md`
+the briefing part omitted with a warning when the project has none, `refine.md`/`glossary_check.md`/`proofread.md`
 if present, inserts), then the render. Destination
 `naming.package_destination` (computed in `stages/package.py`): flat
 `YYMMDD_<id>_<name>` (`<id>_<name>` undated), only the name tail MAX_PATH-trimmed.
@@ -153,17 +160,18 @@ Noise walks seconds (`reserve_seconds`); inserts rotate files (`next_file`).
 the next pool file as `<output><ext>` (`when` stays: inserts are not tied to
 remix by design). An insert named by any `[programs.*]
 inserts` applies only to those programs. Outputs ≤ 24 chars, not all digits,
-not `video|cover|info|refine|glossary_check|review`.
+not `video|cover|info|refine|glossary_check|proofread`.
 
 ## Settings and invariants
 
-- `grill.toml`: `[agents.roles] postprocess|review|utility|image`; `[features]
-  cover|date_research|title_suggestion|review`; `[paths] package|archive`; `[package]
+- `grill.toml`: `[agents.roles] postprocess|proofread|utility|image`; `[features]
+  cover|date_research|title_suggestion|proofread`; `[paths] package|archive`; `[package]
   remix_pool` (default `"default"`), `[[package.inserts]]`;
-  `[programs.series|channel."X"]` `remix`, `inserts`, `instruction.{common,refine,glossary,review}`.
+  `[programs.series|channel."X"]` `remix`, `inserts`, `instruction.{common,refine,glossary,proofread}`.
 - Agent-written stages discard old output on re-entry: the runner deletes all
   declared `FilesOutput` files before each attempt; the ledger is the only
   completion marker (`grill reset` to redo).
-- No stage rewrites another stage's output (hence the glossary briefing copy).
+- No stage rewrites another stage's output (hence the glossary and proofread
+  briefing copies).
 - Read agent SRTs via `core.srt.read_srt_file` (`utf-8-sig`; Codex writes a BOM).
 - Extras caches hit on fixed filenames; no hash/digest invalidation.

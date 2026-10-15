@@ -8,7 +8,8 @@ path: stages and the pipeline ask this class and hand the paths on (to
 packaging, the tool manifest and other domain code).
 
 `ProjectLayout` is a pure path calculator. It never creates directories; the
-only filesystem read is `effective_briefing`'s existence check.
+only filesystem reads are the `effective_*` / `briefing_before` existence
+checks.
 """
 
 from __future__ import annotations
@@ -24,6 +25,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 _SESSION_DIR_NAME = "session"
+# The pre-pass writes the briefing; these stages may each write a corrected
+# copy under the same name in their own directory. Newest first.
+_BRIEFING_FILE_NAME = "briefing.json"
+_BRIEFING_CORRECTORS = (StageKey.PROOFREAD, StageKey.GLOSSARY)
 
 
 def session_dir(parent: Path, *, label: str = "") -> Path:
@@ -162,7 +167,7 @@ class ProjectLayout:
             self.chunk_dir(*chunk),
             self.work_dir(StageKey.REFINE),
             self.work_dir(StageKey.GLOSSARY),
-            self.work_dir(StageKey.REVIEW),
+            self.work_dir(StageKey.PROOFREAD),
             self.work_dir(StageKey.CHAT_TRANSLATE),
             self.side_dir(SideTaskKey.COVER),
             self.side_dir(SideTaskKey.DATE_RESEARCH),
@@ -179,7 +184,7 @@ class ProjectLayout:
             self.chunk_frames_dir(*chunk),
             self.refine_frames_dir,
             self.glossary_frames_dir,
-            self.review_frames_dir,
+            self.proofread_frames_dir,
         )
 
     # --- per-stage artifacts ------------------------------------------------
@@ -221,7 +226,7 @@ class ProjectLayout:
 
     @property
     def prepass_briefing(self) -> Path:
-        return self.work_dir(StageKey.PREPASS) / "briefing.json"
+        return self.work_dir(StageKey.PREPASS) / _BRIEFING_FILE_NAME
 
     @property
     def prepass_frames_dir(self) -> Path:
@@ -265,7 +270,7 @@ class ProjectLayout:
     def glossary_briefing(self) -> Path:
         """The glossary check's corrected briefing; written only when an
         accepted run fixed the pre-pass one."""
-        return self.work_dir(StageKey.GLOSSARY) / "briefing.json"
+        return self.work_dir(StageKey.GLOSSARY) / _BRIEFING_FILE_NAME
 
     @property
     def glossary_briefing_candidate(self) -> Path:
@@ -281,32 +286,38 @@ class ProjectLayout:
         return self.work_dir(StageKey.GLOSSARY) / "frames"
 
     @property
-    def review_aligned(self) -> Path:
+    def proofread_aligned(self) -> Path:
         """Dossier: every block's Japanese and current Chinese, one row each."""
-        return self.work_dir(StageKey.REVIEW) / "aligned.tsv"
+        return self.work_dir(StageKey.PROOFREAD) / "aligned.tsv"
 
     @property
-    def review_history(self) -> Path:
+    def proofread_history(self) -> Path:
         """Dossier: the blocks earlier passes changed, the chunk seams."""
-        return self.work_dir(StageKey.REVIEW) / "history.md"
+        return self.work_dir(StageKey.PROOFREAD) / "history.md"
 
     @property
-    def reviewed_srt(self) -> Path:
-        """`glossary_checked_srt` with the accepted review findings applied."""
-        return self.work_dir(StageKey.REVIEW) / "reviewed.srt"
+    def proofread_srt(self) -> Path:
+        """`glossary_checked_srt` with the accepted proofread fixes applied."""
+        return self.work_dir(StageKey.PROOFREAD) / "proofread.srt"
 
     @property
-    def review_findings(self) -> Path:
-        """The review agent's accepted answer, as returned."""
-        return self.work_dir(StageKey.REVIEW) / "findings.json"
+    def proofread_briefing(self) -> Path:
+        """The proofread's corrected briefing; written only when an accepted
+        run changed it."""
+        return self.work_dir(StageKey.PROOFREAD) / _BRIEFING_FILE_NAME
 
     @property
-    def review_report(self) -> Path:
-        return self.work_dir(StageKey.REVIEW) / "report.md"
+    def proofread_answer(self) -> Path:
+        """The proofread agent's accepted answer, as returned."""
+        return self.work_dir(StageKey.PROOFREAD) / "answer.json"
 
     @property
-    def review_frames_dir(self) -> Path:
-        return self.work_dir(StageKey.REVIEW) / "frames"
+    def proofread_report(self) -> Path:
+        return self.work_dir(StageKey.PROOFREAD) / "report.md"
+
+    @property
+    def proofread_frames_dir(self) -> Path:
+        return self.work_dir(StageKey.PROOFREAD) / "frames"
 
     @property
     def chat_batches_dir(self) -> Path:
@@ -341,18 +352,28 @@ class ProjectLayout:
     # --- derived ------------------------------------------------------------
 
     def effective_briefing(self) -> Path:
-        """The briefing downstream stages read.
+        """The briefing downstream stages read: `briefing_before()` every
+        stage."""
+        return self.briefing_before()
 
-        The glossary check never touches the pre-pass output; when it corrects
-        the briefing it writes its own copy, which then wins.
+    def briefing_before(self, stage: StageKey | None = None) -> Path:
+        """The newest briefing written before `stage` (before none: the
+        newest of all).
+
+        No stage touches an earlier one's briefing; a stage that corrects it
+        writes its own `briefing.json`, which then wins over the earlier ones,
+        so a correcting stage reads `briefing_before(itself)`, never a
+        leftover copy of its own.
         """
-        if self.glossary_briefing.exists():
-            return self.glossary_briefing
+        for key in _BRIEFING_CORRECTORS:
+            path = self.work_dir(key) / _BRIEFING_FILE_NAME
+            if (stage is None or key.number < stage.number) and path.exists():
+                return path
         return self.prepass_briefing
 
     def effective_subtitles(self) -> Path:
-        """The checked subtitles finalize reads: the review's copy once that
+        """The checked subtitles finalize reads: the proofread's copy once that
         optional stage has run, else the glossary check's."""
-        if self.reviewed_srt.exists():
-            return self.reviewed_srt
+        if self.proofread_srt.exists():
+            return self.proofread_srt
         return self.glossary_checked_srt

@@ -3,7 +3,7 @@
   "$defs": {
     "AgentRoles": {
       "additionalProperties": false,
-      "description": "Model per agent role, as backend/model[/effort]; all but chat and\nreview are required.",
+      "description": "Model per agent role, as backend/model[/effort]; all but chat and\nproofread are required.",
       "properties": {
         "prepass": {
           "description": "Whole-film pre-pass analysis.",
@@ -23,7 +23,7 @@
           "title": "Postprocess",
           "type": "string"
         },
-        "review": {
+        "proofread": {
           "anyOf": [
             {
               "description": "backend/model[/effort]; effort defaults to high.",
@@ -35,8 +35,8 @@
             }
           ],
           "default": null,
-          "description": "Final review after the glossary check; omitted means postprocess.",
-          "title": "Review"
+          "description": "Final proofread after the glossary check; omitted means postprocess.",
+          "title": "Proofread"
         },
         "utility": {
           "description": "Lightweight agents: titles, broadcast-date research, and the no-audio fix of a pre-pass or chunk output that failed validation.",
@@ -151,10 +151,10 @@
           "title": "Title Suggestion",
           "type": "boolean"
         },
-        "review": {
+        "proofread": {
           "default": false,
-          "description": "Run the final review stage after the glossary check (also --review).",
-          "title": "Review",
+          "description": "Run the final proofread stage after the glossary check (also --proofread).",
+          "title": "Proofread",
           "type": "boolean"
         }
       },
@@ -339,7 +339,7 @@
           "description": "Agent terminology/fact check against the fixed glossary.",
           "title": "Glossary"
         },
-        "review": {
+        "proofread": {
           "anyOf": [
             {
               "type": "string"
@@ -349,8 +349,8 @@
             }
           ],
           "default": null,
-          "description": "Optional final review of the checked subtitles ([features] review).",
-          "title": "Review"
+          "description": "Optional final proofread of the checked subtitles ([features] proofread).",
+          "title": "Proofread"
         }
       },
       "title": "ProgramInstruction",

@@ -47,12 +47,13 @@ _NAMED_PATHS: list[tuple[Callable[[ProjectLayout], Path], str]] = [
     (lambda p: p.glossary_briefing, "work/11_glossary/briefing.json"),
     (lambda p: p.glossary_report, "work/11_glossary/report.md"),
     (lambda p: p.glossary_frames_dir, "work/11_glossary/frames"),
-    (lambda p: p.review_aligned, "work/12_review/aligned.tsv"),
-    (lambda p: p.review_history, "work/12_review/history.md"),
-    (lambda p: p.reviewed_srt, "work/12_review/reviewed.srt"),
-    (lambda p: p.review_findings, "work/12_review/findings.json"),
-    (lambda p: p.review_report, "work/12_review/report.md"),
-    (lambda p: p.review_frames_dir, "work/12_review/frames"),
+    (lambda p: p.proofread_aligned, "work/12_proofread/aligned.tsv"),
+    (lambda p: p.proofread_history, "work/12_proofread/history.md"),
+    (lambda p: p.proofread_srt, "work/12_proofread/proofread.srt"),
+    (lambda p: p.proofread_briefing, "work/12_proofread/briefing.json"),
+    (lambda p: p.proofread_answer, "work/12_proofread/answer.json"),
+    (lambda p: p.proofread_report, "work/12_proofread/report.md"),
+    (lambda p: p.proofread_frames_dir, "work/12_proofread/frames"),
     (lambda p: p.chat_batches_dir, "work/14_chat_translate/batches"),
     (lambda p: p.chat_polish, "work/14_chat_translate/polish.json"),
     (lambda p: p.date_research_result, "work/side/date_research/result.json"),
@@ -96,7 +97,7 @@ def test_every_stage_has_a_numbered_work_dir():
         "work/09_chunks",
         "work/10_refine",
         "work/11_glossary",
-        "work/12_review",
+        "work/12_proofread",
         "work/13_finalize",
         "work/14_chat_translate",
     ]
@@ -130,7 +131,7 @@ def test_session_and_frames_enumerations():
         "work/09_chunks/0001-0119",
         "work/10_refine",
         "work/11_glossary",
-        "work/12_review",
+        "work/12_proofread",
         "work/14_chat_translate",
         "work/side/cover",
         "work/side/date_research",
@@ -141,7 +142,7 @@ def test_session_and_frames_enumerations():
         "work/09_chunks/0001-0119/frames",
         "work/10_refine/frames",
         "work/11_glossary/frames",
-        "work/12_review/frames",
+        "work/12_proofread/frames",
     ]
 
 
@@ -149,18 +150,24 @@ def test_for_id_roots_the_project_under_the_projects_dir():
     assert ProjectLayout.for_id(Path("projects"), "epabc123").root == ROOT
 
 
-def test_effective_briefing_prefers_the_glossary_copy(layout: ProjectLayout):
+def test_effective_briefing_prefers_the_latest_copy(layout: ProjectLayout):
     assert layout.effective_briefing() == layout.prepass_briefing
     layout.glossary_briefing.parent.mkdir(parents=True)
     layout.glossary_briefing.write_text("{}", encoding="utf-8")
     assert layout.effective_briefing() == layout.glossary_briefing
+    layout.proofread_briefing.parent.mkdir(parents=True)
+    layout.proofread_briefing.write_text("{}", encoding="utf-8")
+    assert layout.effective_briefing() == layout.proofread_briefing
+    # A correcting stage reads the copies before it, never its own.
+    assert layout.briefing_before(StageKey.PROOFREAD) == layout.glossary_briefing
+    assert layout.briefing_before(StageKey.GLOSSARY) == layout.prepass_briefing
 
 
-def test_effective_subtitles_prefer_the_review_copy(layout: ProjectLayout):
+def test_effective_subtitles_prefer_the_proofread_copy(layout: ProjectLayout):
     assert layout.effective_subtitles() == layout.glossary_checked_srt
-    layout.reviewed_srt.parent.mkdir(parents=True)
-    layout.reviewed_srt.write_text("", encoding="utf-8")
-    assert layout.effective_subtitles() == layout.reviewed_srt
+    layout.proofread_srt.parent.mkdir(parents=True)
+    layout.proofread_srt.write_text("", encoding="utf-8")
+    assert layout.effective_subtitles() == layout.proofread_srt
 
 
 def test_layout_never_creates_directories(tmp_path: Path):

@@ -1,4 +1,5 @@
-Final review of a finished Traditional Chinese subtitle track.
+Final proofread of a finished Traditional Chinese subtitle track and its
+briefing.
 
 The subtitles of this Japanese variety show have already passed through four
 agent passes:
@@ -13,9 +14,10 @@ agent passes:
 4. **Glossary check**: names, honorifics, terms and briefing corrections,
    verified with CC, frames and web search.
 
-You are the last reviewer, ideally a different model from the earlier passes.
+You are the proofreader, ideally a different model from the earlier passes.
 Your job is to catch what they missed or got wrong. You do not write files:
-you return findings, and the workflow applies them.
+you return fixes and, when the briefing itself is wrong, a corrected
+briefing, and the workflow applies both.
 
 Below this task are your main reading surface, already in full:
 
@@ -24,13 +26,16 @@ Below this task are your main reading surface, already in full:
 - The **edit history**: the earlier versions of every block a pass changed
   (its current text is in the table), the chunk seams, and the blocks still
   carrying Latin or kana.
+- The **briefing**, including any glossary-check correction. After you it
+  still feeds name spacing in the final subtitles, title suggestions,
+  live-chat translation and the next episode of a serial run, so a wrong name
+  or summary there outlives your subtitle fixes.
 
 Files (absolute paths; read-only):
 
 - Refine report (`{refine_report}`) and glossary report (`{glossary_report}`)
   — why those passes changed what they changed and the evidence they used.
   Either may be missing.
-- The briefing (`{briefing}`), including any glossary-check correction.
 - Fixed glossary (`{fixed_glossary}`) and its guide (`{fixed_glossary_guide}`)
   — curated renderings that win over ad-hoc ones.
 - Pre-sampled frames; a frame's filename carries its timestamp in seconds:
@@ -73,15 +78,15 @@ Evidence:
   unless you have stronger evidence, and say what it is.
 - Do not guess. If the evidence is inconclusive, leave the line and mention
   it in `summary`.
-- A `name_term` finding must cite its evidence: a URL, a CC or `ja` line, or
+- A `name_term` fix must cite its evidence: a URL, a CC or `ja` line, or
   a frame filename.
 
 Answer (the JSON schema):
 
-- `findings`: one entry per block you change.
+- `fixes`: one entry per block you change.
   - `block`: the block index.
   - `current`: the block's `zh` exactly as in the aligned table (it anchors the
-    finding; a mismatch is rejected).
+    fix; a mismatch is rejected).
   - `revised`: the new text as a list of lines, keeping the line count unless
     the change needs otherwise.
   - `category`: `name_term`, `mistranslation`, `omission`, `regression`,
@@ -89,11 +94,21 @@ Answer (the JSON schema):
   - `reason`: one short sentence in Traditional Chinese.
   - `evidence`: the decisive evidence, or `null` when the reason is
     self-evident from `ja` and context (never `null` for `name_term`).
-- `briefing_notes`: corrections the briefing itself needs (a wrong
-  `name_zh`, a wrong proper-noun rendering), as `field`, `current`,
-  `proposed`, `evidence`. Empty when none.
+- `briefing`: one key per briefing field, `null` to keep it. Correct a field
+  only when it is verifiably wrong (a wrong `name_jp` or `name_zh`, a missing
+  or wrong proper noun, a segment summary that contradicts the show); then
+  give its whole new value: the field copied from the briefing below the task
+  with only the wrong entries changed (a segment keeps its range). The same evidence rules apply, and the same
+  ban on style edits: never rephrase an entry that is right.
+- `briefing_changes`: one entry per corrected entry: `field` (the briefing
+  field), `item` (which entry: a character's `name_jp`, a term's source, a
+  segment's range; empty for `summary` or `tone_notes`), `reason` (one short
+  sentence in Traditional Chinese), `evidence` (as for a `name_term` fix).
+  A changed field with no entry, or an entry for a field you did not change,
+  is rejected.
 - `summary`: two to four sentences in Traditional Chinese: what you checked,
   what you found, and anything you suspected but could not verify (with block
   numbers).
 
-An empty `findings` list is a valid answer when nothing needs fixing.
+Empty `fixes` and `briefing_changes` with every `briefing` field `null` is a
+valid answer when nothing needs fixing.

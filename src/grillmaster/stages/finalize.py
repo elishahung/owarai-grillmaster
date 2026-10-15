@@ -1,5 +1,5 @@
-"""Finalize stage: the effective subtitles (`work/12_review/reviewed.srt`
-after the optional review, else `work/11_glossary/checked.srt`) into the
+"""Finalize stage: the effective subtitles (`work/12_proofread/proofread.srt`
+after the optional proofread, else `work/11_glossary/checked.srt`) into the
 deliverables `video.cht.ass` and `video.cht.srt` beside `video.mp4`, where
 players pick them up (name spacing + Netflix-TC punctuation).
 

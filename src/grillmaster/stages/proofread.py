@@ -1,11 +1,14 @@
-"""Review stage (`--review` / `[features] review`): an agent's final review
-of `work/11_glossary/checked.srt` into `work/12_review/reviewed.srt` (+
-`findings.json`, `report.md`, and the dossier `aligned.tsv`, `history.md`).
+"""Proofread stage (`--proofread` / `[features] proofread`): an agent's final
+proofread of `work/11_glossary/checked.srt` into
+`work/12_proofread/proofread.srt`, plus `briefing.json` when it corrected the
+briefing (+ `answer.json`, `report.md`, and the dossier `aligned.tsv`,
+`history.md`).
 
-Finalize reads `reviewed.srt` once it exists (`layout.effective_subtitles`).
-On a project whose finalize already ran, the review would be paid for and
+Finalize reads `proofread.srt` once it exists (`layout.effective_subtitles`)
+and every later reader the corrected briefing (`layout.effective_briefing`).
+On a project whose finalize already ran, the proofread would be paid for and
 never delivered (a later stage never re-runs by itself), so it is recorded
-as skipped with a warning naming `grill reset <id> --from review`.
+as skipped with a warning naming `grill reset <id> --from proofread`.
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ from grillmaster.glossary.fixed import (
     FIXED_GLOSSARY_PATH,
     load_fixed_glossary,
 )
-from grillmaster.postprocess.review import ReviewInputs, review_subtitles
+from grillmaster.postprocess.proofread import ProofreadInputs, proofread_subtitles
 from grillmaster.stages._common import (
     flag_or_feature,
     frames_tool,
@@ -40,8 +43,9 @@ if TYPE_CHECKING:
 def _run(ctx: StageContext) -> str:
     if ctx.state.is_done(StageKey.FINALIZE):
         logger.warning(
-            "Review skipped: finalize already ran, so its deliverables would "
-            f"ignore it; run `grill reset {ctx.state.id} --from review` to review"
+            "Proofread skipped: finalize already ran, so its deliverables would "
+            f"ignore it; run `grill reset {ctx.state.id} --from proofread` to "
+            "proofread"
         )
         return "skipped: finalize already ran"
     layout = ctx.layout
@@ -52,13 +56,13 @@ def _run(ctx: StageContext) -> str:
         layout.refine_frames_dir,
         layout.glossary_frames_dir,
     )
-    inputs = ReviewInputs(
+    inputs = ProofreadInputs(
         checked_srt=require(layout.glossary_checked_srt, StageKey.GLOSSARY),
         refined_srt=require(layout.refined_srt, StageKey.REFINE),
         merged_srt=require(layout.merged_srt, StageKey.CHUNKS),
         ja_srt=layout.ja_srt,
         official_srt=official_srt(layout),
-        briefing=require(layout.effective_briefing(), StageKey.PREPASS),
+        briefing=require(layout.briefing_before(StageKey.PROOFREAD), StageKey.PREPASS),
         refine_report=layout.refine_report,
         glossary_report=layout.glossary_report,
         frames_dirs=tuple(path for path in frames_dirs if path.is_dir()),
@@ -67,36 +71,36 @@ def _run(ctx: StageContext) -> str:
         fixed_glossary_path=FIXED_GLOSSARY_PATH,
         fixed_glossary_guide_path=FIXED_GLOSSARY_GUIDE_PATH,
         workdir=ctx.workdir,
-        aligned=layout.review_aligned,
-        history=layout.review_history,
-        findings=layout.review_findings,
-        output_srt=layout.reviewed_srt,
-        report=layout.review_report,
+        aligned=layout.proofread_aligned,
+        history=layout.proofread_history,
+        output_answer=layout.proofread_answer,
+        output_srt=layout.proofread_srt,
+        output_briefing=layout.proofread_briefing,
+        report=layout.proofread_report,
         program_instruction=program_rules(
             ctx.config, ctx.state.source
-        ).instruction_text(StageKey.REVIEW),
+        ).instruction_text(StageKey.PROOFREAD),
     )
     tools = ToolSession(
         project_root=layout.root,
-        frames=frames_tool(ctx, layout.review_frames_dir),
+        frames=frames_tool(ctx, layout.proofread_frames_dir),
         check_srt=None,
     )
-    answer = review_subtitles(
+    answer = proofread_subtitles(
         inputs, ctx.agents, session_dir=ctx.session_dir(), tools=tools
     )
     logger.success(
-        f"Review applied {len(answer.findings)} findings "
-        f"({len(answer.briefing_notes)} briefing notes reported): "
-        f"{layout.review_report}"
+        f"Proofread applied {len(answer.fixes)} fixes and "
+        f"{len(answer.briefing_changes)} briefing changes: {layout.proofread_report}"
     )
-    return f"{len(answer.findings)} findings"
+    return f"{len(answer.fixes)} fixes, {len(answer.briefing_changes)} briefing changes"
 
 
 STAGE = StageDef(
-    key=StageKey.REVIEW,
-    label="Final review",
+    key=StageKey.PROOFREAD,
+    label="Proofread",
     weight=2,
     run=_run,
-    enabled=flag_or_feature("review"),
-    params=role_params(Role.REVIEW),
+    enabled=flag_or_feature("proofread"),
+    params=role_params(Role.PROOFREAD),
 )

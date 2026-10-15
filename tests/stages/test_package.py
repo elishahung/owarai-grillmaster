@@ -96,8 +96,8 @@ def finished(layout: ProjectLayout) -> ProjectLayout:
     write_model(layout.prepass_briefing, BRIEFING)
     layout.refine_report.parent.mkdir(parents=True)
     layout.refine_report.write_text("refine report", encoding="utf-8")
-    layout.review_report.parent.mkdir(parents=True)
-    layout.review_report.write_text("review report", encoding="utf-8")
+    layout.proofread_report.parent.mkdir(parents=True)
+    layout.proofread_report.write_text("proofread report", encoding="utf-8")
     return layout
 
 
@@ -174,8 +174,8 @@ def test_burns_in_and_copies_the_artifacts_first(
     assert sorted(path.name for path in target.iterdir()) == [
         "cover.jpg",
         "info.json",
+        "proofread.md",
         "refine.md",
-        "review.md",
         "video.mp4",
     ]
     assert json.loads((target / "info.json").read_text("utf-8")) == (
@@ -243,8 +243,8 @@ def test_remix_renders_parts_and_carries_the_insert(
         "cover.jpg",
         "info.json",
         "judge.mp4",
+        "proofread.md",
         "refine.md",
-        "review.md",
     ]
     assert (target / "judge.mp4").read_text(encoding="utf-8") == "judge 2"
     assert json.loads((noise / CURSOR_FILE_NAME).read_text("utf-8"))["index"] == 0

@@ -16,8 +16,8 @@ from grillmaster.cli.run import (
     ChatOption,
     CoverOption,
     DateResearchOption,
+    ProofreadOption,
     RemixOption,
-    ReviewOption,
 )
 from grillmaster.live_chat.layout import DEFAULT_CHAT_LAYOUT
 
@@ -42,7 +42,7 @@ def serial_command(
     pick_parent: PickParentOption = False,
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
-    review: ReviewOption = False,
+    proofread: ProofreadOption = False,
     chat: ChatOption = False,
     chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
     remix: RemixOption = None,
@@ -65,7 +65,7 @@ def serial_command(
                 parent=parent,
                 cover=cover,
                 date_research=date_research,
-                review=review,
+                proofread=proofread,
                 chat=chat,
                 chat_layout=chat_layout,
                 remix=resolve_remix(remix, loaded.config.package.remix_pool),

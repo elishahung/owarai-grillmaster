@@ -33,8 +33,8 @@ from grillmaster.extras.titles import ensure_titles
 from grillmaster.package.assemble import (
     GLOSSARY_REPORT_NAME,
     PACKAGE_INNER_PATH_RESERVE,
+    PROOFREAD_REPORT_NAME,
     REFINE_REPORT_NAME,
-    REVIEW_REPORT_NAME,
     build_burn_plan,
     copy_reports,
     deliverable_dir,
@@ -117,7 +117,7 @@ def _run(ctx: StageContext) -> str:
             {
                 REFINE_REPORT_NAME: layout.refine_report,
                 GLOSSARY_REPORT_NAME: layout.glossary_report,
-                REVIEW_REPORT_NAME: layout.review_report,
+                PROOFREAD_REPORT_NAME: layout.proofread_report,
             },
         )
         copy_inserts(inserts, package_root=package_root, target_dir=target)

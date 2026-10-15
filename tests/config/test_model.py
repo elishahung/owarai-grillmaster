@@ -42,11 +42,13 @@ def test_chat_falls_back_to_utility(roles: dict[str, str]):
     assert agent_roles.spec(Role.CHAT) == agent_roles.utility
 
 
-def test_review_falls_back_to_postprocess(roles: dict[str, str]):
+def test_proofread_falls_back_to_postprocess(roles: dict[str, str]):
     agent_roles = AgentRoles.model_validate(roles)
-    assert agent_roles.spec(Role.REVIEW) == agent_roles.postprocess
-    explicit = AgentRoles.model_validate({**roles, "review": "claude/opus/high"})
-    assert explicit.spec(Role.REVIEW) == ModelSpec(Backend.CLAUDE, "opus", Effort.HIGH)
+    assert agent_roles.spec(Role.PROOFREAD) == agent_roles.postprocess
+    explicit = AgentRoles.model_validate({**roles, "proofread": "claude/opus/high"})
+    assert explicit.spec(Role.PROOFREAD) == ModelSpec(
+        Backend.CLAUDE, "opus", Effort.HIGH
+    )
 
 
 def test_explicit_chat_spec_wins(roles: dict[str, str]):
@@ -62,7 +64,9 @@ def test_specs_cover_every_role(roles: dict[str, str]):
 @pytest.mark.parametrize(
     "role", ["prepass", "chunk", "postprocess", "utility", "image"]
 )
-def test_every_role_but_chat_and_review_is_required(roles: dict[str, str], role: str):
+def test_every_role_but_chat_and_proofread_is_required(
+    roles: dict[str, str], role: str
+):
     del roles[role]
     with pytest.raises(ValidationError, match=role):
         AgentRoles.model_validate(roles)

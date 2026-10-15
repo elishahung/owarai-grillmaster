@@ -84,7 +84,7 @@ grill reset <專案 ID> --from refine
 grill status [專案 ID]
 ```
 
-其他選項：`--cover`（產生封面）、`--date-research`（查不到播出日時上網找）、`--review`（名詞校對後再跑最終審閱）、`--chat`（翻譯 YouTube 聊天室並燒進畫面，`--chat-layout side|overlay|none`）、`--remix [素材池]`、`--parent <專案資料夾>`（不帶值時，從最近十天處理完的 archived 專案中搜尋挑選）。完整說明見 `grill --help`
+其他選項：`--cover`（產生封面）、`--date-research`（查不到播出日時上網找）、`--proofread`（名詞校對後再用另一個模型做最終校對，修正字幕與 briefing）、`--chat`（翻譯 YouTube 聊天室並燒進畫面，`--chat-layout side|overlay|none`）、`--remix [素材池]`、`--parent <專案資料夾>`（不帶值時，從最近十天處理完的 archived 專案中搜尋挑選）。完整說明見 `grill --help`
 
 可以同時開多個 `grill` 處理不同影片：每個 agent 工具伺服器都是各自獨立的子行程，互不衝突；同一個 ID 同時只能有一個 `grill` 在處理，第二個會直接報錯
 
@@ -103,7 +103,7 @@ package = 'NAS:\video\package'     # 燒錄字幕後的成品位置
 prepass = "gemini/gemini-3.1-pro-preview/high"  # backend：gemini、agy、claude、codex（皆為訂閱制；agy 與 gemini 能聽音檔）
 chunk = "gemini/gemini-3.1-pro-preview/high"
 postprocess = "codex/gpt-6.1-sol/high"
-review = "claude/claude-opus-5-5/high"  # 最終審閱；省略則沿用 postprocess
+proofread = "claude/claude-opus-5-5/high"  # 最終校對；省略則沿用 postprocess
 utility = "codex/gpt-6.1-sol/medium"
 image = "codex/gpt-6.1-sol/medium"   # 封面，需要能生圖的 codex
 
@@ -111,7 +111,7 @@ image = "codex/gpt-6.1-sol/medium"   # 封面，需要能生圖的 codex
 cover = true                        # 產生風格化封面
 date_research = true                # 查不到播出日時上網找
 title_suggestion = true             # 燒錄時產生候選標題
-review = true                       # 名詞校對後再跑最終審閱（同 --review）
+proofread = true                    # 名詞校對後再跑最終校對（同 --proofread）
 ```
 
 其他可調參數（切塊大小、併發數、抽圖頻率、remix 素材池等）請見 `grill.example.toml`。併發數 `[agents] max_concurrent` 預設 10，是每個 `grill` 行程各自的上限
@@ -122,7 +122,7 @@ review = true                       # 名詞校對後再跑最終審閱（同 --
 
 - `remix`：`true` 時打包一律用 remix（同 `--remix`）
 - `inserts`：打包時要附上的素材（對應 `[[package.inserts]]`）
-- `instruction`：給各步驟模型的額外指示，鍵為 `prepass`、`chunks`、`refine`、`glossary`、`review`；`common` 會加到上述每個步驟。頻道與系列都有設定時兩者都會帶入
+- `instruction`：給各步驟模型的額外指示，鍵為 `prepass`、`chunks`、`refine`、`glossary`、`proofread`；`common` 會加到上述每個步驟。頻道與系列都有設定時兩者都會帶入
 
 ### `.env`
 

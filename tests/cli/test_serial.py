@@ -13,7 +13,9 @@ if TYPE_CHECKING:
 
 
 def test_serial_chains_the_projects(cli: CliRunner, projects_root: Path):
-    result = cli.invoke(app, ["serial", "epone111", "eptwo222", "--chat", "--review"])
+    result = cli.invoke(
+        app, ["serial", "epone111", "eptwo222", "--chat", "--proofread"]
+    )
     assert result.exit_code == 0, result.output
     first = ProjectLayout.for_id(projects_root, "epone111")
     second = load_state(ProjectLayout.for_id(projects_root, "eptwo222"))

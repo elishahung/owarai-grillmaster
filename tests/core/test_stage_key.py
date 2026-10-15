@@ -16,7 +16,7 @@ def test_declaration_order_is_execution_order():
         "chunks",
         "refine",
         "glossary",
-        "review",
+        "proofread",
         "finalize",
         "chat_translate",
     ]

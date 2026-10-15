@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 class RunOptions:
     """Everything one `grill run` invocation asks for.
 
-    `cover` / `date_research` / `review` are the per-run flags; their steps
+    `cover` / `date_research` / `proofread` are the per-run flags; their steps
     combine them with `[features]`. `remix` is a resolved pool name (a bare `--remix`
     already became `package.remix_pool`). `section` is where `--start` /
     `--to` cut the source; it only applies while the combine stage has not
@@ -53,7 +53,7 @@ class RunOptions:
     break_after: StageKey | None = None
     cover: bool = False
     date_research: bool = False
-    review: bool = False
+    proofread: bool = False
     chat: bool = False
     chat_layout: ChatLayout = DEFAULT_CHAT_LAYOUT
     remix: str | None = None

@@ -27,8 +27,8 @@ from grillmaster.stages import (
     metadata,
     package,
     prepass,
+    proofread,
     refine,
-    review,
     transcript,
 )
 
@@ -177,7 +177,7 @@ STAGES: tuple[StageDef, ...] = (
     chunks.STAGE,
     refine.STAGE,
     glossary.STAGE,
-    review.STAGE,
+    proofread.STAGE,
     finalize.STAGE,
     chat_translate.STAGE,
 )

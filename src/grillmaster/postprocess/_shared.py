@@ -1,6 +1,7 @@
 """What the post-processing passes share: their prompt package, naming the
 files the agent writes, session copies of package files, reading the input
-SRT and the skeleton check of an agent-written SRT."""
+SRT, the skeleton check of an agent-written SRT and settling a corrected
+briefing."""
 
 from __future__ import annotations
 
@@ -9,6 +10,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from grillmaster.agents.errors import ValidationFailure
+from grillmaster.core.json_artifact import write_model
 from grillmaster.core.srt import read_srt_file
 from grillmaster.postprocess.errors import PostprocessError
 from grillmaster.subtitles.structure import check_aligned, unreadable_problem
@@ -17,6 +19,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+    from grillmaster.core.briefing import Briefing
     from grillmaster.core.srt import SrtBlock
 
 
@@ -50,6 +53,17 @@ def session_copies(workdir: Path, *sources: Path) -> Iterator[None]:
     finally:
         for copy in copies:
             copy.unlink(missing_ok=True)
+
+
+def settle_briefing(corrected: Briefing | None, base: Briefing, dest: Path) -> bool:
+    """Write `corrected` to `dest`, the pass's own briefing copy, when it
+    differs from the `base` it read, else remove `dest`; so the copy exists
+    exactly when an accepted run made a real fix. Returns whether it did."""
+    if corrected is not None and corrected != base:
+        write_model(dest, corrected)
+        return True
+    dest.unlink(missing_ok=True)
+    return False
 
 
 def read_reference(path: Path, what: str) -> list[SrtBlock]:

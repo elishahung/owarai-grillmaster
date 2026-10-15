@@ -40,7 +40,7 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
   `audio.ogg`, `translation.json`, `session/`; the dir is also the agent cwd.
 - `work/09_chunks/merged.srt` — renumbered 1..N on Japanese timecodes (refine input).
 - The chunks stage and the pre-pass's parent briefing (`--parent` or serial)
-  read `layout.effective_briefing()` (the glossary stage's copy wins when present).
+  read `layout.effective_briefing()` (a proofread, else glossary, copy wins when present).
 
 ## Invariants
 

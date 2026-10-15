@@ -320,7 +320,11 @@ class FakeAdapter(PerTurnAdapter):
         self.preflights: list[tuple[ModelSpec, tuple[Path, ...], tuple[Path, ...]]] = []
 
     def preflight(
-        self, spec: ModelSpec, images: Sequence[Path], audio: Sequence[Path]
+        self,
+        spec: ModelSpec,
+        images: Sequence[Path],
+        audio: Sequence[Path],
+        video: Sequence[Path],
     ) -> None:
         self.preflights.append((spec, tuple(images), tuple(audio)))
         if self._preflight_error is not None:

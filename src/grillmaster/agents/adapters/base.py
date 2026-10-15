@@ -39,6 +39,8 @@ IMAGE_MEDIA_TYPES = {
 
 class Capability(StrEnum):
     AUDIO_INPUT = "audio_input"
+    # A video clip watched with its sound (picture and audio together).
+    VIDEO_INPUT = "video_input"
     IMAGE_INPUT = "image_input"
     IMAGE_GENERATION = "image_generation"
     # A schema-bound JSON answer (see `SchemaDelivery` for how).
@@ -49,7 +51,7 @@ class Capability(StrEnum):
 
 
 class MediaDelivery(StrEnum):
-    """How input images and audio reach the model."""
+    """How input images, audio and video reach the model."""
 
     # The adapter attaches them itself (CLI flags, SDK content blocks).
     ATTACHED = "attached"
@@ -112,11 +114,16 @@ class TurnRequest:
     images: tuple[Path, ...] = ()
     # Audio the model must hear this turn (verified by the adapter).
     audio: tuple[Path, ...] = ()
+    # Video clips the model must watch and hear this turn.
+    video: tuple[Path, ...] = ()
     # Extra readable roots beyond `workdir`.
     add_dirs: tuple[Path, ...] = ()
     mcp: McpServer | None = None
     # The task requires `Capability.WEB_SEARCH`.
     web_search: bool = False
+    # The task's output is files it writes (`FilesOutput`); only such a task
+    # gets the shell and the file-writing tools.
+    writes_files: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,7 +229,11 @@ class AgentAdapter(Protocol):
     def schema_delivery(self) -> SchemaDelivery: ...
 
     def preflight(
-        self, spec: ModelSpec, images: Sequence[Path], audio: Sequence[Path]
+        self,
+        spec: ModelSpec,
+        images: Sequence[Path],
+        audio: Sequence[Path],
+        video: Sequence[Path],
     ) -> None:
         """Raise `AgentConfigError` for what this backend cannot run (unknown
         model, missing CLI, unsupported media); called before any slot."""

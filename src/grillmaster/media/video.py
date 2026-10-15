@@ -1,5 +1,6 @@
 """Joining downloaded parts and cutting a section, both without re-encoding,
-and the concat demuxer run they and the package renders share.
+the concat demuxer run they and the package renders share, and the small
+preview clip a model watches (`slice_preview`).
 
 `join_parts` and `cut` write under a temporary name and rename into place
 (`core.fs.partial_path`), so an interrupted run never leaves a truncated
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
     import threading
     from collections.abc import Iterator, Sequence
 
+    from grillmaster.core.timecode import TimeRange
     from grillmaster.media.ffmpeg import FfmpegRunner, ProgressCallback
 
 # Stream copy of a long show over a slow disk can take minutes; never time out.
@@ -154,9 +156,45 @@ def cut(
     )
 
 
-def _write(runner: FfmpegRunner, args: tuple[str, ...], output: Path) -> None:
+# A preview clip for a model to watch: small enough to send inline (about
+# 1 MB per 20 s) with captions still legible.
+_PREVIEW_ENCODE = (
+    "-map", "0:v:0", "-map", "0:a:0",
+    # Frames dropped before the scale, so only the kept ones are scaled.
+    "-vf", "fps=5,scale=-2:480",
+    "-c:v", "libx264", "-preset", "veryfast", "-crf", "30",
+    "-c:a", "aac", "-b:a", "48k", "-ac", "1",
+)  # fmt: skip
+_PREVIEW_TIMEOUT_S = 300.0
+
+
+def slice_preview(
+    runner: FfmpegRunner, source: Path, output: Path, span: TimeRange
+) -> None:
+    """Encode `span` of `source` as a 480p, 5 fps preview clip with mono
+    sound at `output`, unless `output` already exists."""
+    if output.exists():
+        return
+    logger.debug(f"Cutting preview {span.start:.3f}-{span.end:.3f}s to {output}")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    seek = ("-ss", f"{span.start:.3f}", "-t", f"{span.duration:.3f}")
+    _write(
+        runner,
+        (*seek, "-i", str(source), *_PREVIEW_ENCODE),
+        output,
+        timeout=_PREVIEW_TIMEOUT_S,
+    )
+
+
+def _write(
+    runner: FfmpegRunner,
+    args: tuple[str, ...],
+    output: Path,
+    *,
+    timeout: float | None = _COPY_TIMEOUT_S,
+) -> None:
     with _into_place(output) as partial:
-        runner.run(ffmpeg(*args, *_MP4, str(partial)), timeout=_COPY_TIMEOUT_S)
+        runner.run(ffmpeg(*args, *_MP4, str(partial)), timeout=timeout)
 
 
 @contextmanager

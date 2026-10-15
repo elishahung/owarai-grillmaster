@@ -8,10 +8,17 @@ from typing import TYPE_CHECKING
 import pytest
 from tests.fakes import FAKE_JPEG
 
+from grillmaster.core.timecode import TimeRange
 from grillmaster.media.errors import MediaError
 from grillmaster.media.ffmpeg import SubprocessFfmpegRunner
 from grillmaster.media.probe import duration
-from grillmaster.media.video import concat_copy, concat_list_text, cut, join_parts
+from grillmaster.media.video import (
+    concat_copy,
+    concat_list_text,
+    cut,
+    join_parts,
+    slice_preview,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -240,3 +247,16 @@ def test_concat_copy_passes_progress_and_abort_to_the_runner(tmp_path: Path):
 def test_concat_copy_needs_an_input(tmp_path: Path):
     with pytest.raises(ValueError, match="at least one input"):
         concat_copy(ListReadingFfmpeg(), [], tmp_path / "out.mp4")
+
+
+def test_a_preview_is_a_small_clip_cut_once(tmp_path: Path, fake_ffmpeg: FakeFfmpeg):
+    output = tmp_path / "transcribe" / "clip.mp4"
+
+    slice_preview(fake_ffmpeg, tmp_path / "video.mp4", output, TimeRange(10.0, 40.5))
+    slice_preview(fake_ffmpeg, tmp_path / "video.mp4", output, TimeRange(10.0, 40.5))
+
+    (argv,) = fake_ffmpeg.calls
+    assert (option(argv, "-ss"), option(argv, "-t")) == ("10.000", "30.500")
+    assert option(argv, "-vf") == "fps=5,scale=-2:480"
+    assert option(argv, "-ac") == "1"
+    assert output.is_file()

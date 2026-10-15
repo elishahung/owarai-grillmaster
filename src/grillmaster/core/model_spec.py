@@ -32,7 +32,7 @@ class Role(StrEnum):
     CHUNK = "chunk"
     POSTPROCESS = "postprocess"
     PROOFREAD = "proofread"  # optional final proofread after the glossary check
-    LISTEN = "listen"  # the `listen` tool's transcription of an audio span
+    TRANSCRIBE = "transcribe"  # the `transcribe` tool: watches a video span
     UTILITY = "utility"  # titles, date research, pre-pass/chunk handoff repairs
     CHAT = "chat"  # live-chat translation
     IMAGE = "image"  # cover generation; needs image-generation capability

@@ -185,6 +185,7 @@ class ClaudeAdapter(PerTurnAdapter):
         spec: ModelSpec,  # noqa: ARG002 - the AgentAdapter signature
         images: Sequence[Path],
         audio: Sequence[Path],  # noqa: ARG002
+        video: Sequence[Path],  # noqa: ARG002
     ) -> None:
         for path in images:
             _media_type(path)
@@ -197,10 +198,11 @@ class ClaudeAdapter(PerTurnAdapter):
 
 
 def base_tools(request: TurnRequest) -> list[str]:
-    """The built-in tools of a session; MCP tools come on top."""
-    if request.schema is not None:
-        return list(READ_TOOLS)
-    return [*READ_TOOLS, *WRITE_TOOLS]
+    """The built-in tools of a session; MCP tools come on top. Only a
+    file-writing task gets the writing tools and the shell."""
+    if request.writes_files:
+        return [*READ_TOOLS, *WRITE_TOOLS]
+    return list(READ_TOOLS)
 
 
 def build_options(

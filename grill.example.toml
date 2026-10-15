@@ -34,7 +34,7 @@ prepass = "agy/gemini-3.1-pro/high"      # whole-film analysis
 chunk = "agy/gemini-3.1-pro/high"        # concurrent chunk translation
 postprocess = "codex/gpt-6.1-sol/high" # refine + glossary check
 proofread = "claude/claude-opus-5-5/high" # final proofread (--proofread); omit to use postprocess
-listen = "gemini/gemini-3.8-flash/low"    # the proofread's listen tool; must hear audio; omit to use chunk
+transcribe = "gemini/gemini-3.8-flash/low"    # the proofread's transcribe tool; must watch video (gemini); omit to use chunk
 utility = "codex/gpt-6.1-sol/medium"         # titles, broadcast-date research, prepass/chunk fixes
 chat = "codex/gpt-6.1-sol/medium"            # live-chat replay; omit to use utility
 image = "codex/gpt-6.1-sol/medium"           # cover; needs image generation (codex)
@@ -68,9 +68,10 @@ title_suggestion = false
 # Final proofread after the glossary check: another model fixes names, terms
 # and mistranslations, and corrects the briefing (also --proofread).
 proofread = false
-# Give the proofread a `listen` tool: the listen role transcribes a span of
-# the audio afresh, a second hearing for lines whose ASR is suspect.
-proofread_listen = false
+# Give the proofread a `transcribe` tool: the transcribe role watches a span of the
+# video and transcribes it afresh, a second hearing for lines whose ASR is
+# suspect (captions and name cards help it spell names).
+proofread_transcribe = false
 
 [package]
 # Noise pool (<package>/pools/<name>/) for a bare --remix or a remix program.

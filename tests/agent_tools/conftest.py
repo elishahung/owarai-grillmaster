@@ -55,5 +55,8 @@ def session(
 ) -> ToolSession:
     """Both tools enabled."""
     return ToolSession(
-        project_root=tmp_path, frames=frames_config, check_srt=srt_config, listen=None
+        project_root=tmp_path,
+        frames=frames_config,
+        check_srt=srt_config,
+        transcribe=None,
     )

@@ -58,7 +58,7 @@ def _run(ctx: StageContext) -> None:
         project_root=layout.root,
         frames=frames_tool(ctx, layout.glossary_frames_dir),
         check_srt=SrtCheckTool(reference_srt=refined),
-        listen=None,
+        transcribe=None,
     )
     outcome = check_glossary(
         inputs, ctx.agents, session_dir=ctx.session_dir(), tools=tools

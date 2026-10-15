@@ -71,13 +71,13 @@ class PathsConfig(BaseModel):
 _ROLE_FALLBACKS = {
     Role.CHAT: Role.UTILITY,
     Role.PROOFREAD: Role.POSTPROCESS,
-    Role.LISTEN: Role.CHUNK,
+    Role.TRANSCRIBE: Role.CHUNK,
 }
 
 
 class AgentRoles(BaseModel):
     """Model per agent role, as backend/model[/effort]; all but chat,
-    proofread and listen are required."""
+    proofread and transcribe are required."""
 
     model_config = _STRICT
 
@@ -88,11 +88,12 @@ class AgentRoles(BaseModel):
         default=None,
         description="Final proofread after the glossary check; omitted means postprocess.",
     )
-    listen: ModelSpecField | None = Field(
+    transcribe: ModelSpecField | None = Field(
         default=None,
         description=(
-            "Transcribes an audio span for the proofread's listen tool "
-            "([features] proofread_listen); must hear audio; omitted means chunk."
+            "Transcribes a span of the video for the proofread's transcribe tool "
+            "([features] proofread_transcribe); must watch video (gemini); omitted "
+            "means chunk."
         ),
     )
     utility: ModelSpecField = Field(
@@ -111,7 +112,7 @@ class AgentRoles(BaseModel):
 
     def spec(self, role: Role) -> ModelSpec:
         """The spec for `role`; an omitted optional role falls back
-        (`chat` to `utility`, `proofread` to `postprocess`, `listen` to
+        (`chat` to `utility`, `proofread` to `postprocess`, `transcribe` to
         `chunk`)."""
         spec: ModelSpec | None = getattr(self, role)
         return spec or self.spec(_ROLE_FALLBACKS[role])
@@ -206,9 +207,9 @@ class FeaturesConfig(BaseModel):
         default=False,
         description="Run the final proofread stage after the glossary check (also --proofread).",
     )
-    proofread_listen: bool = Field(
+    proofread_transcribe: bool = Field(
         default=False,
-        description="Give the proofread a listen tool: the listen role transcribes an audio span afresh.",
+        description="Give the proofread a transcribe tool: the transcribe role watches a span of the video and transcribes it afresh.",
     )
 
 

@@ -108,6 +108,14 @@ def test_options_without_tools_or_schema(make_request: Callable[..., TurnRequest
     assert options.mcp_servers == {}
     assert options.output_format is None
     assert options.resume is None
+    # A text answer writes nothing: no editing tools, no shell.
+    assert options.tools == ["Read", "Grep", "Glob", "WebSearch", "WebFetch"]
+
+
+def test_a_file_writing_task_gets_the_writing_tools(
+    make_request: Callable[..., TurnRequest],
+):
+    options = build_options(make_request(spec=SPEC, writes_files=True), resume=None)
     # A file-writing task edits and may copy files with the shell.
     assert options.tools == [
         "Read",
@@ -238,9 +246,9 @@ def test_unsupported_image_type_is_a_config_error(
     image = tmp_path / "frame.bmp"
     image.write_bytes(b"BM")
     adapter = ClaudeAdapter(query_fn=FakeQuery([]))
-    adapter.preflight(SPEC, (tmp_path / "ok.PNG",), ())
+    adapter.preflight(SPEC, (tmp_path / "ok.PNG",), (), ())
     with pytest.raises(AgentConfigError, match=r"frame\.bmp"):
-        adapter.preflight(SPEC, (image,), ())
+        adapter.preflight(SPEC, (image,), (), ())
 
 
 def test_thinking_progress_ticks_are_dropped(make_request: Callable[..., TurnRequest]):

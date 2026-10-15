@@ -29,7 +29,7 @@ SESSION_ENV_VAR = "GRILL_TOOL_SESSION"
 class ToolName(StrEnum):
     GET_FRAMES = "get_frames"
     CHECK_SRT = "check_srt"
-    LISTEN = "listen"
+    TRANSCRIBE = "transcribe"
 
 
 class FramesTool(FrozenModel):
@@ -80,24 +80,24 @@ class SrtCheckTool(FrozenModel):
     reference_srt: Path
 
 
-class ListenTool(FrozenModel):
-    """`listen`: a fresh transcription of a span of `audio` by `model`.
+class TranscribeTool(FrozenModel):
+    """`transcribe`: a fresh transcription of a span of `video` by `model`.
 
     The tool server runs the transcription as its own agent session (the
-    `listen` role, `model` written `backend/model[/effort]`, each turn bounded
+    `transcribe` role, `model` written `backend/model[/effort]`, each turn bounded
     by `timeout_s`); a span's clip, transcript and session records go to
     `<clips_dir>/<start>-<end>/`, and an existing transcript is returned
     again without a new session."""
 
-    audio: Path
+    video: Path
     clips_dir: Path
     model: ModelSpecField
     timeout_s: float
-    # The longest span one call transcribes, anywhere in the audio.
+    # The longest span one call takes, anywhere in the video.
     max_span_s: float
 
     @model_validator(mode="after")
-    def _check_limits(self) -> ListenTool:
+    def _check_limits(self) -> TranscribeTool:
         if self.max_span_s <= 0 or self.timeout_s <= 0:
             raise ValueError(
                 f"max_span_s and timeout_s must be positive: "
@@ -110,7 +110,7 @@ class ToolSession(FrozenModel):
     project_root: Path
     frames: FramesTool | None
     check_srt: SrtCheckTool | None
-    listen: ListenTool | None
+    transcribe: TranscribeTool | None
 
     @property
     def allowed(self) -> frozenset[ToolName]:
@@ -118,7 +118,7 @@ class ToolSession(FrozenModel):
         tools = {
             ToolName.GET_FRAMES: self.frames,
             ToolName.CHECK_SRT: self.check_srt,
-            ToolName.LISTEN: self.listen,
+            ToolName.TRANSCRIBE: self.transcribe,
         }
         return frozenset(name for name, config in tools.items() if config is not None)
 

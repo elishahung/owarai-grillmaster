@@ -109,6 +109,26 @@ def test_start_runs_acp_in_the_workdir_and_attaches_media_inline(
     assert final.usage == {"input_tokens": 2, "output_tokens": 1}
 
 
+def test_a_video_goes_inline_as_its_own_media_type(
+    make_request: Callable[..., TurnRequest], tmp_path: Path
+):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"mp4")
+    session, spawn = _session()
+    session.start(make_request(spec=FLASH_LOW, video=(clip,))).result()
+
+    _, _, prompt = _sent(spawn)
+    # ACP has no video block: gemini-cli passes the audio block's mimeType on.
+    assert prompt["params"]["prompt"][1:] == [
+        {"type": "audio", "mimeType": "video/mp4", "data": _b64(b"mp4")}
+    ]
+    GeminiAdapter(executable="gemini").preflight(FLASH_LOW, (), (), (clip,))
+    with pytest.raises(AgentConfigError, match=r"\.mp4"):
+        GeminiAdapter(executable="gemini").preflight(
+            FLASH_LOW, (), (), (tmp_path / "clip.mkv",)
+        )
+
+
 def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
 
@@ -203,14 +223,21 @@ def test_effort_becomes_the_thinking_level_of_the_model(
     assert thinking == {"thinkingLevel": level}
 
 
-def test_only_a_file_writing_task_keeps_the_shell(
+def test_only_a_file_writing_task_keeps_the_shell_and_writing_tools(
     make_request: Callable[..., TurnRequest],
 ):
-    request = make_request(spec=FLASH_LOW, schema={"type": "object"})
-    _first_turn(request)
-    assert _settings(request)["tools"] == {"exclude": ["run_shell_command"]}
+    for request in (
+        make_request(spec=FLASH_LOW, schema={"type": "object"}),
+        # A text answer (the transcribe transcription) writes no files either.
+        make_request(spec=FLASH_LOW),
+    ):
+        _first_turn(request)
+        assert _settings(request)["tools"] == {
+            "exclude": ["run_shell_command", "write_file", "replace"]
+        }
 
-    _first_turn(make_request(spec=FLASH_LOW))
+    request = make_request(spec=FLASH_LOW, writes_files=True)
+    _first_turn(request)
     assert "tools" not in _settings(request)
 
 
@@ -261,19 +288,19 @@ def test_preflight_refuses_media_the_model_cannot_take(tmp_path: Path):
         handle.truncate(MAX_MEDIA_BYTES // 2 + 1)
     frame = tmp_path / "frame.jpg"
     frame.write_bytes(b"x" * (MAX_MEDIA_BYTES // 2))
-    adapter.preflight(FLASH_LOW, (), (half,))
+    adapter.preflight(FLASH_LOW, (), (half,), ())
     # The limit is on the request: every attachment goes inline in one prompt.
     with pytest.raises(AgentConfigError, match="20 MB per request"):
-        adapter.preflight(FLASH_LOW, (frame,), (half,))
+        adapter.preflight(FLASH_LOW, (frame,), (half,), ())
     odd = tmp_path / "clip.aiff"
     odd.write_bytes(b"x")
     with pytest.raises(AgentConfigError, match=r"\.ogg"):
-        adapter.preflight(FLASH_LOW, (), (odd,))
+        adapter.preflight(FLASH_LOW, (), (odd,), ())
 
     image, audio = tmp_path / "a.PNG", tmp_path / "with space.ogg"
     image.write_bytes(b"x")
     audio.write_bytes(b"x")
-    adapter.preflight(FLASH_LOW, (image,), (audio,))
+    adapter.preflight(FLASH_LOW, (image,), (audio,), ())
 
 
 def test_updates_become_messages_split_at_tool_calls(

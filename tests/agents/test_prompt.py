@@ -12,8 +12,8 @@ from grillmaster.agents.prompt import (
 from grillmaster.core.model_spec import ModelSpec
 from grillmaster.core.tool_session import (
     FramesTool,
-    ListenTool,
     ToolSession,
+    TranscribeTool,
 )
 
 if TYPE_CHECKING:
@@ -28,7 +28,7 @@ def _frames_session(tmp_path: Path, window: tuple[float, float | None]) -> ToolS
         max_side=640,
     )
     return ToolSession(
-        project_root=tmp_path, frames=frames, check_srt=None, listen=None
+        project_root=tmp_path, frames=frames, check_srt=None, transcribe=None
     )
 
 
@@ -65,16 +65,16 @@ def test_the_frames_line_says_how_the_images_arrive(
     assert expected in tools_section(session, delivery)
 
 
-def test_the_listen_line_leaves_the_limits_to_the_tool(tmp_path: Path):
-    listen = ListenTool(
-        audio=tmp_path / "audio.ogg",
-        clips_dir=tmp_path / "listen",
+def test_the_transcribe_line_leaves_the_limits_to_the_tool(tmp_path: Path):
+    transcribe = TranscribeTool(
+        video=tmp_path / "video.mp4",
+        clips_dir=tmp_path / "transcribe",
         model=ModelSpec.parse("gemini/gemini-3.8-flash/low"),
         timeout_s=60.0,
         max_span_s=300.0,
     )
     session = ToolSession(
-        project_root=tmp_path, frames=None, check_srt=None, listen=listen
+        project_root=tmp_path, frames=None, check_srt=None, transcribe=transcribe
     )
     assert tools_section(session).endswith("以純文字回傳日文逐字稿。")
 

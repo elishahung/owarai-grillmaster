@@ -127,13 +127,15 @@ class AgentTask[T]:
     output: OutputSpec[T]
     images: tuple[Path, ...] = ()
     audio: tuple[Path, ...] = ()
+    # Clips watched with their sound (`Capability.VIDEO_INPUT`).
+    video: tuple[Path, ...] = ()
     # The grill MCP tools this task may call; written as `tools.json`.
     tools: ToolSession | None = None
     # Extra readable roots (e.g. the project root for refine).
     add_dirs: tuple[Path, ...] = ()
     validate: Callable[[T], None] | None = None
     # Capabilities the inputs cannot imply (`IMAGE_GENERATION`,
-    # `WEB_SEARCH`); the runner adds those of images, audio, tools, schema.
+    # `WEB_SEARCH`); the runner adds those the media, tools and schema imply.
     requires: frozenset[Capability] = frozenset()
     # Repair rounds that resume the same session with the failure message.
     max_repairs: int = 3

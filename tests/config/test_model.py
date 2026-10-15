@@ -51,13 +51,13 @@ def test_proofread_falls_back_to_postprocess(roles: dict[str, str]):
     )
 
 
-def test_listen_falls_back_to_chunk(roles: dict[str, str]):
+def test_transcribe_falls_back_to_chunk(roles: dict[str, str]):
     agent_roles = AgentRoles.model_validate(roles)
-    assert agent_roles.spec(Role.LISTEN) == agent_roles.chunk
+    assert agent_roles.spec(Role.TRANSCRIBE) == agent_roles.chunk
     explicit = AgentRoles.model_validate(
-        {**roles, "listen": "gemini/gemini-3.8-flash/low"}
+        {**roles, "transcribe": "gemini/gemini-3.8-flash/low"}
     )
-    assert explicit.spec(Role.LISTEN) == ModelSpec(
+    assert explicit.spec(Role.TRANSCRIBE) == ModelSpec(
         Backend.GEMINI, "gemini-3.8-flash", Effort.LOW
     )
 

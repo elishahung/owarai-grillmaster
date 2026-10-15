@@ -4,7 +4,7 @@ description: >-
   The agent layer `src/grillmaster/agents/` (AgentTask/AgentJob, AgentRunner,
   strict schema, repair loop, errors, events, `process.py`,
   agy/gemini/codex/claude adapters) and the MCP tool server `src/grillmaster/agent_tools/`
-  (`get_frames`, `check_srt`, `listen`, `core/tool_session.py`). Read this before
+  (`get_frames`, `check_srt`, `transcribe`, `core/tool_session.py`). Read this before
   touching either package, adding a backend, capability or tool, or changing
   prompts, media, schema, repair, retries, concurrency or session records.
 ---
@@ -72,12 +72,14 @@ of one grill process (concurrent processes each get their own);
 Claude), not the session.
 
 All adapters declare IMAGE_INPUT, SCHEMA_OUTPUT, RESUME, MCP, WEB_SEARCH; agy
-and gemini have AUDIO_INPUT, only codex IMAGE_GENERATION. Required =
+and gemini have AUDIO_INPUT, only gemini VIDEO_INPUT (a picture+sound clip),
+only codex IMAGE_GENERATION. Required =
 `task.requires` (what inputs cannot imply: IMAGE_GENERATION for cover,
 WEB_SEARCH for prepass/titles/date research) + derived: schema→SCHEMA_OUTPUT,
-`max_repairs > 0`→RESUME, images→IMAGE_INPUT, audio→AUDIO_INPUT, tools→MCP,
-frames tool on a `NEXT_MESSAGE` backend→RESUME + IMAGE_INPUT; a `listen`
-tool's own model must have `LISTEN_REQUIRES` (AUDIO_INPUT + RESUME).
+`max_repairs > 0`→RESUME, images→IMAGE_INPUT, audio→AUDIO_INPUT,
+video→VIDEO_INPUT, tools→MCP,
+frames tool on a `NEXT_MESSAGE` backend→RESUME + IMAGE_INPUT; a `transcribe`
+tool's own model must have `TRANSCRIBE_REQUIRES` (VIDEO_INPUT + RESUME).
 Stages check `runner.capabilities(role)` (`accepts_audio`) before adding audio.
 
 ## Adapters (`adapters/`, loaded lazily by `AdapterRegistry`)
@@ -100,7 +102,7 @@ by the runner when the session ends). agy, codex and claude are
 `PerTurnAdapter`s (each turn its own process); gemini keeps one process per
 session. Closing `events()` early stops the turn (the CLI tree is killed). A resume repeats
 model, workdir, tools and schema with a new `message`; its images/audio are
-only a defect's resends.
+only a defect's resends, and a video is never resent.
 
 - **agy**: `--input-format stream-json --output-format stream-json -p=`, one
   text-only stdin line, stdin closed on `result`. Model id
@@ -122,9 +124,11 @@ only a defect's resends.
   the watchdog restarted per turn). Not `--resume`: a resumed process
   estimates the stored history counting audio by base64 length (3.8 MB ≈
   1.27M tokens), so it compresses the audio away or refuses every later turn
-  without a model call. Media go inline as base64 `image`/`audio` blocks (the
+  without a model call. Media go inline as base64 `image`/`audio` blocks (a video
+  rides an `audio` block with `video/mp4`: gemini-cli passes any block's
+  mimeType on as `inlineData`; the
   token cost of agy's `view_file` turns is the reason this backend exists);
-  `preflight` refuses unknown suffixes and over 20 MB of attachments. ACP text is not
+  `preflight` refuses unknown suffixes and over 20 MB of base64-encoded attachments. ACP text is not
   parsed for `@`. Image tool results are broken through Code Assist (400 on
   3.5/3.8-flash, garbled text after the image on 3.1-pro/flash-lite, the
   nested format drops the image), hence `NEXT_MESSAGE`; `SchemaDelivery.PROMPT`.
@@ -133,10 +137,11 @@ only a defect's resends.
   `gemini-2.5*`), the MCP server, `model.compressionThreshold: 1000` (a
   compression would summarize the audio away) and
   `context.includeDirectoryTree: false` (a listed `audio.ogg` lured a model
-  into ffmpeg via the shell and a false "audio missing" claim) and, for
-  a schema task only, `tools.exclude: [run_shell_command]` (a pre-pass
-  curl'ed Google instead of `google_web_search`; file-writing tasks keep the
-  shell, glossary check copies files with it) go into
+  into ffmpeg via the shell and a false "audio missing" claim) and, unless
+  `TurnRequest.writes_files` (`FilesOutput`), `tools.exclude` of the
+  shell, `write_file` and `replace` (a pre-pass curl'ed Google instead of
+  `google_web_search`; a `transcribe` clip got whisper'd and the project tree
+  browsed; glossary check copies files with it) go into
   `<workdir>/.gemini/settings.json`, read at `session/new`. Model ids are
   gemini-cli's (`gemini-3.1-pro-preview`, not agy's `gemini-3.1-pro`); with
   media attached, an unknown id or an oversized request ends with
@@ -162,7 +167,7 @@ only a defect's resends.
   (like codex's `--ignore-user-config`: the user's own settings, MCP servers
   and CLAUDE.md never reach a grill session), our one-paragraph
   `SYSTEM_PROMPT` (batch independent tool calls in one turn), `tools` =
-  Read/Grep/Glob/WebSearch/WebFetch (+ Write/Edit/Bash for a no-schema task)
+  Read/Grep/Glob/WebSearch/WebFetch (+ Write/Edit/Bash only with `writes_files`)
   with `ENABLE_TOOL_SEARCH=false` (the default set inflated every prompt and hid
   MCP/web tools behind ToolSearch turns), `max_buffer_size` 64 MiB (inline
   `get_frames` stills passed the 1 MiB line cap), base64 image blocks,
@@ -224,7 +229,7 @@ only a defect's resends.
   `summarize` (final message by length only) and `AgentSessionFinished`.
 - No model-side "cannot hear the audio" escape line: in ~400 archived audio
   sessions every such claim was false (gemini, audio inline), and it failed
-  gemini-3.8-flash/low `listen` clips. Delivery is checked mechanically
+  gemini-3.8-flash/low `transcribe` clips. Delivery is checked mechanically
   instead: `ATTACHED` media go inline, and agy's unopened audio is an
   adapter defect that resends it.
 
@@ -238,17 +243,20 @@ tools with a sub-config in `ToolSession` exist; a bad manifest exits 2.
 returned as MCP image content (with `pending_frames`: text only, paths appended
 to that file). `check_srt(path)`: skeleton check of an
 absolute path against `reference_srt` → `VALID` / `INVALID` + problems.
-`listen(start, end)` (`listen.py`, async: parallel calls overlap): cuts
-≤ `max_span_s` anywhere in `audio` into `<clips_dir>/<start>-<end>/clip.ogg`
-and transcribes it as a `TextOutput` session of role `listen` (`agent_tools`
+`transcribe(start, end)` (`transcribe.py`, async: parallel calls overlap): cuts
+≤ `max_span_s` anywhere in `video` into `<clips_dir>/<start>-<end>/clip.mp4`
+(`media.video.slice_preview`: 480p, 5 fps, mono AAC, ~1 MB per 20 s) and
+has it watched as a `TextOutput` session of role `transcribe` (`agent_tools`
 builds its own one-role `AgentRunner` from the manifest's `model`/
 `timeout_s`, with its own 4 slots outside `max_concurrent`; the CLI stays in
 the caller's process tree and needs the caller's env, e.g. gemini's
-`GOOGLE_CLOUD_PROJECT`); one call per span at a time, and a kept
+`GOOGLE_CLOUD_PROJECT`; its cwd is the span's empty `work/`, so the model
+finds no clip to process); one call per span at a time, and a kept
 `transcript.txt` answers again without a session; the caller's tool
 timeout bounds a call. xAI STT was tried as an
 engine and dropped (it loses shouted and overlapping speech, see
-project-architecture `references/asr-provider-evaluation.md`).
+project-architecture `references/asr-provider-evaluation.md`); video beat an
+audio-only clip on names (captions, name cards) for ~10% more tokens.
 `agents/prompt.py` lists the tools (with the window); stages add guidance via
 `core.prompts.frames_guidance`. A new tool = config in `core/tool_session.py`
 (`ToolName` + sub-config) + handler module + registration in `server.py` +

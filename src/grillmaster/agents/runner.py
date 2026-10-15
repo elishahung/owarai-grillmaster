@@ -132,9 +132,9 @@ PENDING_FRAMES_FILE = "frames_pending.txt"
 # asking is stuck, not still reading.
 MAX_FRAME_TURNS = 8
 
-# What the `listen` tool's own session needs (`agent_tools.listen`: it hears
-# a clip and may take one repair round).
-LISTEN_REQUIRES = frozenset({Capability.AUDIO_INPUT, Capability.RESUME})
+# What the `transcribe` tool's own session needs (`agent_tools.transcribe`: it
+# watches a clip and may take one repair round).
+TRANSCRIBE_REQUIRES = frozenset({Capability.VIDEO_INPUT, Capability.RESUME})
 
 # Set while the current context holds a slot; a nested `run` would wait for
 # a slot its own caller holds.
@@ -174,6 +174,7 @@ class _Prepared[T]:
     schema: JsonSchema | None
     images: tuple[Path, ...]
     audio: tuple[Path, ...]
+    video: tuple[Path, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -421,18 +422,20 @@ class AgentRunner:
                 f"{task.name}: {spec.backend} cannot provide "
                 f"{', '.join(missing)} (role {task.role}, spec {spec})"
             )
-        if task.tools is not None and task.tools.listen is not None:
-            listen = task.tools.listen.model
+        if task.tools is not None and task.tools.transcribe is not None:
+            transcribe = task.tools.transcribe.model
             missing = sorted(
-                LISTEN_REQUIRES - self._adapters(listen.backend).capabilities
+                TRANSCRIBE_REQUIRES - self._adapters(transcribe.backend).capabilities
             )
             if missing:
                 raise AgentConfigError(
-                    f"{task.name}: the listen tool's {listen.backend} cannot "
-                    f"provide {', '.join(missing)} (spec {listen})"
+                    f"{task.name}: the transcribe tool's {transcribe.backend} cannot "
+                    f"provide {', '.join(missing)} (spec {transcribe})"
                 )
         absent = [
-            str(path) for path in (*task.images, *task.audio) if not path.is_file()
+            str(path)
+            for path in (*task.images, *task.audio, *task.video)
+            if not path.is_file()
         ]
         if absent:
             raise AgentConfigError(
@@ -447,8 +450,9 @@ class AgentRunner:
                 raise AgentConfigError(f"{task.name}: {error}") from error
         images = tuple(path.resolve() for path in task.images)
         audio = tuple(path.resolve() for path in task.audio)
-        adapter.preflight(spec, images, audio)
-        return _Prepared(task, spec, adapter, requires, schema, images, audio)
+        video = tuple(path.resolve() for path in task.video)
+        adapter.preflight(spec, images, audio, video)
+        return _Prepared(task, spec, adapter, requires, schema, images, audio, video)
 
     def _prepare_session_dir(
         self, prepared: _Prepared[Any], session_dir: Path
@@ -595,7 +599,7 @@ class AgentRunner:
                 summary = f"get_frames: {len(frames)} frame(s) attached"
                 self._activity(task.name, ActivityKind.TOOL_RESULT, summary)
                 message = prompt.frames_message()
-                turn = replace(request, message=message, images=frames, audio=())
+                turn = _follow_up(request, message, images=frames)
                 handle = session.resume(final.session_id, turn)
                 continue
             # The adapter's own findings come first: the output of a turn
@@ -619,9 +623,9 @@ class AgentRunner:
             self._activity(task.name, ActivityKind.REPAIR, first_line(defect.message))
             handle = session.resume(
                 final.session_id,
-                replace(
+                _follow_up(
                     request,
-                    message=prompt.repair_message(defect.message),
+                    prompt.repair_message(defect.message),
                     images=defect.images,
                     audio=defect.audio,
                 ),
@@ -647,7 +651,7 @@ class AgentRunner:
             raise self._cancelled(task_name, "a refused turn") from refused
         if refused.turn_kept:
             message = prompt.continue_message()
-            turn = replace(turn, message=message, images=(), audio=())
+            turn = _follow_up(turn, message)
         how = "continuing the turn" if refused.turn_kept else "sending it again"
         self._activity(task_name, ActivityKind.RETRY, f"server out of capacity: {how}")
         return turn
@@ -728,9 +732,11 @@ class AgentRunner:
             schema_path=files.schema_path,
             images=prepared.images,
             audio=prepared.audio,
+            video=prepared.video,
             add_dirs=tuple(path.resolve() for path in prepared.task.add_dirs),
             mcp=files.mcp,
             web_search=Capability.WEB_SEARCH in prepared.requires,
+            writes_files=isinstance(prepared.task.output, FilesOutput),
         )
 
     @contextmanager
@@ -815,6 +821,18 @@ class AgentRunner:
         self._events.emit(AgentActivity(task=task_name, kind=kind, summary=summary))
 
 
+def _follow_up(
+    request: TurnRequest,
+    message: str,
+    *,
+    images: tuple[Path, ...] = (),
+    audio: tuple[Path, ...] = (),
+) -> TurnRequest:
+    """`request` resumed with `message` and only the given media: a resume
+    never resends the start turn's attachments by itself."""
+    return replace(request, message=message, images=images, audio=audio, video=())
+
+
 def _required_capabilities(
     task: AgentTask[Any], tool_images: ToolImageDelivery
 ) -> frozenset[Capability]:
@@ -829,6 +847,8 @@ def _required_capabilities(
         required.add(Capability.IMAGE_INPUT)
     if task.audio:
         required.add(Capability.AUDIO_INPUT)
+    if task.video:
+        required.add(Capability.VIDEO_INPUT)
     if task.tools is not None:
         required.add(Capability.MCP)
         if (
@@ -850,6 +870,7 @@ def _handoff_task[T](task: AgentTask[T], handoff: Handoff) -> AgentTask[T]:
         instructions=handoff.instructions,
         session_dir=handoff_path(task.session_dir),
         audio=(),
+        video=(),
         add_dirs=handoff.add_dirs,
         handoff=None,
     )

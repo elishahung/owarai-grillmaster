@@ -39,9 +39,11 @@ one `session/prompt` per turn. Facts this module is built on (gemini-cli
   an oversized session ends with `max_tokens` instead) and
   `context.includeDirectoryTree: false` (the workdir listing showed the
   chunk's `audio.ogg`; a model cut it with ffmpeg through the shell, heard
-  nothing and declared its inline audio missing) and, for a schema task,
-  `tools.exclude: [run_shell_command]` (a pre-pass searched the web with
-  curl instead of `google_web_search`) go into
+  nothing and declared its inline audio missing) and, for a task that writes
+  no files, `tools.exclude` of the shell and the writing tools (with a
+  shell, a pre-pass searched the web with curl instead of
+  `google_web_search`, and a `transcribe` session ran whisper on its clip
+  and browsed the project tree) go into
   `<workdir>/.gemini/settings.json`, which `session/new` reads because
   `--skip-trust` trusts the workdir. The user's own MCP servers stay off
   through `--allowed-mcp-server-names`. A tool call arrives as a
@@ -136,6 +138,8 @@ THINKING_BUDGETS = {
 NEVER_COMPRESS = 1000.0
 SETTINGS_RELPATH = (".gemini", "settings.json")
 SHELL_TOOL = "run_shell_command"
+# Built-ins a task that writes no files never gets.
+WRITE_TOOLS = (SHELL_TOOL, "write_file", "replace")
 MAX_MEDIA_BYTES = 20 * 1024 * 1024
 # The audio media types the model takes, by suffix.
 AUDIO_MEDIA_TYPES = {
@@ -146,6 +150,8 @@ AUDIO_MEDIA_TYPES = {
     ".flac": "audio/flac",
     ".m4a": "audio/mp4",
 }
+# The video media types the model takes, by suffix.
+VIDEO_MEDIA_TYPES = {".mp4": "video/mp4"}
 PROTOCOL_VERSION = 1
 _LOGIN_HINT = "run `gemini` once interactively to sign in"
 _UNKNOWN_MODEL = "Requested entity was not found"
@@ -161,6 +167,7 @@ class GeminiAdapter:
     capabilities = frozenset(
         {
             Capability.AUDIO_INPUT,
+            Capability.VIDEO_INPUT,
             Capability.IMAGE_INPUT,
             Capability.SCHEMA_OUTPUT,
             Capability.RESUME,
@@ -183,19 +190,21 @@ class GeminiAdapter:
         spec: ModelSpec,  # noqa: ARG002 - the AgentAdapter signature
         images: Sequence[Path],
         audio: Sequence[Path],
+        video: Sequence[Path],
     ) -> None:
         resolve_cli("gemini", self._executable)
         total = 0
-        for _, path, types in _media(images, audio):
+        for _, path, types in _media(images, audio, video):
             if path.suffix.lower() not in types:
                 raise AgentConfigError(
                     f"gemini takes {', '.join(sorted(types))} files: {path}"
                 )
-            total += path.stat().st_size
+            # Sent base64-encoded: four bytes for every three.
+            total += -(-path.stat().st_size // 3) * 4
         if total > MAX_MEDIA_BYTES:
             raise AgentConfigError(
                 f"gemini sends attachments inline, up to {MAX_MEDIA_BYTES // 2**20} "
-                f"MB per request: {total} bytes in {[*images, *audio]}"
+                f"MB per request: {total} encoded bytes in {[*images, *audio, *video]}"
             )
 
     def session(self) -> GeminiSession:
@@ -251,11 +260,10 @@ def write_settings(request: TurnRequest) -> None:
             "overrides": [{"match": {"model": model}, "modelConfig": model_config}]
         },
     }
-    # A schema task answers in its final message and needs no shell; with one,
-    # a pre-pass curl'ed Google's search page instead of `google_web_search`.
-    # File-writing tasks keep it: glossary check copies the SRT with it.
-    if request.schema is not None:
-        settings["tools"] = {"exclude": [SHELL_TOOL]}
+    # Only a file-writing task gets the shell and the writing tools (module
+    # docstring: what a shell did in other tasks).
+    if not request.writes_files:
+        settings["tools"] = {"exclude": list(WRITE_TOOLS)}
     if request.mcp is not None:
         settings["mcpServers"] = mcp_servers(request.mcp)
     path = request.workdir.joinpath(*SETTINGS_RELPATH)
@@ -401,7 +409,7 @@ class GeminiTurn(Turn):
         """The message text, then one inline block per attached file."""
         request = self._request
         blocks: list[dict[str, str]] = [{"type": "text", "text": request.message}]
-        for kind, path, types in _media(request.images, request.audio):
+        for kind, path, types in _media(request.images, request.audio, request.video):
             data = base64.b64encode(path.read_bytes()).decode("ascii")
             mime = types[path.suffix.lower()]
             blocks.append({"type": kind, "mimeType": mime, "data": data})
@@ -463,14 +471,18 @@ class UpdateReader:
 
 
 def _media(
-    images: Sequence[Path], audio: Sequence[Path]
+    images: Sequence[Path], audio: Sequence[Path], video: Sequence[Path]
 ) -> Iterator[tuple[str, Path, dict[str, str]]]:
     """Each attached file with its ACP block type and that block's media
-    types by suffix."""
+    types by suffix. ACP has no video block; gemini-cli turns image and audio
+    blocks alike into `inlineData` with the block's `mimeType`, so a video
+    rides an audio block."""
     for path in images:
         yield "image", path, IMAGE_MEDIA_TYPES
     for path in audio:
         yield "audio", path, AUDIO_MEDIA_TYPES
+    for path in video:
+        yield "audio", path, VIDEO_MEDIA_TYPES
 
 
 def _ended(connection: AcpConnection, request: TurnRequest) -> AgentTransientError:

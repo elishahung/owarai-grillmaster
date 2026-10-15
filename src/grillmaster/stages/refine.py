@@ -43,7 +43,7 @@ def _run(ctx: StageContext) -> None:
         project_root=layout.root,
         frames=frames_tool(ctx, layout.refine_frames_dir),
         check_srt=SrtCheckTool(reference_srt=merged),
-        listen=None,
+        transcribe=None,
     )
     ctx.agents.run(
         build_refine_task(inputs, session_dir=ctx.session_dir(), tools=tools)

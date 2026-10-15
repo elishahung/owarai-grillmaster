@@ -2,9 +2,9 @@
 
 Only the tools in `session.allowed` are registered; a session with no tool
 configs yields a server that lists nothing. Tool descriptions carry the
-session's limits so the agent sees them in the tool listing. `listen` runs
+session's limits so the agent sees them in the tool listing. `transcribe` runs
 its transcriptions through `agents`, by default a runner of its own
-(`listen.build_agents`).
+(`transcribe.build_agents`).
 """
 
 from __future__ import annotations
@@ -15,7 +15,11 @@ from mcp.server.fastmcp import FastMCP
 
 from grillmaster.agent_tools import srt_check
 from grillmaster.agent_tools.frames import FrameGrabber
-from grillmaster.agent_tools.listen import ListenAgents, Listener, build_agents
+from grillmaster.agent_tools.transcribe import (
+    TranscribeAgents,
+    Transcriber,
+    build_agents,
+)
 from grillmaster.core.tool_session import ToolName
 from grillmaster.media.ffmpeg import SubprocessFfmpegRunner
 
@@ -31,7 +35,7 @@ SERVER_NAME = "grill"
 def build_server(
     session: ToolSession,
     runner: FfmpegRunner | None = None,
-    agents: ListenAgents | None = None,
+    agents: TranscribeAgents | None = None,
 ) -> FastMCP:
     server = FastMCP(SERVER_NAME, log_level="WARNING")
     for name in sorted(session.allowed):
@@ -46,7 +50,7 @@ def _tool(
     session: ToolSession,
     name: ToolName,
     runner: FfmpegRunner | None,
-    agents: ListenAgents | None,
+    agents: TranscribeAgents | None,
 ) -> tuple[Callable[..., Any], str]:
     """The handler and description of one allowed tool."""
     match name:
@@ -56,11 +60,11 @@ def _tool(
         case ToolName.CHECK_SRT if session.check_srt is not None:
             checker = srt_check.SrtChecker(session.check_srt)
             return checker.check_srt, srt_check.DESCRIPTION
-        case ToolName.LISTEN if session.listen is not None:
-            listener = Listener(
-                session.listen,
+        case ToolName.TRANSCRIBE if session.transcribe is not None:
+            transcriber = Transcriber(
+                session.transcribe,
                 runner or SubprocessFfmpegRunner(),
-                agents or build_agents(session.listen),
+                agents or build_agents(session.transcribe),
             )
-            return listener.listen, listener.describe()
+            return transcriber.call, transcriber.describe()
     raise AssertionError(f"{name} is allowed but has no config")  # pragma: no cover

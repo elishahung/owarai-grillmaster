@@ -64,8 +64,8 @@ from grillmaster.core.model_spec import Backend, Effort, ModelSpec, Role
 from grillmaster.core.process import ABORT, ProcessAbortedError, kill_all
 from grillmaster.core.tool_session import (
     FramesTool,
-    ListenTool,
     ToolSession,
+    TranscribeTool,
     leave_pending_frames,
 )
 from grillmaster.events.context import stage_scope
@@ -208,7 +208,7 @@ def test_session_directory_contents(
             max_side=768,
         ),
         check_srt=None,
-        listen=None,
+        transcribe=None,
     )
     adapter = FakeAdapter([Turn(final=final("ok"), raw=['{"a":1}', '{"b":2}'])])
     task = make_task(tmp_path, TextOutput(), tools=tools)
@@ -276,6 +276,7 @@ def test_without_workdir_a_temp_dir_is_used_and_removed(
     ("missing", "overrides"),
     [
         (Capability.AUDIO_INPUT, {"audio": ("a.ogg",)}),
+        (Capability.VIDEO_INPUT, {"video": ("v.mp4",)}),
         (Capability.IMAGE_INPUT, {"images": ("a.png",)}),
         (Capability.SCHEMA_OUTPUT, {"output": SchemaOutput(Answer)}),
         (Capability.RESUME, {}),
@@ -291,7 +292,7 @@ def test_missing_capability_fails_before_any_session(
     make_runner: Callable[..., AgentRunner],
     recording_sink: RecordingSink,
 ):
-    for key in ("audio", "images"):
+    for key in ("audio", "video", "images"):
         if key in overrides:
             path = tmp_path / overrides[key][0]
             path.write_bytes(b"x")
@@ -323,23 +324,23 @@ def test_frames_for_the_next_message_need_a_resumed_turn_with_images(
         make_runner(adapter).run(task)
 
 
-@pytest.mark.parametrize("missing", [Capability.AUDIO_INPUT, Capability.RESUME])
-def test_a_listen_tool_that_cannot_hear_fails_before_any_session(
+@pytest.mark.parametrize("missing", [Capability.VIDEO_INPUT, Capability.RESUME])
+def test_a_transcribe_model_that_cannot_watch_video_fails_first(
     missing: Capability, tmp_path: Path, make_runner: Callable[..., AgentRunner]
 ):
     adapter = FakeAdapter(capabilities=frozenset(Capability) - {missing})
-    listen = ListenTool(
-        audio=tmp_path / "audio.ogg",
-        clips_dir=tmp_path / "listen",
+    transcribe = TranscribeTool(
+        video=tmp_path / "video.mp4",
+        clips_dir=tmp_path / "transcribe",
         model=ModelSpec(adapter.backend, "hears", Effort.LOW),
         timeout_s=60.0,
         max_span_s=300.0,
     )
     tools = ToolSession(
-        project_root=tmp_path, frames=None, check_srt=None, listen=listen
+        project_root=tmp_path, frames=None, check_srt=None, transcribe=transcribe
     )
     task = make_task(tmp_path, TextOutput(), tools=tools, max_repairs=0)
-    with pytest.raises(AgentConfigError, match=f"listen tool.*{missing}"):
+    with pytest.raises(AgentConfigError, match=f"transcribe tool.*{missing}"):
         make_runner(adapter).run(task)
     assert adapter.calls == []
 
@@ -461,6 +462,21 @@ def test_missing_structured_output_is_repaired(
     assert "沒有收到 JSON 結果" in adapter.calls[1].request.message
 
 
+def test_a_repair_turn_does_not_resend_the_video(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"mp4")
+    adapter = FakeAdapter([Turn(final=final("")), Turn(final=final("transcript"))])
+    task = make_task(tmp_path, TextOutput(), video=(clip,))
+
+    make_runner(adapter).run(task)
+
+    start, repair = (call.request for call in adapter.calls)
+    assert start.video == (clip.resolve(),)
+    assert (repair.images, repair.audio, repair.video) == ((), (), ())
+
+
 def test_repairs_exhausted_is_an_output_error_without_a_new_session(
     tmp_path: Path,
     make_runner: Callable[..., AgentRunner],
@@ -508,6 +524,15 @@ def test_files_output_missing_file_is_repaired_and_stale_files_removed(
     assert result.output == (workdir.resolve() / "refined.srt",)
     assert stale.read_text(encoding="utf-8") == "new"
     assert "refined.srt" in adapter.calls[1].request.message
+    assert all(call.request.writes_files for call in adapter.calls)
+
+
+def test_a_text_task_writes_no_files(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    adapter = FakeAdapter([Turn(final=final("transcript"))])
+    make_runner(adapter).run(make_task(tmp_path, TextOutput()))
+    assert not adapter.calls[0].request.writes_files
 
 
 def test_files_output_optional_files_are_removed_before_an_attempt(
@@ -578,7 +603,10 @@ def test_attached_media_are_not_listed_in_the_prompt(
 
 def _frames_tools(tmp_path: Path) -> ToolSession:
     return ToolSession(
-        project_root=tmp_path, frames=frames_tool(tmp_path), check_srt=None, listen=None
+        project_root=tmp_path,
+        frames=frames_tool(tmp_path),
+        check_srt=None,
+        transcribe=None,
     )
 
 

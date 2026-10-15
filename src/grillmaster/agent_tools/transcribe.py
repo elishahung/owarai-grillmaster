@@ -1,15 +1,20 @@
-"""`listen`: a fresh transcription of an audio span, returned as text.
+"""`transcribe`: a fresh transcription of a span of the show, returned as text.
 
 A text-only agent (the proofread on claude or codex) cannot hear the show,
 so an ASR-suspect line it would fix stays unresolved. This tool cuts the
-span from the project's speech audio and runs it, as one agent session of
-its own (role `listen`, an audio-hearing backend), through a plain
-transcription prompt; the transcript is a second hearing next to `ja.srt`.
+span from `video.mp4` as a small preview clip (picture and sound) and runs
+it, as one agent session of its own (role `transcribe`, a video-watching
+backend), through a plain transcription prompt; the transcript is a second
+hearing next to `ja.srt`. The picture is why it is a video: captions and
+name cards let the model spell the names the sound alone leaves ambiguous
+(measured against audio-only clips: 今井らいぱち, 庄司智春, 松浦 were
+written right only from the video).
 
 The tool server is a separate process, so it builds its own `AgentRunner`
 for that one role; its CLI children stay inside the calling agent's process
 tree, so an abort still kills them. A span's clip, transcript and session
-records live in `<clips_dir>/<start>-<end>/`; an existing transcript is
+records live in `<clips_dir>/<start>-<end>/` (the session's cwd is its empty
+`work/`, and the session has no shell); an existing transcript is
 returned again without a new session. The handler is async and runs the
 session on a worker thread, so parallel calls transcribe concurrently.
 """
@@ -34,36 +39,36 @@ from grillmaster.core.model_spec import Role
 from grillmaster.core.prompts import load_prompt
 from grillmaster.core.timecode import TimeRange
 from grillmaster.events.bus import EventBus
-from grillmaster.media.audio import slice_audio
 from grillmaster.media.errors import MediaError
+from grillmaster.media.video import slice_preview
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     from grillmaster.agents.task import AgentResult
-    from grillmaster.core.tool_session import ListenTool
+    from grillmaster.core.tool_session import TranscribeTool
     from grillmaster.media.ffmpeg import FfmpegRunner
 
 # Transcriptions one tool server runs at once.
-MAX_CONCURRENT_LISTENS = 4
+MAX_CONCURRENT_TRANSCRIPTIONS = 4
 TRANSCRIPT_FILE = "transcript.txt"
-CLIP_FILE = "clip.ogg"
+CLIP_FILE = "clip.mp4"
 
 
-class ListenAgents(Protocol):
+class TranscribeAgents(Protocol):
     """The part of `AgentRunner` the tool uses."""
 
     def run[T](self, task: AgentTask[T]) -> AgentResult[T]: ...
 
 
-def build_agents(config: ListenTool) -> ListenAgents:
-    """An `AgentRunner` that knows only the `listen` role. Its events go
+def build_agents(config: TranscribeTool) -> TranscribeAgents:
+    """An `AgentRunner` that knows only the `transcribe` role. Its events go
     nowhere (the session records keep the trace), and its slots are its own:
     the calling grill process's `max_concurrent` does not reach this one."""
     return AgentRunner(
-        {Role.LISTEN: config.model},
+        {Role.TRANSCRIBE: config.model},
         AdapterRegistry(),
-        max_concurrent=MAX_CONCURRENT_LISTENS,
+        max_concurrent=MAX_CONCURRENT_TRANSCRIPTIONS,
         timeout_s=config.timeout_s,
         events=EventBus(),
     )
@@ -74,11 +79,11 @@ def span_name(span: TimeRange) -> str:
     return f"{span.start:08.3f}-{span.end:08.3f}"
 
 
-class Listener:
-    """Serves `listen` for one session; probes the audio duration once."""
+class Transcriber:
+    """Serves `transcribe` for one session; probes the video duration once."""
 
     def __init__(
-        self, config: ListenTool, runner: FfmpegRunner, agents: ListenAgents
+        self, config: TranscribeTool, runner: FfmpegRunner, agents: TranscribeAgents
     ) -> None:
         self._config = config
         self._runner = runner
@@ -91,15 +96,16 @@ class Listener:
     def describe(self) -> str:
         """Tool description with this session's span limit."""
         return (
-            "Transcribe the show's audio between `start` and `end` (seconds) "
-            "afresh with a speech-capable model and return the Japanese "
-            "transcript as plain text, one utterance per line. It is a second "
-            "hearing, independent of ja.srt; it takes tens of seconds. "
-            f"The span must lie inside the audio and last at most "
+            "Transcribe the speech of the show between `start` and `end` "
+            "(seconds) afresh: a separate model watches and hears that clip "
+            "(its captions and name cards help it spell names) and returns "
+            "the Japanese transcript as plain text, one utterance per line. "
+            "It is a second hearing, independent of ja.srt; it takes tens of "
+            f"seconds. The span must lie inside the video and last at most "
             f"{self._config.max_span_s:g}s."
         )
 
-    async def listen(self, start: float, end: float) -> str:
+    async def call(self, start: float, end: float) -> str:
         return await anyio.to_thread.run_sync(self.transcribe, start, end)
 
     def transcribe(self, start: float, end: float) -> str:
@@ -117,7 +123,7 @@ class Listener:
         else:
             clip = clip_dir / CLIP_FILE
             try:
-                slice_audio(self._runner, self._config.audio, clip, span)
+                slice_preview(self._runner, self._config.video, clip, span)
                 text = self._agents.run(_task(span, clip, clip_dir)).output.strip()
             except MediaError as error:
                 raise ToolError(str(error)) from error
@@ -127,7 +133,7 @@ class Listener:
         return f"Transcript of {span.start:.3f}s-{span.end:.3f}s:\n{text}"
 
     def _validate(self, start: float, end: float) -> TimeRange:
-        stop = self._audio_duration
+        stop = self._video_duration
         if not (math.isfinite(start) and math.isfinite(end)):
             raise ToolError(f"start and end must be numbers: {start:g}-{end:g}")
         # Clip names and the cut are at millisecond precision.
@@ -136,7 +142,7 @@ class Listener:
             raise ToolError(f"end must be after start: {start:g}-{end:g}")
         if start < 0 or end > stop:
             raise ToolError(
-                f"span {start:g}-{end:g} lies outside the audio (0-{stop:.3f}s)"
+                f"span {start:g}-{end:g} lies outside the video (0-{stop:.3f}s)"
             )
         if end - start > self._config.max_span_s:
             raise ToolError(
@@ -146,20 +152,22 @@ class Listener:
         return TimeRange(start, end)
 
     @cached_property
-    def _audio_duration(self) -> float:
+    def _video_duration(self) -> float:
         """Probed on first use; a failed probe is retried on the next call."""
-        return media_duration(self._runner, self._config.audio)
+        return media_duration(self._runner, self._config.video)
 
 
 def _task(span: TimeRange, clip: Path, clip_dir: Path) -> AgentTask[str]:
     return AgentTask(
-        name=f"listen/{span_name(span)}",
-        role=Role.LISTEN,
-        instructions=load_prompt(__package__, "listen.md"),
+        name=f"transcribe/{span_name(span)}",
+        role=Role.TRANSCRIBE,
+        instructions=load_prompt(__package__, "transcribe.md"),
         prompt=f"The clip is {span.duration:.1f} seconds long.",
         session_dir=clip_dir / "session",
-        workdir=clip_dir,
+        # An empty cwd: the clip goes inline, and a model that finds it as a
+        # file processes that instead of watching it.
+        workdir=clip_dir / "work",
         output=TextOutput(),
-        audio=(clip,),
+        video=(clip,),
         max_repairs=1,
     )

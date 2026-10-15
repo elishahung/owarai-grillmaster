@@ -109,38 +109,37 @@ def test_proofreads_in_the_stage_directory(
     assert '"summary": "summary"' in task.prompt
 
 
-LISTEN_ON = {"features": {"proofread_listen": True}}
+PROOFREAD_TRANSCRIBE = {"features": {"proofread_transcribe": True}}
 
 
 @pytest.mark.parametrize(
     "config_data",
-    [{**LISTEN_ON, "roles": {"listen": "gemini/gemini-3.8-flash/low"}}],
+    [{**PROOFREAD_TRANSCRIBE, "roles": {"transcribe": "gemini/gemini-3.8-flash/low"}}],
     indirect=True,
 )
-def test_the_listen_feature_adds_the_listen_tool(
+def test_the_feature_adds_the_transcribe_tool(
     make_context: MakeContext, project: ProjectLayout, agents: FakeAgentRunner
 ):
-    project.audio.parent.mkdir(parents=True)
-    project.audio.write_bytes(b"ogg")
+    project.video.write_bytes(b"mp4")
     agents.script[TASK_NAME] = FIX
 
     proofread.STAGE.run(make_context(StageKey.PROOFREAD))
 
     tools = agents.task(TASK_NAME).tools
     assert tools is not None
-    assert tools.listen is not None
-    assert tools.listen.audio == project.audio
-    assert tools.listen.clips_dir == project.proofread_listen_dir
-    assert tools.listen.model == ModelSpec.parse("gemini/gemini-3.8-flash/low")
-    assert tools.listen.timeout_s == 40 * 60.0
-    assert "`listen(start, end)`" in agents.task(TASK_NAME).prompt
+    assert tools.transcribe is not None
+    assert tools.transcribe.video == project.video
+    assert tools.transcribe.clips_dir == project.proofread_transcribe_dir
+    assert tools.transcribe.model == ModelSpec.parse("gemini/gemini-3.8-flash/low")
+    assert tools.transcribe.timeout_s == 40 * 60.0
+    assert "`transcribe(start, end)`" in agents.task(TASK_NAME).prompt
 
 
 @pytest.mark.parametrize(
     ("features", "expected"),
-    [({}, "off"), ({"proofread_listen": True}, "gemini/gemini-3.8-flash/low")],
+    [({}, "off"), ({"proofread_transcribe": True}, "gemini/gemini-3.8-flash/low")],
 )
-def test_the_params_record_the_listen_model(
+def test_the_params_record_the_transcribe_model(
     tmp_path: Path,
     roles: dict[str, str],
     features: dict[str, bool],
@@ -148,15 +147,15 @@ def test_the_params_record_the_listen_model(
 ):
     config = validate_config(
         {
-            "agents": {"roles": {**roles, "listen": "gemini/gemini-3.8-flash/low"}},
+            "agents": {"roles": {**roles, "transcribe": "gemini/gemini-3.8-flash/low"}},
             "features": features,
         },
         root=tmp_path,
     )
-    assert proofread.STAGE.params(config)["listen"] == expected
+    assert proofread.STAGE.params(config)["transcribe"] == expected
 
 
-def test_without_the_feature_there_is_no_listen_tool(
+def test_without_the_feature_there_is_no_transcribe_tool(
     make_context: MakeContext, project: ProjectLayout, agents: FakeAgentRunner
 ):
     agents.script[TASK_NAME] = FIX
@@ -165,7 +164,7 @@ def test_without_the_feature_there_is_no_listen_tool(
 
     tools = agents.task(TASK_NAME).tools
     assert tools is not None
-    assert tools.listen is None
+    assert tools.transcribe is None
 
 
 def test_a_corrected_briefing_becomes_the_effective_one(

@@ -11,8 +11,9 @@ and cannot break the skeleton: fixes, each quoting the block's current text
 (anchoring it to a real block), a `name_term` one citing evidence; and a
 briefing patch, the replacement of each top-level field it corrects, every
 changed field explained in `briefing_changes`. A violation is a repair round.
-With a `listen` tool in the session, the agent can also have a span of the
-audio transcribed afresh, a second hearing for lines whose ASR is suspect.
+With a `transcribe` tool in the session, the agent can also have a span of the
+video (picture and sound) transcribed afresh, a second hearing for lines
+whose ASR is suspect.
 
 Python then applies the accepted fixes to a copy of the checked SRT, writes
 the patched briefing as this stage's own copy when it changed
@@ -341,7 +342,7 @@ def build_proofread_task(
     tools: ToolSession,
 ) -> AgentTask[ProofreadAnswer]:
     """The proofread call with the dossier inline; `tools` offers
-    `get_frames` (and `listen`, with its guidance, when configured), its
+    `get_frames` (and `transcribe`, with its guidance, when configured), its
     project root is readable, and the backend must search the web."""
     glossary_copy, guide_copy = inputs.glossary_copies
     instructions = join_sections(
@@ -372,8 +373,8 @@ def build_proofread_task(
         f"## Briefing\n\n```json\n{briefing.model_dump_json(indent=2)}\n```",
         frames_guidance(load_prompt(PROMPTS, "proofread_frames.md")),
         (
-            load_prompt(PROMPTS, "proofread_listen.md")
-            if tools.listen is not None
+            load_prompt(PROMPTS, "proofread_transcribe.md")
+            if tools.transcribe is not None
             else None
         ),
     )

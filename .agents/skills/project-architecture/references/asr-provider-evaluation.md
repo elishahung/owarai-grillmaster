@@ -65,7 +65,7 @@ Doubao, Fun-ASR, Chirp 3, GPT-4o-transcribe and self-hosted Qwen3-ASR.
   sentence in 9 of 10 gaps; in the exception, the sentence head was sung
   and the tail spoken later.
 
-A 2026-10-16 recheck as the proofread `listen` engine (9 short ASR-suspect
+A 2026-10-16 recheck as the proofread `transcribe` engine (9 short ASR-suspect
 clips, 8–25 s) confirmed it: Grok kept calm speech but dropped shouted and
 overlapping lines whole, with or without VAD and diarization, while
 gemini-3.8-flash heard them (イライパ for らいぱち, 空の咳 for 空の席).

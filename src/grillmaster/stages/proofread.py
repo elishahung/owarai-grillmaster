@@ -2,8 +2,8 @@
 proofread of `work/11_glossary/checked.srt` into
 `work/12_proofread/proofread.srt`, plus `briefing.json` when it corrected the
 briefing (+ `answer.json`, `report.md`, and the dossier `aligned.tsv`,
-`history.md`). With `[features] proofread_listen` the agent also gets the
-`listen` tool (role `listen`), its spans kept under `listen/`.
+`history.md`). With `[features] proofread_transcribe` the agent also gets the
+`transcribe` tool (role `transcribe`), its spans kept under `transcribe/`.
 
 Finalize reads `proofread.srt` once it exists (`layout.effective_subtitles`)
 and every later reader the corrected briefing (`layout.effective_briefing`).
@@ -20,7 +20,7 @@ from loguru import logger
 
 from grillmaster.core.model_spec import Role
 from grillmaster.core.stage_key import StageKey
-from grillmaster.core.tool_session import ListenTool, ToolSession
+from grillmaster.core.tool_session import ToolSession, TranscribeTool
 from grillmaster.glossary.fixed import (
     FIXED_GLOSSARY_GUIDE_PATH,
     FIXED_GLOSSARY_PATH,
@@ -43,30 +43,31 @@ if TYPE_CHECKING:
     from grillmaster.stages.base import StageContext
 
 
-# The longest span one `listen` call transcribes.
-LISTEN_MAX_SPAN_S = 300.0
+# The longest span one `transcribe` call takes: a preview runs ~50 KB/s, so
+# 120 s is ~8 MB once base64'd inline, well under gemini's 20 MB request.
+TRANSCRIBE_MAX_SPAN_S = 120.0
 
 
-def listen_spec(config: AppConfig) -> ModelSpec | None:
-    """The `listen` role's model with `[features] proofread_listen`, else `None`."""
-    if not config.features.proofread_listen:
+def transcribe_spec(config: AppConfig) -> ModelSpec | None:
+    """The `transcribe` role's model with `[features] proofread_transcribe`, else `None`."""
+    if not config.features.proofread_transcribe:
         return None
-    return config.agents.roles.spec(Role.LISTEN)
+    return config.agents.roles.spec(Role.TRANSCRIBE)
 
 
-def listen_tool(ctx: StageContext) -> ListenTool | None:
-    """`listen` over `work/05_audio/audio.ogg` into `work/12_proofread/listen/`
-    when enabled; the runner refuses a listen model that cannot hear audio
+def transcribe_tool(ctx: StageContext) -> TranscribeTool | None:
+    """`transcribe` over `video.mp4` into `work/12_proofread/transcribe/` when
+    enabled; the runner refuses a transcribe model that cannot watch video
     before the proofread takes a slot."""
-    spec = listen_spec(ctx.config)
+    spec = transcribe_spec(ctx.config)
     if spec is None:
         return None
-    return ListenTool(
-        audio=require(ctx.layout.audio, StageKey.AUDIO),
-        clips_dir=ctx.layout.proofread_listen_dir,
+    return TranscribeTool(
+        video=require(ctx.layout.video, StageKey.COMBINE),
+        clips_dir=ctx.layout.proofread_transcribe_dir,
         model=spec,
         timeout_s=ctx.config.agents.timeout_s,
-        max_span_s=LISTEN_MAX_SPAN_S,
+        max_span_s=TRANSCRIBE_MAX_SPAN_S,
     )
 
 
@@ -115,7 +116,7 @@ def _run(ctx: StageContext) -> str:
         project_root=layout.root,
         frames=frames_tool(ctx, layout.proofread_frames_dir),
         check_srt=None,
-        listen=listen_tool(ctx),
+        transcribe=transcribe_tool(ctx),
     )
     answer = proofread_subtitles(
         inputs, ctx.agents, session_dir=ctx.session_dir(), tools=tools
@@ -135,6 +136,6 @@ STAGE = StageDef(
     enabled=flag_or_feature("proofread"),
     params=role_params(
         Role.PROOFREAD,
-        listen=lambda config: str(listen_spec(config) or "off"),
+        transcribe=lambda config: str(transcribe_spec(config) or "off"),
     ),
 )

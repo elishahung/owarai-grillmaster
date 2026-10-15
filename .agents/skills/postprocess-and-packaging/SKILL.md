@@ -65,10 +65,11 @@ quotes its block's current text, changes it, no empty line, one per block,
 fields equal the explained ones. Python then writes `answer.json`,
 `report.md` (fixes + Python-computed briefing diff), `proofread.srt`
 (checked + fixes) and `briefing.json` only when changed (both deleted at
-stage start). With `[features] proofread_listen` the
-session also gets `listen` (role `listen`; the runner refuses a model that
-cannot hear audio before the slot; spans under `work/12_proofread/listen/`) plus
-`proofread_listen.md`, for ASR-suspect lines. Finalize reads
+stage start). With `[features] proofread_transcribe` the
+session also gets `transcribe` (role `transcribe`, watches a `video.mp4`
+clip; the runner refuses a model that cannot watch video before the slot;
+spans under `work/12_proofread/transcribe/`) plus
+`proofread_transcribe.md`, for ASR-suspect lines. Finalize reads
 `layout.effective_subtitles()` (proofread, else checked); a proofread reached after finalize ran is recorded as skipped (it
 would never be delivered) with a warning naming `grill reset --from proofread`.
 
@@ -167,8 +168,8 @@ not `video|cover|info|refine|glossary_check|proofread`.
 
 ## Settings and invariants
 
-- `grill.toml`: `[agents.roles] postprocess|proofread|listen|utility|image`; `[features]
-  cover|date_research|title_suggestion|proofread|proofread_listen`; `[paths] package|archive`; `[package]
+- `grill.toml`: `[agents.roles] postprocess|proofread|transcribe|utility|image`; `[features]
+  cover|date_research|title_suggestion|proofread|proofread_transcribe`; `[paths] package|archive`; `[package]
   remix_pool` (default `"default"`), `[[package.inserts]]`;
   `[programs.series|channel."X"]` `remix`, `inserts`, `instruction.{common,refine,glossary,proofread}`.
 - Agent-written stages discard old output on re-entry: the runner deletes all

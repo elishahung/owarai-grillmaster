@@ -13,9 +13,9 @@ Facts this module is built on (codex-cli 0.160.0):
   web search and MCP flags.
 * MCP servers do not inherit the environment, so the tool-session manifest
   path travels in the server's argv and `mcp_servers.grill.env_vars` names
-  every variable of this process for it to inherit (the `listen` tool's own
+  every variable of this process for it to inherit (the `transcribe` tool's own
   gemini session needs `GOOGLE_CLOUD_PROJECT`); `tool_timeout_sec` (60 s by
-  default) is raised to the turn's timeout, which a `listen` call can need.
+  default) is raised to the turn's timeout, which a `transcribe` call can need.
 * `error` records also report recoverable stream retries; only a turn that
   never completes is a failure.
 """
@@ -98,6 +98,7 @@ class CodexAdapter(PerTurnAdapter):
         spec: ModelSpec,  # noqa: ARG002 - the AgentAdapter signature
         images: Sequence[Path],  # noqa: ARG002
         audio: Sequence[Path],  # noqa: ARG002
+        video: Sequence[Path],  # noqa: ARG002
     ) -> None:
         resolve_cli("codex", self._executable)
 

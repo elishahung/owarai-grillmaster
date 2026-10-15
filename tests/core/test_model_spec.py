@@ -62,7 +62,7 @@ def test_role_values_match_grill_toml_keys():
         "chunk",
         "postprocess",
         "proofread",
-        "listen",
+        "transcribe",
         "utility",
         "chat",
         "image",

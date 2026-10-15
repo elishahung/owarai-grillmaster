@@ -104,6 +104,7 @@ prepass = "gemini/gemini-3.1-pro-preview/high"  # backend：gemini、agy、claud
 chunk = "gemini/gemini-3.1-pro-preview/high"
 postprocess = "codex/gpt-6.1-sol/high"
 proofread = "claude/claude-opus-5-5/high"  # 最終校對；省略則沿用 postprocess
+transcribe = "gemini/gemini-3.8-flash/low"  # 最終校對的重聽工具：看影片片段重新聽寫（需 gemini）；省略則沿用 chunk
 utility = "codex/gpt-6.1-sol/medium"
 image = "codex/gpt-6.1-sol/medium"   # 封面，需要能生圖的 codex
 
@@ -112,6 +113,7 @@ cover = true                        # 產生風格化封面
 date_research = true                # 查不到播出日時上網找
 title_suggestion = true             # 燒錄時產生候選標題
 proofread = true                    # 名詞校對後再跑最終校對（同 --proofread）
+proofread_transcribe = true         # 讓最終校對能請 transcribe 重聽可疑段落
 ```
 
 其他可調參數（切塊大小、併發數、抽圖頻率、remix 素材池等）請見 `grill.example.toml`。併發數 `[agents] max_concurrent` 預設 10，是每個 `grill` 行程各自的上限

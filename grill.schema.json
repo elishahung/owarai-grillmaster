@@ -3,7 +3,7 @@
   "$defs": {
     "AgentRoles": {
       "additionalProperties": false,
-      "description": "Model per agent role, as backend/model[/effort]; all but chat,\nproofread and listen are required.",
+      "description": "Model per agent role, as backend/model[/effort]; all but chat,\nproofread and transcribe are required.",
       "properties": {
         "prepass": {
           "description": "Whole-film pre-pass analysis.",
@@ -38,7 +38,7 @@
           "description": "Final proofread after the glossary check; omitted means postprocess.",
           "title": "Proofread"
         },
-        "listen": {
+        "transcribe": {
           "anyOf": [
             {
               "description": "backend/model[/effort]; effort defaults to high.",
@@ -50,8 +50,8 @@
             }
           ],
           "default": null,
-          "description": "Transcribes an audio span for the proofread's listen tool ([features] proofread_listen); must hear audio; omitted means chunk.",
-          "title": "Listen"
+          "description": "Transcribes a span of the video for the proofread's transcribe tool ([features] proofread_transcribe); must watch video (gemini); omitted means chunk.",
+          "title": "Transcribe"
         },
         "utility": {
           "description": "Lightweight agents: titles, broadcast-date research, and the no-audio fix of a pre-pass or chunk output that failed validation.",
@@ -172,10 +172,10 @@
           "title": "Proofread",
           "type": "boolean"
         },
-        "proofread_listen": {
+        "proofread_transcribe": {
           "default": false,
-          "description": "Give the proofread a listen tool: the listen role transcribes an audio span afresh.",
-          "title": "Proofread Listen",
+          "description": "Give the proofread a transcribe tool: the transcribe role watches a span of the video and transcribes it afresh.",
+          "title": "Proofread Transcribe",
           "type": "boolean"
         }
       },

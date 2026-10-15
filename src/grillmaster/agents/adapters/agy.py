@@ -131,6 +131,7 @@ class AgyAdapter(PerTurnAdapter):
         spec: ModelSpec,
         images: Sequence[Path],  # noqa: ARG002 - the AgentAdapter signature
         audio: Sequence[Path],  # noqa: ARG002
+        video: Sequence[Path],  # noqa: ARG002
     ) -> None:
         self.model_id(spec)
 

@@ -247,15 +247,18 @@ def test_only_a_file_writing_task_keeps_the_shell_and_writing_tools(
     assert "tools" not in _settings(request)
 
 
-def test_no_tool_access_excludes_every_built_in(
+def test_no_tool_access_allows_only_an_inert_built_in_and_no_skill(
     make_request: Callable[..., TurnRequest],
 ):
-    request = make_request(spec=FLASH_LOW, tool_access=ToolAccess.NONE)
+    mcp = McpServer("python", ("-m", "grillmaster.agent_tools"))
+    request = make_request(spec=FLASH_LOW, tool_access=ToolAccess.NONE, mcp=mcp)
     _first_turn(request)
-    excluded = _settings(request)["tools"]["exclude"]
-    assert {"run_shell_command", "read_file", "glob", "google_web_search"} <= set(
-        excluded
-    )
+    settings = _settings(request)
+    # The API refuses a request without any function declaration.
+    assert settings["tools"] == {"core": ["list_background_processes"]}
+    assert settings["skills"] == {"enabled": False}
+    # The grill MCP server is not a built-in: the allowlist leaves it.
+    assert "grill" in settings["mcpServers"]
 
 
 def test_gemini_2_5_gets_a_thinking_budget(make_request: Callable[..., TurnRequest]):

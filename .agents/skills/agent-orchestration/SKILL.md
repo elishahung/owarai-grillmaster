@@ -54,7 +54,7 @@ description: >-
 - `ToolAccess` (the CLI's built-in tools; grill MCP tools come with `tools`):
   the runner gives WRITE to a `FilesOutput`, READ otherwise, NONE to a task
   with `builtin_tools=False` (`transcribe`). Mapped once per adapter:
-  claude's `BASE_TOOLS`, gemini's `EXCLUDED_TOOLS`; agy and codex have no
+  claude's `BASE_TOOLS`, gemini's `TOOL_SETTINGS`; agy and codex have no
   switch (READ = WRITE there) and lack TOOL_ISOLATION, which NONE requires.
 - Outputs: `TextOutput`, `SchemaOutput(model)` (see `schema_delivery`),
   `FilesOutput(required, optional)` (both deleted before each attempt). A
@@ -150,11 +150,14 @@ turn's.
   compression would summarize the audio away) and
   `context.includeDirectoryTree: false` (a listed `audio.ogg` lured a model
   into ffmpeg via the shell and a false "audio missing" claim) and the
-  `ToolAccess`'s `tools.exclude` (READ: the shell, `write_file`, `replace`:
+  `ToolAccess` (READ: `tools.exclude` of the shell, `write_file`, `replace`:
   a pre-pass curl'ed Google instead of `google_web_search`, a `transcribe`
   clip got whisper'd and the project tree browsed, glossary check copies
-  files with it; NONE: every built-in gemini-cli 0.63.0 registers, a list to
-  recheck after an upgrade) go into
+  files with it; NONE: `tools.core` = [`list_background_processes`], an
+  allowlist that leaves MCP tools and keeps one inert built-in because the
+  API answers a request without any function with a 400, plus
+  `skills.enabled: false`, since `activate_skill` is registered again
+  outside `tools.core` when a skill exists; verified live) go into
   `<workdir>/.gemini/settings.json`, read at `session/new`. Model ids are
   gemini-cli's (`gemini-3.1-pro-preview`, not agy's `gemini-3.1-pro`); with
   media attached, an unknown id or an oversized request ends with

@@ -39,11 +39,13 @@ one `session/prompt` per turn. Facts this module is built on (gemini-cli
   an oversized session ends with `max_tokens` instead) and
   `context.includeDirectoryTree: false` (the workdir listing showed the
   chunk's `audio.ogg`; a model cut it with ffmpeg through the shell, heard
-  nothing and declared its inline audio missing) and the `tools.exclude` of
-  the request's `ToolAccess` (READ: the shell and the writing tools; with a
-  shell, a pre-pass searched the web with curl instead of
+  nothing and declared its inline audio missing) and the request's
+  `ToolAccess` (READ: `tools.exclude` of the shell and the writing tools;
+  with a shell, a pre-pass searched the web with curl instead of
   `google_web_search`, and a `transcribe` session ran whisper on its clip
-  and browsed the project tree; NONE: every built-in) go into
+  and browsed the project tree; NONE: a `tools.core` allowlist of one inert
+  built-in, since the API refuses a request without any function, and
+  skills off) go into
   `<workdir>/.gemini/settings.json`, which `session/new` reads because
   `--skip-trust` trusts the workdir. The user's own MCP servers stay off
   through `--allowed-mcp-server-names`. A tool call arrives as a
@@ -139,43 +141,21 @@ THINKING_BUDGETS = {
 # history reaches this multiple of it, so the CLI never compresses a session.
 NEVER_COMPRESS = 1000.0
 SETTINGS_RELPATH = (".gemini", "settings.json")
-SHELL_TOOL = "run_shell_command"
 # The shell and the file-writing built-ins: WRITE access only.
-WRITE_TOOLS = (SHELL_TOOL, "write_file", "replace")
-# Every other built-in gemini-cli 0.63.0 can register
-# (`Config.createToolRegistry`; recheck after an upgrade): with WRITE_TOOLS,
-# what NONE excludes. Names it does not register are ignored.
-OTHER_BUILTIN_TOOLS = (
-    "list_directory",
-    "read_file",
-    "read_many_files",
-    "grep_search",
-    "glob",
-    "web_fetch",
-    "google_web_search",
-    "read_mcp_resource",
-    "list_mcp_resources",
-    "list_background_processes",
-    "read_background_output",
-    "activate_skill",
-    "invoke_agent",
-    "ask_user",
-    "update_topic",
-    "write_todos",
-    "enter_plan_mode",
-    "exit_plan_mode",
-    "tracker_create_task",
-    "tracker_update_task",
-    "tracker_get_task",
-    "tracker_list_tasks",
-    "tracker_add_dependency",
-    "tracker_visualize",
-)
-# `tools.exclude` of each `ToolAccess`.
-EXCLUDED_TOOLS: dict[ToolAccess, tuple[str, ...]] = {
-    ToolAccess.NONE: (*WRITE_TOOLS, *OTHER_BUILTIN_TOOLS),
-    ToolAccess.READ: WRITE_TOOLS,
-    ToolAccess.WRITE: (),
+WRITE_TOOLS = ("run_shell_command", "write_file", "replace")
+# A built-in that reaches no file, shell or network: it lists the session's
+# background shell processes, and a session without the shell has none.
+INERT_TOOL = "list_background_processes"
+# The workspace settings of each `ToolAccess`. NONE is an allowlist
+# (`tools.core` gates every built-in `Config.createToolRegistry` registers;
+# MCP tools register apart) of only `INERT_TOOL`: gemini-cli always sends a
+# function-declarations block, and the API refuses an empty one (400
+# "tool_type ... must have one initialized field"). Skills go off too:
+# `activate_skill` is registered again outside that gate when a skill exists.
+TOOL_SETTINGS: dict[ToolAccess, dict[str, Any]] = {
+    ToolAccess.NONE: {"tools": {"core": [INERT_TOOL]}, "skills": {"enabled": False}},
+    ToolAccess.READ: {"tools": {"exclude": list(WRITE_TOOLS)}},
+    ToolAccess.WRITE: {},
 }
 MAX_MEDIA_BYTES = 20 * 1024 * 1024
 # The ACP block type of each media kind and the media types it takes, by
@@ -307,8 +287,7 @@ def write_settings(request: TurnRequest) -> None:
         },
     }
     # Module docstring: what a shell did in tasks that write no files.
-    if excluded := EXCLUDED_TOOLS[request.tool_access]:
-        settings["tools"] = {"exclude": list(excluded)}
+    settings |= TOOL_SETTINGS[request.tool_access]
     if request.mcp is not None:
         settings["mcpServers"] = mcp_servers(request.mcp)
     path = request.workdir.joinpath(*SETTINGS_RELPATH)

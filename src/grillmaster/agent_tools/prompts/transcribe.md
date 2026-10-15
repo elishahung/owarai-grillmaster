@@ -15,5 +15,4 @@ show, verbatim.
   laughter or music only where it replaces speech, e.g. `（笑い）`.
 - A clip without speech is answered `（発話なし）`.
 
-Answer from the attached clip alone, without tools. Your whole answer is
-the transcript.
+Answer from the attached clip alone. Your whole answer is the transcript.

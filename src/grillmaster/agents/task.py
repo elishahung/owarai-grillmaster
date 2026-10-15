@@ -20,7 +20,7 @@ from grillmaster.agents.errors import ValidationFailure
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
-    from grillmaster.agents.adapters.base import Capability, FinalOutput
+    from grillmaster.agents.adapters.base import Capability, FinalOutput, Media
     from grillmaster.core.model_spec import ModelSpec, Role
     from grillmaster.core.tool_session import ToolSession
 
@@ -98,7 +98,8 @@ class Handoff:
     Instead of a repair round that resends the whole session (attached
     audio included), the runner ends that session and starts one on `role`
     with `instructions` (the task written for a model without the audio),
-    the task's prompt, images and tools, and the failed output with its
+    the task's prompt, tools and media without sound (`MEDIA_KINDS`), and
+    the failed output with its
     problems; output, validator, workdir and repair rounds stay the task's.
     `add_dirs` replaces the task's extra roots, which often exist only to
     reach the audio.
@@ -125,12 +126,14 @@ class AgentTask[T]:
     # Concurrent tasks may not share one (the runner refuses).
     workdir: Path | None
     output: OutputSpec[T]
-    images: tuple[Path, ...] = ()
-    audio: tuple[Path, ...] = ()
-    # Clips watched with their sound (`Capability.VIDEO_INPUT`).
-    video: tuple[Path, ...] = ()
+    # Images, audio and clips the model sees and hears; each kind requires
+    # its capability (`MEDIA_KINDS`).
+    media: tuple[Media, ...] = ()
     # The grill MCP tools this task may call; written as `tools.json`.
     tools: ToolSession | None = None
+    # The CLI's own tools (`ToolAccess`, derived by the runner from the
+    # output); `False` leaves the model only its message, media and `tools`.
+    builtin_tools: bool = True
     # Extra readable roots (e.g. the project root for refine).
     add_dirs: tuple[Path, ...] = ()
     validate: Callable[[T], None] | None = None
@@ -152,6 +155,8 @@ class AgentTask[T]:
             raise ValueError(f"attempts must be >= 1: {self.attempts}")
         if self.handoff is not None and isinstance(self.output, FilesOutput):
             raise ValueError(f"{self.name}: a files output cannot be handed off")
+        if not self.builtin_tools and isinstance(self.output, FilesOutput):
+            raise ValueError(f"{self.name}: a files output needs the writing tools")
 
 
 @dataclass(frozen=True, slots=True)

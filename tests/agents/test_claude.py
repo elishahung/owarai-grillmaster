@@ -19,7 +19,7 @@ from claude_agent_sdk import (
 from claude_agent_sdk.types import RateLimitInfo
 from tests.agents.fakes import FakeQuery, claude_messages
 
-from grillmaster.agents.adapters.base import McpServer
+from grillmaster.agents.adapters.base import McpServer, Media, MediaKind, ToolAccess
 from grillmaster.agents.adapters.claude import (
     SYSTEM_PROMPT,
     ClaudeAdapter,
@@ -112,10 +112,18 @@ def test_options_without_tools_or_schema(make_request: Callable[..., TurnRequest
     assert options.tools == ["Read", "Grep", "Glob", "WebSearch", "WebFetch"]
 
 
+def test_no_tool_access_leaves_no_built_in_tools(
+    make_request: Callable[..., TurnRequest],
+):
+    request = make_request(spec=SPEC, tool_access=ToolAccess.NONE)
+    assert build_options(request, resume=None).tools == []
+
+
 def test_a_file_writing_task_gets_the_writing_tools(
     make_request: Callable[..., TurnRequest],
 ):
-    options = build_options(make_request(spec=SPEC, writes_files=True), resume=None)
+    request = make_request(spec=SPEC, tool_access=ToolAccess.WRITE)
+    options = build_options(request, resume=None)
     # A file-writing task edits and may copy files with the shell.
     assert options.tools == [
         "Read",
@@ -223,7 +231,7 @@ def test_images_travel_as_base64_blocks(
     image.write_bytes(b"\x89PNG fake")
     query = FakeQuery(claude_messages("live_resume"))
     ClaudeAdapter(query_fn=query).start(
-        make_request(spec=SPEC, images=(image,), message="look")
+        make_request(spec=SPEC, media=(Media(MediaKind.IMAGE, image),), message="look")
     ).result()
 
     async def first(stream: AsyncIterator[dict[str, Any]]) -> dict[str, Any]:
@@ -246,9 +254,9 @@ def test_unsupported_image_type_is_a_config_error(
     image = tmp_path / "frame.bmp"
     image.write_bytes(b"BM")
     adapter = ClaudeAdapter(query_fn=FakeQuery([]))
-    adapter.preflight(SPEC, (tmp_path / "ok.PNG",), (), ())
+    adapter.preflight(SPEC, (Media(MediaKind.IMAGE, tmp_path / "ok.PNG"),))
     with pytest.raises(AgentConfigError, match=r"frame\.bmp"):
-        adapter.preflight(SPEC, (image,), (), ())
+        adapter.preflight(SPEC, (Media(MediaKind.IMAGE, image),))
 
 
 def test_thinking_progress_ticks_are_dropped(make_request: Callable[..., TurnRequest]):

@@ -14,6 +14,7 @@ import claude_agent_sdk.types as sdk_types
 from grillmaster.agents.adapters.base import (
     Capability,
     FinalOutput,
+    Media,
     MediaDelivery,
     PerTurnAdapter,
     PerTurnSession,
@@ -317,16 +318,10 @@ class FakeAdapter(PerTurnAdapter):
         self._lock = threading.Lock()
         self.calls: list[Call] = []
         self.sessions: list[FakeSession] = []
-        self.preflights: list[tuple[ModelSpec, tuple[Path, ...], tuple[Path, ...]]] = []
+        self.preflights: list[tuple[ModelSpec, tuple[Media, ...]]] = []
 
-    def preflight(
-        self,
-        spec: ModelSpec,
-        images: Sequence[Path],
-        audio: Sequence[Path],
-        video: Sequence[Path],
-    ) -> None:
-        self.preflights.append((spec, tuple(images), tuple(audio)))
+    def preflight(self, spec: ModelSpec, media: Sequence[Media]) -> None:
+        self.preflights.append((spec, tuple(media)))
         if self._preflight_error is not None:
             raise self._preflight_error
 

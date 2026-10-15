@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, override
 import pytest
 from tests.fakes import FakeAgentRunner, FakeFfmpeg, Rounds, make_blocks, make_briefing
 
+from grillmaster.agents.adapters.base import Media, MediaKind
 from grillmaster.agents.errors import AgentOutputError
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.srt import SrtBlock, read_srt_file, write_srt_file
@@ -132,10 +133,12 @@ def test_each_chunk_gets_its_own_dirs_window_and_media(
         assert task.workdir == chunk_dir
         assert task.session_dir == chunk_dir / "session"
         assert task.attempts == 2
-        assert task.audio == (layout.chunk_audio(*chunk.index_range),)
-        assert task.audio[0].is_file()
-        assert task.images
-        assert all(path.parent == chunk_dir / "frames" for path in task.images)
+        *frames, audio = task.media
+        assert audio == Media(MediaKind.AUDIO, layout.chunk_audio(*chunk.index_range))
+        assert audio.path.is_file()
+        assert frames
+        assert all(frame.kind is MediaKind.IMAGE for frame in frames)
+        assert all(frame.path.parent == chunk_dir / "frames" for frame in frames)
         assert task.tools is not None
         assert task.tools.frames is not None
         span = chunk.time_range
@@ -355,7 +358,9 @@ def test_backend_without_audio_input_gets_no_slices(
 ) -> None:
     chunks.STAGE.run(make_context(StageKey.CHUNKS))
 
-    assert all(task.audio == () for task in agents.tasks)
+    assert all(
+        item.kind is MediaKind.IMAGE for task in agents.tasks for item in task.media
+    )
     assert not [argv for argv in fake_ffmpeg.calls if "libopus" in argv]
     assert "no audio is available" in agents.tasks[0].instructions
 

@@ -14,7 +14,7 @@ from grillmaster.agents.adapters.agy import (
     AgyTurnParser,
     parse_model_list,
 )
-from grillmaster.agents.adapters.base import McpServer
+from grillmaster.agents.adapters.base import McpServer, Media, MediaKind
 from grillmaster.agents.errors import AgentConfigError
 from grillmaster.agents.events import Message
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec
@@ -51,8 +51,7 @@ def test_start_argv_puts_every_flag_before_the_empty_print_flag(
     request = make_request(
         spec=PRO_HIGH,
         schema={"type": "object"},
-        images=(image,),
-        audio=(audio,),
+        media=(Media(MediaKind.IMAGE, image), Media(MediaKind.AUDIO, audio)),
         add_dirs=(extra,),
     )
     _run(_adapter(spawn), request)
@@ -126,7 +125,7 @@ def test_effort_is_part_of_the_model_id(effort: Effort, model_id: str):
 def test_unknown_model_fails_preflight_listing_the_available_ids():
     spec = ModelSpec(Backend.AGY, "gemini-3.1-pro", Effort.MEDIUM)
     with pytest.raises(AgentConfigError, match=r"gemini-3\.1-pro-medium") as caught:
-        _adapter(FakeSpawn()).preflight(spec, (), (), ())
+        _adapter(FakeSpawn()).preflight(spec, ())
     assert "gemini-3.1-pro-high, gemini-3.1-pro-low" in str(caught.value)
 
 
@@ -138,7 +137,7 @@ def test_model_list_is_fetched_once():
         return MODELS
 
     adapter = AgyAdapter(spawn=FakeSpawn(), executable="agy", list_models=models)
-    adapter.preflight(PRO_HIGH, (), (), ())
+    adapter.preflight(PRO_HIGH, ())
     adapter.model_id(PRO_HIGH)
     assert calls == [1]
 
@@ -165,7 +164,7 @@ def test_a_failed_model_probe_answers_later_tasks_until_it_expires():
     for at in (0.0, PROBE_FAILURE_TTL_S - 1, PROBE_FAILURE_TTL_S + 1):
         now[0] = at
         with pytest.raises(AgentConfigError, match="not signed in"):
-            adapter.preflight(PRO_HIGH, (), (), ())
+            adapter.preflight(PRO_HIGH, ())
     # The second task shared the first failure; the third probed again.
     assert len(spawn.specs) == 2
 
@@ -176,12 +175,12 @@ def test_a_timed_out_model_probe_does_not_fail_tasks_after_it_expires():
     spawn = FakeSpawn(FakeProcess([], timed_out=True), FakeProcess(listed))
     adapter = AgyAdapter(spawn=spawn, executable="agy", clock=lambda: now[0])
     with pytest.raises(AgentConfigError, match="timed out"):
-        adapter.preflight(PRO_HIGH, (), (), ())
+        adapter.preflight(PRO_HIGH, ())
 
     now[0] = PROBE_FAILURE_TTL_S
-    adapter.preflight(PRO_HIGH, (), (), ())
+    adapter.preflight(PRO_HIGH, ())
     now[0] = 10 * PROBE_FAILURE_TTL_S
-    adapter.preflight(PRO_HIGH, (), (), ())  # the success is remembered
+    adapter.preflight(PRO_HIGH, ())  # the success is remembered
     assert len(spawn.specs) == 2
 
 

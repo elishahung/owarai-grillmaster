@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 from tests.fakes import make_blocks
 
+from grillmaster.agents.adapters.base import Media, MediaKind
 from grillmaster.agents.errors import ValidationFailure
 from grillmaster.agents.schema import strict_json_schema
 from grillmaster.agents.task import SchemaOutput
@@ -122,8 +123,11 @@ def test_build_chunk_task(
     assert task.name == task_name(inputs.chunk) == "chunks/0001-0003"
     assert task.role is Role.CHUNK
     assert isinstance(task.output, SchemaOutput)
-    assert task.images == (tmp_path / "f1.jpg", tmp_path / "f2.jpg")
-    assert task.audio == (tmp_path / "audio.ogg",)
+    assert task.media == (
+        Media(MediaKind.IMAGE, tmp_path / "f1.jpg"),
+        Media(MediaKind.IMAGE, tmp_path / "f2.jpg"),
+        Media(MediaKind.AUDIO, tmp_path / "audio.ogg"),
+    )
     assert task.tools is tools
     assert task.attempts == 3
     assert "chunk-specific audio slice" in task.instructions
@@ -146,5 +150,5 @@ def test_build_chunk_task_without_audio(
         tools=tools,
         attempts=1,
     )
-    assert task.audio == ()
+    assert all(item.kind is MediaKind.IMAGE for item in task.media)
     assert "no audio is available for this run" in task.instructions

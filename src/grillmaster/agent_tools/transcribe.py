@@ -14,7 +14,7 @@ The tool server is a separate process, so it builds its own `AgentRunner`
 for that one role; its CLI children stay inside the calling agent's process
 tree, so an abort still kills them. A span's clip, transcript and session
 records live in `<clips_dir>/<start>-<end>/` (the session's cwd is its empty
-`work/`, and the session has no shell); an existing transcript is
+`work/`, and it gets no built-in tools: `ToolAccess.NONE`); an existing transcript is
 returned again without a new session. The handler is async and runs the
 session on a worker thread, so parallel calls transcribe concurrently.
 """
@@ -31,6 +31,7 @@ from mcp.server.fastmcp.exceptions import ToolError
 
 from grillmaster.agent_tools._media import media_duration
 from grillmaster.agents.adapters import AdapterRegistry
+from grillmaster.agents.adapters.base import Media, MediaKind
 from grillmaster.agents.errors import AgentError
 from grillmaster.agents.runner import AgentRunner
 from grillmaster.agents.task import AgentTask, TextOutput
@@ -168,6 +169,8 @@ def _task(span: TimeRange, clip: Path, clip_dir: Path) -> AgentTask[str]:
         # file processes that instead of watching it.
         workdir=clip_dir / "work",
         output=TextOutput(),
-        video=(clip,),
+        media=(Media(MediaKind.VIDEO, clip),),
+        # The answer is the clip watched; a tool would only process it.
+        builtin_tools=False,
         max_repairs=1,
     )

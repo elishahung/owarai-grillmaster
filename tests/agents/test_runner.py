@@ -23,8 +23,11 @@ from tests.fakes import frames_tool
 
 from grillmaster.agents.adapters.base import (
     Capability,
+    Media,
     MediaDelivery,
+    MediaKind,
     SchemaDelivery,
+    ToolAccess,
     ToolImageDelivery,
     TurnDefect,
 )
@@ -275,14 +278,15 @@ def test_without_workdir_a_temp_dir_is_used_and_removed(
 @pytest.mark.parametrize(
     ("missing", "overrides"),
     [
-        (Capability.AUDIO_INPUT, {"audio": ("a.ogg",)}),
-        (Capability.VIDEO_INPUT, {"video": ("v.mp4",)}),
-        (Capability.IMAGE_INPUT, {"images": ("a.png",)}),
+        (Capability.AUDIO_INPUT, {"media": (MediaKind.AUDIO, "a.ogg")}),
+        (Capability.VIDEO_INPUT, {"media": (MediaKind.VIDEO, "v.mp4")}),
+        (Capability.IMAGE_INPUT, {"media": (MediaKind.IMAGE, "a.png")}),
         (Capability.SCHEMA_OUTPUT, {"output": SchemaOutput(Answer)}),
         (Capability.RESUME, {}),
         (Capability.MCP, {"tools": "frames"}),
         (Capability.IMAGE_GENERATION, {"requires": {Capability.IMAGE_GENERATION}}),
         (Capability.WEB_SEARCH, {"requires": {Capability.WEB_SEARCH}}),
+        (Capability.TOOL_ISOLATION, {"builtin_tools": False}),
     ],
 )
 def test_missing_capability_fails_before_any_session(
@@ -292,11 +296,11 @@ def test_missing_capability_fails_before_any_session(
     make_runner: Callable[..., AgentRunner],
     recording_sink: RecordingSink,
 ):
-    for key in ("audio", "video", "images"):
-        if key in overrides:
-            path = tmp_path / overrides[key][0]
-            path.write_bytes(b"x")
-            overrides[key] = (path,)
+    if "media" in overrides:
+        kind, name = overrides["media"]
+        path = tmp_path / name
+        path.write_bytes(b"x")
+        overrides["media"] = (Media(kind, path),)
     if overrides.get("tools") == "frames":
         overrides["tools"] = _frames_tools(tmp_path)
     overrides.setdefault("output", TextOutput())
@@ -324,7 +328,10 @@ def test_frames_for_the_next_message_need_a_resumed_turn_with_images(
         make_runner(adapter).run(task)
 
 
-@pytest.mark.parametrize("missing", [Capability.VIDEO_INPUT, Capability.RESUME])
+@pytest.mark.parametrize(
+    "missing",
+    [Capability.VIDEO_INPUT, Capability.TOOL_ISOLATION, Capability.RESUME],
+)
 def test_a_transcribe_model_that_cannot_watch_video_fails_first(
     missing: Capability, tmp_path: Path, make_runner: Callable[..., AgentRunner]
 ):
@@ -353,10 +360,10 @@ def test_preflight_failure_happens_before_any_session(
     image = tmp_path / "frame.png"
     image.write_bytes(b"x")
     adapter = FakeAdapter(preflight_error=AgentConfigError("agy has no model"))
-    task = make_task(tmp_path, TextOutput(), images=(image,))
+    task = make_task(tmp_path, TextOutput(), media=(Media(MediaKind.IMAGE, image),))
     with pytest.raises(AgentConfigError, match="no model"):
         make_runner(adapter).run(task)
-    assert adapter.preflights == [(SPEC, (image.resolve(),), ())]
+    assert adapter.preflights == [(SPEC, (Media(MediaKind.IMAGE, image.resolve()),))]
     assert adapter.calls == []
     assert recording_sink.events == []
     assert not (tmp_path / "refine").exists()
@@ -390,7 +397,9 @@ def test_missing_role_is_a_config_error(
 def test_missing_input_file_is_a_config_error(
     tmp_path: Path, make_runner: Callable[..., AgentRunner]
 ):
-    task = make_task(tmp_path, TextOutput(), images=(tmp_path / "nope.png",))
+    task = make_task(
+        tmp_path, TextOutput(), media=(Media(MediaKind.IMAGE, tmp_path / "nope.png"),)
+    )
     with pytest.raises(AgentConfigError, match=r"nope\.png"):
         make_runner(FakeAdapter()).run(task)
 
@@ -427,7 +436,10 @@ def test_validation_failure_resumes_the_same_session_with_only_the_message(
             raise ValidationFailure("color must be UPPERCASE")
 
     task = make_task(
-        tmp_path, SchemaOutput(Answer), validate=must_be_upper, images=(image,)
+        tmp_path,
+        SchemaOutput(Answer),
+        validate=must_be_upper,
+        media=(Media(MediaKind.IMAGE, image),),
     )
     result = make_runner(adapter).run(task)
 
@@ -437,7 +449,7 @@ def test_validation_failure_resumes_the_same_session_with_only_the_message(
     assert (start.kind, repair.kind, repair.session_id) == ("start", "resume", "s-1")
     assert "color must be UPPERCASE" in repair.request.message
     assert "INSTRUCTIONS" not in repair.request.message
-    assert repair.request.images == ()
+    assert repair.request.media == ()
     assert repair.request.schema == start.request.schema
     assert repair.request.workdir == start.request.workdir
     assert (ActivityKind.REPAIR, "color must be UPPERCASE") in activities(
@@ -468,13 +480,13 @@ def test_a_repair_turn_does_not_resend_the_video(
     clip = tmp_path / "clip.mp4"
     clip.write_bytes(b"mp4")
     adapter = FakeAdapter([Turn(final=final("")), Turn(final=final("transcript"))])
-    task = make_task(tmp_path, TextOutput(), video=(clip,))
+    task = make_task(tmp_path, TextOutput(), media=(Media(MediaKind.VIDEO, clip),))
 
     make_runner(adapter).run(task)
 
     start, repair = (call.request for call in adapter.calls)
-    assert start.video == (clip.resolve(),)
-    assert (repair.images, repair.audio, repair.video) == ((), (), ())
+    assert start.media == (Media(MediaKind.VIDEO, clip.resolve()),)
+    assert repair.media == ()
 
 
 def test_repairs_exhausted_is_an_output_error_without_a_new_session(
@@ -524,7 +536,7 @@ def test_files_output_missing_file_is_repaired_and_stale_files_removed(
     assert result.output == (workdir.resolve() / "refined.srt",)
     assert stale.read_text(encoding="utf-8") == "new"
     assert "refined.srt" in adapter.calls[1].request.message
-    assert all(call.request.writes_files for call in adapter.calls)
+    assert all(call.request.tool_access is ToolAccess.WRITE for call in adapter.calls)
 
 
 def test_a_text_task_writes_no_files(
@@ -532,7 +544,22 @@ def test_a_text_task_writes_no_files(
 ):
     adapter = FakeAdapter([Turn(final=final("transcript"))])
     make_runner(adapter).run(make_task(tmp_path, TextOutput()))
-    assert not adapter.calls[0].request.writes_files
+    assert adapter.calls[0].request.tool_access is ToolAccess.READ
+
+
+def test_a_task_without_builtin_tools_gets_none(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    adapter = FakeAdapter([Turn(final=final("transcript"))])
+    task = make_task(tmp_path, TextOutput(), builtin_tools=False)
+    make_runner(adapter).run(task)
+    assert adapter.calls[0].request.tool_access is ToolAccess.NONE
+
+
+def test_a_files_output_needs_builtin_tools(tmp_path: Path):
+    output = FilesOutput((Path("out.srt"),))
+    with pytest.raises(ValueError, match="writing tools"):
+        make_task(tmp_path, output, builtin_tools=False)
 
 
 def test_files_output_optional_files_are_removed_before_an_attempt(
@@ -566,7 +593,8 @@ def test_adapter_defects_are_repaired_resending_their_media(
     audio = tmp_path / "chunk.ogg"
     audio.write_bytes(b"x")
     resolved = audio.resolve()
-    defect = TurnDefect("open the audio first", audio=(resolved,))
+    heard = Media(MediaKind.AUDIO, resolved)
+    defect = TurnDefect("open the audio first", media=(heard,))
     adapter = FakeAdapter(
         [
             # A valid output does not outweigh the adapter's own finding.
@@ -577,14 +605,14 @@ def test_adapter_defects_are_repaired_resending_their_media(
         media_delivery=MediaDelivery.VIEW_FILE,
     )
     roles = dict.fromkeys(Role, ModelSpec(Backend.AGY, "gemini-3.1-pro", Effort.HIGH))
-    task = make_task(tmp_path, TextOutput(), audio=(audio,))
+    task = make_task(tmp_path, TextOutput(), media=(Media(MediaKind.AUDIO, audio),))
     result = make_runner(adapter, roles=roles).run(task)
 
     assert (result.output, result.repairs) == ("heard it", 1)
     start, repair = adapter.calls
-    assert start.request.audio == (resolved,)
+    assert start.request.media == (heard,)
     assert str(resolved) in start.request.message  # view_file instructions
-    assert repair.request.audio == (resolved,)
+    assert repair.request.media == (heard,)
     assert "open the audio first" in repair.request.message
     assert (ActivityKind.REPAIR, "open the audio first") in activities(recording_sink)
 
@@ -595,9 +623,10 @@ def test_attached_media_are_not_listed_in_the_prompt(
     image = tmp_path / "poster.jpg"
     image.write_bytes(b"x")
     adapter = FakeAdapter([Turn(final=final())])
-    make_runner(adapter).run(make_task(tmp_path, TextOutput(), images=(image,)))
+    task = make_task(tmp_path, TextOutput(), media=(Media(MediaKind.IMAGE, image),))
+    make_runner(adapter).run(task)
     request = adapter.calls[0].request
-    assert request.images == (image.resolve(),)
+    assert request.media == (Media(MediaKind.IMAGE, image.resolve()),)
     assert "poster.jpg" not in request.message
 
 
@@ -642,7 +671,7 @@ def test_requested_frames_come_with_the_next_message_without_a_repair(
     start, frames_turn = adapter.calls
     assert "附在下一則訊息" in start.request.message
     assert frames_turn.kind == "resume"
-    assert frames_turn.request.images == (frame,)
+    assert frames_turn.request.media == (Media(MediaKind.IMAGE, frame),)
     assert frames_turn.request.message.startswith("【畫面】")
     assert not (tmp_path / "refine" / "session" / "frames_pending.txt").exists()
     assert (ActivityKind.TOOL_RESULT, "get_frames: 1 frame(s) attached") in activities(
@@ -750,13 +779,14 @@ def _not_red(answer: Answer) -> None:
         raise ValidationFailure("red is not allowed")
 
 
-def test_a_failed_output_goes_to_the_handoff_role_without_audio(
+def test_a_failed_output_goes_to_the_handoff_role_without_sound(
     tmp_path: Path, make_runner: Callable[..., AgentRunner]
 ):
     audio = tmp_path / "chunk.ogg"
+    clip = tmp_path / "clip.mp4"
     image = tmp_path / "frame.jpg"
-    audio.write_bytes(b"x")
-    image.write_bytes(b"x")
+    for path in (audio, clip, image):
+        path.write_bytes(b"x")
     adapter = FakeAdapter(
         [
             Turn(final=final(structured={"color": "red"})),
@@ -766,8 +796,11 @@ def test_a_failed_output_goes_to_the_handoff_role_without_audio(
     task = make_task(
         tmp_path,
         SchemaOutput(Answer),
-        images=(image,),
-        audio=(audio,),
+        media=(
+            Media(MediaKind.IMAGE, image),
+            Media(MediaKind.AUDIO, audio),
+            Media(MediaKind.VIDEO, clip),
+        ),
         add_dirs=(tmp_path / "audio",),
         validate=_not_red,
         handoff=_HANDOFF,
@@ -778,7 +811,7 @@ def test_a_failed_output_goes_to_the_handoff_role_without_audio(
     assert result.output == Answer(color="blue")
     assert [call.kind for call in adapter.calls] == ["start", "start"]
     fix = adapter.calls[1].request
-    assert (fix.images, fix.audio, fix.add_dirs) == ((image.resolve(),), (), ())
+    assert (fix.media, fix.add_dirs) == ((Media(MediaKind.IMAGE, image.resolve()),), ())
     assert fix.message.startswith("FIX INSTRUCTIONS")
     for part in ("PROMPT", "【交接修正】", "red is not allowed", '{"color": "red"}'):
         assert part in fix.message
@@ -930,7 +963,7 @@ def test_a_refused_turn_is_sent_again_in_its_surviving_session(
     audio = tmp_path / "chunk.ogg"
     audio.write_bytes(b"x")
     adapter = FakeAdapter([_refused(), Turn(final=final("ok"))])
-    task = make_task(tmp_path, TextOutput(), audio=(audio,))
+    task = make_task(tmp_path, TextOutput(), media=(Media(MediaKind.AUDIO, audio),))
 
     result = make_runner(adapter).run(task)
 
@@ -954,13 +987,13 @@ def test_a_refused_turn_the_session_kept_is_continued(
     audio = tmp_path / "chunk.ogg"
     audio.write_bytes(b"x")
     adapter = FakeAdapter([_refused(kept=True), Turn(final=final("ok"))])
-    task = make_task(tmp_path, TextOutput(), audio=(audio,))
+    task = make_task(tmp_path, TextOutput(), media=(Media(MediaKind.AUDIO, audio),))
 
     assert make_runner(adapter).run(task).output == "ok"
 
     resumed = adapter.calls[1].request
     assert resumed.message == continue_message()
-    assert (resumed.images, resumed.audio) == ((), ())
+    assert resumed.media == ()
 
 
 def test_frames_asked_for_before_a_kept_refusal_follow_the_continued_turn(
@@ -979,7 +1012,7 @@ def test_frames_asked_for_before_a_kept_refusal_follow_the_continued_turn(
 
     _, resumed, frames_turn = adapter.calls
     assert resumed.request.message == continue_message()
-    assert frames_turn.request.images == (frame,)
+    assert frames_turn.request.media == (Media(MediaKind.IMAGE, frame),)
 
 
 def test_a_refused_repair_turn_is_sent_again(

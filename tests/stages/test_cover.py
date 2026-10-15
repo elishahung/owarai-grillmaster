@@ -6,6 +6,7 @@ import pytest
 from tests.fakes import FakeAgentRunner, draws
 from tests.stages.conftest import complete_side_task
 
+from grillmaster.agents.adapters.base import Media, MediaKind
 from grillmaster.agents.errors import AgentQuotaError
 from grillmaster.core.stage_key import SideTaskKey, StageKey
 from grillmaster.extras.cover import POSTER_NAME, TASK_NAME
@@ -53,7 +54,7 @@ def test_draws_the_root_cover_in_its_side_directory(
     task = agents.task(TASK_NAME)
     assert task.workdir == side
     assert task.session_dir == side / "session"
-    assert task.images == (side / POSTER_NAME,)
+    assert task.media == (Media(MediaKind.IMAGE, side / POSTER_NAME),)
     record = load_state(layout).side_tasks.cover
     assert record is not None
     assert record.elapsed_s == 1.0

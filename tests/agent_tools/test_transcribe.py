@@ -12,7 +12,7 @@ from tests.fakes import FakeAgentRunner
 
 from grillmaster.agent_tools.server import build_server
 from grillmaster.agent_tools.transcribe import Transcriber, _task
-from grillmaster.agents.adapters.base import ToolImageDelivery
+from grillmaster.agents.adapters.base import Media, MediaKind, ToolImageDelivery
 from grillmaster.agents.errors import AgentOutputError
 from grillmaster.agents.runner import TRANSCRIBE_REQUIRES, _required_capabilities
 from grillmaster.core.model_spec import ModelSpec, Role
@@ -52,7 +52,8 @@ def test_a_span_is_cut_transcribed_and_kept(
     task = agents.task(TASK)
     clip_dir = config.clips_dir / SPAN_DIR
     assert task.role is Role.TRANSCRIBE
-    assert (task.audio, task.video) == ((), (clip_dir / "clip.mp4",))
+    assert task.media == (Media(MediaKind.VIDEO, clip_dir / "clip.mp4"),)
+    assert not task.builtin_tools
     # The session's cwd holds nothing to process instead of watching it.
     assert task.workdir == clip_dir / "work"
     assert (clip_dir / "clip.mp4").is_file()

@@ -15,7 +15,7 @@ from tests.agents.fakes import (
 )
 
 from grillmaster.agents.adapters._google import API_KEY_ENV_VARS
-from grillmaster.agents.adapters.base import McpServer
+from grillmaster.agents.adapters.base import McpServer, Media, MediaKind, ToolAccess
 from grillmaster.agents.adapters.gemini import MAX_MEDIA_BYTES, GeminiAdapter
 from grillmaster.agents.errors import (
     AgentAuthError,
@@ -79,7 +79,9 @@ def test_start_runs_acp_in_the_workdir_and_attaches_media_inline(
     extra = tmp_path / "project"
     session, spawn = _session()
     request = make_request(
-        spec=FLASH_LOW, images=(image,), audio=(audio,), add_dirs=(extra,)
+        spec=FLASH_LOW,
+        media=(Media(MediaKind.IMAGE, image), Media(MediaKind.AUDIO, audio)),
+        add_dirs=(extra,),
     )
     final = session.start(request).result()
 
@@ -115,17 +117,21 @@ def test_a_video_goes_inline_as_its_own_media_type(
     clip = tmp_path / "clip.mp4"
     clip.write_bytes(b"mp4")
     session, spawn = _session()
-    session.start(make_request(spec=FLASH_LOW, video=(clip,))).result()
+    session.start(
+        make_request(spec=FLASH_LOW, media=(Media(MediaKind.VIDEO, clip),))
+    ).result()
 
     _, _, prompt = _sent(spawn)
     # ACP has no video block: gemini-cli passes the audio block's mimeType on.
     assert prompt["params"]["prompt"][1:] == [
         {"type": "audio", "mimeType": "video/mp4", "data": _b64(b"mp4")}
     ]
-    GeminiAdapter(executable="gemini").preflight(FLASH_LOW, (), (), (clip,))
+    GeminiAdapter(executable="gemini").preflight(
+        FLASH_LOW, (Media(MediaKind.VIDEO, clip),)
+    )
     with pytest.raises(AgentConfigError, match=r"\.mp4"):
         GeminiAdapter(executable="gemini").preflight(
-            FLASH_LOW, (), (), (tmp_path / "clip.mkv",)
+            FLASH_LOW, (Media(MediaKind.VIDEO, tmp_path / "clip.mkv"),)
         )
 
 
@@ -236,9 +242,20 @@ def test_only_a_file_writing_task_keeps_the_shell_and_writing_tools(
             "exclude": ["run_shell_command", "write_file", "replace"]
         }
 
-    request = make_request(spec=FLASH_LOW, writes_files=True)
+    request = make_request(spec=FLASH_LOW, tool_access=ToolAccess.WRITE)
     _first_turn(request)
     assert "tools" not in _settings(request)
+
+
+def test_no_tool_access_excludes_every_built_in(
+    make_request: Callable[..., TurnRequest],
+):
+    request = make_request(spec=FLASH_LOW, tool_access=ToolAccess.NONE)
+    _first_turn(request)
+    excluded = _settings(request)["tools"]["exclude"]
+    assert {"run_shell_command", "read_file", "glob", "google_web_search"} <= set(
+        excluded
+    )
 
 
 def test_gemini_2_5_gets_a_thinking_budget(make_request: Callable[..., TurnRequest]):
@@ -288,19 +305,23 @@ def test_preflight_refuses_media_the_model_cannot_take(tmp_path: Path):
         handle.truncate(MAX_MEDIA_BYTES // 2 + 1)
     frame = tmp_path / "frame.jpg"
     frame.write_bytes(b"x" * (MAX_MEDIA_BYTES // 2))
-    adapter.preflight(FLASH_LOW, (), (half,), ())
+    adapter.preflight(FLASH_LOW, (Media(MediaKind.AUDIO, half),))
     # The limit is on the request: every attachment goes inline in one prompt.
     with pytest.raises(AgentConfigError, match="20 MB per request"):
-        adapter.preflight(FLASH_LOW, (frame,), (half,), ())
+        adapter.preflight(
+            FLASH_LOW, (Media(MediaKind.IMAGE, frame), Media(MediaKind.AUDIO, half))
+        )
     odd = tmp_path / "clip.aiff"
     odd.write_bytes(b"x")
     with pytest.raises(AgentConfigError, match=r"\.ogg"):
-        adapter.preflight(FLASH_LOW, (), (odd,), ())
+        adapter.preflight(FLASH_LOW, (Media(MediaKind.AUDIO, odd),))
 
     image, audio = tmp_path / "a.PNG", tmp_path / "with space.ogg"
     image.write_bytes(b"x")
     audio.write_bytes(b"x")
-    adapter.preflight(FLASH_LOW, (image,), (audio,), ())
+    adapter.preflight(
+        FLASH_LOW, (Media(MediaKind.IMAGE, image), Media(MediaKind.AUDIO, audio))
+    )
 
 
 def test_updates_become_messages_split_at_tool_calls(
@@ -518,7 +539,9 @@ def test_an_unreadable_attachment_fails_the_turn(
 ):
     gone = tmp_path / "gone.ogg"
     session, spawn = _session()
-    turn = session.start(make_request(spec=FLASH_LOW, audio=(gone,)))
+    turn = session.start(
+        make_request(spec=FLASH_LOW, media=(Media(MediaKind.AUDIO, gone),))
+    )
     with pytest.raises(AgentTransientError, match="attachment unreadable"):
         turn.result()
     assert len(spawn.processes[0].sent) == 2  # no prompt was sent

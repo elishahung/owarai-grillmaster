@@ -7,9 +7,10 @@ live with the bundled CLI):
 
 * `setting_sources=[]` + `strict_mcp_config=True` keep the user's settings,
   CLAUDE.md files and MCP servers out of the session.
-* `tools` narrows the built-in tools (`base_tools`): the default set (Task,
-  Cron*, Workflow...) inflates every prompt, and with that many tools the CLI
-  defers the MCP and web tools behind ToolSearch, a turn per load.
+* `tools` narrows the built-in tools to the request's `ToolAccess`
+  (`BASE_TOOLS`; an empty list is `--tools ""`, none at all): the default set
+  (Task, Cron*, Workflow...) inflates every prompt, and with that many tools
+  the CLI defers the MCP and web tools behind ToolSearch, a turn per load.
   `ENABLE_TOOL_SEARCH=false` loads every remaining tool up front.
 * The system prompt is ours alone (`SYSTEM_PROMPT`; none would send an empty
   one): it asks for independent tool calls in one turn, since every extra
@@ -79,6 +80,7 @@ from grillmaster.agents.adapters.base import (
     MediaDelivery,
     PerTurnAdapter,
     SchemaDelivery,
+    ToolAccess,
     ToolImageDelivery,
     Turn,
     TurnRequest,
@@ -120,6 +122,7 @@ if TYPE_CHECKING:
     from anyio.abc import Process
     from claude_agent_sdk.types import EffortLevel
 
+    from grillmaster.agents.adapters.base import Media
     from grillmaster.agents.events import AgentEvent
     from grillmaster.core.model_spec import ModelSpec
     from grillmaster.core.process import ProcessTree
@@ -147,12 +150,19 @@ _USAGE_NAMES = {
 _STDERR_TAIL_LINES = 40
 # One CLI message line; eight 768px stills already passed the 1 MiB default.
 _MAX_MESSAGE_BYTES = 64 * 1024 * 1024
-# Reading and the web for every task (prompts ask for web evidence without
-# requiring `WEB_SEARCH`); editing and the shell only for a file-writing task
-# (no schema): a schema task answers in its final message, and with a shell a
-# review read every file through Bash and stalled on the console code page.
+# The built-in tools of each `ToolAccess`. READ has reading and the web
+# (prompts ask for web evidence without requiring `WEB_SEARCH`); editing and
+# the shell come only with WRITE, a file-writing task's: a schema task answers
+# in its final message, and with a shell a review read every file through
+# Bash and stalled on the console code page. `--tools ""` (NONE) leaves only
+# the MCP tools.
 READ_TOOLS = ("Read", "Grep", "Glob", "WebSearch", "WebFetch")
 WRITE_TOOLS = ("Write", "Edit", "Bash")
+BASE_TOOLS: dict[ToolAccess, tuple[str, ...]] = {
+    ToolAccess.NONE: (),
+    ToolAccess.READ: READ_TOOLS,
+    ToolAccess.WRITE: (*READ_TOOLS, *WRITE_TOOLS),
+}
 _ENV = {"ENABLE_TOOL_SEARCH": "false"}
 SYSTEM_PROMPT = (
     "You are running a task inside an automated subtitle pipeline; the user "
@@ -171,6 +181,7 @@ class ClaudeAdapter(PerTurnAdapter):
             Capability.RESUME,
             Capability.MCP,
             Capability.WEB_SEARCH,
+            Capability.TOOL_ISOLATION,
         }
     )
     media_delivery = MediaDelivery.ATTACHED
@@ -183,26 +194,16 @@ class ClaudeAdapter(PerTurnAdapter):
     def preflight(
         self,
         spec: ModelSpec,  # noqa: ARG002 - the AgentAdapter signature
-        images: Sequence[Path],
-        audio: Sequence[Path],  # noqa: ARG002
-        video: Sequence[Path],  # noqa: ARG002
+        media: Sequence[Media],
     ) -> None:
-        for path in images:
-            _media_type(path)
+        for image in media:
+            _media_type(image.path)
 
     def start(self, request: TurnRequest) -> ClaudeTurn:
         return ClaudeTurn(self._query, request, resume=None)
 
     def resume(self, session_id: str, request: TurnRequest) -> ClaudeTurn:
         return ClaudeTurn(self._query, request, resume=session_id)
-
-
-def base_tools(request: TurnRequest) -> list[str]:
-    """The built-in tools of a session; MCP tools come on top. Only a
-    file-writing task gets the writing tools and the shell."""
-    if request.writes_files:
-        return [*READ_TOOLS, *WRITE_TOOLS]
-    return list(READ_TOOLS)
 
 
 def build_options(
@@ -226,7 +227,8 @@ def build_options(
         setting_sources=[],
         strict_mcp_config=True,
         system_prompt=SYSTEM_PROMPT,
-        tools=base_tools(request),
+        # The built-in tools; MCP tools come on top.
+        tools=list(BASE_TOOLS[request.tool_access]),
         env=_ENV,
         mcp_servers=mcp_servers,
         output_format=(
@@ -476,11 +478,12 @@ def encode_message(value: object) -> Any:
 
 
 def _prompt(request: TurnRequest) -> Prompt:
-    """A plain string, or one streamed user message carrying image blocks."""
-    if not request.images:
+    """A plain string, or one streamed user message carrying image blocks
+    (images are the only media claude takes: `IMAGE_INPUT`)."""
+    if not request.media:
         return request.message
     content: list[dict[str, Any]] = [{"type": "text", "text": request.message}]
-    content += [_image_block(path) for path in request.images]
+    content += [_image_block(image.path) for image in request.media]
     message = {"type": "user", "message": {"role": "user", "content": content}}
 
     async def stream() -> AsyncIterator[dict[str, Any]]:

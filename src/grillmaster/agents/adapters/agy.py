@@ -38,7 +38,9 @@ from grillmaster.agents.adapters._jsonl import JsonlTurn, resolve_cli
 from grillmaster.agents.adapters.base import (
     Capability,
     FinalOutput,
+    Media,
     MediaDelivery,
+    MediaKind,
     PerTurnAdapter,
     SchemaDelivery,
     ToolImageDelivery,
@@ -129,9 +131,7 @@ class AgyAdapter(PerTurnAdapter):
     def preflight(
         self,
         spec: ModelSpec,
-        images: Sequence[Path],  # noqa: ARG002 - the AgentAdapter signature
-        audio: Sequence[Path],  # noqa: ARG002
-        video: Sequence[Path],  # noqa: ARG002
+        media: Sequence[Media],  # noqa: ARG002 - the AgentAdapter signature
     ) -> None:
         self.model_id(spec)
 
@@ -187,7 +187,8 @@ class AgyAdapter(PerTurnAdapter):
             stdin=stdin + "\n",
             keep_stdin_open=True,
         )
-        parser = AgyTurnParser(request.audio, schema=request.schema is not None)
+        audio = [item.path for item in request.media if item.kind is MediaKind.AUDIO]
+        parser = AgyTurnParser(audio, schema=request.schema is not None)
         return JsonlTurn(self._spawn(spec), parser, request)
 
     def _available_models(self) -> frozenset[str]:
@@ -345,7 +346,7 @@ def unheard_audio_defect(paths: Sequence[Path]) -> TurnDefect:
             "你沒有用 view_file 開啟下列音訊檔，所以沒有真正聽到它們：\n"
             f"{listed}\n請先在同一輪同時開啟聆聽，再依聽到的內容完成任務。"
         ),
-        audio=tuple(paths),
+        media=tuple(Media(MediaKind.AUDIO, path) for path in paths),
     )
 
 
@@ -365,7 +366,7 @@ def readable_roots(request: TurnRequest) -> list[Path]:
     roots = [
         request.workdir,
         *request.add_dirs,
-        *(path.parent for path in (*request.images, *request.audio)),
+        *(item.path.parent for item in request.media),
     ]
     unique: dict[str, Path] = {}
     for root in roots:

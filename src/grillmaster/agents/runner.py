@@ -45,9 +45,13 @@ from pydantic import BaseModel
 
 from grillmaster.agents import prompt
 from grillmaster.agents.adapters.base import (
+    MEDIA_KINDS,
     Capability,
     McpServer,
+    Media,
+    MediaKind,
     SchemaDelivery,
+    ToolAccess,
     ToolImageDelivery,
     TurnDefect,
     TurnRequest,
@@ -133,8 +137,10 @@ PENDING_FRAMES_FILE = "frames_pending.txt"
 MAX_FRAME_TURNS = 8
 
 # What the `transcribe` tool's own session needs (`agent_tools.transcribe`: it
-# watches a clip and may take one repair round).
-TRANSCRIBE_REQUIRES = frozenset({Capability.VIDEO_INPUT, Capability.RESUME})
+# watches a clip without the CLI's own tools and may take one repair round).
+TRANSCRIBE_REQUIRES = frozenset(
+    {Capability.VIDEO_INPUT, Capability.TOOL_ISOLATION, Capability.RESUME}
+)
 
 # Set while the current context holds a slot; a nested `run` would wait for
 # a slot its own caller holds.
@@ -172,9 +178,8 @@ class _Prepared[T]:
     adapter: AgentAdapter
     requires: frozenset[Capability]
     schema: JsonSchema | None
-    images: tuple[Path, ...]
-    audio: tuple[Path, ...]
-    video: tuple[Path, ...]
+    # The task's media with absolute paths.
+    media: tuple[Media, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -432,11 +437,7 @@ class AgentRunner:
                     f"{task.name}: the transcribe tool's {transcribe.backend} cannot "
                     f"provide {', '.join(missing)} (spec {transcribe})"
                 )
-        absent = [
-            str(path)
-            for path in (*task.images, *task.audio, *task.video)
-            if not path.is_file()
-        ]
+        absent = [str(item.path) for item in task.media if not item.path.is_file()]
         if absent:
             raise AgentConfigError(
                 f"{task.name}: input files missing: {', '.join(absent)}"
@@ -448,11 +449,9 @@ class AgentRunner:
                 schema = strict_json_schema(model)
             except StrictSchemaError as error:
                 raise AgentConfigError(f"{task.name}: {error}") from error
-        images = tuple(path.resolve() for path in task.images)
-        audio = tuple(path.resolve() for path in task.audio)
-        video = tuple(path.resolve() for path in task.video)
-        adapter.preflight(spec, images, audio, video)
-        return _Prepared(task, spec, adapter, requires, schema, images, audio, video)
+        media = tuple(replace(item, path=item.path.resolve()) for item in task.media)
+        adapter.preflight(spec, media)
+        return _Prepared(task, spec, adapter, requires, schema, media)
 
     def _prepare_session_dir(
         self, prepared: _Prepared[Any], session_dir: Path
@@ -472,8 +471,7 @@ class AgentRunner:
             task.instructions,
             task.prompt,
             tools=tools,
-            images=prepared.images,
-            audio=prepared.audio,
+            media=prepared.media,
             media_delivery=adapter.media_delivery,
             tool_images=adapter.tool_image_delivery,
             schema=prepared.schema,
@@ -599,7 +597,8 @@ class AgentRunner:
                 summary = f"get_frames: {len(frames)} frame(s) attached"
                 self._activity(task.name, ActivityKind.TOOL_RESULT, summary)
                 message = prompt.frames_message()
-                turn = _follow_up(request, message, images=frames)
+                images = tuple(Media(MediaKind.IMAGE, frame) for frame in frames)
+                turn = _follow_up(request, message, media=images)
                 handle = session.resume(final.session_id, turn)
                 continue
             # The adapter's own findings come first: the output of a turn
@@ -626,8 +625,7 @@ class AgentRunner:
                 _follow_up(
                     request,
                     prompt.repair_message(defect.message),
-                    images=defect.images,
-                    audio=defect.audio,
+                    media=defect.media,
                 ),
             )
 
@@ -730,13 +728,11 @@ class AgentRunner:
             raw=write_raw,
             schema=prepared.schema,
             schema_path=files.schema_path,
-            images=prepared.images,
-            audio=prepared.audio,
-            video=prepared.video,
+            media=prepared.media,
             add_dirs=tuple(path.resolve() for path in prepared.task.add_dirs),
             mcp=files.mcp,
             web_search=Capability.WEB_SEARCH in prepared.requires,
-            writes_files=isinstance(prepared.task.output, FilesOutput),
+            tool_access=_tool_access(prepared.task),
         )
 
     @contextmanager
@@ -822,15 +818,11 @@ class AgentRunner:
 
 
 def _follow_up(
-    request: TurnRequest,
-    message: str,
-    *,
-    images: tuple[Path, ...] = (),
-    audio: tuple[Path, ...] = (),
+    request: TurnRequest, message: str, *, media: tuple[Media, ...] = ()
 ) -> TurnRequest:
     """`request` resumed with `message` and only the given media: a resume
     never resends the start turn's attachments by itself."""
-    return replace(request, message=message, images=images, audio=audio, video=())
+    return replace(request, message=message, media=media)
 
 
 def _required_capabilities(
@@ -843,12 +835,9 @@ def _required_capabilities(
         required.add(Capability.SCHEMA_OUTPUT)
     if task.max_repairs > 0:
         required.add(Capability.RESUME)
-    if task.images:
-        required.add(Capability.IMAGE_INPUT)
-    if task.audio:
-        required.add(Capability.AUDIO_INPUT)
-    if task.video:
-        required.add(Capability.VIDEO_INPUT)
+    required.update(MEDIA_KINDS[item.kind].capability for item in task.media)
+    if not task.builtin_tools:
+        required.add(Capability.TOOL_ISOLATION)
     if task.tools is not None:
         required.add(Capability.MCP)
         if (
@@ -859,9 +848,19 @@ def _required_capabilities(
     return frozenset(required)
 
 
+def _tool_access(task: AgentTask[Any]) -> ToolAccess:
+    """The CLI built-ins a session gets: the shell and file writing only for
+    a `FilesOutput`, nothing for a task without `builtin_tools`."""
+    if not task.builtin_tools:
+        return ToolAccess.NONE
+    if isinstance(task.output, FilesOutput):
+        return ToolAccess.WRITE
+    return ToolAccess.READ
+
+
 def _handoff_task[T](task: AgentTask[T], handoff: Handoff) -> AgentTask[T]:
     """`task` as its handoff role runs it: the handoff's instructions and
-    extra roots, no audio, its session records beside the task's
+    extra roots, no media with sound, its session records beside the task's
     (`core.paths.handoff_path`). `run` appends the failed output to the
     prompt."""
     return replace(
@@ -869,8 +868,7 @@ def _handoff_task[T](task: AgentTask[T], handoff: Handoff) -> AgentTask[T]:
         role=handoff.role,
         instructions=handoff.instructions,
         session_dir=handoff_path(task.session_dir),
-        audio=(),
-        video=(),
+        media=tuple(item for item in task.media if not MEDIA_KINDS[item.kind].sound),
         add_dirs=handoff.add_dirs,
         handoff=None,
     )
@@ -887,8 +885,7 @@ def _merge_defects(defects: Sequence[TurnDefect]) -> TurnDefect:
     """One repair round answers every defect of the turn."""
     return TurnDefect(
         message="\n\n".join(defect.message for defect in defects),
-        images=tuple(dict.fromkeys(p for defect in defects for p in defect.images)),
-        audio=tuple(dict.fromkeys(p for defect in defects for p in defect.audio)),
+        media=tuple(dict.fromkeys(m for defect in defects for m in defect.media)),
     )
 
 

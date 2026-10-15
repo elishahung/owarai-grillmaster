@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 from tests.agents.fakes import FakeProcess, FakeSpawn, fixture_lines
 
-from grillmaster.agents.adapters.base import McpServer
+from grillmaster.agents.adapters.base import McpServer, Media, MediaKind
 from grillmaster.agents.adapters.codex import CodexAdapter
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec
 
@@ -45,7 +45,7 @@ def test_start_argv(
     request = make_request(
         spec=SPEC,
         schema={"type": "object"},
-        images=(image,),
+        media=(Media(MediaKind.IMAGE, image),),
         mcp=MCP,
         message="do it",
         web_search=True,
@@ -94,7 +94,10 @@ def test_resume_runs_in_the_workdir_without_cd(
     )
     adapter = CodexAdapter(spawn=spawn, executable="codex")
     request = make_request(
-        spec=SPEC, schema={"type": "object"}, mcp=MCP, images=(tmp_path / "a.png",)
+        spec=SPEC,
+        schema={"type": "object"},
+        mcp=MCP,
+        media=(Media(MediaKind.IMAGE, tmp_path / "a.png"),),
     )
     adapter.start(request).result()
     adapter.resume("thread-1", request).result()

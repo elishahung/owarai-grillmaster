@@ -4,10 +4,11 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from grillmaster.agents.adapters.base import ToolImageDelivery
+from grillmaster.agents.adapters.base import Media, MediaKind, ToolImageDelivery
 from grillmaster.agents.prompt import (
     handoff_section,
     tools_section,
+    view_file_section,
 )
 from grillmaster.core.model_spec import ModelSpec
 from grillmaster.core.tool_session import (
@@ -77,6 +78,25 @@ def test_the_transcribe_line_leaves_the_limits_to_the_tool(tmp_path: Path):
         project_root=tmp_path, frames=None, check_srt=None, transcribe=transcribe
     )
     assert tools_section(session).endswith("以純文字回傳日文逐字稿。")
+
+
+def test_view_file_section_lists_the_paths_by_kind(tmp_path: Path):
+    clip, audio, image = tmp_path / "c.mp4", tmp_path / "a.ogg", tmp_path / "f.jpg"
+    media = (
+        Media(MediaKind.VIDEO, clip),
+        Media(MediaKind.AUDIO, audio),
+        Media(MediaKind.IMAGE, image),
+    )
+    # After the heading and the instruction line.
+    assert view_file_section(media).splitlines()[2:] == [
+        "圖片：",
+        f"- {image}",
+        "音訊（直接聆聽；不要用 shell 指令、腳本、ffmpeg 或語音辨識工具轉寫或分析）：",
+        f"- {audio}",
+        "影片（直接觀看並聆聽；不要用 shell 指令、腳本、ffmpeg 或語音辨識工具轉寫或分析）：",
+        f"- {clip}",
+    ]
+    assert view_file_section(()) == ""
 
 
 @pytest.mark.parametrize(

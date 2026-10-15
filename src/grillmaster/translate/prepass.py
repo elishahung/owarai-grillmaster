@@ -76,8 +76,7 @@ def build_prepass_task(
         session_dir=session_dir,
         workdir=workdir,
         output=SchemaOutput(Briefing),
-        images=tuple(frame.path for frame in assets.frames),
-        audio=(assets.audio,) if assets.audio is not None else (),
+        media=assets.media(),
         tools=tools,
         add_dirs=add_dirs,
         validate=segment_coverage_validator(

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 
 from grillmaster.agents.adapters.base import (
     MediaDelivery,
+    MediaKind,
     SchemaDelivery,
     ToolImageDelivery,
 )
@@ -24,8 +25,8 @@ from grillmaster.core.prompts import join_sections
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
+    from grillmaster.agents.adapters.base import Media
     from grillmaster.agents.schema import JsonSchema
     from grillmaster.core.tool_session import ToolSession
 
@@ -35,8 +36,7 @@ def compose_message(
     prompt: str,
     *,
     tools: ToolSession | None,
-    images: Sequence[Path] = (),
-    audio: Sequence[Path] = (),
+    media: Sequence[Media] = (),
     media_delivery: MediaDelivery = MediaDelivery.ATTACHED,
     tool_images: ToolImageDelivery = ToolImageDelivery.INLINE,
     schema: JsonSchema | None = None,
@@ -63,7 +63,7 @@ def compose_message(
         instructions,
         prompt,
         tools_section(tools, tool_images) if tools is not None else None,
-        view_file_section(images, audio) if view_file else None,
+        view_file_section(media) if view_file else None,
         submit,
     )
 
@@ -107,9 +107,21 @@ def tools_section(
     return "\n".join(["【可用工具】", "可以呼叫 grill MCP server 的下列工具：", *lines])
 
 
-def view_file_section(images: Sequence[Path], audio: Sequence[Path]) -> str:
-    """Absolute paths the model must open itself with `view_file`."""
-    if not images and not audio:
+# The heading of each kind's paths in `view_file_section`.
+_VIEW_FILE_HEADINGS = {
+    MediaKind.IMAGE: "圖片：",
+    MediaKind.AUDIO: (
+        "音訊（直接聆聽；不要用 shell 指令、腳本、ffmpeg 或語音辨識工具轉寫或分析）："
+    ),
+    MediaKind.VIDEO: (
+        "影片（直接觀看並聆聽；不要用 shell 指令、腳本、ffmpeg 或語音辨識工具轉寫或分析）："
+    ),
+}
+
+
+def view_file_section(media: Sequence[Media]) -> str:
+    """Absolute paths the model must open itself with `view_file`, by kind."""
+    if not media:
         return ""
     lines = [
         "【輸入檔案】",
@@ -119,13 +131,9 @@ def view_file_section(images: Sequence[Path], audio: Sequence[Path]) -> str:
             "路徑請照抄，不要改寫任何字元："
         ),
     ]
-    if images:
-        lines += ["圖片：", *(f"- {path}" for path in images)]
-    if audio:
-        lines += [
-            "音訊（直接聆聽；不要用 shell 指令、腳本、ffmpeg 或語音辨識工具轉寫或分析）：",
-            *(f"- {path}" for path in audio),
-        ]
+    for kind in MediaKind:
+        if paths := [item.path for item in media if item.kind is kind]:
+            lines += [_VIEW_FILE_HEADINGS[kind], *(f"- {path}" for path in paths)]
     return "\n".join(lines)
 
 

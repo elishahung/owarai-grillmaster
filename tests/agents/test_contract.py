@@ -27,7 +27,7 @@ from tests.agents.fakes import (
 )
 
 from grillmaster.agents.adapters.agy import AgyAdapter
-from grillmaster.agents.adapters.base import SchemaDelivery
+from grillmaster.agents.adapters.base import Media, MediaKind, SchemaDelivery
 from grillmaster.agents.adapters.claude import ClaudeAdapter
 from grillmaster.agents.adapters.codex import CodexAdapter
 from grillmaster.agents.adapters.gemini import GeminiAdapter
@@ -376,18 +376,23 @@ def test_agy_audio_opened_with_view_file_counts_as_heard(
 ):
     heard = _recorded_audio_path()
     other = heard.with_name("other.ogg")
-    request = make_request(spec=SPECS[Backend.AGY], audio=(heard, other))
+    request = make_request(
+        spec=SPECS[Backend.AGY],
+        media=(Media(MediaKind.AUDIO, heard), Media(MediaKind.AUDIO, other)),
+    )
     run = replay(Backend.AGY, request, fixture="audio_view_file")
     assert run.final is not None
     (defect,) = run.final.defects
-    assert defect.audio == (other,)
+    assert defect.media == (Media(MediaKind.AUDIO, other),)
     assert str(other) in defect.message
     assert "view_file" in defect.message
     assert run.final.text == "Beep\n"
 
 
 def test_agy_audio_all_heard_has_no_defects(make_request: Callable[..., TurnRequest]):
-    request = make_request(spec=SPECS[Backend.AGY], audio=(_recorded_audio_path(),))
+    request = make_request(
+        spec=SPECS[Backend.AGY], media=(Media(MediaKind.AUDIO, _recorded_audio_path()),)
+    )
     run = replay(Backend.AGY, request, fixture="audio_view_file")
     assert run.final is not None
     assert run.final.defects == ()

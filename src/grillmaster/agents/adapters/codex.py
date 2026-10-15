@@ -49,8 +49,8 @@ from grillmaster.core.model_spec import Backend, Effort
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Iterator, Sequence
-    from pathlib import Path
 
+    from grillmaster.agents.adapters.base import Media
     from grillmaster.agents.events import AgentEvent
     from grillmaster.core.model_spec import ModelSpec
 
@@ -96,9 +96,7 @@ class CodexAdapter(PerTurnAdapter):
     def preflight(
         self,
         spec: ModelSpec,  # noqa: ARG002 - the AgentAdapter signature
-        images: Sequence[Path],  # noqa: ARG002
-        audio: Sequence[Path],  # noqa: ARG002
-        video: Sequence[Path],  # noqa: ARG002
+        media: Sequence[Media],  # noqa: ARG002
     ) -> None:
         resolve_cli("codex", self._executable)
 
@@ -112,8 +110,9 @@ class CodexAdapter(PerTurnAdapter):
         argv = [resolve_cli("codex", self._executable), "exec"]
         if thread is None:
             # `--image` takes several values; the next flag ends the list.
-            for image in request.images:
-                argv += ["--image", str(image)]
+            # Images are the only media codex takes (`IMAGE_INPUT`).
+            for image in request.media:
+                argv += ["--image", str(image.path)]
         else:
             argv += ["resume", thread]
         argv += [

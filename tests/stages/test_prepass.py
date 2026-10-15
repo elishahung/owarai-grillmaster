@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 from tests.fakes import FakeAgentRunner, FakeFfmpeg, make_blocks, make_briefing
 
+from grillmaster.agents.adapters.base import Media, MediaKind
 from grillmaster.agents.errors import AgentQuotaError
 from grillmaster.core.briefing import Briefing
 from grillmaster.core.json_artifact import read_model, write_model
@@ -57,10 +58,12 @@ def test_writes_the_briefing_from_one_agent_call(
     assert task.workdir == workdir
     assert task.session_dir == workdir / "session"
     # agy hears: the full track goes along, readable through `add_dirs`.
-    assert task.audio == (layout.audio,)
+    *frames, audio = task.media
+    assert audio == Media(MediaKind.AUDIO, layout.audio)
     assert task.add_dirs == (layout.audio.parent,)
-    assert task.images
-    assert all(path.parent == layout.prepass_frames_dir for path in task.images)
+    assert frames
+    assert all(frame.kind is MediaKind.IMAGE for frame in frames)
+    assert all(frame.path.parent == layout.prepass_frames_dir for frame in frames)
     assert task.tools is not None
     assert task.tools.frames is not None
     assert task.tools.frames.window == (0.0, _BLOCKS[-1].time_range.end)
@@ -94,7 +97,7 @@ def test_backend_without_audio_input_gets_no_audio(
     prepass.STAGE.run(make_context(StageKey.PREPASS))
 
     [task] = agents.tasks
-    assert task.audio == ()
+    assert all(item.kind is MediaKind.IMAGE for item in task.media)
     assert task.add_dirs == ()
     assert "Full Source Audio" not in task.instructions
 

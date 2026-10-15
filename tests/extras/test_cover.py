@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from tests.fakes import FakeAgentRunner, draws
 
-from grillmaster.agents.adapters.base import Capability
+from grillmaster.agents.adapters.base import Capability, Media, MediaKind
 from grillmaster.agents.errors import AgentQuotaError
 from grillmaster.agents.task import FilesOutput
 from grillmaster.core.model_spec import Role
@@ -56,7 +56,7 @@ def test_task_needs_image_generation_and_reads_the_staged_poster(
     assert task.role is Role.IMAGE
     assert task.requires == frozenset({Capability.IMAGE_GENERATION})
     assert task.workdir == workdir
-    assert task.images == (workdir / POSTER_NAME,)
+    assert task.media == (Media(MediaKind.IMAGE, workdir / POSTER_NAME),)
     assert task.output == FilesOutput((Path(COVER_NAME),))
     assert "`cover.png`" in task.instructions
     assert "poster.cover.png" not in task.instructions

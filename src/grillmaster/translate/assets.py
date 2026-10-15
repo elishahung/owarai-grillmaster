@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from grillmaster.agents.adapters.base import Media, MediaKind
 from grillmaster.media import probe
 from grillmaster.media.audio import slice_audio
 from grillmaster.media.errors import MediaError
@@ -50,6 +51,12 @@ class MediaAssets:
 
     frames: tuple[Frame, ...]
     audio: Path | None
+
+    def media(self) -> tuple[Media, ...]:
+        """The stills, then the track, as the agent task's media."""
+        images = (Media(MediaKind.IMAGE, frame.path) for frame in self.frames)
+        audio = () if self.audio is None else (Media(MediaKind.AUDIO, self.audio),)
+        return (*images, *audio)
 
 
 def prepass_frame_times(

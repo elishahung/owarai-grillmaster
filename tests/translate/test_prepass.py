@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 from tests.fakes import FakeAgentRunner, make_briefing
 
-from grillmaster.agents.adapters.base import Capability
+from grillmaster.agents.adapters.base import Capability, Media, MediaKind
 from grillmaster.agents.errors import ValidationFailure
 from grillmaster.agents.schema import strict_json_schema
 from grillmaster.agents.task import AgentTask, SchemaOutput
@@ -113,8 +113,10 @@ def test_build_prepass_task(
     assert task.role is Role.PREPASS
     assert isinstance(task.output, SchemaOutput)
     assert task.requires == frozenset({Capability.WEB_SEARCH})
-    assert task.images == (tmp_path / "f1.jpg",)
-    assert task.audio == (tmp_path / "audio.ogg",)
+    assert task.media == (
+        Media(MediaKind.IMAGE, tmp_path / "f1.jpg"),
+        Media(MediaKind.AUDIO, tmp_path / "audio.ogg"),
+    )
     assert task.add_dirs == (tmp_path / "audio",)
     assert "Full Source Audio" in task.instructions
     assert task.validate is not None
@@ -138,6 +140,6 @@ def test_build_prepass_task_without_audio(
         workdir=tmp_path,
         tools=tools,
     )
-    assert task.audio == ()
+    assert all(item.kind is MediaKind.IMAGE for item in task.media)
     assert "Full Source Audio" not in task.instructions
     assert "No audio track is available for this run" in task.instructions

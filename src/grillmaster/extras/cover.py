@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from grillmaster.agents.adapters.base import Capability
+from grillmaster.agents.adapters.base import Capability, Media, MediaKind
 from grillmaster.agents.task import AgentTask, FilesOutput
 from grillmaster.core.model_spec import Role
 from grillmaster.core.prompts import load_prompt
@@ -47,7 +47,7 @@ def build_cover_task(
         session_dir=session_dir,
         workdir=workdir,
         output=FilesOutput((Path(COVER_NAME),)),
-        images=(poster,),
+        media=(Media(MediaKind.IMAGE, poster),),
         requires=frozenset({Capability.IMAGE_GENERATION}),
     )
 

@@ -15,7 +15,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, NamedTuple, Protocol
 
 from grillmaster.agents.errors import AgentTransientError
 
@@ -48,10 +48,57 @@ class Capability(StrEnum):
     RESUME = "resume"
     MCP = "mcp"
     WEB_SEARCH = "web_search"
+    # A session without the CLI's own tools (`ToolAccess.NONE`).
+    TOOL_ISOLATION = "tool_isolation"
+
+
+class MediaKind(StrEnum):
+    IMAGE = "image"
+    AUDIO = "audio"
+    # A clip watched with its sound (picture and audio together).
+    VIDEO = "video"
+
+
+class MediaKindSpec(NamedTuple):
+    # What a backend must have to take the kind.
+    capability: Capability
+    # Carries sound: a `Handoff` (the no-audio rendition) drops it.
+    sound: bool
+
+
+# Every kind's spec; a new kind is an entry here plus the adapters that
+# support it.
+MEDIA_KINDS: Mapping[MediaKind, MediaKindSpec] = {
+    MediaKind.IMAGE: MediaKindSpec(Capability.IMAGE_INPUT, sound=False),
+    MediaKind.AUDIO: MediaKindSpec(Capability.AUDIO_INPUT, sound=True),
+    MediaKind.VIDEO: MediaKindSpec(Capability.VIDEO_INPUT, sound=True),
+}
+
+
+@dataclass(frozen=True, slots=True)
+class Media:
+    """One input file the model must see or hear."""
+
+    kind: MediaKind
+    path: Path
+
+
+class ToolAccess(StrEnum):
+    """Which of the CLI's own built-in tools a session gets; the grill MCP
+    tools come with the task's `tools` either way. agy and codex have no
+    switch for their built-ins: they run READ and WRITE alike and lack
+    `Capability.TOOL_ISOLATION`, which NONE requires."""
+
+    # None at all: the model answers from its message and attachments.
+    NONE = "none"
+    # Reading files and the web, no shell and no file writing.
+    READ = "read"
+    # Everything, the shell included.
+    WRITE = "write"
 
 
 class MediaDelivery(StrEnum):
-    """How input images, audio and video reach the model."""
+    """How input media reach the model."""
 
     # The adapter attaches them itself (CLI flags, SDK content blocks).
     ATTACHED = "attached"
@@ -111,19 +158,15 @@ class TurnRequest:
     schema: JsonSchema | None = None
     # `schema` as the session's `schema.json`, written once by the runner.
     schema_path: Path | None = None
-    images: tuple[Path, ...] = ()
-    # Audio the model must hear this turn (verified by the adapter).
-    audio: tuple[Path, ...] = ()
-    # Video clips the model must watch and hear this turn.
-    video: tuple[Path, ...] = ()
+    # What the model must see and hear this turn; a resume carries only
+    # what that turn adds (a defect's resends, requested frames).
+    media: tuple[Media, ...] = ()
     # Extra readable roots beyond `workdir`.
     add_dirs: tuple[Path, ...] = ()
     mcp: McpServer | None = None
     # The task requires `Capability.WEB_SEARCH`.
     web_search: bool = False
-    # The task's output is files it writes (`FilesOutput`); only such a task
-    # gets the shell and the file-writing tools.
-    writes_files: bool = False
+    tool_access: ToolAccess = ToolAccess.READ
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,8 +176,7 @@ class TurnDefect:
     validation: `message` is the repair text, and the media are resent."""
 
     message: str
-    images: tuple[Path, ...] = ()
-    audio: tuple[Path, ...] = ()
+    media: tuple[Media, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,13 +270,7 @@ class AgentAdapter(Protocol):
     @property
     def schema_delivery(self) -> SchemaDelivery: ...
 
-    def preflight(
-        self,
-        spec: ModelSpec,
-        images: Sequence[Path],
-        audio: Sequence[Path],
-        video: Sequence[Path],
-    ) -> None:
+    def preflight(self, spec: ModelSpec, media: Sequence[Media]) -> None:
         """Raise `AgentConfigError` for what this backend cannot run (unknown
         model, missing CLI, unsupported media); called before any slot."""
         ...

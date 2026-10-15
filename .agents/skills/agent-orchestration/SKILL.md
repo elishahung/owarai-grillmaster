@@ -43,9 +43,19 @@ description: >-
 - `AgentTask[T]`: `name` (e.g. `chunks/0001-0119`), `role`, `instructions` +
   `prompt` (sent as ONE user message on every backend), `session_dir`,
   `workdir` (cwd and writable root; `None` = temp dir; concurrent tasks may not
-  share one), `output`, `images`, `audio`, `tools`, `add_dirs`, `validate`
+  share one), `output`, `media`, `tools`, `builtin_tools`, `add_dirs`, `validate`
   (raises `ValidationFailure`), `requires`, `max_repairs=3`, `attempts=1`,
   `handoff` (`Handoff(role, instructions)`, not with `FilesOutput`).
+- Media (`adapters/base.py`): one tuple of `Media(kind, path)`, `MediaKind`
+  IMAGE/AUDIO/VIDEO. `MEDIA_KINDS` gives each kind its capability and whether
+  it carries sound (a handoff drops those); a new kind is an entry there plus
+  the adapters that take it (gemini's `MEDIA_BLOCKS`, a `view_file_section`
+  heading for a `VIEW_FILE` backend).
+- `ToolAccess` (the CLI's built-in tools; grill MCP tools come with `tools`):
+  the runner gives WRITE to a `FilesOutput`, READ otherwise, NONE to a task
+  with `builtin_tools=False` (`transcribe`). Mapped once per adapter:
+  claude's `BASE_TOOLS`, gemini's `EXCLUDED_TOOLS`; agy and codex have no
+  switch (READ = WRITE there) and lack TOOL_ISOLATION, which NONE requires.
 - Outputs: `TextOutput`, `SchemaOutput(model)` (see `schema_delivery`),
   `FilesOutput(required, optional)` (both deleted before each attempt). A
   failed parse is a `ValidationFailure`, i.e. a repair round.
@@ -73,13 +83,14 @@ Claude), not the session.
 
 All adapters declare IMAGE_INPUT, SCHEMA_OUTPUT, RESUME, MCP, WEB_SEARCH; agy
 and gemini have AUDIO_INPUT, only gemini VIDEO_INPUT (a picture+sound clip),
-only codex IMAGE_GENERATION. Required =
+claude and gemini TOOL_ISOLATION, only codex IMAGE_GENERATION. Required =
 `task.requires` (what inputs cannot imply: IMAGE_GENERATION for cover,
 WEB_SEARCH for prepass/titles/date research) + derived: schema→SCHEMA_OUTPUT,
-`max_repairs > 0`→RESUME, images→IMAGE_INPUT, audio→AUDIO_INPUT,
-video→VIDEO_INPUT, tools→MCP,
+`max_repairs > 0`→RESUME, each media kind→its `MEDIA_KINDS` capability,
+`builtin_tools=False`→TOOL_ISOLATION, tools→MCP,
 frames tool on a `NEXT_MESSAGE` backend→RESUME + IMAGE_INPUT; a `transcribe`
-tool's own model must have `TRANSCRIBE_REQUIRES` (VIDEO_INPUT + RESUME).
+tool's own model must have `TRANSCRIBE_REQUIRES` (VIDEO_INPUT + TOOL_ISOLATION +
+RESUME).
 Stages check `runner.capabilities(role)` (`accepts_audio`) before adding audio.
 
 ## Adapters (`adapters/`, loaded lazily by `AdapterRegistry`)
@@ -101,8 +112,9 @@ and reads the answer from `FinalOutput.text` with
 by the runner when the session ends). agy, codex and claude are
 `PerTurnAdapter`s (each turn its own process); gemini keeps one process per
 session. Closing `events()` early stops the turn (the CLI tree is killed). A resume repeats
-model, workdir, tools and schema with a new `message`; its images/audio are
-only a defect's resends, and a video is never resent.
+model, workdir, tools, tool access and schema with a new `message`; its
+`media` are only a defect's resends or requested frames, never the start
+turn's.
 
 - **agy**: `--input-format stream-json --output-format stream-json -p=`, one
   text-only stdin line, stdin closed on `result`. Model id
@@ -137,11 +149,12 @@ only a defect's resends, and a video is never resent.
   `gemini-2.5*`), the MCP server, `model.compressionThreshold: 1000` (a
   compression would summarize the audio away) and
   `context.includeDirectoryTree: false` (a listed `audio.ogg` lured a model
-  into ffmpeg via the shell and a false "audio missing" claim) and, unless
-  `TurnRequest.writes_files` (`FilesOutput`), `tools.exclude` of the
-  shell, `write_file` and `replace` (a pre-pass curl'ed Google instead of
-  `google_web_search`; a `transcribe` clip got whisper'd and the project tree
-  browsed; glossary check copies files with it) go into
+  into ffmpeg via the shell and a false "audio missing" claim) and the
+  `ToolAccess`'s `tools.exclude` (READ: the shell, `write_file`, `replace`:
+  a pre-pass curl'ed Google instead of `google_web_search`, a `transcribe`
+  clip got whisper'd and the project tree browsed, glossary check copies
+  files with it; NONE: every built-in gemini-cli 0.63.0 registers, a list to
+  recheck after an upgrade) go into
   `<workdir>/.gemini/settings.json`, read at `session/new`. Model ids are
   gemini-cli's (`gemini-3.1-pro-preview`, not agy's `gemini-3.1-pro`); with
   media attached, an unknown id or an oversized request ends with
@@ -167,8 +180,8 @@ only a defect's resends, and a video is never resent.
   (like codex's `--ignore-user-config`: the user's own settings, MCP servers
   and CLAUDE.md never reach a grill session), our one-paragraph
   `SYSTEM_PROMPT` (batch independent tool calls in one turn), `tools` =
-  Read/Grep/Glob/WebSearch/WebFetch (+ Write/Edit/Bash only with `writes_files`)
-  with `ENABLE_TOOL_SEARCH=false` (the default set inflated every prompt and hid
+  Read/Grep/Glob/WebSearch/WebFetch (+ Write/Edit/Bash for WRITE; none for
+  NONE) with `ENABLE_TOOL_SEARCH=false` (the default set inflated every prompt and hid
   MCP/web tools behind ToolSearch turns), `max_buffer_size` 64 MiB (inline
   `get_frames` stills passed the 1 MiB line cap), base64 image blocks,
   `output_format`, `resume=`.
@@ -195,7 +208,7 @@ only a defect's resends, and a video is never resent.
   it (a resume resends attached audio, and a resumed gemini shifted a whole
   chunk by one index). The handoff role then runs the task with the
   handoff's `instructions` (the no-audio rendition) and `add_dirs` (default
-  none: the task's often exist only to reach the audio), no audio, the same
+  none: the task's often exist only to reach the audio), no media with sound, the same
   prompt + `prompt.handoff_section(failed output, failure)`, images, tools,
   output and validator, in `core.paths.handoff_path` (`session_fix/`) with
   its own attempts and in-session repairs. Both roles are checked before any
@@ -250,8 +263,8 @@ has it watched as a `TextOutput` session of role `transcribe` (`agent_tools`
 builds its own one-role `AgentRunner` from the manifest's `model`/
 `timeout_s`, with its own 4 slots outside `max_concurrent`; the CLI stays in
 the caller's process tree and needs the caller's env, e.g. gemini's
-`GOOGLE_CLOUD_PROJECT`; its cwd is the span's empty `work/`, so the model
-finds no clip to process); one call per span at a time, and a kept
+`GOOGLE_CLOUD_PROJECT`; its cwd is the span's empty `work/` and its
+`ToolAccess` NONE, so the model can only watch the clip); one call per span at a time, and a kept
 `transcript.txt` answers again without a session; the caller's tool
 timeout bounds a call. xAI STT was tried as an
 engine and dropped (it loses shouted and overlapping speech, see

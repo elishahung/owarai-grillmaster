@@ -9,10 +9,17 @@ request lines whose meaning is already clear.
 
 - Ask for the blocks in question plus a few seconds either side (from the
   `start` column), usually 10–60 s; request several spans in one turn.
-- The transcript is a second hearing, not ground truth: it can mishear
-  too, and it carries no speaker labels or timestamps. A reading that the
-  transcript and the context (or a frame, or CC) agree on outranks `ja` and
-  is enough to fix the line; when the transcript says what `ja` says, `ja`
-  stands.
+- The transcript is a second hearing, not ground truth: it mishears too,
+  most on shouted, overlapping or unclear lines, and it carries no speaker
+  labels or timestamps.
+  - When it says what `ja` says, `ja` stands.
+  - When it reads differently, fix the line only if something independent
+    backs the new reading: a frame or caption, CC, a source, or a second
+    `transcribe` of the span shifted by a few seconds that reads the same.
+    A real mishearing also sounds like what `ja` wrote; a reading that does
+    not is suspect.
+  - When two hearings disagree, or only one transcript and your sense of
+    the context back the new reading, leave the line and name it in
+    `summary`.
 - Cite it in `evidence` as `transcribe 812.0–845.5s:「…」`, quoting the
   decisive words.

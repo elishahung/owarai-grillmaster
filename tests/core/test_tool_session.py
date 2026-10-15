@@ -132,7 +132,6 @@ def _listen(root: Path, **overrides: Any) -> ListenTool:
         "clips_dir": root / "work" / "12_proofread" / "listen",
         "model": "gemini/gemini-3.8-flash/low",
         "timeout_s": 600.0,
-        "window": (0.0, None),
         "max_span_s": 300.0,
     }
     fields.update(overrides)
@@ -153,7 +152,6 @@ def test_listen_is_allowed_with_its_config(tmp_path: Path):
     "overrides",
     [
         {"model": "gemini-3.8-flash"},
-        {"window": (5.0, 1.0)},
         {"max_span_s": 0.0},
         {"timeout_s": -1.0},
     ],

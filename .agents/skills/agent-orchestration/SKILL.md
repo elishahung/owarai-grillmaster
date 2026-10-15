@@ -76,7 +76,8 @@ and gemini have AUDIO_INPUT, only codex IMAGE_GENERATION. Required =
 `task.requires` (what inputs cannot imply: IMAGE_GENERATION for cover,
 WEB_SEARCH for prepass/titles/date research) + derived: schema→SCHEMA_OUTPUT,
 `max_repairs > 0`→RESUME, images→IMAGE_INPUT, audio→AUDIO_INPUT, tools→MCP,
-frames tool on a `NEXT_MESSAGE` backend→RESUME + IMAGE_INPUT.
+frames tool on a `NEXT_MESSAGE` backend→RESUME + IMAGE_INPUT; a `listen`
+tool's own model must have `LISTEN_REQUIRES` (AUDIO_INPUT + RESUME).
 Stages check `runner.capabilities(role)` (`accepts_audio`) before adding audio.
 
 ## Adapters (`adapters/`, loaded lazily by `AdapterRegistry`)
@@ -148,7 +149,10 @@ only a defect's resends.
   user's `~/.gemini` settings and `GEMINI.md` still load.
 - **codex**: `codex exec --json … -`, `--ignore-user-config`, sandbox bypassed,
   `--image` on the start turn only, `--output-schema` (last `agent_message`),
-  `-c mcp_servers.grill.*`, `-c tools.web_search=true` only when required.
+  `-c mcp_servers.grill.*` (codex strips the MCP server's env, so
+  `env_vars` names every variable of the grill process; `tool_timeout_sec`
+  = the turn timeout, default 60 s), `-c tools.web_search=true` only when
+  required.
   `exec resume <thread>` has no `--cd`: the process cwd is the workdir. No
   `--ephemeral` (resume needs the stored thread), so sessions accumulate in
   `~/.codex/sessions`. `--ignore-user-config` skips only `config.toml`: the
@@ -235,13 +239,14 @@ returned as MCP image content (with `pending_frames`: text only, paths appended
 to that file). `check_srt(path)`: skeleton check of an
 absolute path against `reference_srt` → `VALID` / `INVALID` + problems.
 `listen(start, end)` (`listen.py`, async: parallel calls overlap): cuts
-≤ `max_span_s` of `audio` into `<clips_dir>/<start>-<end>/clip.ogg` and
-transcribes it as a `TextOutput` session of role `listen` (`agent_tools`
+≤ `max_span_s` anywhere in `audio` into `<clips_dir>/<start>-<end>/clip.ogg`
+and transcribes it as a `TextOutput` session of role `listen` (`agent_tools`
 builds its own one-role `AgentRunner` from the manifest's `model`/
-`timeout_s`; the CLI stays in the caller's process tree; the caller's MCP
-env must carry what that CLI needs, e.g. gemini's `GOOGLE_CLOUD_PROJECT`,
-which codex strips); a kept `transcript.txt` answers again without a
-session; the caller's tool timeout bounds a call. xAI STT was tried as an
+`timeout_s`, with its own 4 slots outside `max_concurrent`; the CLI stays in
+the caller's process tree and needs the caller's env, e.g. gemini's
+`GOOGLE_CLOUD_PROJECT`); one call per span at a time, and a kept
+`transcript.txt` answers again without a session; the caller's tool
+timeout bounds a call. xAI STT was tried as an
 engine and dropped (it loses shouted and overlapping speech, see
 project-architecture `references/asr-provider-evaluation.md`).
 `agents/prompt.py` lists the tools (with the window); stages add guidance via

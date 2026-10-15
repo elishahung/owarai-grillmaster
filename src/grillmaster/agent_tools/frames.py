@@ -17,8 +17,8 @@ from mcp.server.fastmcp.exceptions import ToolError
 from mcp.server.fastmcp.utilities.types import Image
 from mcp.types import ImageContent, TextContent
 
+from grillmaster.agent_tools._media import media_duration
 from grillmaster.core.tool_session import leave_pending_frames
-from grillmaster.media import probe
 from grillmaster.media.errors import MediaError
 from grillmaster.media.frames import extract_frames
 
@@ -116,7 +116,4 @@ class FrameGrabber:
     @cached_property
     def _video_duration(self) -> float:
         """Probed on first use; a failed probe is retried on the next call."""
-        try:
-            return probe.duration(self._runner, self._config.video)
-        except MediaError as error:
-            raise ToolError(str(error)) from error
+        return media_duration(self._runner, self._config.video)

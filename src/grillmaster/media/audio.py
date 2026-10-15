@@ -10,6 +10,8 @@ from __future__ import annotations
 from itertools import pairwise
 from typing import TYPE_CHECKING
 
+from loguru import logger
+
 from grillmaster.core.fs import partial_path
 from grillmaster.core.timecode import TimeRange
 from grillmaster.media.ffmpeg import ffmpeg, ffprobe
@@ -63,6 +65,14 @@ def extract_audio_segment(
         output,
         timeout=_SEGMENT_TIMEOUT_S,
     )
+
+
+def slice_audio(runner: FfmpegRunner, source: Path, out: Path, span: TimeRange) -> None:
+    """Cut `span` of `source` to `out`, unless `out` already exists."""
+    if out.exists():
+        return
+    logger.debug(f"Extracting audio {span.start:.3f}-{span.end:.3f}s to {out}")
+    extract_audio_segment(runner, source, out, span)
 
 
 def find_audio_gaps(runner: FfmpegRunner, path: Path) -> list[TimeRange]:

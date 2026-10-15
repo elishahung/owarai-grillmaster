@@ -132,6 +132,10 @@ PENDING_FRAMES_FILE = "frames_pending.txt"
 # asking is stuck, not still reading.
 MAX_FRAME_TURNS = 8
 
+# What the `listen` tool's own session needs (`agent_tools.listen`: it hears
+# a clip and may take one repair round).
+LISTEN_REQUIRES = frozenset({Capability.AUDIO_INPUT, Capability.RESUME})
+
 # Set while the current context holds a slot; a nested `run` would wait for
 # a slot its own caller holds.
 _holding_slot: contextvars.ContextVar[bool] = contextvars.ContextVar(
@@ -417,6 +421,16 @@ class AgentRunner:
                 f"{task.name}: {spec.backend} cannot provide "
                 f"{', '.join(missing)} (role {task.role}, spec {spec})"
             )
+        if task.tools is not None and task.tools.listen is not None:
+            listen = task.tools.listen.model
+            missing = sorted(
+                LISTEN_REQUIRES - self._adapters(listen.backend).capabilities
+            )
+            if missing:
+                raise AgentConfigError(
+                    f"{task.name}: the listen tool's {listen.backend} cannot "
+                    f"provide {', '.join(missing)} (spec {listen})"
+                )
         absent = [
             str(path) for path in (*task.images, *task.audio) if not path.is_file()
         ]

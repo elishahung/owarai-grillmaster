@@ -20,7 +20,7 @@ from loguru import logger
 
 from grillmaster.core.model_spec import Role
 from grillmaster.core.stage_key import StageKey
-from grillmaster.core.tool_session import ToolSession
+from grillmaster.core.tool_session import ListenTool, ToolSession
 from grillmaster.glossary.fixed import (
     FIXED_GLOSSARY_GUIDE_PATH,
     FIXED_GLOSSARY_PATH,
@@ -30,7 +30,6 @@ from grillmaster.postprocess.proofread import ProofreadInputs, proofread_subtitl
 from grillmaster.stages._common import (
     flag_or_feature,
     frames_tool,
-    listen_tool,
     official_srt,
     program_rules,
     role_params,
@@ -39,7 +38,36 @@ from grillmaster.stages._common import (
 from grillmaster.stages.base import StageDef, require
 
 if TYPE_CHECKING:
+    from grillmaster.config.model import AppConfig
+    from grillmaster.core.model_spec import ModelSpec
     from grillmaster.stages.base import StageContext
+
+
+# The longest span one `listen` call transcribes.
+LISTEN_MAX_SPAN_S = 300.0
+
+
+def listen_spec(config: AppConfig) -> ModelSpec | None:
+    """The `listen` role's model with `[features] proofread_listen`, else `None`."""
+    if not config.features.proofread_listen:
+        return None
+    return config.agents.roles.spec(Role.LISTEN)
+
+
+def listen_tool(ctx: StageContext) -> ListenTool | None:
+    """`listen` over `work/05_audio/audio.ogg` into `work/12_proofread/listen/`
+    when enabled; the runner refuses a listen model that cannot hear audio
+    before the proofread takes a slot."""
+    spec = listen_spec(ctx.config)
+    if spec is None:
+        return None
+    return ListenTool(
+        audio=require(ctx.layout.audio, StageKey.AUDIO),
+        clips_dir=ctx.layout.proofread_listen_dir,
+        model=spec,
+        timeout_s=ctx.config.agents.timeout_s,
+        max_span_s=LISTEN_MAX_SPAN_S,
+    )
 
 
 def _run(ctx: StageContext) -> str:
@@ -87,11 +115,7 @@ def _run(ctx: StageContext) -> str:
         project_root=layout.root,
         frames=frames_tool(ctx, layout.proofread_frames_dir),
         check_srt=None,
-        listen=(
-            listen_tool(ctx, layout.proofread_listen_dir)
-            if ctx.config.features.proofread_listen
-            else None
-        ),
+        listen=listen_tool(ctx),
     )
     answer = proofread_subtitles(
         inputs, ctx.agents, session_dir=ctx.session_dir(), tools=tools
@@ -111,10 +135,6 @@ STAGE = StageDef(
     enabled=flag_or_feature("proofread"),
     params=role_params(
         Role.PROOFREAD,
-        listen=lambda config: (
-            str(config.agents.roles.spec(Role.LISTEN))
-            if config.features.proofread_listen
-            else "off"
-        ),
+        listen=lambda config: str(listen_spec(config) or "off"),
     ),
 )

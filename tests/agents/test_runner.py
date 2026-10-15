@@ -64,6 +64,7 @@ from grillmaster.core.model_spec import Backend, Effort, ModelSpec, Role
 from grillmaster.core.process import ABORT, ProcessAbortedError, kill_all
 from grillmaster.core.tool_session import (
     FramesTool,
+    ListenTool,
     ToolSession,
     leave_pending_frames,
 )
@@ -320,6 +321,27 @@ def test_frames_for_the_next_message_need_a_resumed_turn_with_images(
     )
     with pytest.raises(AgentConfigError, match=str(missing)):
         make_runner(adapter).run(task)
+
+
+@pytest.mark.parametrize("missing", [Capability.AUDIO_INPUT, Capability.RESUME])
+def test_a_listen_tool_that_cannot_hear_fails_before_any_session(
+    missing: Capability, tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    adapter = FakeAdapter(capabilities=frozenset(Capability) - {missing})
+    listen = ListenTool(
+        audio=tmp_path / "audio.ogg",
+        clips_dir=tmp_path / "listen",
+        model=ModelSpec(adapter.backend, "hears", Effort.LOW),
+        timeout_s=60.0,
+        max_span_s=300.0,
+    )
+    tools = ToolSession(
+        project_root=tmp_path, frames=None, check_srt=None, listen=listen
+    )
+    task = make_task(tmp_path, TextOutput(), tools=tools, max_repairs=0)
+    with pytest.raises(AgentConfigError, match=f"listen tool.*{missing}"):
+        make_runner(adapter).run(task)
+    assert adapter.calls == []
 
 
 def test_preflight_failure_happens_before_any_session(

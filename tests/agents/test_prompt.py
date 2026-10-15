@@ -9,6 +9,7 @@ from grillmaster.agents.prompt import (
     handoff_section,
     tools_section,
 )
+from grillmaster.core.model_spec import ModelSpec
 from grillmaster.core.tool_session import (
     FramesTool,
     ListenTool,
@@ -64,21 +65,18 @@ def test_the_frames_line_says_how_the_images_arrive(
     assert expected in tools_section(session, delivery)
 
 
-def test_the_listen_line_states_window_and_limit(tmp_path: Path):
+def test_the_listen_line_leaves_the_limits_to_the_tool(tmp_path: Path):
     listen = ListenTool(
         audio=tmp_path / "audio.ogg",
         clips_dir=tmp_path / "listen",
-        model="gemini/gemini-3.8-flash/low",
+        model=ModelSpec.parse("gemini/gemini-3.8-flash/low"),
         timeout_s=60.0,
-        window=(0.0, None),
         max_span_s=300.0,
     )
     session = ToolSession(
         project_root=tmp_path, frames=None, check_srt=None, listen=listen
     )
-    assert tools_section(session).endswith(
-        "（時間需介於 0.000 秒與音訊結尾之間，每次最長 300 秒）。"
-    )
+    assert tools_section(session).endswith("以純文字回傳日文逐字稿。")
 
 
 @pytest.mark.parametrize(

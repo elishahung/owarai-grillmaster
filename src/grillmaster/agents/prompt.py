@@ -3,11 +3,10 @@
 Stages write what to do; this module adds how to reach the grill tools,
 how to open media on backends that need `view_file`, the message that
 delivers requested frames on backends whose tool results cannot carry
-images, how to submit a
-schema answer on backends that take it through a `finish` tool or as the
-final message, the message continuing a turn the server cut
-off, and the repair-round message. Detailed limits
-stay in each MCP tool's own description.
+images, how to submit a schema answer on backends that take it through a
+`finish` tool or as the final message, the message continuing a turn the
+server cut off, and the repair-round message. Detailed limits stay in each
+MCP tool's own description.
 """
 
 from __future__ import annotations
@@ -99,12 +98,9 @@ def tools_section(
             "（區塊數、編號、時間碼、非空），回傳 VALID 或錯誤清單。"
         )
     if tools.listen is not None:
-        start, end = tools.listen.window
-        until = f"{end:.3f} 秒" if end is not None else "音訊結尾"
         lines.append(
             "- `listen(start, end)`：由另一個聽得到聲音的模型重新聽寫這段音訊，"
-            "以純文字回傳日文逐字稿（時間需介於 "
-            f"{start:.3f} 秒與{until}之間，每次最長 {tools.listen.max_span_s:g} 秒）。"
+            "以純文字回傳日文逐字稿。"
         )
     if not lines:
         return ""

@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from tests.fakes import FakeAgentRunner, make_blocks, make_briefing
 
-from grillmaster.agents.errors import AgentConfigError
 from grillmaster.config.model import validate_config
 from grillmaster.core.briefing import Briefing
 from grillmaster.core.json_artifact import read_model, write_model
+from grillmaster.core.model_spec import ModelSpec
 from grillmaster.core.srt import read_srt_file, write_srt_file
 from grillmaster.core.stage_key import StageKey
 from grillmaster.postprocess.proofread import (
@@ -131,22 +131,29 @@ def test_the_listen_feature_adds_the_listen_tool(
     assert tools.listen is not None
     assert tools.listen.audio == project.audio
     assert tools.listen.clips_dir == project.proofread_listen_dir
-    assert tools.listen.model == "gemini/gemini-3.8-flash/low"
+    assert tools.listen.model == ModelSpec.parse("gemini/gemini-3.8-flash/low")
     assert tools.listen.timeout_s == 40 * 60.0
     assert "`listen(start, end)`" in agents.task(TASK_NAME).prompt
 
 
 @pytest.mark.parametrize(
-    "config_data",
-    [{**LISTEN_ON, "roles": {"listen": "codex/gpt-5.5/low"}}],
-    indirect=True,
+    ("features", "expected"),
+    [({}, "off"), ({"proofread_listen": True}, "gemini/gemini-3.8-flash/low")],
 )
-def test_a_listen_role_that_cannot_hear_fails_first(
-    make_context: MakeContext, project: ProjectLayout, agents: FakeAgentRunner
+def test_the_params_record_the_listen_model(
+    tmp_path: Path,
+    roles: dict[str, str],
+    features: dict[str, bool],
+    expected: str,
 ):
-    with pytest.raises(AgentConfigError, match="cannot hear audio"):
-        proofread.STAGE.run(make_context(StageKey.PROOFREAD))
-    assert agents.tasks == []
+    config = validate_config(
+        {
+            "agents": {"roles": {**roles, "listen": "gemini/gemini-3.8-flash/low"}},
+            "features": features,
+        },
+        root=tmp_path,
+    )
+    assert proofread.STAGE.params(config)["listen"] == expected
 
 
 def test_without_the_feature_there_is_no_listen_tool(

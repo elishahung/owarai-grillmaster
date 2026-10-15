@@ -1,6 +1,5 @@
 """Glue several stages share: the program's rules, the yt-dlp request for the
-source, the translation inputs, the frame and listen tools, and definition
-helpers."""
+source, the translation inputs, the frame tool, and definition helpers."""
 
 from __future__ import annotations
 
@@ -8,14 +7,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
 from grillmaster.agents.adapters.base import Capability
-from grillmaster.agents.errors import AgentConfigError
 from grillmaster.config.programs import resolve_program_rules
 from grillmaster.core.briefing import Briefing
 from grillmaster.core.json_artifact import read_model
-from grillmaster.core.model_spec import Role
 from grillmaster.core.srt import read_srt_file
 from grillmaster.core.stage_key import StageKey
-from grillmaster.core.tool_session import FramesTool, ListenTool
+from grillmaster.core.tool_session import FramesTool
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.sources.registry import source_platform
 from grillmaster.sources.ytdlp import shared_options
@@ -31,6 +28,7 @@ if TYPE_CHECKING:
     from grillmaster.agents.runner import AgentRunner
     from grillmaster.config.model import AppConfig
     from grillmaster.config.programs import ProgramRules
+    from grillmaster.core.model_spec import Role
     from grillmaster.core.srt import SrtBlock
     from grillmaster.project.state import SourceInfo
     from grillmaster.sources.base import SourcePlatform
@@ -127,29 +125,6 @@ def frames_tool(
         frames_dir=frames_dir,
         window=window,
         max_side=ctx.config.translate.frame_max_side,
-    )
-
-
-# The longest span one `listen` call transcribes.
-LISTEN_MAX_SPAN_S = 300.0
-
-
-def listen_tool(ctx: StageContext, clips_dir: Path) -> ListenTool:
-    """`listen` over `work/05_audio/audio.ogg`, transcribed by the `listen`
-    role into `clips_dir`; `AgentConfigError` when that backend cannot hear
-    audio (checked now, before the calling agent takes a slot)."""
-    spec = ctx.config.agents.roles.spec(Role.LISTEN)
-    if not accepts_audio(ctx.agents, Role.LISTEN):
-        raise AgentConfigError(
-            f"the listen role ({spec}) cannot hear audio; use an agy or gemini model"
-        )
-    return ListenTool(
-        audio=require(ctx.layout.audio, StageKey.AUDIO),
-        clips_dir=clips_dir,
-        model=str(spec),
-        timeout_s=ctx.config.agents.timeout_minutes * 60.0,
-        window=(0.0, None),
-        max_span_s=LISTEN_MAX_SPAN_S,
     )
 
 

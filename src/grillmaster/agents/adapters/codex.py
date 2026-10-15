@@ -12,7 +12,10 @@ Facts this module is built on (codex-cli 0.160.0):
   the workdir as the process cwd and resume repeats model, effort, schema,
   web search and MCP flags.
 * MCP servers do not inherit the environment, so the tool-session manifest
-  path travels in the server's argv.
+  path travels in the server's argv and `mcp_servers.grill.env_vars` names
+  every variable of this process for it to inherit (the `listen` tool's own
+  gemini session needs `GOOGLE_CLOUD_PROJECT`); `tool_timeout_sec` (60 s by
+  default) is raised to the turn's timeout, which a `listen` call can need.
 * `error` records also report recoverable stream retries; only a turn that
   never completes is a failure.
 """
@@ -20,6 +23,7 @@ Facts this module is built on (codex-cli 0.160.0):
 from __future__ import annotations
 
 import json
+import os
 from typing import TYPE_CHECKING, Any
 
 from grillmaster.agents import process
@@ -135,6 +139,10 @@ class CodexAdapter(PerTurnAdapter):
                 f"mcp_servers.grill.command={json.dumps(request.mcp.command)}",
                 "-c",
                 f"mcp_servers.grill.args={json.dumps(list(request.mcp.args))}",
+                "-c",
+                f"mcp_servers.grill.env_vars={json.dumps(sorted(os.environ))}",
+                "-c",
+                f"mcp_servers.grill.tool_timeout_sec={request.timeout_s:g}",
             ]
         argv.append("-")  # the prompt comes on stdin
         return argv

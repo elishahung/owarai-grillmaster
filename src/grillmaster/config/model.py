@@ -17,52 +17,18 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    PlainSerializer,
-    PlainValidator,
     StringConstraints,
     ValidationInfo,
-    WithJsonSchema,
     model_validator,
 )
 
-from grillmaster.core.model_spec import (
-    MODEL_NAME_PATTERN,
-    Backend,
-    Effort,
-    ModelSpec,
-    Role,
-)
+from grillmaster.core.model_spec import ModelSpec, ModelSpecField, Role
 from grillmaster.core.stage_key import StageKey
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
 
 _ROOT_CONTEXT_KEY = "root"
-
-
-def _parse_model_spec(value: object) -> ModelSpec:
-    if isinstance(value, ModelSpec):
-        return value
-    if isinstance(value, str):
-        return ModelSpec.parse(value)
-    raise ValueError("model spec must be a 'backend/model[/effort]' string")
-
-
-# `"backend/model[/effort]"` in TOML, a `ModelSpec` in code.
-ModelSpecField = Annotated[
-    ModelSpec,
-    PlainValidator(_parse_model_spec),
-    PlainSerializer(str, return_type=str),
-    WithJsonSchema(
-        {
-            "type": "string",
-            "pattern": (
-                f"^({'|'.join(Backend)})/{MODEL_NAME_PATTERN}(/({'|'.join(Effort)}))?$"
-            ),
-            "description": "backend/model[/effort]; effort defaults to high.",
-        }
-    ),
-]
 
 
 def _resolve_path(value: Path, info: ValidationInfo) -> Path:
@@ -169,6 +135,11 @@ class AgentsConfig(BaseModel):
         description="Agent processes one grill process runs at once across fan-out stages (chunks, chat batches); several grill processes each get this many.",
     )
     roles: AgentRoles
+
+    @property
+    def timeout_s(self) -> float:
+        """`timeout_minutes` in seconds."""
+        return self.timeout_minutes * 60.0
 
 
 class AsrConfig(BaseModel):

@@ -66,8 +66,8 @@ fields equal the explained ones. Python then writes `answer.json`,
 `report.md` (fixes + Python-computed briefing diff), `proofread.srt`
 (checked + fixes) and `briefing.json` only when changed (both deleted at
 stage start). With `[features] proofread_listen` the
-session also gets `listen` (role `listen`, must hear audio, checked before
-the slot; spans under `work/12_proofread/listen/`) plus
+session also gets `listen` (role `listen`; the runner refuses a model that
+cannot hear audio before the slot; spans under `work/12_proofread/listen/`) plus
 `proofread_listen.md`, for ASR-suspect lines. Finalize reads
 `layout.effective_subtitles()` (proofread, else checked); a proofread reached after finalize ran is recorded as skipped (it
 would never be delivered) with a warning naming `grill reset --from proofread`.

@@ -64,8 +64,6 @@ if TYPE_CHECKING:
     from grillmaster.project.state import ProjectState
     from grillmaster.stages.base import RunOptions, StageDef, StepOutcome
 
-_SECONDS_PER_MINUTE = 60
-
 
 def run_project(
     loaded: LoadedConfig,
@@ -230,7 +228,7 @@ def _agent_runner(loaded: LoadedConfig, events: EventBus) -> AgentRunner:
         settings.roles.specs(),
         AdapterRegistry(),
         max_concurrent=settings.max_concurrent,
-        timeout_s=settings.timeout_minutes * _SECONDS_PER_MINUTE,
+        timeout_s=settings.timeout_s,
         events=events,
     )
 

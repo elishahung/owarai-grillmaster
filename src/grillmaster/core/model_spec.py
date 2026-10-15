@@ -3,7 +3,9 @@
 Lives in core because both `config` (parses it from `grill.toml`) and
 `agents` (resolves adapters from it) need it, and `agents` may not import
 `config`. Each adapter maps `Effort` onto its own CLI vocabulary. `Role` is
-the key `grill.toml` `[agents.roles]` maps onto a `ModelSpec`.
+the key `grill.toml` `[agents.roles]` maps onto a `ModelSpec`;
+`ModelSpecField` is the pydantic field written as the spec string
+(`grill.toml`, the tool-session manifest).
 """
 
 from __future__ import annotations
@@ -11,6 +13,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Annotated
+
+from pydantic import PlainSerializer, PlainValidator, WithJsonSchema
 
 
 class Backend(StrEnum):
@@ -95,3 +100,28 @@ class ModelSpec:
 
     def __str__(self) -> str:
         return f"{self.backend}/{self.model}/{self.effort}"
+
+
+def _parse_model_spec(value: object) -> ModelSpec:
+    if isinstance(value, ModelSpec):
+        return value
+    if isinstance(value, str):
+        return ModelSpec.parse(value)
+    raise ValueError("model spec must be a 'backend/model[/effort]' string")
+
+
+# `"backend/model[/effort]"` when serialized, a `ModelSpec` in code.
+ModelSpecField = Annotated[
+    ModelSpec,
+    PlainValidator(_parse_model_spec),
+    PlainSerializer(str, return_type=str),
+    WithJsonSchema(
+        {
+            "type": "string",
+            "pattern": (
+                f"^({'|'.join(Backend)})/{MODEL_NAME_PATTERN}(/({'|'.join(Effort)}))?$"
+            ),
+            "description": "backend/model[/effort]; effort defaults to high.",
+        }
+    ),
+]

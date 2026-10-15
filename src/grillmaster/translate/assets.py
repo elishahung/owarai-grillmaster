@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from grillmaster.media import probe
-from grillmaster.media.audio import extract_audio_segment
+from grillmaster.media.audio import slice_audio
 from grillmaster.media.errors import MediaError
 from grillmaster.media.frames import extract_frames
 
@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from grillmaster.core.srt import SrtBlock
-    from grillmaster.core.timecode import TimeRange
     from grillmaster.media.ffmpeg import FfmpegRunner
     from grillmaster.translate.chunker import Chunk
 
@@ -127,14 +126,6 @@ def prepare_chunk_assets(
         audio = audio_out
     frames = extract_available_frames(runner, video, times, frames_dir, max_side)
     return MediaAssets(frames=frames, audio=audio)
-
-
-def slice_audio(runner: FfmpegRunner, source: Path, out: Path, span: TimeRange) -> None:
-    """Cut `span` of `source` to `out`, unless `out` already exists."""
-    if out.exists():
-        return
-    logger.debug(f"Extracting audio {span.start:.3f}-{span.end:.3f}s to {out}")
-    extract_audio_segment(runner, source, out, span)
 
 
 def extract_available_frames(

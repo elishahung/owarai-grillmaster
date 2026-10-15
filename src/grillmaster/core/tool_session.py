@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 from pydantic import model_validator
 
 from grillmaster.core.json_artifact import read_model, write_model
-from grillmaster.core.model_spec import ModelSpec
+from grillmaster.core.model_spec import ModelSpecField
 from grillmaster.core.models import FrozenModel
 
 if TYPE_CHECKING:
@@ -91,23 +91,18 @@ class ListenTool(FrozenModel):
 
     audio: Path
     clips_dir: Path
-    model: str
+    model: ModelSpecField
     timeout_s: float
-    # Seconds; `None` as the end means "to the end of the audio".
-    window: tuple[float, float | None]
+    # The longest span one call transcribes, anywhere in the audio.
     max_span_s: float
 
     @model_validator(mode="after")
-    def _check_ranges(self) -> ListenTool:
-        start, end = self.window
-        if start < 0 or (end is not None and end < start):
-            raise ValueError(f"Invalid tool window: {self.window}")
+    def _check_limits(self) -> ListenTool:
         if self.max_span_s <= 0 or self.timeout_s <= 0:
             raise ValueError(
                 f"max_span_s and timeout_s must be positive: "
                 f"{self.max_span_s}, {self.timeout_s}"
             )
-        ModelSpec.parse(self.model)
         return self
 
 

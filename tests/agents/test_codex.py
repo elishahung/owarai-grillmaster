@@ -31,7 +31,15 @@ def _configs(argv: list[str]) -> list[str]:
     return [argv[i + 1] for i, arg in enumerate(argv) if arg == "-c"]
 
 
-def test_start_argv(make_request: Callable[..., TurnRequest], tmp_path: Path):
+def test_start_argv(
+    make_request: Callable[..., TurnRequest],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        "grillmaster.agents.adapters.codex.os.environ",
+        {"PATH": "p", "GOOGLE_CLOUD_PROJECT": "g"},
+    )
     image = tmp_path / "poster.jpg"
     spawn = FakeSpawn(FakeProcess(fixture_lines("codex", "mcp_schema")))
     request = make_request(
@@ -66,6 +74,8 @@ def test_start_argv(make_request: Callable[..., TurnRequest], tmp_path: Path):
             'mcp_servers.grill.args=["-m", "grillmaster.agent_tools", "--session", '
             '"C:\\\\s\\\\tools.json"]'
         ),
+        'mcp_servers.grill.env_vars=["GOOGLE_CLOUD_PROJECT", "PATH"]',
+        f"mcp_servers.grill.tool_timeout_sec={request.timeout_s:g}",
     ]
     schema_file = Path(_value(argv, "--output-schema"))
     assert json.loads(schema_file.read_text(encoding="utf-8")) == {"type": "object"}

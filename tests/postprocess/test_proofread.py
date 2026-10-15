@@ -13,7 +13,7 @@ from grillmaster.agents.schema import strict_json_schema
 from grillmaster.agents.task import SchemaOutput
 from grillmaster.core.briefing import Briefing, SegmentSummary, TermMapping
 from grillmaster.core.json_artifact import read_model, write_model
-from grillmaster.core.model_spec import Role
+from grillmaster.core.model_spec import ModelSpec, Role
 from grillmaster.core.srt import SrtBlock, read_srt_file, write_srt_file
 from grillmaster.core.tool_session import ListenTool, ToolSession
 from grillmaster.glossary.fixed import (
@@ -400,9 +400,8 @@ def test_the_listen_tool_brings_its_guidance(
     listen = ListenTool(
         audio=tmp_path / "audio.ogg",
         clips_dir=tmp_path / "listen",
-        model="gemini/gemini-3.8-flash/low",
+        model=ModelSpec.parse("gemini/gemini-3.8-flash/low"),
         timeout_s=60.0,
-        window=(0.0, None),
         max_span_s=300.0,
     )
     assert "`listen(start, end)`" not in build(tools)

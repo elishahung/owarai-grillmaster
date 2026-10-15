@@ -51,6 +51,17 @@ def test_proofread_falls_back_to_postprocess(roles: dict[str, str]):
     )
 
 
+def test_listen_falls_back_to_chunk(roles: dict[str, str]):
+    agent_roles = AgentRoles.model_validate(roles)
+    assert agent_roles.spec(Role.LISTEN) == agent_roles.chunk
+    explicit = AgentRoles.model_validate(
+        {**roles, "listen": "gemini/gemini-3.8-flash/low"}
+    )
+    assert explicit.spec(Role.LISTEN) == ModelSpec(
+        Backend.GEMINI, "gemini-3.8-flash", Effort.LOW
+    )
+
+
 def test_explicit_chat_spec_wins(roles: dict[str, str]):
     agent_roles = AgentRoles.model_validate({**roles, "chat": "claude/opus/max"})
     assert agent_roles.spec(Role.CHAT) == ModelSpec(Backend.CLAUDE, "opus", Effort.MAX)

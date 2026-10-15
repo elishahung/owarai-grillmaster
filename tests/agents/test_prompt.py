@@ -6,12 +6,14 @@ import pytest
 
 from grillmaster.agents.adapters.base import ToolImageDelivery
 from grillmaster.agents.prompt import (
-    AUDIO_UNAVAILABLE_MARKER,
-    audio_unavailable,
     handoff_section,
     tools_section,
 )
-from grillmaster.core.tool_session import FramesTool, ToolSession
+from grillmaster.core.tool_session import (
+    FramesTool,
+    ListenTool,
+    ToolSession,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -24,7 +26,9 @@ def _frames_session(tmp_path: Path, window: tuple[float, float | None]) -> ToolS
         window=window,
         max_side=640,
     )
-    return ToolSession(project_root=tmp_path, frames=frames, check_srt=None)
+    return ToolSession(
+        project_root=tmp_path, frames=frames, check_srt=None, listen=None
+    )
 
 
 @pytest.mark.parametrize(
@@ -60,24 +64,21 @@ def test_the_frames_line_says_how_the_images_arrive(
     assert expected in tools_section(session, delivery)
 
 
-@pytest.mark.parametrize(
-    ("text", "expected"),
-    [
-        pytest.param(
-            f"{AUDIO_UNAVAILABLE_MARKER}: only the file name", "only the file name"
-        ),
-        pytest.param(
-            f"`{AUDIO_UNAVAILABLE_MARKER}：只有檔名`", "只有檔名", id="fullwidth"
-        ),
-        pytest.param(f"Sorry.\n{AUDIO_UNAVAILABLE_MARKER}", "", id="bare-line"),
-        pytest.param(
-            f"I will not write {AUDIO_UNAVAILABLE_MARKER} here", None, id="inline"
-        ),
-        pytest.param("I heard everything.", None, id="absent"),
-    ],
-)
-def test_audio_unavailable_reads_only_a_marker_line(text: str, expected: str | None):
-    assert audio_unavailable(text) == expected
+def test_the_listen_line_states_window_and_limit(tmp_path: Path):
+    listen = ListenTool(
+        audio=tmp_path / "audio.ogg",
+        clips_dir=tmp_path / "listen",
+        model="gemini/gemini-3.8-flash/low",
+        timeout_s=60.0,
+        window=(0.0, None),
+        max_span_s=300.0,
+    )
+    session = ToolSession(
+        project_root=tmp_path, frames=None, check_srt=None, listen=listen
+    )
+    assert tools_section(session).endswith(
+        "（時間需介於 0.000 秒與音訊結尾之間，每次最長 300 秒）。"
+    )
 
 
 @pytest.mark.parametrize(

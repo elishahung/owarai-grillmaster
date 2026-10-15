@@ -320,6 +320,11 @@ class ProjectLayout:
         return self.work_dir(StageKey.PROOFREAD) / "frames"
 
     @property
+    def proofread_listen_dir(self) -> Path:
+        """The `listen` tool's clips, transcripts and sessions, one dir per span."""
+        return self.work_dir(StageKey.PROOFREAD) / "listen"
+
+    @property
     def chat_batches_dir(self) -> Path:
         return self.work_dir(StageKey.CHAT_TRANSLATE) / "batches"
 

@@ -4,7 +4,7 @@ description: >-
   The agent layer `src/grillmaster/agents/` (AgentTask/AgentJob, AgentRunner,
   strict schema, repair loop, errors, events, `process.py`,
   agy/gemini/codex/claude adapters) and the MCP tool server `src/grillmaster/agent_tools/`
-  (`get_frames`, `check_srt`, `core/tool_session.py`). Read this before
+  (`get_frames`, `check_srt`, `listen`, `core/tool_session.py`). Read this before
   touching either package, adding a backend, capability or tool, or changing
   prompts, media, schema, repair, retries, concurrency or session records.
 ---
@@ -132,7 +132,7 @@ only a defect's resends.
   `gemini-2.5*`), the MCP server, `model.compressionThreshold: 1000` (a
   compression would summarize the audio away) and
   `context.includeDirectoryTree: false` (a listed `audio.ogg` lured a model
-  into ffmpeg via the shell and a false `GRILL_AUDIO_UNAVAILABLE`) and, for
+  into ffmpeg via the shell and a false "audio missing" claim) and, for
   a schema task only, `tools.exclude: [run_shell_command]` (a pre-pass
   curl'ed Google instead of `google_web_search`; file-writing tasks keep the
   shell, glossary check copies files with it) go into
@@ -198,8 +198,7 @@ only a defect's resends.
   any status), `AgentAuthError` (401 + login hint), `AgentTransientError`
   (timeout, crash, no result, a bare 429/rate limit) and its subclass
   `AgentUnavailableError` ("no capacity available": the server's shortage,
-  frequent on gemini-3.1-pro), `AgentOutputError`,
-  `AgentInputError`, `AgentCancelledError`; `classify_failure`: capacity
+  frequent on gemini-3.1-pro), `AgentOutputError`, `AgentCancelledError`; `classify_failure`: capacity
   phrase, quota phrase, then status (401
   auth, 429 transient, other 4xx `AgentConfigError`), then whole-word auth
   markers, else transient. Claude's rejected rate-limit event and
@@ -219,16 +218,11 @@ only a defect's resends.
 - Events: adapters yield `Thought`/`ToolCall`/`ToolResult`/`Message`; the
   runner emits `AgentSessionStarted` (on slot), `AgentActivity` via
   `summarize` (final message by length only) and `AgentSessionFinished`.
-- Audio-unavailable protocol (runner-owned, backend-neutral, only for tasks
-  with audio): `prompt.audio_check_section` offers a
-  `GRILL_AUDIO_UNAVAILABLE: <reason>` line; a `Message` carrying it stops the
-  turn at once → `AgentInputError` (outcome `input_error`, never repaired or
-  retried; `usage` stays empty). Exception: on an `ATTACHED` backend the
-  audio provably reached the model (gemini-3.1-pro once falsely claimed it
-  missing), so the first claim in a final message resumes with
-  `prompt.audio_recheck_message()` + the audio again (`MAX_AUDIO_RECHECKS`,
-  `audio_rechecks` in `result.json`); a second claim raises. Distinct from
-  the agy defect for audio never opened, which the adapter detects and repairs.
+- No model-side "cannot hear the audio" escape line: in ~400 archived audio
+  sessions every such claim was false (gemini, audio inline), and it failed
+  gemini-3.8-flash/low `listen` clips. Delivery is checked mechanically
+  instead: `ATTACHED` media go inline, and agy's unopened audio is an
+  adapter defect that resends it.
 
 ## MCP tools (`agent_tools/`)
 
@@ -240,6 +234,16 @@ tools with a sub-config in `ToolSession` exist; a bad manifest exits 2.
 returned as MCP image content (with `pending_frames`: text only, paths appended
 to that file). `check_srt(path)`: skeleton check of an
 absolute path against `reference_srt` → `VALID` / `INVALID` + problems.
+`listen(start, end)` (`listen.py`, async: parallel calls overlap): cuts
+≤ `max_span_s` of `audio` into `<clips_dir>/<start>-<end>/clip.ogg` and
+transcribes it as a `TextOutput` session of role `listen` (`agent_tools`
+builds its own one-role `AgentRunner` from the manifest's `model`/
+`timeout_s`; the CLI stays in the caller's process tree; the caller's MCP
+env must carry what that CLI needs, e.g. gemini's `GOOGLE_CLOUD_PROJECT`,
+which codex strips); a kept `transcript.txt` answers again without a
+session; the caller's tool timeout bounds a call. xAI STT was tried as an
+engine and dropped (it loses shouted and overlapping speech, see
+project-architecture `references/asr-provider-evaluation.md`).
 `agents/prompt.py` lists the tools (with the window); stages add guidance via
 `core.prompts.frames_guidance`. A new tool = config in `core/tool_session.py`
 (`ToolName` + sub-config) + handler module + registration in `server.py` +

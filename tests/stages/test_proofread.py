@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from tests.fakes import FakeAgentRunner, make_blocks, make_briefing
 
+from grillmaster.agents.errors import AgentConfigError
 from grillmaster.config.model import validate_config
 from grillmaster.core.briefing import Briefing
 from grillmaster.core.json_artifact import read_model, write_model
@@ -106,6 +107,58 @@ def test_proofreads_in_the_stage_directory(
     assert task.tools.frames.frames_dir == project.proofread_frames_dir
     assert task.tools.check_srt is None
     assert '"summary": "summary"' in task.prompt
+
+
+LISTEN_ON = {"features": {"proofread_listen": True}}
+
+
+@pytest.mark.parametrize(
+    "config_data",
+    [{**LISTEN_ON, "roles": {"listen": "gemini/gemini-3.8-flash/low"}}],
+    indirect=True,
+)
+def test_the_listen_feature_adds_the_listen_tool(
+    make_context: MakeContext, project: ProjectLayout, agents: FakeAgentRunner
+):
+    project.audio.parent.mkdir(parents=True)
+    project.audio.write_bytes(b"ogg")
+    agents.script[TASK_NAME] = FIX
+
+    proofread.STAGE.run(make_context(StageKey.PROOFREAD))
+
+    tools = agents.task(TASK_NAME).tools
+    assert tools is not None
+    assert tools.listen is not None
+    assert tools.listen.audio == project.audio
+    assert tools.listen.clips_dir == project.proofread_listen_dir
+    assert tools.listen.model == "gemini/gemini-3.8-flash/low"
+    assert tools.listen.timeout_s == 40 * 60.0
+    assert "`listen(start, end)`" in agents.task(TASK_NAME).prompt
+
+
+@pytest.mark.parametrize(
+    "config_data",
+    [{**LISTEN_ON, "roles": {"listen": "codex/gpt-5.5/low"}}],
+    indirect=True,
+)
+def test_a_listen_role_that_cannot_hear_fails_first(
+    make_context: MakeContext, project: ProjectLayout, agents: FakeAgentRunner
+):
+    with pytest.raises(AgentConfigError, match="cannot hear audio"):
+        proofread.STAGE.run(make_context(StageKey.PROOFREAD))
+    assert agents.tasks == []
+
+
+def test_without_the_feature_there_is_no_listen_tool(
+    make_context: MakeContext, project: ProjectLayout, agents: FakeAgentRunner
+):
+    agents.script[TASK_NAME] = FIX
+
+    proofread.STAGE.run(make_context(StageKey.PROOFREAD))
+
+    tools = agents.task(TASK_NAME).tools
+    assert tools is not None
+    assert tools.listen is None
 
 
 def test_a_corrected_briefing_becomes_the_effective_one(

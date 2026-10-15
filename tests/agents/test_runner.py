@@ -32,7 +32,6 @@ from grillmaster.agents.errors import (
     AgentCancelledError,
     AgentConfigError,
     AgentError,
-    AgentInputError,
     AgentOutputError,
     AgentQuotaError,
     AgentTransientError,
@@ -42,8 +41,6 @@ from grillmaster.agents.errors import (
 )
 from grillmaster.agents.events import Message, Thought, ToolCall, ToolResult
 from grillmaster.agents.prompt import (
-    AUDIO_UNAVAILABLE_MARKER,
-    audio_recheck_message,
     continue_message,
 )
 from grillmaster.agents.runner import (
@@ -210,6 +207,7 @@ def test_session_directory_contents(
             max_side=768,
         ),
         check_srt=None,
+        listen=None,
     )
     adapter = FakeAdapter([Turn(final=final("ok"), raw=['{"a":1}', '{"b":2}'])])
     task = make_task(tmp_path, TextOutput(), tools=tools)
@@ -558,7 +556,7 @@ def test_attached_media_are_not_listed_in_the_prompt(
 
 def _frames_tools(tmp_path: Path) -> ToolSession:
     return ToolSession(
-        project_root=tmp_path, frames=frames_tool(tmp_path), check_srt=None
+        project_root=tmp_path, frames=frames_tool(tmp_path), check_srt=None, listen=None
     )
 
 
@@ -691,86 +689,6 @@ def test_a_prompt_backend_answer_is_read_from_its_final_message(
     assert result.output == Answer(color="red")
 
 
-def test_the_audio_unavailable_marker_stops_the_session(
-    tmp_path: Path,
-    make_runner: Callable[..., AgentRunner],
-    recording_sink: RecordingSink,
-):
-    audio = tmp_path / "chunk.ogg"
-    audio.write_bytes(b"x")
-    turn = Turn(
-        events=[
-            Message(f"{AUDIO_UNAVAILABLE_MARKER}: only a file name came back"),
-            Message("never read"),
-        ],
-        final=final("guessed anyway"),
-    )
-    adapter = FakeAdapter([turn], media_delivery=MediaDelivery.VIEW_FILE)
-    task = make_task(tmp_path, TextOutput(), audio=(audio,))
-
-    with pytest.raises(AgentInputError, match="only a file name came back"):
-        make_runner(adapter).run(task)
-
-    assert turn.stopped
-    assert [call.kind for call in adapter.calls] == ["start"]
-    assert AUDIO_UNAVAILABLE_MARKER in adapter.calls[0].request.message
-    record = _record(tmp_path / "refine" / "session")
-    assert record.outcome is SessionOutcome.INPUT_ERROR
-    assert (
-        ActivityKind.MESSAGE,
-        f"{AUDIO_UNAVAILABLE_MARKER}: only a file name came back",
-    ) in activities(recording_sink)
-
-
-def test_attached_audio_claimed_unheard_is_attached_again(
-    tmp_path: Path, make_runner: Callable[..., AgentRunner]
-):
-    audio = tmp_path / "chunk.ogg"
-    audio.write_bytes(b"x")
-    claim = f"{AUDIO_UNAVAILABLE_MARKER}: only text and images"
-    adapter = FakeAdapter(
-        [
-            Turn(events=[Message(claim)], final=final(claim)),
-            Turn(final=final("heard it")),
-        ]
-    )
-    task = make_task(tmp_path, TextOutput(), audio=(audio,))
-
-    result = make_runner(adapter).run(task)
-
-    assert result.output == "heard it"
-    assert result.repairs == 0
-    assert [call.kind for call in adapter.calls] == ["start", "resume"]
-    recheck = adapter.calls[1].request
-    assert recheck.message == audio_recheck_message()
-    assert (recheck.audio, recheck.images) == ((audio,), ())
-    record = _record(tmp_path / "refine" / "session")
-    assert (record.audio_rechecks, record.repairs) == (1, 0)
-
-
-def test_attached_audio_claimed_unheard_twice_stops_the_session(
-    tmp_path: Path, make_runner: Callable[..., AgentRunner]
-):
-    audio = tmp_path / "chunk.ogg"
-    audio.write_bytes(b"x")
-    first = f"{AUDIO_UNAVAILABLE_MARKER}: nothing"
-    second = f"{AUDIO_UNAVAILABLE_MARKER}: still nothing"
-    adapter = FakeAdapter(
-        [
-            Turn(events=[Message(first)], final=final(first)),
-            Turn(events=[Message(second)], final=final(second)),
-        ]
-    )
-    task = make_task(tmp_path, TextOutput(), audio=(audio,))
-
-    with pytest.raises(AgentInputError, match="still nothing"):
-        make_runner(adapter).run(task)
-
-    assert [call.kind for call in adapter.calls] == ["start", "resume"]
-    record = _record(tmp_path / "refine" / "session")
-    assert (record.outcome, record.audio_rechecks) == (SessionOutcome.INPUT_ERROR, 1)
-
-
 # --- handoff -----------------------------------------------------------------------
 
 
@@ -814,7 +732,6 @@ def test_a_failed_output_goes_to_the_handoff_role_without_audio(
     assert fix.message.startswith("FIX INSTRUCTIONS")
     for part in ("PROMPT", "【交接修正】", "red is not allowed", '{"color": "red"}'):
         assert part in fix.message
-    assert AUDIO_UNAVAILABLE_MARKER not in fix.message
     base = tmp_path / "refine"
     assert _record(base / "session").outcome is SessionOutcome.HANDED_OFF
     assert _record(base / "session_fix").outcome is SessionOutcome.OK
@@ -873,16 +790,6 @@ def test_an_unconfigured_handoff_role_fails_before_any_session(
         runner.run(task)
 
     assert adapter.calls == []
-
-
-def test_the_audio_marker_means_nothing_without_audio(
-    tmp_path: Path, make_runner: Callable[..., AgentRunner]
-):
-    text = f"{AUDIO_UNAVAILABLE_MARKER}: quoted"
-    adapter = FakeAdapter([Turn(events=[Message(text)], final=final(text))])
-    result = make_runner(adapter).run(make_task(tmp_path, TextOutput()))
-    assert result.output == text
-    assert AUDIO_UNAVAILABLE_MARKER not in adapter.calls[0].request.message
 
 
 # --- attempts and error classification ---------------------------------------------

@@ -102,12 +102,16 @@ class PathsConfig(BaseModel):
 
 
 # Where an omitted optional role goes; required roles are never `None`.
-_ROLE_FALLBACKS = {Role.CHAT: Role.UTILITY, Role.PROOFREAD: Role.POSTPROCESS}
+_ROLE_FALLBACKS = {
+    Role.CHAT: Role.UTILITY,
+    Role.PROOFREAD: Role.POSTPROCESS,
+    Role.LISTEN: Role.CHUNK,
+}
 
 
 class AgentRoles(BaseModel):
-    """Model per agent role, as backend/model[/effort]; all but chat and
-    proofread are required."""
+    """Model per agent role, as backend/model[/effort]; all but chat,
+    proofread and listen are required."""
 
     model_config = _STRICT
 
@@ -117,6 +121,13 @@ class AgentRoles(BaseModel):
     proofread: ModelSpecField | None = Field(
         default=None,
         description="Final proofread after the glossary check; omitted means postprocess.",
+    )
+    listen: ModelSpecField | None = Field(
+        default=None,
+        description=(
+            "Transcribes an audio span for the proofread's listen tool "
+            "([features] proofread_listen); must hear audio; omitted means chunk."
+        ),
     )
     utility: ModelSpecField = Field(
         description=(
@@ -134,7 +145,8 @@ class AgentRoles(BaseModel):
 
     def spec(self, role: Role) -> ModelSpec:
         """The spec for `role`; an omitted optional role falls back
-        (`chat` to `utility`, `proofread` to `postprocess`)."""
+        (`chat` to `utility`, `proofread` to `postprocess`, `listen` to
+        `chunk`)."""
         spec: ModelSpec | None = getattr(self, role)
         return spec or self.spec(_ROLE_FALLBACKS[role])
 
@@ -222,6 +234,10 @@ class FeaturesConfig(BaseModel):
     proofread: bool = Field(
         default=False,
         description="Run the final proofread stage after the glossary check (also --proofread).",
+    )
+    proofread_listen: bool = Field(
+        default=False,
+        description="Give the proofread a listen tool: the listen role transcribes an audio span afresh.",
     )
 
 

@@ -2,7 +2,8 @@
 proofread of `work/11_glossary/checked.srt` into
 `work/12_proofread/proofread.srt`, plus `briefing.json` when it corrected the
 briefing (+ `answer.json`, `report.md`, and the dossier `aligned.tsv`,
-`history.md`).
+`history.md`). With `[features] proofread_listen` the agent also gets the
+`listen` tool (role `listen`), its spans kept under `listen/`.
 
 Finalize reads `proofread.srt` once it exists (`layout.effective_subtitles`)
 and every later reader the corrected briefing (`layout.effective_briefing`).
@@ -29,6 +30,7 @@ from grillmaster.postprocess.proofread import ProofreadInputs, proofread_subtitl
 from grillmaster.stages._common import (
     flag_or_feature,
     frames_tool,
+    listen_tool,
     official_srt,
     program_rules,
     role_params,
@@ -85,6 +87,11 @@ def _run(ctx: StageContext) -> str:
         project_root=layout.root,
         frames=frames_tool(ctx, layout.proofread_frames_dir),
         check_srt=None,
+        listen=(
+            listen_tool(ctx, layout.proofread_listen_dir)
+            if ctx.config.features.proofread_listen
+            else None
+        ),
     )
     answer = proofread_subtitles(
         inputs, ctx.agents, session_dir=ctx.session_dir(), tools=tools
@@ -102,5 +109,12 @@ STAGE = StageDef(
     weight=2,
     run=_run,
     enabled=flag_or_feature("proofread"),
-    params=role_params(Role.PROOFREAD),
+    params=role_params(
+        Role.PROOFREAD,
+        listen=lambda config: (
+            str(config.agents.roles.spec(Role.LISTEN))
+            if config.features.proofread_listen
+            else "off"
+        ),
+    ),
 )

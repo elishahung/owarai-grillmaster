@@ -180,6 +180,7 @@ def _chunk_task(
             max_side=inputs.frame_max_side,
         ),
         check_srt=None,
+        listen=None,
     )
     return build_chunk_task(
         ChunkInputs(

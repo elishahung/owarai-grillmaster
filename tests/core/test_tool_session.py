@@ -8,6 +8,7 @@ from pydantic import ValidationError
 
 from grillmaster.core.tool_session import (
     FramesTool,
+    ListenTool,
     SrtCheckTool,
     ToolName,
     ToolSession,
@@ -37,6 +38,7 @@ def _session(root: Path, *, frames: bool = True, check_srt: bool = True) -> Tool
             if check_srt
             else None
         ),
+        listen=None,
     )
 
 
@@ -53,9 +55,10 @@ def test_manifest_matches_the_documented_shape(tmp_path: Path):
         project_root=tmp_path,
         frames=_frames(tmp_path, window=(12.5, 99.0)),
         check_srt=None,
+        listen=None,
     ).write(path)
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert set(data) == {"project_root", "frames", "check_srt"}
+    assert set(data) == {"project_root", "frames", "check_srt", "listen"}
     assert set(data["frames"]) == {
         "video",
         "frames_dir",
@@ -121,3 +124,40 @@ def test_invalid_frames_config_is_rejected(
 ):
     with pytest.raises(ValidationError, match=match):
         _frames(tmp_path, **overrides)
+
+
+def _listen(root: Path, **overrides: Any) -> ListenTool:
+    fields: dict[str, Any] = {
+        "audio": root / "work" / "05_audio" / "audio.ogg",
+        "clips_dir": root / "work" / "12_proofread" / "listen",
+        "model": "gemini/gemini-3.8-flash/low",
+        "timeout_s": 600.0,
+        "window": (0.0, None),
+        "max_span_s": 300.0,
+    }
+    fields.update(overrides)
+    return ListenTool(**fields)
+
+
+def test_listen_is_allowed_with_its_config(tmp_path: Path):
+    session = _session(tmp_path, check_srt=False).model_copy(
+        update={"listen": _listen(tmp_path)}
+    )
+    assert session.allowed == {ToolName.GET_FRAMES, ToolName.LISTEN}
+    path = tmp_path / "tools.json"
+    session.write(path)
+    assert ToolSession.load(path) == session
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"model": "gemini-3.8-flash"},
+        {"window": (5.0, 1.0)},
+        {"max_span_s": 0.0},
+        {"timeout_s": -1.0},
+    ],
+)
+def test_listen_rejects_invalid_config(tmp_path: Path, overrides: dict[str, Any]):
+    with pytest.raises(ValidationError):
+        _listen(tmp_path, **overrides)

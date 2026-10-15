@@ -5,8 +5,7 @@ how to open media on backends that need `view_file`, the message that
 delivers requested frames on backends whose tool results cannot carry
 images, how to submit a
 schema answer on backends that take it through a `finish` tool or as the
-final message, the
-audio-unavailable protocol, the message continuing a turn the server cut
+final message, the message continuing a turn the server cut
 off, and the repair-round message. Detailed limits
 stay in each MCP tool's own description.
 """
@@ -31,15 +30,6 @@ if TYPE_CHECKING:
     from grillmaster.agents.schema import JsonSchema
     from grillmaster.core.tool_session import ToolSession
 
-# The line a model writes when it cannot hear its audio (`audio_check_section`).
-AUDIO_UNAVAILABLE_MARKER = "GRILL_AUDIO_UNAVAILABLE"
-# Decoration a model may wrap the marker line in; trimmed off the reason too.
-_DECORATION = " \t`*"
-_AUDIO_UNAVAILABLE_RE = re.compile(
-    rf"^[{_DECORATION}]*{AUDIO_UNAVAILABLE_MARKER}[{_DECORATION}]*[:：]?(.*)$",
-    re.MULTILINE,
-)
-
 
 def compose_message(
     instructions: str,
@@ -58,8 +48,7 @@ def compose_message(
 
     `VIEW_FILE` media: the model opens them itself, so their paths are
     listed. A `schema` on a `FINISH_TOOL` backend is submitted through the
-    CLI's `finish` tool; on a `PROMPT` backend the message states it. Audio
-    inputs bring the audio-unavailable protocol.
+    CLI's `finish` tool; on a `PROMPT` backend the message states it.
     """
     submit = None
     if schema is not None:
@@ -76,7 +65,6 @@ def compose_message(
         prompt,
         tools_section(tools, tool_images) if tools is not None else None,
         view_file_section(images, audio) if view_file else None,
-        audio_check_section() if audio else None,
         submit,
     )
 
@@ -110,6 +98,14 @@ def tools_section(
             "- `check_srt(path)`：以參考字幕檢查候選 SRT 的骨架"
             "（區塊數、編號、時間碼、非空），回傳 VALID 或錯誤清單。"
         )
+    if tools.listen is not None:
+        start, end = tools.listen.window
+        until = f"{end:.3f} 秒" if end is not None else "音訊結尾"
+        lines.append(
+            "- `listen(start, end)`：由另一個聽得到聲音的模型重新聽寫這段音訊，"
+            "以純文字回傳日文逐字稿（時間需介於 "
+            f"{start:.3f} 秒與{until}之間，每次最長 {tools.listen.max_span_s:g} 秒）。"
+        )
     if not lines:
         return ""
     return "\n".join(["【可用工具】", "可以呼叫 grill MCP server 的下列工具：", *lines])
@@ -135,35 +131,6 @@ def view_file_section(images: Sequence[Path], audio: Sequence[Path]) -> str:
             *(f"- {path}" for path in audio),
         ]
     return "\n".join(lines)
-
-
-def audio_check_section() -> str:
-    """The way out when the model cannot hear its audio: one marker line,
-    on which the runner stops the session (`audio_unavailable`), after one
-    `audio_recheck_message` turn when the backend attached the audio."""
-    return (
-        "【聽不到音訊時】\n"
-        "若音訊沒有以聲音進入你的脈絡，不要猜測或改用其他工具，"
-        "只回覆這一行，任務會停止並回報錯誤：\n"
-        f"{AUDIO_UNAVAILABLE_MARKER}: <你實際收到了什麼>"
-    )
-
-
-def audio_unavailable(text: str) -> str | None:
-    """The model's reason when `text` holds the audio-unavailable marker
-    line (possibly empty), else `None`."""
-    match = _AUDIO_UNAVAILABLE_RE.search(text)
-    return match.group(1).strip(_DECORATION) if match else None
-
-
-def audio_recheck_message() -> str:
-    """The whole user message answering an audio-unavailable claim on a
-    backend that attached the audio itself; the backend attaches it again."""
-    return (
-        "【音訊】你上一輪回報聽不到音訊，但音訊已作為內嵌音訊附在第一則訊息，"
-        "這則訊息再附上一次。請直接聆聽，接著完成原本的任務；"
-        f"若仍然聽不到，再只回覆那一行 {AUDIO_UNAVAILABLE_MARKER}。"
-    )
 
 
 def finish_section() -> str:

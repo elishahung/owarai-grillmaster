@@ -57,6 +57,7 @@ def _prepass_task(ctx: StageContext) -> AgentTask[Briefing]:
             ctx, layout.prepass_frames_dir, (0.0, blocks[-1].time_range.end)
         ),
         check_srt=None,
+        listen=None,
     )
     inputs = PrepassInputs(
         source=source,

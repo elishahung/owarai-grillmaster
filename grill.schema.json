@@ -3,7 +3,7 @@
   "$defs": {
     "AgentRoles": {
       "additionalProperties": false,
-      "description": "Model per agent role, as backend/model[/effort]; all but chat and\nproofread are required.",
+      "description": "Model per agent role, as backend/model[/effort]; all but chat,\nproofread and listen are required.",
       "properties": {
         "prepass": {
           "description": "Whole-film pre-pass analysis.",
@@ -37,6 +37,21 @@
           "default": null,
           "description": "Final proofread after the glossary check; omitted means postprocess.",
           "title": "Proofread"
+        },
+        "listen": {
+          "anyOf": [
+            {
+              "description": "backend/model[/effort]; effort defaults to high.",
+              "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Transcribes an audio span for the proofread's listen tool ([features] proofread_listen); must hear audio; omitted means chunk.",
+          "title": "Listen"
         },
         "utility": {
           "description": "Lightweight agents: titles, broadcast-date research, and the no-audio fix of a pre-pass or chunk output that failed validation.",
@@ -155,6 +170,12 @@
           "default": false,
           "description": "Run the final proofread stage after the glossary check (also --proofread).",
           "title": "Proofread",
+          "type": "boolean"
+        },
+        "proofread_listen": {
+          "default": false,
+          "description": "Give the proofread a listen tool: the listen role transcribes an audio span afresh.",
+          "title": "Proofread Listen",
           "type": "boolean"
         }
       },

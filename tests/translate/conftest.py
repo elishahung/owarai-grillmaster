@@ -30,6 +30,7 @@ def tools(tmp_path: Path) -> ToolSession:
         project_root=tmp_path,
         frames=frames_tool(tmp_path, window=(0.0, 10.0)),
         check_srt=None,
+        listen=None,
     )
 
 

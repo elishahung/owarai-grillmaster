@@ -75,6 +75,7 @@ def test_schema_mcp_image_and_resume(
             max_side=64,
         ),
         check_srt=None,
+        listen=None,
     )
     task = AgentTask(
         name=f"live/{backend}",

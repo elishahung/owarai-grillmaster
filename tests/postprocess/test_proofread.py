@@ -15,7 +15,7 @@ from grillmaster.core.briefing import Briefing, SegmentSummary, TermMapping
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.model_spec import Role
 from grillmaster.core.srt import SrtBlock, read_srt_file, write_srt_file
-from grillmaster.core.tool_session import ToolSession
+from grillmaster.core.tool_session import ListenTool, ToolSession
 from grillmaster.glossary.fixed import (
     FIXED_GLOSSARY_GUIDE_PATH,
     FIXED_GLOSSARY_PATH,
@@ -148,7 +148,7 @@ def inputs(tmp_path: Path) -> ProofreadInputs:
 @pytest.fixture
 def tools(tmp_path: Path) -> ToolSession:
     return ToolSession(
-        project_root=tmp_path, frames=frames_tool(tmp_path), check_srt=None
+        project_root=tmp_path, frames=frames_tool(tmp_path), check_srt=None, listen=None
     )
 
 
@@ -381,6 +381,32 @@ def test_the_official_captions_join_the_instructions(
     assert "Keep 說." in task.instructions
     assert "  - (none)" in task.instructions
     assert "## Aligned table (6 blocks)" in task.prompt
+
+
+def test_the_listen_tool_brings_its_guidance(
+    inputs: ProofreadInputs, tools: ToolSession, tmp_path: Path
+):
+    def build(session: ToolSession) -> str:
+        return build_proofread_task(
+            inputs,
+            blocks(CHECKED),
+            BRIEFING,
+            aligned="",
+            history="",
+            session_dir=tmp_path,
+            tools=session,
+        ).prompt
+
+    listen = ListenTool(
+        audio=tmp_path / "audio.ogg",
+        clips_dir=tmp_path / "listen",
+        model="gemini/gemini-3.8-flash/low",
+        timeout_s=60.0,
+        window=(0.0, None),
+        max_span_s=300.0,
+    )
+    assert "`listen(start, end)`" not in build(tools)
+    assert "`listen(start, end)`" in build(tools.model_copy(update={"listen": listen}))
 
 
 def test_report_cells_stay_in_their_column():

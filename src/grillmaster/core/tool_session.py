@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from pydantic import model_validator
 
 from grillmaster.core.json_artifact import read_model, write_model
+from grillmaster.core.model_spec import ModelSpec
 from grillmaster.core.models import FrozenModel
 
 if TYPE_CHECKING:
@@ -28,6 +29,7 @@ SESSION_ENV_VAR = "GRILL_TOOL_SESSION"
 class ToolName(StrEnum):
     GET_FRAMES = "get_frames"
     CHECK_SRT = "check_srt"
+    LISTEN = "listen"
 
 
 class FramesTool(FrozenModel):
@@ -78,10 +80,42 @@ class SrtCheckTool(FrozenModel):
     reference_srt: Path
 
 
+class ListenTool(FrozenModel):
+    """`listen`: a fresh transcription of a span of `audio` by `model`.
+
+    The tool server runs the transcription as its own agent session (the
+    `listen` role, `model` written `backend/model[/effort]`, each turn bounded
+    by `timeout_s`); a span's clip, transcript and session records go to
+    `<clips_dir>/<start>-<end>/`, and an existing transcript is returned
+    again without a new session."""
+
+    audio: Path
+    clips_dir: Path
+    model: str
+    timeout_s: float
+    # Seconds; `None` as the end means "to the end of the audio".
+    window: tuple[float, float | None]
+    max_span_s: float
+
+    @model_validator(mode="after")
+    def _check_ranges(self) -> ListenTool:
+        start, end = self.window
+        if start < 0 or (end is not None and end < start):
+            raise ValueError(f"Invalid tool window: {self.window}")
+        if self.max_span_s <= 0 or self.timeout_s <= 0:
+            raise ValueError(
+                f"max_span_s and timeout_s must be positive: "
+                f"{self.max_span_s}, {self.timeout_s}"
+            )
+        ModelSpec.parse(self.model)
+        return self
+
+
 class ToolSession(FrozenModel):
     project_root: Path
     frames: FramesTool | None
     check_srt: SrtCheckTool | None
+    listen: ListenTool | None
 
     @property
     def allowed(self) -> frozenset[ToolName]:
@@ -89,6 +123,7 @@ class ToolSession(FrozenModel):
         tools = {
             ToolName.GET_FRAMES: self.frames,
             ToolName.CHECK_SRT: self.check_srt,
+            ToolName.LISTEN: self.listen,
         }
         return frozenset(name for name, config in tools.items() if config is not None)
 

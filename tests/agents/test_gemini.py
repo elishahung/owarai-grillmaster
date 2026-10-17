@@ -307,10 +307,11 @@ def test_preflight_refuses_media_the_model_cannot_take(tmp_path: Path):
     with half.open("wb") as handle:
         handle.truncate(MAX_MEDIA_BYTES // 2 + 1)
     frame = tmp_path / "frame.jpg"
-    frame.write_bytes(b"x" * (MAX_MEDIA_BYTES // 2))
+    with frame.open("wb") as handle:
+        handle.truncate(MAX_MEDIA_BYTES // 2)
     adapter.preflight(FLASH_LOW, (Media(MediaKind.AUDIO, half),))
     # The limit is on the request: every attachment goes inline in one prompt.
-    with pytest.raises(AgentConfigError, match="20 MB per request"):
+    with pytest.raises(AgentConfigError, match="100 MB per request"):
         adapter.preflight(
             FLASH_LOW, (Media(MediaKind.IMAGE, frame), Media(MediaKind.AUDIO, half))
         )

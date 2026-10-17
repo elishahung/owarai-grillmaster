@@ -44,7 +44,7 @@ if TYPE_CHECKING:
 
 
 # The longest span one `transcribe` call takes: a preview runs ~50 KB/s, so
-# 120 s is ~8 MB once base64'd inline, well under gemini's 20 MB request.
+# 120 s is ~8 MB once base64'd inline, well under gemini's 100 MB request.
 TRANSCRIBE_MAX_SPAN_S = 120.0
 
 

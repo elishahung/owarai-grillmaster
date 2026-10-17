@@ -16,8 +16,9 @@ one `session/prompt` per turn. Facts this module is built on (gemini-cli
 * Prompt blocks reach the model as given: text verbatim (ACP text is not
   parsed for `@` commands, unlike `--prompt`), images and audio as base64
   `image` / `audio` blocks the CLI sends as inline data. `preflight`
-  refuses more than 20 MB of attachments, the Gemini API's inline request
-  limit.
+  refuses more than 100 MB of base64-encoded attachments, the Gemini API's
+  inline request limit (raised from 20 MB; Code Assist took a 21.6 MiB
+  pre-pass, the top was not probed).
 * Before a request with media the CLI asks `countTokens` for its size; if
   that fails (e.g. an unknown model: gemini-cli names previews
   `gemini-3.1-pro-preview`), it estimates the media by their base64 length,
@@ -157,7 +158,7 @@ TOOL_SETTINGS: dict[ToolAccess, dict[str, Any]] = {
     ToolAccess.READ: {"tools": {"exclude": list(WRITE_TOOLS)}},
     ToolAccess.WRITE: {},
 }
-MAX_MEDIA_BYTES = 20 * 1024 * 1024
+MAX_MEDIA_BYTES = 100 * 1024 * 1024
 # The ACP block type of each media kind and the media types it takes, by
 # suffix. ACP has no video block; gemini-cli turns image and audio blocks
 # alike into `inlineData` with the block's `mimeType`, so a video rides an

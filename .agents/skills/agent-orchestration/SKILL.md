@@ -141,7 +141,8 @@ turn's.
   rides an `audio` block with `video/mp4`: gemini-cli passes any block's
   mimeType on as `inlineData`; the
   token cost of agy's `view_file` turns is the reason this backend exists);
-  `preflight` refuses unknown suffixes and over 20 MB of base64-encoded attachments. ACP text is not
+  `preflight` refuses unknown suffixes and over 100 MB of base64-encoded attachments (the Gemini
+  API's inline limit; Code Assist took 21.6 MiB, the top was not probed). ACP text is not
   parsed for `@`. Image tool results are broken through Code Assist (400 on
   3.5/3.8-flash, garbled text after the image on 3.1-pro/flash-lite, the
   nested format drops the image), hence `NEXT_MESSAGE`; `SchemaDelivery.PROMPT`.

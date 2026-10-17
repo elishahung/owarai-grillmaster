@@ -1,4 +1,4 @@
-"""A run's project-local logs: `logs/run-<ts>.log` and `logs/events-<ts>.jsonl`.
+"""A run's project-local logs: `.logs/run-<ts>.log` and `.logs/events-<ts>.jsonl`.
 
 The text log is a loguru file sink taking every record (DEBUG and up, each
 tagged with the stage/task scope `install_log_context` puts in its `extra`);

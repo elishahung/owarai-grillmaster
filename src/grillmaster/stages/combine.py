@@ -1,4 +1,4 @@
-"""Combine stage: `video.mp4` from the downloaded `work/02_download/full.mp4`,
+"""Combine stage: `video.mp4` from the downloaded `.work/02_download/full.mp4`,
 cut to the section.
 
 `--start` / `--to` apply only while this stage has not run: the section is
@@ -6,7 +6,7 @@ recorded on `ProjectState.section` (the chat fetch reads it there). A cut
 writes `video.mp4` and keeps `full.mp4`, so `grill reset --from combine`
 can cut again; without a section `full.mp4` becomes `video.mp4`, the only
 copy, which a combine reset moves back (`on_reset`). Platform captions
-become `subs/ja.official.srt`, shifted onto the section.
+become `.subs/ja.official.srt`, shifted onto the section.
 """
 
 from __future__ import annotations

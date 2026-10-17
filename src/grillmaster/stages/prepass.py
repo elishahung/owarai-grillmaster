@@ -1,4 +1,4 @@
-"""Pre-pass stage: whole-film analysis into `work/08_prepass/briefing.json`.
+"""Pre-pass stage: whole-film analysis into `.work/08_prepass/briefing.json`.
 
 An existing briefing is reused as-is (fixed-name cache); `grill reset`
 re-runs the analysis.

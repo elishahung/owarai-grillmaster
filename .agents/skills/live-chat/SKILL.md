@@ -19,8 +19,8 @@ For registry and ledger rules, see **project-architecture**.
 
 | Stage key | Placement | Writes (`project/layout.py`) |
 |---|---|---|
-| `chat_fetch` | after `combine`, before `audio` | `work/04_chat_fetch/live_chat.jsonl` (raw yt-dlp track, cache), `messages.json` (`ChatLog`, re-parsed each stage run) |
-| `chat_translate` | last stage, after `finalize` | `work/13_chat_translate/batches/batch_NNNN.json`, `polish.json`, `session_<label>/`; output `subs/chat.cht.json` (`TranslatedChatLog`) |
+| `chat_fetch` | after `combine`, before `audio` | `.work/04_chat_fetch/live_chat.jsonl` (raw yt-dlp track, cache), `messages.json` (`ChatLog`, re-parsed each stage run) |
+| `chat_translate` | last stage, after `finalize` | `.work/13_chat_translate/batches/batch_NNNN.json`, `polish.json`, `session_<label>/`; output `.subs/chat.cht.json` (`TranslatedChatLog`) |
 
 - Fetch runs early so a video without a replay raises `SourceError` before ASR spends money.
   Times come from `videoOffsetTimeMsec`, not from ASR. `parse_live_chat` drops messages outside
@@ -29,7 +29,7 @@ For registry and ledger rules, see **project-architecture**.
   membership, gift and system items, and emoji runs, which libass cannot draw.
   `ChatMessage.id` is the message's final position in the log.
 - Translate runs after finalize, so `video.cht.srt` and `effective_briefing()` serve as ground
-  truth. `subs/ja.srt` is paired with `video.cht.srt` by position, only when the block counts match.
+  truth. `.subs/ja.srt` is paired with `video.cht.srt` by position, only when the block counts match.
   A chat failure leaves the main subtitles finalized.
 - `live_chat` must not import `grillmaster.project` or `grillmaster.config` (import-linter). The
   stage passes in `ChatTranslationInputs` and `ChatTranslationFiles` (cache paths, session dirs).
@@ -63,7 +63,7 @@ For registry and ledger rules, see **project-architecture**.
 ## Rendering and packaging
 
 - The chat panel is not a stage. `package/assemble.py::build_burn_plan` renders
-  `work/package/chat.ass` from `subs/chat.cht.json` on every package, so a layout change only
+  `.work/package/chat.ass` from `.subs/chat.cht.json` on every package, so a layout change only
   needs `grill package`. The dialogue alone burns on the full frame when the chat file is
   missing, when the layout is `none`, or when rendering fails (warned).
 - `--chat-layout` (default `side`) is read only at package time, on `run`, `serial` and

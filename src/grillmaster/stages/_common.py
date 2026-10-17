@@ -132,7 +132,7 @@ def frames_tool(
 
 
 def split_source(ctx: StageContext) -> tuple[tuple[SrtBlock, ...], tuple[Chunk, ...]]:
-    """`subs/ja.srt` and its chunks under `[translate] chunk_char_limit`."""
+    """`.subs/ja.srt` and its chunks under `[translate] chunk_char_limit`."""
     blocks = tuple(read_srt_file(require(ctx.layout.ja_srt, StageKey.TRANSCRIPT)))
     if not blocks:
         raise TranslateError(f"No subtitle blocks to translate in {ctx.layout.ja_srt}")
@@ -168,7 +168,7 @@ def source_context(
 
 
 def official_srt(layout: ProjectLayout) -> Path | None:
-    """`subs/ja.official.srt`, or `None` when the project has no CC."""
+    """`.subs/ja.official.srt`, or `None` when the project has no CC."""
     official = layout.ja_official_srt
     return official if official.exists() else None
 

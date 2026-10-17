@@ -24,6 +24,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable
 
 SESSION_ENV_VAR = "GRILL_TOOL_SESSION"
+# A `transcribe` span's clip in `<clips_dir>/<start>-<end>/` (`TranscribeTool`).
+TRANSCRIBE_CLIP_FILE = "clip.mp4"
 
 
 class ToolName(StrEnum):

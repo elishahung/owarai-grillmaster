@@ -204,7 +204,7 @@ turn's.
   `tools.json` (with tools), `schema.json` (with a schema), `raw.jsonl`
   (verbatim CLI stream; encoded SDK messages for Claude), `result.json`
   (`SessionRecord`); agy adds `agy.log`. Normalized events go only to the
-  project's `logs/events-<ts>.jsonl`, as `AgentActivity` summaries.
+  project's `.logs/events-<ts>.jsonl`, as `AgentActivity` summaries.
 - One global slot is held from the first turn through every repair. Pending
   frames (`NEXT_MESSAGE`) first, then adapter defects, then parse +
   `validate`; a failure resumes the same session
@@ -273,7 +273,8 @@ builds its own one-role `AgentRunner` from the manifest's `model`/
 the caller's process tree and needs the caller's env, e.g. gemini's
 `GOOGLE_CLOUD_PROJECT`; its cwd is the span's empty `work/` and its
 `ToolAccess` NONE, so the model can only watch the clip); one call per span at a time, and a kept
-`transcript.txt` answers again without a session; the caller's tool
+`transcript.txt` answers again without a session (so the archive move drops
+the clips: `ProjectLayout.archive_discards`); the caller's tool
 timeout bounds a call. xAI STT was tried as an
 engine and dropped (it loses shouted and overlapping speech, see
 project-architecture `references/asr-provider-evaluation.md`); video beat an

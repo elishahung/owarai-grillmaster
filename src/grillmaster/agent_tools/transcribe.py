@@ -39,6 +39,7 @@ from grillmaster.core.fs import atomic_write_text
 from grillmaster.core.model_spec import Role
 from grillmaster.core.prompts import load_prompt
 from grillmaster.core.timecode import TimeRange
+from grillmaster.core.tool_session import TRANSCRIBE_CLIP_FILE
 from grillmaster.events.bus import EventBus
 from grillmaster.media.errors import MediaError
 from grillmaster.media.video import slice_preview
@@ -53,7 +54,6 @@ if TYPE_CHECKING:
 # Transcriptions one tool server runs at once.
 MAX_CONCURRENT_TRANSCRIPTIONS = 4
 TRANSCRIPT_FILE = "transcript.txt"
-CLIP_FILE = "clip.mp4"
 
 
 class TranscribeAgents(Protocol):
@@ -122,7 +122,7 @@ class Transcriber:
         if transcript.is_file():
             text = transcript.read_text(encoding="utf-8").strip()
         else:
-            clip = clip_dir / CLIP_FILE
+            clip = clip_dir / TRANSCRIBE_CLIP_FILE
             try:
                 slice_preview(self._runner, self._config.video, clip, span)
                 text = self._agents.run(_task(span, clip, clip_dir)).output.strip()

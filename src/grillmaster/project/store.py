@@ -107,7 +107,8 @@ def archive_project(
     ID anywhere under `archived_root` (`find_archived`: a changed broadcast
     date moves the destination) or a destination that already holds a
     `project.json` is refused: replacing or duplicating an archived project
-    could lose work (remove the stale one by hand). The project is copied into a staging directory, the
+    could lose work (remove the stale one by hand). The layout's
+    `archive_discards` are deleted first. The project is copied into a staging directory, the
     copy is verified (same files, same sizes), and only then swapped in
     (`core.fs.staged_dir`): any other existing destination leaf is replaced,
     the shared `YY/MM` parents never are. The local project is deleted last,
@@ -133,6 +134,8 @@ def archive_project(
                 "manually"
             )
     logger.info(f"Archiving project {state.id} to {destination}")
+    for discard in layout.archive_discards():
+        discard.unlink()
     with staged_dir(destination, create=False) as staging:
         shutil.copytree(layout.root, staging)
         _verify_copy(layout.root, staging)

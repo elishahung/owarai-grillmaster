@@ -1,15 +1,19 @@
 """Every path inside a project directory, and nothing else.
 
 Deliverables live at the root (`video.mp4` with its `video.cht.srt` /
-`video.cht.ass` beside it, `poster.jpg`, `cover.png`, `subs/`); each stage keeps its intermediates in its own `work/NN_<stage>/`
+`video.cht.ass` beside it, `poster.jpg`, `cover.png`, `.subs/`); each stage keeps its intermediates in its own `.work/NN_<stage>/`
 (`NN` = `StageKey.number`); side tasks and packaging get unnumbered
-`work/side/<task>/` and `work/package/`. No other module spells a project
+`.work/side/<task>/` and `.work/package/`. No other module spells a project
 path: stages and the pipeline ask this class and hand the paths on (to
 packaging, the tool manifest and other domain code).
 
+Everything but the deliverables sits in dot directories (`.subs/`, `.logs/`,
+`.work/`), which media servers (Plex, Infuse) skip, so their intermediate
+videos and clips are never scanned as episodes.
+
 `ProjectLayout` is a pure path calculator. It never creates directories; the
 only filesystem reads are the `effective_*` / `briefing_before` existence
-checks.
+checks and the `archive_discards` listing.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from typing import TYPE_CHECKING
 
 from grillmaster.core.srt import chunk_range_name
 from grillmaster.core.stage_key import SideTaskKey, StageKey
+from grillmaster.core.tool_session import TRANSCRIBE_CLIP_FILE
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -82,7 +87,7 @@ class ProjectLayout:
 
     @property
     def subs_dir(self) -> Path:
-        return self.root / "subs"
+        return self.root / ".subs"
 
     @property
     def ja_srt(self) -> Path:
@@ -116,7 +121,7 @@ class ProjectLayout:
 
     @property
     def logs_dir(self) -> Path:
-        return self.root / "logs"
+        return self.root / ".logs"
 
     def run_log(self, started_at: datetime) -> Path:
         return self.logs_dir / f"run-{_stamp(started_at)}.log"
@@ -128,10 +133,10 @@ class ProjectLayout:
 
     @property
     def work_root(self) -> Path:
-        return self.root / "work"
+        return self.root / ".work"
 
     def work_dir(self, key: StageKey) -> Path:
-        """`work/NN_<stage>/`, the only directory stage `key` writes into
+        """`.work/NN_<stage>/`, the only directory stage `key` writes into
         besides its declared deliverables."""
         return self.work_root / f"{key.number:02d}_{key.value}"
 
@@ -323,6 +328,13 @@ class ProjectLayout:
     def proofread_transcribe_dir(self) -> Path:
         """The `transcribe` tool's clips, transcripts and sessions, one dir per span."""
         return self.work_dir(StageKey.PROOFREAD) / "transcribe"
+
+    def archive_discards(self) -> tuple[Path, ...]:
+        """Existing files the archive move drops: the `transcribe` tool's
+        clips, which nothing reads once their span's transcript is kept."""
+        return tuple(
+            sorted(self.proofread_transcribe_dir.glob(f"*/{TRANSCRIBE_CLIP_FILE}"))
+        )
 
     @property
     def chat_batches_dir(self) -> Path:

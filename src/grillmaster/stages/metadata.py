@@ -1,4 +1,4 @@
-"""Metadata stage: yt-dlp info (`work/01_metadata/info.json`), platform
+"""Metadata stage: yt-dlp info (`.work/01_metadata/info.json`), platform
 extras and the broadcast date, recorded on `ProjectState`.
 
 Extras and the date are best-effort (a missing date only leaves the

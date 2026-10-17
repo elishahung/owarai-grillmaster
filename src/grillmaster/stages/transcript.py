@@ -1,4 +1,4 @@
-"""Transcript stage: build the Japanese source SRT `subs/ja.srt` from the
+"""Transcript stage: build the Japanese source SRT `.subs/ja.srt` from the
 ElevenLabs response. Platform captions play no part here; translation reads
 them separately as ground truth."""
 

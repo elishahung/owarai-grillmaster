@@ -49,25 +49,25 @@ Breaking a contract fails `poe check`; fix the dependency, not the contract.
 ## Pipeline (`pipeline/`, `stages/`)
 
 `core/stage_key.py` `StageKey` declaration order **is** execution order, and
-`key.number` numbers the work directory (`work/NN_<key>/`), so reordering
+`key.number` numbers the work directory (`.work/NN_<key>/`), so reordering
 members is a layout change. `pipeline/registry.py` holds the only lists:
 `STAGES` (must follow `StageKey` order; `Pipeline.__post_init__` asserts it),
 `SIDE_TASKS`, `DELIVERY`, combined into `PIPELINE`. Tests build their own
 `Pipeline` from fakes (the CLI takes one via `ctx.obj`).
 
-| # | key | writes (besides `work/NN_<key>/`) |
+| # | key | writes (besides `.work/NN_<key>/`) |
 |---|---|---|
 | 1 | `metadata` | state: name, broadcast date, `source` (title, series, channel, talents, broadcast_label) |
-| 2 | `download` | `poster.jpg`; `work/02_download/{parts/,full.mp4}`; appends new programs to `grill.toml` |
-| 3 | `combine` | `video.mp4` (cut to the section, else `full.mp4` moved), `subs/ja.official.srt` (normally none without CC or with multi-part CC; unusable downloaded CC fails); state `section` |
+| 2 | `download` | `poster.jpg`; `.work/02_download/{parts/,full.mp4}`; appends new programs to `grill.toml` |
+| 3 | `combine` | `video.mp4` (cut to the section, else `full.mp4` moved), `.subs/ja.official.srt` (normally none without CC or with multi-part CC; unusable downloaded CC fails); state `section` |
 | 4 | `chat_fetch` | `--chat` only (see live-chat) |
-| 5 | `audio` | `work/05_audio/audio.ogg` |
-| 6 | `asr` | `work/06_asr/asr.json`; adds `asr_cost_usd` (an existing `asr.json` costs nothing) |
-| 7 | `transcript` | `subs/ja.srt` |
+| 5 | `audio` | `.work/05_audio/audio.ogg` |
+| 6 | `asr` | `.work/06_asr/asr.json`; adds `asr_cost_usd` (an existing `asr.json` costs nothing) |
+| 7 | `transcript` | `.subs/ja.srt` |
 | 8–11 | `prepass`, `chunks`, `refine`, `glossary` | work dirs only (translate-pipeline, postprocess-and-packaging) |
 | 12 | `proofread` | `--proofread` / `[features] proofread` only: work dir only (postprocess-and-packaging) |
-| 13 | `finalize` | `video.cht.srt`, `video.cht.ass` (root, `video.mp4`'s stem: players auto-load them; under `subs/` they did not) |
-| 14 | `chat_translate` | `--chat` only: `subs/chat.cht.json` |
+| 13 | `finalize` | `video.cht.srt`, `video.cht.ass` (root, `video.mp4`'s stem: players auto-load them; under `.subs/` they did not) |
+| 14 | `chat_translate` | `--chat` only: `.subs/chat.cht.json` |
 
 Side tasks: `cover` (after `download`), `date_research` (after `metadata`).
 Delivery: `package`. Archive is not a step definition; the runner does it
@@ -152,9 +152,11 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 
 - `layout.py` `ProjectLayout` is the **only** place that spells a project
   path (pure calculator, never creates dirs). Root: `project.json`,
-  `video.mp4` + `video.cht.{srt,ass}`, `poster.jpg`, `cover.png`, `subs/`
-  (`ja.srt`, `ja.official.srt`, `chat.cht.json`), `logs/{run,events}-<ts>`.
-  Work: `work/NN_<key>/`, unnumbered `work/side/<task>/` and `work/package/`.
+  `video.mp4` + `video.cht.{srt,ass}`, `poster.jpg`, `cover.png`, `.subs/`
+  (`ja.srt`, `ja.official.srt`, `chat.cht.json`), `.logs/{run,events}-<ts>`.
+  Work: `.work/NN_<key>/`, unnumbered `.work/side/<task>/` and `.work/package/`.
+  Non-deliverables live in dot dirs so Plex/Infuse skip their videos;
+  `archive_discards()` (transcribe clips) are deleted by `archive_project`.
   Agent sessions: `session/`, `session_<label>/`, retries `session.2/`,
   handoff `session_fix/` (`core.paths.handoff_path`).
   `effective_briefing()` = proofread's, else glossary's, else pre-pass's briefing; a correcting stage reads `briefing_before(itself)`;
@@ -214,9 +216,9 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   `events/context.py` `stage_scope` / `task_scope` contextvars attribute
   events and loguru records; worker pools propagate them with
   `copy_context()`. Progress bars go through `events.progress.track`.
-- Sinks: `ConsoleSink` (non-TTY), `JsonlSink` (`logs/events-<ts>.jsonl`,
+- Sinks: `ConsoleSink` (non-TTY), `JsonlSink` (`.logs/events-<ts>.jsonl`,
   added by the pipeline), `tui.TuiSink`. `pipeline/logs.py` also writes
-  `logs/run-<ts>.log`.
+  `.logs/run-<ts>.log`.
 - TUI: `PipelineState` is a pure reducer over events; plan, labels and weights
   come from `RunStarted`; the chunk board is sessions named `chunks/…`. Abort
   kills every live child tree (`core.process.kill_all`).

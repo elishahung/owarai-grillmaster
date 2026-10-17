@@ -1,5 +1,5 @@
-"""Glossary stage: the agent terminology check of `work/10_refine/refined.srt`
-into `work/11_glossary/checked.srt` (+ `report.md` on changes, `briefing.json`
+"""Glossary stage: the agent terminology check of `.work/10_refine/refined.srt`
+into `.work/11_glossary/checked.srt` (+ `report.md` on changes, `briefing.json`
 on an accepted briefing correction, which then becomes the effective
 briefing).
 

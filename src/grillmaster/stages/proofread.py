@@ -1,6 +1,6 @@
 """Proofread stage (`--proofread` / `[features] proofread`): an agent's final
-proofread of `work/11_glossary/checked.srt` into
-`work/12_proofread/proofread.srt`, plus `briefing.json` when it corrected the
+proofread of `.work/11_glossary/checked.srt` into
+`.work/12_proofread/proofread.srt`, plus `briefing.json` when it corrected the
 briefing (+ `answer.json`, `report.md`, and the dossier `aligned.tsv`,
 `history.md`). With `[features] proofread_transcribe` the agent also gets the
 `transcribe` tool (role `transcribe`), its spans kept under `transcribe/`.
@@ -56,7 +56,7 @@ def transcribe_spec(config: AppConfig) -> ModelSpec | None:
 
 
 def transcribe_tool(ctx: StageContext) -> TranscribeTool | None:
-    """`transcribe` over `video.mp4` into `work/12_proofread/transcribe/` when
+    """`transcribe` over `video.mp4` into `.work/12_proofread/transcribe/` when
     enabled; the runner refuses a transcribe model that cannot watch video
     before the proofread takes a slot."""
     spec = transcribe_spec(ctx.config)

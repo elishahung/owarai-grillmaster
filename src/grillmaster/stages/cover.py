@@ -1,5 +1,5 @@
 """Cover side task: once the download produced `poster.jpg`, the image agent
-draws the root `cover.png`, working in `work/side/cover/`.
+draws the root `cover.png`, working in `.work/side/cover/`.
 
 Runs when `--cover` or `[features] cover` asks for it; the record in
 `state.side_tasks.cover` marks it done. An existing `cover.png` is kept and

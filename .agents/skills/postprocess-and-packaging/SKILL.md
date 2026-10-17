@@ -25,12 +25,12 @@ readable via `add_dirs`. Tools: `get_frames` (into the stage's `frames/`) and
 `check_srt` against the pass's input SRT. Prompts (`postprocess/prompts/*.md`)
 own semantic rules and get `ProgramRules.instruction_text(<stage>)` appended.
 
-- **Refine** (`RefineInputs`): `work/09_chunks/merged.srt` →
-  `work/10_refine/refined.srt` (required) + `report.md` (optional); reads the
+- **Refine** (`RefineInputs`): `.work/09_chunks/merged.srt` →
+  `.work/10_refine/refined.srt` (required) + `report.md` (optional); reads the
   effective briefing.
-- **Glossary** (`GlossaryInputs`): `refined.srt` → `work/11_glossary/checked.srt`
+- **Glossary** (`GlossaryInputs`): `refined.srt` → `.work/11_glossary/checked.srt`
   (required), optional `report.md` and `briefing.candidate.json`. Reads the
-  pre-pass briefing, `subs/ja.srt`, and `subs/ja.official.srt` if present
+  pre-pass briefing, `.subs/ja.srt`, and `.subs/ja.official.srt` if present
   (adds `official_subtitle_reference.md`: CC outranks ASR). The fixed glossary
   (`glossary/fixed_glossary.json` + `.md`) is copied into the workdir and
   removed in `finally`. Latin/kana-run blocks are listed as priority hints
@@ -40,8 +40,8 @@ own semantic rules and get `ProgramRules.instruction_text(<stage>)` appended.
   Glossary also needs `report.md` if the SRT or briefing changed, and a
   candidate that parses as `Briefing`.
 - **Briefing promotion**: after acceptance `finish_glossary_check` writes the
-  candidate to `work/11_glossary/briefing.json` only if it differs from
-  `work/08_prepass/briefing.json` (else removes it; `_shared.settle_briefing`,
+  candidate to `.work/11_glossary/briefing.json` only if it differs from
+  `.work/08_prepass/briefing.json` (else removes it; `_shared.settle_briefing`,
   shared with proofread), then deletes the candidate. A correcting stage reads
   `layout.briefing_before(itself)`; downstream reads
   `layout.effective_briefing()` (proofread copy, else glossary copy, else
@@ -54,7 +54,7 @@ for a second model family. It edits, but never writes files: Python builds the d
 (`aligned.tsv` ja/zh per block; `history.md` earlier versions of changed
 blocks, seams from `split_source`, Latin/kana suspects by number; the
 briefing JSON) and sends it inline in the prompt (as a file it cost
-paged-read turns), keeping table copies in `work/12_proofread/`; existing
+paged-read turns), keeping table copies in `.work/12_proofread/`; existing
 frame dirs are listed. The agent (`get_frames`, `requires={WEB_SEARCH}`, no
 `check_srt`) answers `ProofreadAnswer` through the schema: `fixes`, and a
 `BriefingPatch` (a replacement per corrected top-level field, null keeps it;
@@ -68,7 +68,7 @@ fields equal the explained ones. Python then writes `answer.json`,
 stage start). With `[features] proofread_transcribe` the
 session also gets `transcribe` (role `transcribe`, watches a `video.mp4`
 clip; the runner refuses a model that cannot watch video before the slot;
-spans under `work/12_proofread/transcribe/`) plus
+spans under `.work/12_proofread/transcribe/`) plus
 `proofread_transcribe.md`, for ASR-suspect lines. Finalize reads
 `layout.effective_subtitles()` (proofread, else checked); a proofread reached after finalize ran is recorded as skipped (it
 would never be delivered) with a warning naming `grill reset --from proofread`.
@@ -77,7 +77,7 @@ would never be delivered) with a warning naming `grill reset --from proofread`.
 
 `effective_subtitles()` → `video.cht.ass` + `video.cht.srt` at the project root, sharing
 `video.mp4`'s stem so players auto-load them (declared `outputs`; no
-`work/12_finalize/`). Deterministic, the last pass over the dialogue: name spacing (effective briefing
+`.work/12_finalize/`). Deterministic, the last pass over the dialogue: name spacing (effective briefing
 names + curated Han/kana-Latin `zh` from the fixed glossary, longest first),
 then Netflix-TC punctuation. `subtitles/ass.py` holds canvas, font, margins and
 dialogue style, shared with the chat panel; a change hits every package.
@@ -91,14 +91,14 @@ exit even when a stage failed, skipped entirely by `--break-after`; done =
 
 - **Cover** (after `download`; `--cover` / `[features] cover`; role `image`,
   `requires={IMAGE_GENERATION}`, codex only): `poster.jpg` staged into
-  `work/side/cover/`, the agent's `cover.png` moves to the root. Root cover = hit.
+  `.work/side/cover/`, the agent's `cover.png` moves to the root. Root cover = hit.
 - **Date research** (after `metadata`; `--date-research` / `[features]
   date_research`; role `utility`, `WEB_SEARCH`, `workdir=None` = throwaway temp
-  dir): verdict cached at `work/side/date_research/result.json` (corrupt = redo);
+  dir): verdict cached at `.work/side/date_research/result.json` (corrupt = redo);
   `DateResearchRecord` feeds `effective_broadcast_date`. Moot once a date or
   record exists; a cached verdict is applied even when skipped (`_on_skip`).
 - **Titles** (package step; role `utility`, `WEB_SEARCH`, `workdir=None`): three
-  titles from the effective briefing, cached at `work/package/titles.json`;
+  titles from the effective briefing, cached at `.work/package/titles.json`;
   `[features] title_suggestion` gates only generating a missing one; failure warns.
 
 ## Packaging (`package/`, `stages/package.py`)
@@ -126,7 +126,7 @@ if present, inserts), then the render. Destination
 `YYMMDD_<id>_<name>` (`<id>_<name>` undated), only the name tail MAX_PATH-trimmed.
 
 **Burn plan**: dialogue alone, or with translated chat and layout ≠ `none` the
-panel at `work/package/chat.ass`; `side` also shrinks the picture into a box
+panel at `.work/package/chat.ass`; `side` also shrinks the picture into a box
 (scale+pad after the look), `overlay` keeps the full frame.
 Layers must sit under the video's dir (ffmpeg runs there with relative names).
 

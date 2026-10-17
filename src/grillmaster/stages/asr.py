@@ -1,5 +1,5 @@
-"""ASR stage: transcribe `work/05_audio/audio.ogg` with ElevenLabs into
-`work/06_asr/asr.json` and add the spend to `ProjectState.asr_cost_usd`.
+"""ASR stage: transcribe `.work/05_audio/audio.ogg` with ElevenLabs into
+`.work/06_asr/asr.json` and add the spend to `ProjectState.asr_cost_usd`.
 
 An existing `asr.json` is a cache hit: the stage costs nothing and records
 nothing, so a resume after a failure past the request never pays twice. A

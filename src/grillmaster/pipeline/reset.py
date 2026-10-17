@@ -1,7 +1,7 @@
 """`grill reset`: explicit, user-requested invalidation of stage results.
 
 Clearing a stage removes its ledger entry, the state fields its
-`StageDef.clear_state` resets, its whole `work/NN_<stage>/` directory and the
+`StageDef.clear_state` resets, its whole `.work/NN_<stage>/` directory and the
 deliverables its `StageDef.outputs` declares; there is no other list to keep
 in sync. The state is saved first, so an interrupted deletion still reruns
 the stage. Then every cleared stage's `StageDef.on_reset` runs before any

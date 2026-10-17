@@ -1,6 +1,6 @@
 """Broadcast-date research side task: once the metadata stage has run, a
 web-searching agent looks for the original on-air date the platform did not
-give, keeping its verdict in `work/side/date_research/result.json`.
+give, keeping its verdict in `.work/side/date_research/result.json`.
 
 Runs when `--date-research` or `[features] date_research` asks for it, and
 is moot once the project has a date or a recorded verdict. Either verdict

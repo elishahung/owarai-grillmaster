@@ -1,9 +1,9 @@
 """Chat-translate stage (`--chat`): the replay in Traditional Chinese.
 
-Runs last, after finalize: the finalized SRT (paired with `subs/ja.srt`) and
+Runs last, after finalize: the finalized SRT (paired with `.subs/ja.srt`) and
 the effective briefing are the ground truth for names and context, and a
 chat failure leaves the main subtitles finalized. Batches and the polish pass
-cache under `work/13_chat_translate/` (fixed names); `subs/chat.cht.json` is
+cache under `.work/13_chat_translate/` (fixed names); `.subs/chat.cht.json` is
 rebuilt from them on every run.
 """
 

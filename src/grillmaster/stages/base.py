@@ -155,7 +155,7 @@ class StageDef:
     `run` does the work and returns normally on success, optionally with
     the `StepCompleted` result text; the runner then records the stage in
     the ledger. `outputs` lists the root deliverables the stage writes
-    besides its `work/NN_<stage>/` directory (what `grill reset` deletes);
+    besides its `.work/NN_<stage>/` directory (what `grill reset` deletes);
     `clear_state` resets the `ProjectState` fields it writes (name,
     broadcast date, section, ...) on the same reset. `on_skip` runs when a
     resume skips the stage as already complete (e.g. warn that `--start` /
@@ -272,7 +272,7 @@ class StageContext:
 
     A stage hands the config sections its domain module needs on as
     explicit inputs. `workdir` is the step's own directory
-    (`work/NN_<stage>/`, `work/side/<task>/` or the delivery step's declared
+    (`.work/NN_<stage>/`, `.work/side/<task>/` or the delivery step's declared
     one), created on first access so stages without intermediates leave no
     empty directory. `ffmpeg`, `ytdlp`, `http` and `speech_to_text` are the
     run's `Externals`.

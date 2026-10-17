@@ -1,7 +1,7 @@
 """Chunk stage: translate every chunk concurrently, then merge the results
-onto the Japanese timecodes as `work/09_chunks/merged.srt`.
+onto the Japanese timecodes as `.work/09_chunks/merged.srt`.
 
-Each chunk works in its own `work/09_chunks/<from>-<to>/` (frames, audio
+Each chunk works in its own `.work/09_chunks/<from>-<to>/` (frames, audio
 slice, session record, agent cwd, `translation.json` cache); the batch
 itself is `translate.chunk.translate_chunks`. Progress is the
 `CHUNK_PROGRESS_SCOPE` bar over the chunk count, advanced per finished or

@@ -108,6 +108,20 @@ def test_archive_moves_dated_projects_under_year_month(
     assert not layout.root.exists()
 
 
+def test_archive_drops_transcribe_clips_but_keeps_transcripts(
+    layout: ProjectLayout, state: ProjectState, tmp_path: Path
+):
+    span = layout.proofread_transcribe_dir / "0812.000-0845.500"
+    span.mkdir(parents=True)
+    (span / "clip.mp4").write_bytes(b"clip")
+    (span / "transcript.txt").write_text("text\n", encoding="utf-8")
+
+    archived = archive_project(layout, state, tmp_path / "archive")
+
+    moved = archived.proofread_transcribe_dir / span.name
+    assert sorted(path.name for path in moved.iterdir()) == ["transcript.txt"]
+
+
 def test_archive_puts_undated_projects_under_etc(
     layout: ProjectLayout, state: ProjectState, tmp_path: Path
 ):

@@ -26,7 +26,7 @@ or database: all state lives in `projects/<id>/project.json`, and the pipeline
 is a declarative, **resumable** stage registry — re-running an ID resumes where
 it left off.
 
-Pipeline at a glance (stage keys, in order; `work/NN_<key>/` per stage with
+Pipeline at a glance (stage keys, in order; `.work/NN_<key>/` per stage with
 intermediates):
 `metadata → download → combine → (chat_fetch) → audio → asr → transcript →
 prepass → chunks → refine → glossary → (proofread) → finalize → (chat_translate)`, then

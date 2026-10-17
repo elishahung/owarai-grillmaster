@@ -1,4 +1,4 @@
-"""Audio stage: encode `video.mp4`'s audio track for ASR (`work/05_audio/`)."""
+"""Audio stage: encode `video.mp4`'s audio track for ASR (`.work/05_audio/`)."""
 
 from __future__ import annotations
 

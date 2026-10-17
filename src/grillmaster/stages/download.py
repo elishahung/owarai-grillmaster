@@ -1,8 +1,8 @@
 """Download stage: the whole video, platform captions and the poster.
 
-yt-dlp writes parts and raw captions to `work/02_download/parts/`; checked
+yt-dlp writes parts and raw captions to `.work/02_download/parts/`; checked
 for audio gaps (before ASR spends money on drifting timestamps), the parts
-are joined into `work/02_download/full.mp4`, the thumbnail goes to the root
+are joined into `.work/02_download/full.mp4`, the thumbnail goes to the root
 `poster.jpg`. New series/channel names are then registered in `grill.toml`
 as empty program entries, the one write outside the project directory any
 stage makes.

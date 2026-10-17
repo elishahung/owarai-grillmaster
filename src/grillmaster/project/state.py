@@ -81,7 +81,7 @@ class StageRecord(TaskRecord):
 
 
 class DateResearchRecord(TaskRecord):
-    """Research outcome; the evidence lives in `work/side/date_research/`.
+    """Research outcome; the evidence lives in `.work/side/date_research/`.
 
     `broadcast_date` is the adopted date (`ProjectState.
     effective_broadcast_date` falls back to it); `unknown` is recorded too

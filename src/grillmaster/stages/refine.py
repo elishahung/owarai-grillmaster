@@ -1,5 +1,5 @@
-"""Refine stage: agent polish of `work/09_chunks/merged.srt` into
-`work/10_refine/refined.srt` (+ `report.md`).
+"""Refine stage: agent polish of `.work/09_chunks/merged.srt` into
+`.work/10_refine/refined.srt` (+ `report.md`).
 
 Every file the agent may write is a declared output, which the agent runner
 deletes before each fresh attempt; `grill reset` re-runs a finished refine.

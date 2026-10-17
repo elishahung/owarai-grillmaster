@@ -2,7 +2,7 @@
 
 Runs right after combine, so a video without a replay fails before ASR
 spends money, and so the section the video was cut to is already on
-`ProjectState.section`. The raw replay (`work/04_chat_fetch/live_chat.jsonl`)
+`ProjectState.section`. The raw replay (`.work/04_chat_fetch/live_chat.jsonl`)
 is a fixed-name cache; `messages.json` is rebuilt from it on every run.
 """
 

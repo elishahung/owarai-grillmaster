@@ -141,9 +141,11 @@ ELEVENLABS_API_KEY=xxx
 - `video.mp4`、`poster.jpg`、`cover.png`（有開封面時）
 - `video.cht.ass`：套好樣式的繁中字幕，與影片同名，播放器會自動載入
 - `video.cht.srt`：給不支援 ASS 的播放器
-- `subs/ja.srt`：日文原文字幕（`ja.official.srt` 為平台官方字幕，有才有）
+- `.subs/ja.srt`：日文原文字幕（`ja.official.srt` 為平台官方字幕，有才有）
 - `project.json`：專案狀態與各 stage 完成紀錄
-- `work/NN_<stage>/`：各 stage 的中間產物與 agent session 紀錄
-- `logs/`：每次執行的 log 與事件紀錄
+- `.work/NN_<stage>/`：各 stage 的中間產物與 agent session 紀錄
+- `.logs/`：每次執行的 log 與事件紀錄
+
+中間產物都放在點開頭的資料夾，Plex、Infuse 等媒體伺服器不會把其中的影片切片當成節目掃進去。歸檔時會刪掉 proofread `transcribe` 工具的影片切片（逐字稿保留）。
 
 設定 `[paths] archive` 時，stage 全部完成後專案會整個搬過去，打包再從歸檔位置讀取；設定 `[paths] package` 時，燒錄好的影片、封面與候選標題會輸出到該目錄。歸檔後打包失敗，錯誤訊息會給出對歸檔資料夾執行的 `grill package` 指令；已歸檔的 ID 不能再跑 stage，重跑同一個 ID 會被拒絕並提示同樣的指令

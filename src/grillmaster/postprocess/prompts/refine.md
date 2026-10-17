@@ -14,7 +14,7 @@ Write scope (strict): you may only create or modify `{output_srt}` and `{report}
 
 - `project.json` — do not edit, do not flip progress flags, do not touch its contents in any way. The outer Python workflow owns this file and will mark progress after validating your output.
 - `merged.srt` and `ja.srt` — read-only sources.
-- The other stage directories under `work/` — read-only caches.
+- The other stage directories under `.work/` — read-only caches.
 - `video.mp4`, `audio.ogg`, `poster.jpg`, etc. — unrelated to subtitle refinement.
 
 Do not run scripts that mutate `project.json` (e.g. don't run the project's own Python entrypoints, validators that write back, or any tool that re-saves state). The grill tools (`get_frames`, `check_srt`) are exempt: `get_frames` saves its frames under `frames/` by itself, so calling them does not violate this write scope.

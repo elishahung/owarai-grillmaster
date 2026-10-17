@@ -24,7 +24,7 @@ class ChatMessage(StrictModel):
 
 
 class ChatLog(StrictModel):
-    """Normalized chat messages, ordered by time (`work/04_chat_fetch/messages.json`)."""
+    """Normalized chat messages, ordered by time (`.work/04_chat_fetch/messages.json`)."""
 
     messages: list[ChatMessage]
 
@@ -36,6 +36,6 @@ class TranslatedChatMessage(ChatMessage):
 
 
 class TranslatedChatLog(StrictModel):
-    """Translated chat consumed by packaging (`subs/chat.cht.json`)."""
+    """Translated chat consumed by packaging (`.subs/chat.cht.json`)."""
 
     messages: list[TranslatedChatMessage]

@@ -12,7 +12,7 @@ description: >-
 
 # Translation (`translate/` + `stages/prepass.py`, `stages/chunks.py`)
 
-`subs/ja.srt` (transcript stage) → **prepass** stage: one whole-film agent call
+`.subs/ja.srt` (transcript stage) → **prepass** stage: one whole-film agent call
 → `Briefing` → **chunks** stage: concurrent per-chunk agent calls → merged SRT.
 Runner, adapters, `AgentTask`/`AgentJob` and repair rounds: **agent-orchestration**.
 Stage registry, ledger, `grill reset`, layout: **project-architecture**.
@@ -35,10 +35,10 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
 
 ## Artifacts (`project/layout.py` is the only path authority)
 
-- `work/08_prepass/briefing.json` (+ `frames/`, `session/`).
-- `work/09_chunks/<from>-<to>/` (`chunk_range_name`, `0001-0119`): `frames/`,
+- `.work/08_prepass/briefing.json` (+ `frames/`, `session/`).
+- `.work/09_chunks/<from>-<to>/` (`chunk_range_name`, `0001-0119`): `frames/`,
   `audio.ogg`, `translation.json`, `session/`; the dir is also the agent cwd.
-- `work/09_chunks/merged.srt` — renumbered 1..N on Japanese timecodes (refine input).
+- `.work/09_chunks/merged.srt` — renumbered 1..N on Japanese timecodes (refine input).
 - The chunks stage and the pre-pass's parent briefing (`--parent` or serial)
   read `layout.effective_briefing()` (a proofread, else glossary, copy wins when present).
 

@@ -1,8 +1,10 @@
-"""Agent backend + model + reasoning effort, written `backend/model[/effort]`.
+"""Agent backend + model + reasoning effort + fast mode, written
+`backend/model[/effort][/fast]`.
 
 Lives in core because both `config` (parses it from `grill.toml`) and
 `agents` (resolves adapters from it) need it, and `agents` may not import
-`config`. Each adapter maps `Effort` onto its own CLI vocabulary. `Role` is
+`config`. Each adapter maps `Effort` onto its own CLI vocabulary; `fast`
+(a faster tier that spends more quota) needs the `FAST_MODE` capability. `Role` is
 the key `grill.toml` `[agents.roles]` maps onto a `ModelSpec`;
 `ModelSpecField` is the pydantic field written as the spec string
 (`grill.toml`, the tool-session manifest).
@@ -53,12 +55,16 @@ DEFAULT_EFFORT = Effort.HIGH
 # A model name is one path segment without whitespace.
 MODEL_NAME_PATTERN = r"[^/\s]+"
 
+# The optional last segment that turns fast mode on.
+FAST = "fast"
+
 
 @dataclass(frozen=True, slots=True)
 class ModelSpec:
     backend: Backend
     model: str
     effort: Effort
+    fast: bool = False
 
     def __post_init__(self) -> None:
         if not re.fullmatch(MODEL_NAME_PATTERN, self.model):
@@ -66,11 +72,14 @@ class ModelSpec:
 
     @classmethod
     def parse(cls, text: str) -> ModelSpec:
-        """Parse `backend/model` or `backend/model/effort`, written exactly.
+        """Parse `backend/model[/effort][/fast]`, written exactly.
 
         No whitespace, lowercase effort; a spec without one gets `DEFAULT_EFFORT`.
         """
-        match text.split("/"):
+        head, _, last = text.rpartition("/")
+        # `backend/fast` names a model called fast.
+        fast = last == FAST and "/" in head
+        match (head if fast else text).split("/"):
             case [backend_text, model] if backend_text and model:
                 effort_text = None
             case [backend_text, model, effort_text] if (
@@ -79,8 +88,8 @@ class ModelSpec:
                 pass
             case _:
                 raise ValueError(
-                    "model spec must be written as 'backend/model' or "
-                    f"'backend/model/effort', got: {text!r}"
+                    "model spec must be written as "
+                    f"'backend/model[/effort][/fast]', got: {text!r}"
                 )
         try:
             backend = Backend(backend_text)
@@ -96,10 +105,11 @@ class ModelSpec:
                 f"Unknown effort {effort_text!r} in {text!r}; "
                 f"expected one of: {', '.join(Effort)}"
             ) from None
-        return cls(backend, model, effort)
+        return cls(backend, model, effort, fast)
 
     def __str__(self) -> str:
-        return f"{self.backend}/{self.model}/{self.effort}"
+        text = f"{self.backend}/{self.model}/{self.effort}"
+        return f"{text}/{FAST}" if self.fast else text
 
 
 def _parse_model_spec(value: object) -> ModelSpec:
@@ -107,10 +117,10 @@ def _parse_model_spec(value: object) -> ModelSpec:
         return value
     if isinstance(value, str):
         return ModelSpec.parse(value)
-    raise ValueError("model spec must be a 'backend/model[/effort]' string")
+    raise ValueError("model spec must be a 'backend/model[/effort][/fast]' string")
 
 
-# `"backend/model[/effort]"` when serialized, a `ModelSpec` in code.
+# `"backend/model[/effort][/fast]"` when serialized, a `ModelSpec` in code.
 ModelSpecField = Annotated[
     ModelSpec,
     PlainValidator(_parse_model_spec),
@@ -119,9 +129,13 @@ ModelSpecField = Annotated[
         {
             "type": "string",
             "pattern": (
-                f"^({'|'.join(Backend)})/{MODEL_NAME_PATTERN}(/({'|'.join(Effort)}))?$"
+                f"^({'|'.join(Backend)})/{MODEL_NAME_PATTERN}"
+                f"(/({'|'.join(Effort)}))?(/{FAST})?$"
             ),
-            "description": "backend/model[/effort]; effort defaults to high.",
+            "description": (
+                "backend/model[/effort][/fast]; effort defaults to high, "
+                "fast (codex only) spends more quota for speed."
+            ),
         }
     ),
 ]

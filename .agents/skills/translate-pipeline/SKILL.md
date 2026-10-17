@@ -110,7 +110,7 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
 
 ## Config (`grill.toml`, `config/model.py`)
 
-- `[agents.roles] prepass`, `chunk` — `backend/model[/effort]`.
+- `[agents.roles] prepass`, `chunk` — `backend/model[/effort][/fast]`.
 - `[translate]`: `chunk_char_limit` (6000; changing it moves every boundary),
   `chunk_attempts` (3), `prepass_frame_interval_s` (60),
   `chunk_frame_interval_s` (30), `frame_max_side` (768).

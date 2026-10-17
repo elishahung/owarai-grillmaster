@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -9,6 +10,7 @@ from tests.agents.fakes import FakeProcess, FakeSpawn, fixture_lines
 
 from grillmaster.agents.adapters.base import McpServer, Media, MediaKind
 from grillmaster.agents.adapters.codex import CodexAdapter
+from grillmaster.agents.errors import AgentConfigError
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec
 
 if TYPE_CHECKING:
@@ -126,12 +128,38 @@ def test_effort_mapping(
     assert f"model_reasoning_effort={value}" in _configs(argv)
 
 
-def test_web_search_is_enabled_only_when_required(
+def test_web_search_and_fast_mode_only_when_asked(
     make_request: Callable[..., TurnRequest],
 ):
     adapter = CodexAdapter(spawn=FakeSpawn(), executable="codex")
     argv = adapter.argv(make_request(spec=SPEC), thread=None)
     assert _configs(argv) == ["model_reasoning_effort=xhigh"]
+    fast = adapter.argv(make_request(spec=replace(SPEC, fast=True)), thread="t")
+    assert _configs(fast) == ["model_reasoning_effort=xhigh", "service_tier=fast"]
+
+
+def test_a_dropped_fast_tier_is_a_config_error(
+    make_request: Callable[..., TurnRequest],
+):
+    message = (
+        "Configured service tier `fast` is not advertised as supported for "
+        "model `m` and will be omitted from requests."
+    )
+    lines = [
+        '{"type":"thread.started","thread_id":"t"}',
+        json.dumps(
+            {
+                "type": "item.completed",
+                "item": {"id": "e", "type": "error", "message": message},
+            }
+        ),
+        '{"type":"item.completed","item":{"id":"i","type":"agent_message","text":"OK"}}',
+        '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}',
+    ]
+    spawn = FakeSpawn(FakeProcess(lines))
+    request = make_request(spec=replace(SPEC, fast=True))
+    with pytest.raises(AgentConfigError, match=r"without fast mode.*not advertised"):
+        CodexAdapter(spawn=spawn, executable="codex").start(request).result()
 
 
 def test_no_schema_means_no_structured_output(

@@ -421,6 +421,7 @@ class AgentRunner:
             )
         adapter = self._adapters(spec.backend)
         requires = _required_capabilities(task, adapter.tool_image_delivery)
+        requires |= _spec_capabilities(spec)
         missing = sorted(requires - adapter.capabilities)
         if missing:
             raise AgentConfigError(
@@ -430,7 +431,8 @@ class AgentRunner:
         if task.tools is not None and task.tools.transcribe is not None:
             transcribe = task.tools.transcribe.model
             missing = sorted(
-                TRANSCRIBE_REQUIRES - self._adapters(transcribe.backend).capabilities
+                (TRANSCRIBE_REQUIRES | _spec_capabilities(transcribe))
+                - self._adapters(transcribe.backend).capabilities
             )
             if missing:
                 raise AgentConfigError(
@@ -846,6 +848,11 @@ def _required_capabilities(
         ):
             required |= {Capability.RESUME, Capability.IMAGE_INPUT}
     return frozenset(required)
+
+
+def _spec_capabilities(spec: ModelSpec) -> frozenset[Capability]:
+    """What the model spec itself asks of the backend."""
+    return frozenset({Capability.FAST_MODE}) if spec.fast else frozenset()
 
 
 def _tool_access(task: AgentTask[Any]) -> ToolAccess:

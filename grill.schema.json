@@ -3,31 +3,31 @@
   "$defs": {
     "AgentRoles": {
       "additionalProperties": false,
-      "description": "Model per agent role, as backend/model[/effort]; all but chat,\nproofread and transcribe are required.",
+      "description": "Model per agent role, as backend/model[/effort][/fast]; all but chat,\nproofread and transcribe are required.",
       "properties": {
         "prepass": {
           "description": "Whole-film pre-pass analysis.",
-          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?(/fast)?$",
           "title": "Prepass",
           "type": "string"
         },
         "chunk": {
           "description": "Concurrent chunk translation.",
-          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?(/fast)?$",
           "title": "Chunk",
           "type": "string"
         },
         "postprocess": {
           "description": "Refine and glossary check.",
-          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?(/fast)?$",
           "title": "Postprocess",
           "type": "string"
         },
         "proofread": {
           "anyOf": [
             {
-              "description": "backend/model[/effort]; effort defaults to high.",
-              "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+              "description": "backend/model[/effort][/fast]; effort defaults to high, fast (codex only) spends more quota for speed.",
+              "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?(/fast)?$",
               "type": "string"
             },
             {
@@ -41,8 +41,8 @@
         "transcribe": {
           "anyOf": [
             {
-              "description": "backend/model[/effort]; effort defaults to high.",
-              "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+              "description": "backend/model[/effort][/fast]; effort defaults to high, fast (codex only) spends more quota for speed.",
+              "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?(/fast)?$",
               "type": "string"
             },
             {
@@ -55,15 +55,15 @@
         },
         "utility": {
           "description": "Lightweight agents: titles, broadcast-date research, and the no-audio fix of a pre-pass or chunk output that failed validation.",
-          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?(/fast)?$",
           "title": "Utility",
           "type": "string"
         },
         "chat": {
           "anyOf": [
             {
-              "description": "backend/model[/effort]; effort defaults to high.",
-              "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+              "description": "backend/model[/effort][/fast]; effort defaults to high, fast (codex only) spends more quota for speed.",
+              "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?(/fast)?$",
               "type": "string"
             },
             {
@@ -76,7 +76,7 @@
         },
         "image": {
           "description": "Cover generation; the backend must support image generation.",
-          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?$",
+          "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?(/fast)?$",
           "title": "Image",
           "type": "string"
         }

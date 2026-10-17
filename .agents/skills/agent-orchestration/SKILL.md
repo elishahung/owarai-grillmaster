@@ -75,15 +75,16 @@ description: >-
 ## Roles and capabilities
 
 `grill.toml [agents.roles]` → `AgentRoles.specs()` (`chat` falls back to
-`utility`) → `dict[Role, ModelSpec]`, written `backend/model[/effort]`
-(default `high`). `[agents] max_concurrent` (default 10) sizes the semaphore
+`utility`) → `dict[Role, ModelSpec]`, written `backend/model[/effort][/fast]`
+(default `high`; `/fast` requires FAST_MODE, checked for the role, a handoff
+role and the `transcribe` tool's model). `[agents] max_concurrent` (default 10) sizes the semaphore
 of one grill process (concurrent processes each get their own);
 `timeout_minutes` bounds each turn (process watchdog; `asyncio.timeout` for
 Claude), not the session.
 
 All adapters declare IMAGE_INPUT, SCHEMA_OUTPUT, RESUME, MCP, WEB_SEARCH; agy
 and gemini have AUDIO_INPUT, only gemini VIDEO_INPUT (a picture+sound clip),
-claude and gemini TOOL_ISOLATION, only codex IMAGE_GENERATION. Required =
+claude and gemini TOOL_ISOLATION, only codex IMAGE_GENERATION and FAST_MODE. Required =
 `task.requires` (what inputs cannot imply: IMAGE_GENERATION for cover,
 WEB_SEARCH for prepass/titles/date research) + derived: schema→SCHEMA_OUTPUT,
 `max_repairs > 0`→RESUME, each media kind→its `MEDIA_KINDS` capability,
@@ -173,7 +174,10 @@ turn's.
   `-c mcp_servers.grill.*` (codex strips the MCP server's env, so
   `env_vars` names every variable of the grill process; `tool_timeout_sec`
   = the turn timeout, default 60 s), `-c tools.web_search=true` only when
-  required.
+  required, `-c service_tier=fast` for a `/fast` spec (codex maps it onto the
+  model's tier, `priority` for gpt-6.1-sol; a tier the model does not
+  advertise is dropped with only an `error` item, which the parser turns into
+  `AgentConfigError`).
   `exec resume <thread>` has no `--cd`: the process cwd is the workdir. No
   `--ephemeral` (resume needs the stored thread), so sessions accumulate in
   `~/.codex/sessions`. `--ignore-user-config` skips only `config.toml`: the

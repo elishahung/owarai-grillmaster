@@ -99,7 +99,7 @@ grill status [專案 ID]
 archive = 'NAS:\video\ai'          # stage 完成後的歸檔位置（打包前）
 package = 'NAS:\video\package'     # 燒錄字幕後的成品位置
 
-[agents.roles]                      # 各角色模型，格式為 backend/model[/effort]
+[agents.roles]                      # 各角色模型，格式為 backend/model[/effort][/fast]（fast 僅 codex，較快但耗更多額度）
 prepass = "gemini/gemini-3.1-pro-preview/high"  # backend：gemini、agy、claude、codex（皆為訂閱制；agy 與 gemini 能聽音檔）
 chunk = "gemini/gemini-3.1-pro-preview/high"
 postprocess = "codex/gpt-6.1-sol/high"

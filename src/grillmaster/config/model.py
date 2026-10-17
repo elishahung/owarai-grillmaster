@@ -76,7 +76,7 @@ _ROLE_FALLBACKS = {
 
 
 class AgentRoles(BaseModel):
-    """Model per agent role, as backend/model[/effort]; all but chat,
+    """Model per agent role, as backend/model[/effort][/fast]; all but chat,
     proofread and transcribe are required."""
 
     model_config = _STRICT

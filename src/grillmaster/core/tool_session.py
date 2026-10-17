@@ -84,7 +84,7 @@ class TranscribeTool(FrozenModel):
     """`transcribe`: a fresh transcription of a span of `video` by `model`.
 
     The tool server runs the transcription as its own agent session (the
-    `transcribe` role, `model` written `backend/model[/effort]`, each turn bounded
+    `transcribe` role, `model` written as a `ModelSpec` string, each turn bounded
     by `timeout_s`); a span's clip, transcript and session records go to
     `<clips_dir>/<start>-<end>/`, and an existing transcript is returned
     again without a new session."""

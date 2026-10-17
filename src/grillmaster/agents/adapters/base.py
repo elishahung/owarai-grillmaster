@@ -50,6 +50,8 @@ class Capability(StrEnum):
     WEB_SEARCH = "web_search"
     # A session without the CLI's own tools (`ToolAccess.NONE`).
     TOOL_ISOLATION = "tool_isolation"
+    # A faster service tier for more quota (`/fast` in the spec).
+    FAST_MODE = "fast_mode"
 
 
 class MediaKind(StrEnum):

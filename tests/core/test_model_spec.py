@@ -18,6 +18,20 @@ def test_missing_effort_defaults_to_high():
 
 
 @pytest.mark.parametrize(
+    ("text", "effort"),
+    [
+        ("codex/gpt-6.1-sol/low/fast", Effort.LOW),
+        ("codex/gpt-6.1-sol/fast", Effort.HIGH),
+    ],
+)
+def test_a_trailing_fast_turns_fast_mode_on(text: str, effort: Effort):
+    spec = ModelSpec.parse(text)
+    assert spec == ModelSpec(Backend.CODEX, "gpt-6.1-sol", effort, fast=True)
+    assert ModelSpec.parse(str(spec)) == spec
+    assert not ModelSpec.parse("codex/gpt-6.1-sol/low").fast
+
+
+@pytest.mark.parametrize(
     ("text", "match"),
     [
         ("codex/gpt-5.5/xhigh", "Unknown effort"),
@@ -28,6 +42,9 @@ def test_missing_effort_defaults_to_high():
         ("codex/ gpt-5.5", "Invalid model name"),
         ("gpt-5.5", "backend/model"),
         ("codex/gpt-5.5/medium/high", "backend/model"),
+        ("codex/gpt-5.5/fast/low", "backend/model"),
+        ("codex/gpt-5.5/fast/fast", "Unknown effort"),
+        ("codex/gpt-5.5/low/FAST", "backend/model"),
         ("/gpt-5.5", "backend/model"),
         ("codex/", "backend/model"),
         ("openai/gpt-x", "Unknown backend"),

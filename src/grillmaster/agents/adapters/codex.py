@@ -18,6 +18,10 @@ Facts this module is built on (codex-cli 0.160.0):
   default) is raised to the turn's timeout, which a `transcribe` call can need.
 * `error` records also report recoverable stream retries; only a turn that
   never completes is a failure.
+* Fast mode is `-c service_tier=fast`, which codex maps onto the model's
+  advertised fast tier (`priority` for gpt-6.1-sol). A tier the model does
+  not advertise is dropped from the request with only an `error` item, so
+  that item fails the turn as a configuration error.
 """
 
 from __future__ import annotations
@@ -37,7 +41,11 @@ from grillmaster.agents.adapters.base import (
     ToolImageDelivery,
     TurnRequest,
 )
-from grillmaster.agents.errors import AgentTransientError, classify_failure
+from grillmaster.agents.errors import (
+    AgentConfigError,
+    AgentTransientError,
+    classify_failure,
+)
 from grillmaster.agents.events import (
     Message,
     Thought,
@@ -63,6 +71,8 @@ EFFORTS = {
     Effort.ULTRA: "ultra",
 }
 _LOGIN_HINT = "run `codex login`"
+# The `error` item codex emits when it drops the requested service tier.
+_TIER_DROPPED = "is not advertised as supported"
 _USAGE_NAMES = {
     "input_tokens": "input_tokens",
     "output_tokens": "output_tokens",
@@ -81,6 +91,7 @@ class CodexAdapter(PerTurnAdapter):
             Capability.RESUME,
             Capability.MCP,
             Capability.WEB_SEARCH,
+            Capability.FAST_MODE,
         }
     )
     media_delivery = MediaDelivery.ATTACHED
@@ -126,6 +137,8 @@ class CodexAdapter(PerTurnAdapter):
             "-c",
             f"model_reasoning_effort={EFFORTS[request.spec.effort]}",
         ]
+        if request.spec.fast:
+            argv += ["-c", "service_tier=fast"]
         if request.web_search:
             argv += ["-c", "tools.web_search=true"]
         if thread is None:
@@ -168,6 +181,7 @@ class CodexTurnParser:
         self._announced: set[str] = set()
         self._errors: list[str] = []
         self._failure: str | None = None
+        self._dropped_tier: str | None = None
         self._usage: dict[str, int] | None = None
 
     @property
@@ -193,6 +207,8 @@ class CodexTurnParser:
                 pass
 
     def finish(self, returncode: int, stderr_tail: str) -> FinalOutput:
+        if self._dropped_tier is not None:
+            raise AgentConfigError(f"codex ran without fast mode: {self._dropped_tier}")
         if self._usage is None:
             message = self._failure or (self._errors[-1] if self._errors else None)
             if message is None:
@@ -260,9 +276,11 @@ class CodexTurnParser:
                 yield from self._tool(
                     item_id, "file_change", {"paths": paths}, completed=True, ok=True
                 )
+            case "error" if _TIER_DROPPED in str(item.get("message") or ""):
+                self._dropped_tier = str(item.get("message"))
             case _:
-                # `error` items are warnings (e.g. unknown model metadata);
-                # todo lists carry nothing worth showing.
+                # Other `error` items are warnings (e.g. unknown model
+                # metadata); todo lists carry nothing worth showing.
                 pass
 
     def _tool(

@@ -5,6 +5,7 @@ import contextlib
 import json
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, override
 
@@ -348,6 +349,31 @@ def test_a_transcribe_model_that_cannot_watch_video_fails_first(
     )
     task = make_task(tmp_path, TextOutput(), tools=tools, max_repairs=0)
     with pytest.raises(AgentConfigError, match=f"transcribe tool.*{missing}"):
+        make_runner(adapter).run(task)
+    assert adapter.calls == []
+
+
+def test_a_fast_spec_needs_fast_mode(
+    tmp_path: Path, make_runner: Callable[..., AgentRunner]
+):
+    adapter = FakeAdapter(capabilities=frozenset(Capability) - {Capability.FAST_MODE})
+    fast = replace(SPEC, fast=True)
+    with pytest.raises(AgentConfigError, match=r"fast_mode.*/fast"):
+        make_runner(adapter, roles=dict.fromkeys(Role, fast)).run(
+            make_task(tmp_path, TextOutput())
+        )
+    transcribe = TranscribeTool(
+        video=tmp_path / "video.mp4",
+        clips_dir=tmp_path / "transcribe",
+        model=fast,
+        timeout_s=60.0,
+        max_span_s=300.0,
+    )
+    tools = ToolSession(
+        project_root=tmp_path, frames=None, check_srt=None, transcribe=transcribe
+    )
+    task = make_task(tmp_path, TextOutput(), tools=tools, max_repairs=0)
+    with pytest.raises(AgentConfigError, match=r"transcribe tool.*fast_mode"):
         make_runner(adapter).run(task)
     assert adapter.calls == []
 

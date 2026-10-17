@@ -108,6 +108,10 @@ def test_bad_model_specs_fail(roles: dict[str, str], spec: object, match: str):
         " agy/m",
         "agy/a b",
         "agy/m/high/x",
+        "codex/m/low/fast",
+        "codex/m/fast",
+        "codex/m/fast/low",
+        "codex/m/fast/fast",
         "openai/m",
     ],
 )

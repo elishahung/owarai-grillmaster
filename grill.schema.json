@@ -123,7 +123,7 @@
       "properties": {
         "model": {
           "default": "scribe_v2",
-          "description": "ElevenLabs speech-to-text model. scribe_v2 output gets an SRT timing compensation for late sentence tails; other models do not.",
+          "description": "ElevenLabs speech-to-text model.",
           "minLength": 1,
           "title": "Model",
           "type": "string"

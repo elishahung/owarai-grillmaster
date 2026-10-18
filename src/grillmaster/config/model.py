@@ -149,10 +149,7 @@ class AsrConfig(BaseModel):
     model: str = Field(
         default="scribe_v2",
         min_length=1,
-        description=(
-            "ElevenLabs speech-to-text model. scribe_v2 output gets an SRT "
-            "timing compensation for late sentence tails; other models do not."
-        ),
+        description="ElevenLabs speech-to-text model.",
     )
     language: str = Field(
         default="jpn", min_length=1, description="Language code hint for ElevenLabs."

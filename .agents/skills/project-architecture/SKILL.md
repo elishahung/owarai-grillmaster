@@ -240,10 +240,8 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   `core.process.spawn_tree` trees; every tree is killable and registered in
   `LIVE_PROCESSES`; after `kill_all` (`ABORT` latched) no child may start.
 - `asr/`: ElevenLabs client and the ASR-JSON → SRT builder (tuning constants
-  are intentional, not settings). Per-model compensation for ASR timing
-  faults lives only in `asr/srt_compensation.py`. Why Scribe v2 is still the
-  only provider, and how to check a new candidate:
-  `references/asr-provider-evaluation.md`.
+  are intentional, not settings). Why Scribe v2 is still the only provider,
+  and how to check a new candidate: `references/asr-provider-evaluation.md`.
   `glossary/`: the fixed glossary, a required runtime input of pre-pass,
   glossary check and finalize.
 - `core/`: single copies of SRT parsing (`read_srt_file` reads `utf-8-sig`),

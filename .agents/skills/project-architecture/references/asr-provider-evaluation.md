@@ -48,22 +48,11 @@ Doubao, Fun-ASR, Chirp 3, GPT-4o-transcribe and self-hosted Qwen3-ASR.
 - **Scribe mis-times sentence tails.** It sometimes places a sentence's last
   characters tens of seconds after the rest. This happened 137 times over
   38 episodes for gaps of 3 s or more, and the worst case produced a 77 s
-  block. `asr/srt_compensation.py` compensates for it, for `scribe_v2` only; the rule
-  and the rejected alternatives are in its docstring. Measured over the same
-  38 episodes, block texts and start times stayed the same except for 45
-  dialogue blocks that are now split:
-
-  | Measure | Before | After |
-  |---|---|---|
-  | Blocks of 10 s or more | 27 | 6 |
-  | Slow blocks (4 s or more, under 1.5 chars/s) | 79 | 12 |
-  | Longest block | 76.9 s | 12.6 s |
-  | Blocks under 0.6 s | 1171 | 1172 |
-
-  The user also compared 23 clips side by side and judged the new timing
-  better. Blind listening by Gemini found the tail really spoken with its
+  block. Blind listening by Gemini found the tail really spoken with its
   sentence in 9 of 10 gaps; in the exception, the sentence head was sung
-  and the tail spoken later.
+  and the tail spoken later. A scribe_v2-only SRT compensation that capped
+  such inner silences at 1 s (commit d535f17, with its measurements) was
+  reverted on 2026-10-19; the SRT builder uses the ASR timings as they are.
 
 A 2026-10-16 recheck as the proofread `transcribe` engine (9 short ASR-suspect
 clips, 8–25 s) confirmed it: Grok kept calm speech but dropped shouted and
@@ -75,9 +64,7 @@ gemini-3.8-flash heard them (イライパ for らいぱち, 空の咳 for 空の
 1. Run it on the long MX final and one YouTube window. Compare the
    speech-seconds it has against Scribe's before looking at accuracy, since
    dropped speech is the disqualifying failure.
-2. Check digits (第N弾, N年目) and the mid-sentence gap count. Build the
-   candidate's SRTs with the plain `SrtFormatOptions()`: the
-   `srt_options_for_model` compensation targets Scribe v2's fault only.
+2. Check digits (第N弾, N年目) and the mid-sentence gap count.
 3. A provider abstraction is not built yet. `transcript` and everything after
    it need only `words[{text, start, end, type, speaker_id}]` and
    `audio_duration_secs`; ElevenLabs' raw response shape is the de facto

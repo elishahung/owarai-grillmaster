@@ -160,6 +160,35 @@ def test_archive_of_an_archived_project_is_a_no_op(
     assert again.project_json.is_file()
 
 
+def test_archive_writes_the_infuse_sidecar_only_when_asked(
+    layout: ProjectLayout, state: ProjectState, tmp_path: Path
+):
+    state.broadcast_date = date(2026, 5, 3)
+    archived = archive_project(layout, state, tmp_path / "archive")
+    assert not archived.infuse_metadata.exists()
+
+    # Re-archiving in place (`grill archive <archived dir>`) backfills it.
+    again = archive_project(archived, state, tmp_path / "archive", infuse_metadata=True)
+    assert again == archived
+    assert "<published>2026-05-03</published>" in archived.infuse_metadata.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_an_unwritable_infuse_sidecar_does_not_fail_the_archive(
+    layout: ProjectLayout, state: ProjectState, tmp_path: Path, warnings: list[str]
+):
+    archived = archive_project(layout, state, tmp_path / "archive")
+    archived.infuse_metadata.mkdir()  # the sidecar's name is taken
+
+    again = archive_project(archived, state, tmp_path / "archive", infuse_metadata=True)
+
+    assert again == archived
+    assert archived.project_json.is_file()
+    assert len(warnings) == 1
+    assert f'grill archive "{archived.root}"' in warnings[0]
+
+
 def test_an_archived_copy_under_another_date_blocks_a_second_one(
     layout: ProjectLayout, state: ProjectState, tmp_path: Path
 ):

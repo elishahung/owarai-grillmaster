@@ -26,6 +26,8 @@ def archive_command(
     For a run whose archive move failed (a NAS behind a dropped VPN): the
     move is retried without re-running any stage; `grill package <archived
     dir>` then builds the deliverable, which the failed run never reached.
+    On an already archived project it only rewrites the Infuse sidecar
+    (`[features] infuse_metadata`).
     """
     from grillmaster.core.stage_key import StageKey
     from grillmaster.project.errors import ProjectError
@@ -40,7 +42,12 @@ def archive_command(
         if not state.is_done(StageKey.FINALIZE):
             fail(f"{state.id} is not finished ({StageKey.FINALIZE} is not done)")
         try:
-            archived = archive_project(layout, state, archive_root)
+            archived = archive_project(
+                layout,
+                state,
+                archive_root,
+                infuse_metadata=loaded.config.features.infuse_metadata,
+            )
         except (ProjectError, OSError) as error:
             fail(f"Failed to archive {layout.root}: {error}")
     if archived.root == layout.root:

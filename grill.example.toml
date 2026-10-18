@@ -74,6 +74,10 @@ proofread = false
 # video and transcribes it afresh, a second hearing for lines whose ASR is
 # suspect (captions and name cards help it spell names).
 proofread_transcribe = false
+# Write video.xml (title, description, broadcast date) beside each archived
+# video.mp4, so Infuse can sort the archive by broadcast date; it ignores the
+# date embedded in the MP4.
+infuse_metadata = false
 
 [package]
 # Noise pool (<package>/pools/<name>/) for a bare --remix or a remix program.

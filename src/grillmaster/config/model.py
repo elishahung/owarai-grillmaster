@@ -211,6 +211,10 @@ class FeaturesConfig(BaseModel):
         default=False,
         description="Give the proofread a transcribe tool: the transcribe role watches a span of the video and transcribes it afresh.",
     )
+    infuse_metadata: bool = Field(
+        default=False,
+        description="Write an Infuse metadata sidecar (video.xml: title, description, broadcast date) beside each archived video.mp4.",
+    )
 
 
 # Stems of the deliverable's own entries (`package.assemble`): an insert

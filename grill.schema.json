@@ -177,6 +177,12 @@
           "description": "Give the proofread a transcribe tool: the transcribe role watches a span of the video and transcribes it afresh.",
           "title": "Proofread Transcribe",
           "type": "boolean"
+        },
+        "infuse_metadata": {
+          "default": false,
+          "description": "Write an Infuse metadata sidecar (video.xml: title, description, broadcast date) beside each archived video.mp4.",
+          "title": "Infuse Metadata",
+          "type": "boolean"
         }
       },
       "title": "FeaturesConfig",

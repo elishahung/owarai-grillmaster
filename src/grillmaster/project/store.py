@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from grillmaster.core.fs import exclusive_lock, staged_dir
+from grillmaster.core.fs import atomic_write_text, exclusive_lock, staged_dir
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.project.errors import (
     DuplicateProjectError,
@@ -23,6 +23,7 @@ from grillmaster.project.errors import (
     ProjectExistsError,
     ProjectNotFoundError,
 )
+from grillmaster.project.infuse import infuse_xml
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.naming import (
     archive_destination,
@@ -98,9 +99,15 @@ def create_project(
 
 
 def archive_project(
-    layout: ProjectLayout, state: ProjectState, archived_root: Path
+    layout: ProjectLayout,
+    state: ProjectState,
+    archived_root: Path,
+    *,
+    infuse_metadata: bool = False,
 ) -> ProjectLayout:
-    """Move the whole project directory under `archived_root`.
+    """Move the whole project directory under `archived_root`; with
+    `infuse_metadata`, then (re)write its Infuse sidecar (`project.infuse`),
+    also when the project is already archived there.
 
     The destination is `<root>/YY/MM/<deliverable name>` (`etc/` when
     undated), trimmed to the MAX_PATH budget. An archived copy of the same
@@ -119,6 +126,29 @@ def archive_project(
     """
     if not layout.root.is_dir():
         raise ProjectNotFoundError(f"Project directory not found: {layout.root}")
+    archived = _move_to_archive(layout, state, archived_root)
+    if infuse_metadata:
+        _write_infuse_sidecar(archived, state)
+    return archived
+
+
+def _write_infuse_sidecar(archived: ProjectLayout, state: ProjectState) -> None:
+    """The archive is complete by now, so a failed write is logged, not
+    raised (callers would report a completed move as failed)."""
+    try:
+        atomic_write_text(archived.infuse_metadata, infuse_xml(state))
+    except OSError as error:
+        logger.warning(
+            f"Archived to {archived.root}, but its Infuse sidecar could not be "
+            f'written ({error}); write it with: grill archive "{archived.root}"'
+        )
+        return
+    logger.info(f"Wrote Infuse sidecar: {archived.infuse_metadata}")
+
+
+def _move_to_archive(
+    layout: ProjectLayout, state: ProjectState, archived_root: Path
+) -> ProjectLayout:
     destination = archive_destination(state, archived_root)
     if destination.resolve() == layout.root.resolve():
         return layout

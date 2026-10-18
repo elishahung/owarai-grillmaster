@@ -100,6 +100,11 @@ def run_project(
         events = EventBus(sinks)
         if archive_root is None:
             logger.info("[paths] archive is not set; the project stays in place")
+            archive = None
+        else:
+            archive = archive_to(
+                archive_root, infuse_metadata=loaded.config.features.infuse_metadata
+            )
         return run_pipeline(
             layout,
             state,
@@ -109,7 +114,7 @@ def run_project(
             externals=real_externals(),
             events=events,
             pipeline=pipeline,
-            archive=archive_to(archive_root) if archive_root is not None else None,
+            archive=archive,
         )
 
 
@@ -141,15 +146,21 @@ def deliver_project(
         )
 
 
-def archive_to(archived_root: Path) -> Archive:
+def archive_to(archived_root: Path, *, infuse_metadata: bool) -> Archive:
     """The archive move into `archived_root` (`project.store.archive_project`).
 
     The state is read back from `project.json` at move time, so the
-    destination name reflects everything the run recorded.
+    destination name and the Infuse sidecar reflect everything the run
+    recorded.
     """
 
     def move(layout: ProjectLayout) -> ProjectLayout:
-        return archive_project(layout, load_state(layout), archived_root)
+        return archive_project(
+            layout,
+            load_state(layout),
+            archived_root,
+            infuse_metadata=infuse_metadata,
+        )
 
     return move
 

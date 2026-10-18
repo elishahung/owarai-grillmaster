@@ -171,7 +171,10 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 - `store.py`: strict load (no old formats), atomic save, `archive_project`
   (staged copy, verify, swap; refuses when the ID is already archived under
   any `YY/MM` or `etc/` or the destination holds `project.json`; deletes the local
-  `project.json` first so a failed cleanup leaves no project),
+  `project.json` first so a failed cleanup leaves no project; with
+  `[features] infuse_metadata` it then (re)writes the Infuse sidecar
+  `video.xml` from the state, `infuse.py`, also for an already archived
+  project; a failed write only warns — Infuse ignores embedded MP4 dates),
   `locate_project` (local, else `find_archived` by
   `naming.archived_candidates`, else none; also behind `grill reset`; an
   archive that cannot be listed only warns there, while `archive_project`

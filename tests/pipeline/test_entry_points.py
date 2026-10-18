@@ -147,10 +147,11 @@ def test_archive_to_moves_with_the_saved_state(
     state.name = "show"
     save_state(layout, state)
 
-    moved = archive_to(archive_root)(layout)
+    moved = archive_to(archive_root, infuse_metadata=True)(layout)
 
     assert moved == ProjectLayout(archive_root / "etc" / f"{state.id}_show")
     assert load_state(moved).id == state.id
+    assert "<title>show</title>" in moved.infuse_metadata.read_text(encoding="utf-8")
 
 
 def test_deliver_project_runs_only_the_delivery_steps(

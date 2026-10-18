@@ -10,6 +10,7 @@ module is built on (agy 1.3.2):
   unheard audio becomes a `TurnDefect` that resends it.
 * In stream-json input mode an error is reported and agy keeps waiting for
   the next message, so stdin closes as soon as the `result` record arrives.
+  An agy still running `RESULT_EXIT_GRACE_S` after the `result` is killed.
 * `--json-schema` output arrives through agy's `finish` tool and is copied
   to `result.structured_output`; a turn that never calls `finish` still
   reports the previous turn's value there, so it is trusted only after a
@@ -87,6 +88,10 @@ _LOGIN_HINT = "run `agy` once interactively to sign in"
 _FINISH_TOOL = "finish"
 _MCP_TOOL = "call_mcp_tool"
 _VIEW_FILE_TOOL = "view_file"
+# How long agy may keep running after its `result`: 1.4.1 at times never
+# exits (its log stops before "Language server shutting down"), which held
+# a finished turn until the timeout. A clean exit takes under a second.
+RESULT_EXIT_GRACE_S = 30.0
 _USAGE_NAMES = {
     "input_tokens": "input_tokens",
     "output_tokens": "output_tokens",
@@ -189,7 +194,9 @@ class AgyAdapter(PerTurnAdapter):
         )
         audio = [item.path for item in request.media if item.kind is MediaKind.AUDIO]
         parser = AgyTurnParser(audio, schema=request.schema is not None)
-        return JsonlTurn(self._spawn(spec), parser, request)
+        return JsonlTurn(
+            self._spawn(spec), parser, request, exit_grace_s=RESULT_EXIT_GRACE_S
+        )
 
     def _available_models(self) -> frozenset[str]:
         with self._models_lock:

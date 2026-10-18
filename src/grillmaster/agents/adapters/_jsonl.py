@@ -38,14 +38,22 @@ class TurnParser(Protocol):
 class JsonlTurn(Turn):
     """Feeds stdout records to a parser, mirrors them to `raw`, and closes
     stdin as soon as the parser saw the terminal record (agy's stream-json
-    input mode otherwise waits for another message until the timeout)."""
+    input mode otherwise waits for another message until the timeout). With
+    `exit_grace_s`, a CLI still running that long after the terminal record
+    is killed, keeping its answer."""
 
     def __init__(
-        self, process: LineProcess, parser: TurnParser, request: TurnRequest
+        self,
+        process: LineProcess,
+        parser: TurnParser,
+        request: TurnRequest,
+        *,
+        exit_grace_s: float | None = None,
     ) -> None:
         super().__init__(request)
         self._process = process
         self._parser = parser
+        self._exit_grace_s = exit_grace_s
         self._returncode: int | None = None
 
     @override
@@ -55,6 +63,7 @@ class JsonlTurn(Turn):
         # Closing `lines()` ends the CLI tree, so a caller that stops this
         # generator early also stops the turn; `wait` then reaps it and
         # closes its pipes either way.
+        grace = self._exit_grace_s
         try:
             with contextlib.closing(self._process.lines()) as lines:
                 for line in lines:
@@ -63,6 +72,9 @@ class JsonlTurn(Turn):
                         yield from self._parser.feed(record)
                     if self._parser.done:
                         self._process.close_stdin()
+                        if grace is not None:
+                            self._process.kill_after(grace)
+                            grace = None
         finally:
             self._returncode = self._process.wait()
 

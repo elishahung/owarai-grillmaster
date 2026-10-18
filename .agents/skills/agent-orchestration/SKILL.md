@@ -118,8 +118,9 @@ model, workdir, tools, tool access and schema with a new `message`; its
 turn's.
 
 - **agy**: `--input-format stream-json --output-format stream-json -p=`, one
-  text-only stdin line, stdin closed on `result`. Model id
-  `<model>-<low|medium|high>` checked against `agy models` (success cached
+  text-only stdin line, stdin closed on `result`; a tree still running
+  `RESULT_EXIT_GRACE_S` (30 s) later is killed and the answer kept (agy
+  1.4.1 at times never exits). Model id `<model>-<low|medium|high>` checked against `agy models` (success cached
   for good; a failure answers every task for 60 s). Audio not
   opened by a finished `view_file` step → `TurnDefect` resending it.
   `--json-schema` output trusted only if `finish` ran this turn, else a JSON

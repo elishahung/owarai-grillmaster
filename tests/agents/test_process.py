@@ -76,6 +76,21 @@ def test_restarting_the_watchdog_moves_the_deadline():
     assert process.timed_out
 
 
+def test_kill_after_ends_a_cli_that_lingers_without_a_timeout():
+    # Like agy at times: the answer is out and stdin closed, yet it runs on.
+    code = "print('answer', flush=True); sys.stdin.read(); import time; time.sleep(60)"
+    process = spawn(_python(code, keep_stdin_open=True))
+    began = time.monotonic()
+    lines = process.lines()
+    assert next(lines) == "answer"
+    process.close_stdin()
+    process.kill_after(0.5)
+    assert list(lines) == []
+    process.wait()
+    assert not process.timed_out
+    assert time.monotonic() - began < 20
+
+
 def test_stderr_tail_and_exit_code():
     process = spawn(_python("sys.stderr.write('bad\\nworse\\n'); sys.exit(3)"))
     assert list(process.lines()) == []

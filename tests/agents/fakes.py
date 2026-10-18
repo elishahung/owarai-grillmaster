@@ -85,6 +85,8 @@ class FakeProcess:
         # What `send` wrote, and each watchdog deadline set after the spawn.
         self.sent: list[str] = []
         self.watchdog: list[float | None] = []
+        # Each `kill_after` grace, with how many lines had been read then.
+        self.kill_after_calls: list[tuple[int, float]] = []
         self.waits = 0
 
     def lines(self) -> Generator[str]:
@@ -105,6 +107,9 @@ class FakeProcess:
     def close_stdin(self) -> None:
         if self.stdin_closed_after is None:
             self.stdin_closed_after = self.lines_read
+
+    def kill_after(self, grace_s: float) -> None:
+        self.kill_after_calls.append((self.lines_read, grace_s))
 
     def wait(self) -> int:
         self.waits += 1

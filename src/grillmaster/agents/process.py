@@ -84,6 +84,11 @@ class LineProcess(Protocol):
 
     def close_stdin(self) -> None: ...
 
+    def kill_after(self, grace_s: float) -> None:
+        """The CLI delivered its answer: kill the tree `grace_s` from now
+        instead of at the watchdog deadline, without counting as a timeout."""
+        ...
+
     def wait(self) -> int:
         """The exit code; call after `lines()` is exhausted."""
         ...
@@ -147,13 +152,20 @@ class _PopenLineProcess:
         self._writer.start()
 
     def restart_watchdog(self, timeout_s: float | None) -> None:
+        self._arm(timeout_s, self._on_timeout)
+
+    def kill_after(self, grace_s: float) -> None:
+        self._arm(grace_s, self._tree.kill)
+
+    def _arm(self, delay_s: float | None, action: Callable[[], None]) -> None:
+        """Run `action` `delay_s` from now in place of the pending one."""
         with self._watchdog_lock:
             if self._watchdog is not None:
                 self._watchdog.cancel()
                 self._watchdog = None
-            if timeout_s is None or self._released:
+            if delay_s is None or self._released:
                 return
-            self._watchdog = threading.Timer(timeout_s, self._on_timeout)
+            self._watchdog = threading.Timer(delay_s, action)
             self._watchdog.daemon = True
             self._watchdog.start()
 

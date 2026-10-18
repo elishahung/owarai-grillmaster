@@ -26,7 +26,7 @@ from tests.agents.fakes import (
     fixture_lines,
 )
 
-from grillmaster.agents.adapters.agy import AgyAdapter
+from grillmaster.agents.adapters.agy import RESULT_EXIT_GRACE_S, AgyAdapter
 from grillmaster.agents.adapters.base import Media, MediaKind, SchemaDelivery
 from grillmaster.agents.adapters.claude import ClaudeAdapter
 from grillmaster.agents.adapters.codex import CodexAdapter
@@ -276,6 +276,19 @@ def test_agy_closes_stdin_as_soon_as_the_result_arrives(
     run = replay(Backend.AGY, request, lines=lines)
     assert run.spawn is not None
     assert run.spawn.processes[0].stdin_closed_after == len(lines) - 1
+    # A CLI that lingers after answering is killed soon, once.
+    assert run.spawn.processes[0].kill_after_calls == [
+        (len(lines) - 1, RESULT_EXIT_GRACE_S)
+    ]
+
+
+def test_agy_answer_survives_the_kill_after_its_result(
+    make_request: Callable[..., TurnRequest],
+):
+    # The grace kill ends agy with a nonzero code; the result still counts.
+    request = make_request(spec=SPECS[Backend.AGY])
+    run = replay(Backend.AGY, request, fixture="text_simple", returncode=1)
+    assert run.error is None
 
 
 def test_codex_unsupported_model_is_a_config_error(
@@ -295,6 +308,9 @@ def test_codex_recoverable_stream_errors_do_not_fail_a_completed_turn(
     request = make_request(spec=SPECS[Backend.CODEX], schema=SCHEMA)
     run = replay(Backend.CODEX, request, lines=lines)
     assert run.error is None
+    # Only agy is killed after answering; codex exits on its own.
+    assert run.spawn is not None
+    assert run.spawn.processes[0].kill_after_calls == []
 
 
 def _quota_stream(backend: Backend) -> dict[str, Any]:

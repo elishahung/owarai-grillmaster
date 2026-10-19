@@ -233,7 +233,8 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   `core/source_id.py`. BiliBili never sends cookies (format list cap); ABEMA
   resets yt-dlp's cached token before downloading. Extras and broadcast dates
   are best-effort. Downloads keep `skip_unavailable_fragments=False` and fail
-  on audio gaps (a gap drifts ASR timestamps).
+  on audio gaps (a gap drifts ASR timestamps). Fragmented (HLS) download
+  progress counts fragments; yt-dlp's byte estimate starts at 100%.
 - External processes only via `media/ffmpeg.py` (ffmpeg/ffprobe),
   `agents/process.py` (agent CLIs) or the Claude SDK (its CLI `adopt_tree`d);
   ruff bans `subprocess.*` elsewhere. The first two spawn

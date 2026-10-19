@@ -312,6 +312,28 @@ def test_progress_without_a_known_size_only_opens_the_bar():
     assert sink.events == [ProgressStarted("download:0.mp4", "Downloading 0.mp4", 1.0)]
 
 
+def test_fragmented_progress_counts_fragments_not_the_byte_estimate():
+    # yt-dlp's first HLS estimate equals the bytes downloaded so far.
+    sink = RecordingSink()
+    hook = DownloadProgress(sink, clock(1.0, 2.0))
+
+    def fragment(index: int, done: int) -> dict[str, Any]:
+        return progress_update("0.f616.mp4", done, total=0) | {
+            "total_bytes_estimate": done,
+            "fragment_index": index,
+            "fragment_count": 200,
+        }
+
+    hook(fragment(0, 712))
+    hook(fragment(50, 150_000_000))
+
+    scope = "download:0.f616.mp4"
+    assert sink.events == [
+        ProgressStarted(scope, "Downloading 0.f616.mp4", 1.0),
+        ProgressAdvanced(scope, 0.25),
+    ]
+
+
 # --- thumbnail fixup ---------------------------------------------------------
 
 

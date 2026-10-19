@@ -48,7 +48,9 @@ order, and domain packages never import `project` or `config` — only
 - **Python 3.13+**, managed with **`uv`** + a local **`.venv`**; `uv sync`
   installs the package editable with the `dev` group (pytest, ruff,
   basedpyright, import-linter, poe).
-- **FFmpeg** on `PATH`; the agent CLIs (`agy`, `gemini`, `codex`; Claude runs
+- **FFmpeg** and **Deno** on `PATH` (Deno runs yt-dlp's YouTube JS
+  challenge solver, `yt-dlp-ejs` via `yt-dlp[default]`; without it YouTube
+  formats go missing); the agent CLIs (`agy`, `gemini`, `codex`; Claude runs
   through the SDK) logged in on their subscriptions (`gemini` also needs
   `GOOGLE_CLOUD_PROJECT`). Only ElevenLabs ASR is metered.
 - Config: `grill.toml` (see `grill.example.toml`, schema `grill.schema.json`);

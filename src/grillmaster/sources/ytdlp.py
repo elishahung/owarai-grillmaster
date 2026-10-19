@@ -358,11 +358,8 @@ class DownloadProgress:
         if now - self._last_update < _PROGRESS_INTERVAL_S:
             return
         self._last_update = now
-        total = update.get("total_bytes") or update.get("total_bytes_estimate") or 0
-        if total <= 0 or self._scope is None:
-            return
-        fraction = min(1.0, (update.get("downloaded_bytes") or 0) / total)
-        if fraction <= self._fraction:
+        fraction = _fraction(update)
+        if fraction is None or self._scope is None or fraction <= self._fraction:
             return
         self._events.emit(
             ProgressAdvanced(self._scope, fraction - self._fraction, _note(update))
@@ -397,6 +394,21 @@ class DownloadProgress:
         self._scope = None
         self._filename = None
         self._fraction = 0.0
+
+
+def _fraction(update: Mapping[str, Any]) -> float | None:
+    """The finished share of the file, or None while its size is unknown.
+
+    A fragmented (HLS) download counts fragments: its `total_bytes_estimate`
+    extrapolates from the fragments seen so far, and the first update's
+    estimate equals the bytes downloaded, which would read as 100%.
+    """
+    if count := update.get("fragment_count"):
+        return min(1.0, (update.get("fragment_index") or 0) / count)
+    total = update.get("total_bytes") or update.get("total_bytes_estimate") or 0
+    if total <= 0:
+        return None
+    return min(1.0, (update.get("downloaded_bytes") or 0) / total)
 
 
 def _note(update: Mapping[str, Any]) -> str | None:

@@ -20,7 +20,7 @@ dependencies = [
     "textual>=6.0.0",
     "tomlkit>=0.15.1",
     "typer>=0.21.1",
-    "yt-dlp>=2026.8.19",
+    "yt-dlp[default]>=2026.8.19",
 ]
 
 [project.scripts]

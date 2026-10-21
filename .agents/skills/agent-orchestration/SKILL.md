@@ -270,7 +270,9 @@ absolute path against `reference_srt` → `VALID` / `INVALID` + problems.
 (`media.video.slice_preview`: 480p, 5 fps, mono AAC, ~1 MB per 20 s) and
 has it watched as a `TextOutput` session of role `transcribe` (`agent_tools`
 builds its own one-role `AgentRunner` from the manifest's `model`/
-`timeout_s`, with its own 4 slots outside `max_concurrent`; the CLI stays in
+`timeout_s` — the proofread stage's fixed `TRANSCRIBE_TIMEOUT_S` (5 min), not
+`timeout_minutes`, so a capacity-stalled gemini cannot eat the caller's turn —
+with its own 4 slots outside `max_concurrent`; the CLI stays in
 the caller's process tree and needs the caller's env, e.g. gemini's
 `GOOGLE_CLOUD_PROJECT`; its cwd is the span's empty `work/` and its
 `ToolAccess` NONE, so the model can only watch the clip); one call per span at a time, and a kept

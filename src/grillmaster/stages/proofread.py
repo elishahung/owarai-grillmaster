@@ -46,6 +46,11 @@ if TYPE_CHECKING:
 # The longest span one `transcribe` call takes: a preview runs ~50 KB/s, so
 # 120 s is ~8 MB once base64'd inline, well under gemini's 100 MB request.
 TRANSCRIBE_MAX_SPAN_S = 120.0
+# One `transcribe` turn's limit, far below the proofread's own: a healthy
+# call takes under 100 s, but gemini short of capacity has stalled one for
+# 20+ minutes, and a call bounded only by `[agents] timeout_minutes` eats
+# the whole proofread turn. A timeout reaches the proofread as a tool error.
+TRANSCRIBE_TIMEOUT_S = 300.0
 
 
 def transcribe_spec(config: AppConfig) -> ModelSpec | None:
@@ -66,7 +71,7 @@ def transcribe_tool(ctx: StageContext) -> TranscribeTool | None:
         video=require(ctx.layout.video, StageKey.COMBINE),
         clips_dir=ctx.layout.proofread_transcribe_dir,
         model=spec,
-        timeout_s=ctx.config.agents.timeout_s,
+        timeout_s=TRANSCRIBE_TIMEOUT_S,
         max_span_s=TRANSCRIBE_MAX_SPAN_S,
     )
 

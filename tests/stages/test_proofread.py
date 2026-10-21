@@ -131,7 +131,7 @@ def test_the_feature_adds_the_transcribe_tool(
     assert tools.transcribe.video == project.video
     assert tools.transcribe.clips_dir == project.proofread_transcribe_dir
     assert tools.transcribe.model == ModelSpec.parse("gemini/gemini-3.8-flash/low")
-    assert tools.transcribe.timeout_s == 40 * 60.0
+    assert tools.transcribe.timeout_s == proofread.TRANSCRIBE_TIMEOUT_S
     assert "`transcribe(start, end)`" in agents.task(TASK_NAME).prompt
 
 

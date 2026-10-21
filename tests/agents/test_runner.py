@@ -49,7 +49,6 @@ from grillmaster.agents.prompt import (
 )
 from grillmaster.agents.runner import (
     MAX_FRAME_TURNS,
-    MAX_UNAVAILABLE_ATTEMPTS,
     RESULT_FILE,
     AgentRunner,
     SessionRecord,
@@ -967,10 +966,14 @@ def test_an_unavailable_server_gives_up_after_its_own_budget(
     adapter = FakeAdapter(
         script=lambda call: Turn(error=AgentUnavailableError("No capacity available"))
     )
+    runner = make_runner(
+        adapter, clock=lambda: 100.0 + sum(sleeps), unavailable_budget_s=10.0
+    )
     with pytest.raises(AgentUnavailableError):
-        make_runner(adapter).run(make_task(tmp_path, TextOutput()))
-    assert len(adapter.calls) == MAX_UNAVAILABLE_ATTEMPTS
-    assert len(sleeps) == MAX_UNAVAILABLE_ATTEMPTS - 1
+        runner.run(make_task(tmp_path, TextOutput()))
+    # Refused at 100, 103, 106, 109 and 112 s: the last one is past the budget.
+    assert len(adapter.calls) == 5
+    assert sleeps == [3.0] * 4
 
 
 def _refused(*, kept: bool = False) -> Turn:
@@ -1064,11 +1067,14 @@ def test_refused_turns_share_the_unavailable_budget(
     tmp_path: Path, make_runner: Callable[..., AgentRunner], sleeps: list[float]
 ):
     adapter = FakeAdapter(script=lambda call: _refused())
+    runner = make_runner(
+        adapter, clock=lambda: 100.0 + sum(sleeps), unavailable_budget_s=10.0
+    )
     with pytest.raises(AgentUnavailableError):
-        make_runner(adapter).run(make_task(tmp_path, TextOutput()))
-    assert len(adapter.calls) == MAX_UNAVAILABLE_ATTEMPTS
+        runner.run(make_task(tmp_path, TextOutput()))
+    assert len(adapter.calls) == 5
     assert [call.kind for call in adapter.calls].count("start") == 1
-    assert len(sleeps) == MAX_UNAVAILABLE_ATTEMPTS - 1
+    assert sleeps == [3.0] * 4
 
 
 def test_an_abort_while_a_refused_turn_waits_cancels_it(

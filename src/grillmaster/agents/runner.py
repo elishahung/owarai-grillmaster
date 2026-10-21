@@ -116,11 +116,12 @@ if TYPE_CHECKING:
 # The MCP tool server; the runner appends `--session <tools.json>`.
 DEFAULT_TOOL_SERVER = (sys.executable, "-m", "grillmaster.agent_tools")
 DEFAULT_RETRY_DELAY_S = 30.0
-# Turns a task may lose to `AgentUnavailableError` (the server had no
-# capacity), on top of and apart from `AgentTask.attempts`, each after a
-# shorter delay: a shortage clears in seconds. 60 waits of 5 s give the
-# server five minutes.
-MAX_UNAVAILABLE_ATTEMPTS = 61
+# How long, from its first refusal, a task keeps taking turns the server
+# refused for lack of capacity (`AgentUnavailableError`), on top of and apart
+# from `AgentTask.attempts`, each after a shorter delay: a shortage clears in
+# seconds. Wall-clock, not a count: gemini answers a refusal only after its
+# own retries (~80 s), so a count of refusals waited for 90 minutes.
+DEFAULT_UNAVAILABLE_BUDGET_S = 300.0
 DEFAULT_UNAVAILABLE_DELAY_S = 5.0
 # How often `run_jobs` wakes up to let a pending Ctrl-C through.
 _INTERRUPT_POLL_S = 0.1
@@ -196,12 +197,15 @@ class _Retries:
     """A task's retry budgets, spent across its sessions."""
 
     transient: int = 0
-    unavailable: int = 0
+    # When the task's first turn was refused for lack of capacity.
+    refused_since: float | None = None
 
-    def refused(self) -> bool:
-        """Count a turn refused for lack of capacity; whether another may follow."""
-        self.unavailable += 1
-        return self.unavailable < MAX_UNAVAILABLE_ATTEMPTS
+    def refused(self, now: float, budget_s: float) -> bool:
+        """Note a turn refused for lack of capacity at `now`; whether another
+        may follow (`budget_s` since the first refusal has not passed)."""
+        if self.refused_since is None:
+            self.refused_since = now
+        return now - self.refused_since < budget_s
 
 
 @dataclass(slots=True)
@@ -239,6 +243,7 @@ class AgentRunner:
         tool_server: Sequence[str] = DEFAULT_TOOL_SERVER,
         retry_delay_s: float = DEFAULT_RETRY_DELAY_S,
         unavailable_delay_s: float = DEFAULT_UNAVAILABLE_DELAY_S,
+        unavailable_budget_s: float = DEFAULT_UNAVAILABLE_BUDGET_S,
         clock: Callable[[], float] = time.monotonic,
         abort: threading.Event = ABORT,
     ) -> None:
@@ -255,6 +260,7 @@ class AgentRunner:
         self._tool_server = tuple(tool_server)
         self._retry_delay_s = retry_delay_s
         self._unavailable_delay_s = unavailable_delay_s
+        self._unavailable_budget_s = unavailable_budget_s
         self._clock = clock
         self._abort = abort
         # The first quota error of each backend; later tasks fail with it.
@@ -325,7 +331,7 @@ class AgentRunner:
     def _attempts[T](self, prepared: _Prepared[T], workdir: Path) -> AgentResult[T]:
         """Sessions until one is accepted; only a transient error starts
         another (`AgentTask.attempts`; an unavailable server has its own
-        `MAX_UNAVAILABLE_ATTEMPTS`, shared with the turns a surviving
+        wall-clock `unavailable_budget_s`, shared with the turns a surviving
         session takes again, and a shorter delay), after the retry delay."""
         retries = _Retries()
         attempt = 0
@@ -339,7 +345,7 @@ class AgentRunner:
             except AgentUnavailableError as error:
                 # A session that survived the refusal let it out only once
                 # its own retries had spent the budget.
-                if error.session_id or not retries.refused():
+                if error.session_id or not self._may_retry_refused(retries):
                     raise
                 delay = self._unavailable_delay_s
             except AgentTransientError:
@@ -642,7 +648,7 @@ class AgentRunner:
         capacity, once the unavailable delay passed: the continue message if
         the session kept `turn`, else `turn` again. Re-raises `refused` when
         its session did not survive or the unavailable budget is spent."""
-        if not refused.session_id or not state.retries.refused():
+        if not refused.session_id or not self._may_retry_refused(state.retries):
             raise refused
         state.session_id = refused.session_id
         state.refused_turns += 1
@@ -655,6 +661,9 @@ class AgentRunner:
         how = "continuing the turn" if refused.turn_kept else "sending it again"
         self._activity(task_name, ActivityKind.RETRY, f"server out of capacity: {how}")
         return turn
+
+    def _may_retry_refused(self, retries: _Retries) -> bool:
+        return retries.refused(self._clock(), self._unavailable_budget_s)
 
     def _check_resumable(self, task_name: str, session_id: str, step: str) -> None:
         """Raise unless the session can take `step`, another turn."""

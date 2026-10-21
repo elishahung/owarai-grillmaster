@@ -53,6 +53,10 @@ if TYPE_CHECKING:
 
 # Transcriptions one tool server runs at once.
 MAX_CONCURRENT_TRANSCRIPTIONS = 4
+# How long a call keeps retrying a server out of capacity: shorter than the
+# runner's default, since the calling proofread does without a transcript
+# sooner than it waits (a stalled gemini refuses a turn every ~80 s).
+UNAVAILABLE_BUDGET_S = 120.0
 TRANSCRIPT_FILE = "transcript.txt"
 
 
@@ -71,6 +75,7 @@ def build_agents(config: TranscribeTool) -> TranscribeAgents:
         AdapterRegistry(),
         max_concurrent=MAX_CONCURRENT_TRANSCRIPTIONS,
         timeout_s=config.timeout_s,
+        unavailable_budget_s=UNAVAILABLE_BUDGET_S,
         events=EventBus(),
     )
 

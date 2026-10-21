@@ -235,8 +235,10 @@ turn's.
   markers, else transient. Claude's rejected rate-limit event and
   `billing_error` are quota too. The only retry loop is in `run`:
   transient → new session (up to `attempts`) after 30 s without a slot;
-  unavailable counts apart, up to `MAX_UNAVAILABLE_ATTEMPTS` (61) refused
-  turns per task, after 5 s each (five minutes of waiting). An unavailable
+  unavailable counts apart, retried after 5 s each until
+  `unavailable_budget_s` (default 300 s; `transcribe` 120 s) has passed since
+  the task's first refusal — wall-clock, since gemini answers a refusal only
+  after ~80 s of its own retries. An unavailable
   error carrying `session_id` (the session survived) is retried in that
   session holding the slot: `turn_kept` → `prompt.continue_message()` without
   media, else the same turn again (`refused_turns` in `result.json`, a

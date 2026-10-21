@@ -10,7 +10,7 @@
 ## 說明
 
 - 目標是 one shot 即可直接觀看，不想校準 (避免被暴雷)
-- 翻譯與後處理都走 agent 訂閱，只有 ElevenLabs ASR 計費：$0.22 美元／小時。一集 20 多分鐘節目從下載到輸出字幕約 30 分鐘
+- 翻譯與後處理都走 agent 訂閱，只有 ElevenLabs ASR 計費：$0.22 美元／小時（開了 `proofread_watch_clip` 另有 Meta Muse，每段一分鐘的片段約 $0.003）。一集 20 多分鐘節目從下載到輸出字幕約 30 分鐘
 - 設定偏好都是個人主觀，如需修改請自行 fork
 - 更詳細說明請查看以下或直接把這個 repo 丟給你的 agent
   - [心得1](https://www.bilibili.com/video/BV1ZwRQB5ETf)
@@ -104,16 +104,19 @@ prepass = "gemini/gemini-3.1-pro-preview/high"  # backend：gemini、agy、claud
 chunk = "gemini/gemini-3.1-pro-preview/high"
 postprocess = "codex/gpt-6.1-sol/high"
 proofread = "claude/claude-opus-5-5/high"  # 最終校對；省略則沿用 postprocess
-transcribe = "gemini/gemini-3.8-flash/low"  # 最終校對的重聽工具：看影片片段重新聽寫（需 gemini）；省略則沿用 chunk
 utility = "codex/gpt-6.1-sol/medium"
 image = "codex/gpt-6.1-sol/medium"   # 封面，需要能生圖的 codex
+
+[watch_clip]                        # 最終校對的看片工具：Meta Muse API，按 token 計費（.env 的 META_API_KEY）
+model = "muse-spark-1.3-contributor"
+effort = "high"                     # 低於 high 會漏掉大半發話
 
 [features]
 cover = true                        # 產生風格化封面
 date_research = true                # 查不到播出日時上網找
 title_suggestion = true             # 燒錄時產生候選標題
 proofread = true                    # 名詞校對後再跑最終校對（同 --proofread）
-proofread_transcribe = true         # 讓最終校對能請 transcribe 重聽可疑段落
+proofread_watch_clip = true         # 讓最終校對能請 watch_clip 看可疑段落（發話、畫面字幕、場景）
 ```
 
 其他可調參數（切塊大小、併發數、抽圖頻率、remix 素材池等）請見 `grill.example.toml`。併發數 `[agents] max_concurrent` 預設 10，是每個 `grill` 行程各自的上限
@@ -132,6 +135,7 @@ proofread_transcribe = true         # 讓最終校對能請 transcribe 重聽可
 
 ```env
 ELEVENLABS_API_KEY=xxx
+META_API_KEY=xxx                    # 只有開 proofread_watch_clip 才需要
 ```
 
 ## 輸出
@@ -146,6 +150,6 @@ ELEVENLABS_API_KEY=xxx
 - `.work/NN_<stage>/`：各 stage 的中間產物與 agent session 紀錄
 - `.logs/`：每次執行的 log 與事件紀錄
 
-中間產物都放在點開頭的資料夾，Plex、Infuse 等媒體伺服器不會把其中的影片切片當成節目掃進去。歸檔時會刪掉 proofread `transcribe` 工具的影片切片（逐字稿保留）。
+中間產物都放在點開頭的資料夾，Plex、Infuse 等媒體伺服器不會把其中的影片切片當成節目掃進去。歸檔時會刪掉 proofread `watch_clip` 工具的影片切片（回傳紀錄保留）。
 
 設定 `[paths] archive` 時，stage 全部完成後專案會整個搬過去，打包再從歸檔位置讀取；設定 `[paths] package` 時，燒錄好的影片、封面與候選標題會輸出到該目錄。歸檔後打包失敗，錯誤訊息會給出對歸檔資料夾執行的 `grill package` 指令；已歸檔的 ID 不能再跑 stage，重跑同一個 ID 會被拒絕並提示同樣的指令

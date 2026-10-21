@@ -3,7 +3,7 @@
   "$defs": {
     "AgentRoles": {
       "additionalProperties": false,
-      "description": "Model per agent role, as backend/model[/effort][/fast]; all but chat,\nproofread and transcribe are required.",
+      "description": "Model per agent role, as backend/model[/effort][/fast]; all but chat\nand proofread are required.",
       "properties": {
         "prepass": {
           "description": "Whole-film pre-pass analysis.",
@@ -37,21 +37,6 @@
           "default": null,
           "description": "Final proofread after the glossary check; omitted means postprocess.",
           "title": "Proofread"
-        },
-        "transcribe": {
-          "anyOf": [
-            {
-              "description": "backend/model[/effort][/fast]; effort defaults to high, fast (codex only) spends more quota for speed.",
-              "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?(/fast)?$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Transcribes a span of the video for the proofread's transcribe tool ([features] proofread_transcribe); must watch video (gemini); omitted means chunk.",
-          "title": "Transcribe"
         },
         "utility": {
           "description": "Lightweight agents: titles, broadcast-date research, and the no-audio fix of a pre-pass or chunk output that failed validation.",
@@ -172,10 +157,10 @@
           "title": "Proofread",
           "type": "boolean"
         },
-        "proofread_transcribe": {
+        "proofread_watch_clip": {
           "default": false,
-          "description": "Give the proofread a transcribe tool: the transcribe role watches a span of the video and transcribes it afresh.",
-          "title": "Proofread Transcribe",
+          "description": "Give the proofread a watch_clip tool: Meta's Muse ([watch_clip]) watches a span of the video and reports its speech, captions and scene.",
+          "title": "Proofread Watch Clip",
           "type": "boolean"
         },
         "infuse_metadata": {
@@ -473,6 +458,37 @@
       },
       "title": "TranslateConfig",
       "type": "object"
+    },
+    "WatchClipConfig": {
+      "additionalProperties": false,
+      "description": "The proofread's `watch_clip` tool: a Meta Muse API call per span\n(`META_API_KEY` in `.env`), not an agent role.",
+      "properties": {
+        "model": {
+          "default": "muse-spark-1.3-contributor",
+          "description": "Meta Muse model that watches each span; the contributor tier is the cheap one (Meta may train on the clips).",
+          "enum": [
+            "muse-spark-1.3-contributor",
+            "muse-spark-1.3"
+          ],
+          "title": "Model",
+          "type": "string"
+        },
+        "effort": {
+          "default": "high",
+          "description": "Muse reasoning effort; below high it drops much of the speech.",
+          "enum": [
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "title": "Effort",
+          "type": "string"
+        }
+      },
+      "title": "WatchClipConfig",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -486,6 +502,9 @@
     },
     "asr": {
       "$ref": "#/$defs/AsrConfig"
+    },
+    "watch_clip": {
+      "$ref": "#/$defs/WatchClipConfig"
     },
     "translate": {
       "$ref": "#/$defs/TranslateConfig"

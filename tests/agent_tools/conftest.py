@@ -58,5 +58,5 @@ def session(
         project_root=tmp_path,
         frames=frames_config,
         check_srt=srt_config,
-        transcribe=None,
+        watch_clip=None,
     )

@@ -4,7 +4,7 @@ description: >-
   The agent layer `src/grillmaster/agents/` (AgentTask/AgentJob, AgentRunner,
   strict schema, repair loop, errors, events, `process.py`,
   agy/gemini/codex/claude adapters) and the MCP tool server `src/grillmaster/agent_tools/`
-  (`get_frames`, `check_srt`, `transcribe`, `core/tool_session.py`). Read this before
+  (`get_frames`, `check_srt`, `watch_clip`, `core/tool_session.py`). Read this before
   touching either package, adding a backend, capability or tool, or changing
   prompts, media, schema, repair, retries, concurrency or session records.
 ---
@@ -53,7 +53,7 @@ description: >-
   heading for a `VIEW_FILE` backend).
 - `ToolAccess` (the CLI's built-in tools; grill MCP tools come with `tools`):
   the runner gives WRITE to a `FilesOutput`, READ otherwise, NONE to a task
-  with `builtin_tools=False` (`transcribe`). Mapped once per adapter:
+  with `builtin_tools=False`. Mapped once per adapter:
   claude's `BASE_TOOLS`, gemini's `TOOL_SETTINGS`; agy and codex have no
   switch (READ = WRITE there) and lack TOOL_ISOLATION, which NONE requires.
 - Outputs: `TextOutput`, `SchemaOutput(model)` (see `schema_delivery`),
@@ -76,8 +76,8 @@ description: >-
 
 `grill.toml [agents.roles]` → `AgentRoles.specs()` (`chat` falls back to
 `utility`) → `dict[Role, ModelSpec]`, written `backend/model[/effort][/fast]`
-(default `high`; `/fast` requires FAST_MODE, checked for the role, a handoff
-role and the `transcribe` tool's model). `[agents] max_concurrent` (default 10) sizes the semaphore
+(default `high`; `/fast` requires FAST_MODE, checked for the role and a
+handoff role). `[agents] max_concurrent` (default 10) sizes the semaphore
 of one grill process (concurrent processes each get their own);
 `timeout_minutes` bounds each turn (process watchdog; `asyncio.timeout` for
 Claude), not the session.
@@ -89,9 +89,7 @@ claude and gemini TOOL_ISOLATION, only codex IMAGE_GENERATION and FAST_MODE. Req
 WEB_SEARCH for prepass/titles/date research) + derived: schema→SCHEMA_OUTPUT,
 `max_repairs > 0`→RESUME, each media kind→its `MEDIA_KINDS` capability,
 `builtin_tools=False`→TOOL_ISOLATION, tools→MCP,
-frames tool on a `NEXT_MESSAGE` backend→RESUME + IMAGE_INPUT; a `transcribe`
-tool's own model must have `TRANSCRIBE_REQUIRES` (VIDEO_INPUT + TOOL_ISOLATION +
-RESUME).
+frames tool on a `NEXT_MESSAGE` backend→RESUME + IMAGE_INPUT.
 Stages check `runner.capabilities(role)` (`accepts_audio`) before adding audio.
 
 ## Adapters (`adapters/`, loaded lazily by `AdapterRegistry`)
@@ -154,8 +152,8 @@ turn's.
   `context.includeDirectoryTree: false` (a listed `audio.ogg` lured a model
   into ffmpeg via the shell and a false "audio missing" claim) and the
   `ToolAccess` (READ: `tools.exclude` of the shell, `write_file`, `replace`:
-  a pre-pass curl'ed Google instead of `google_web_search`, a `transcribe`
-  clip got whisper'd and the project tree browsed, glossary check copies
+  a pre-pass curl'ed Google instead of `google_web_search`, a clip
+  transcription got whisper'd and the project tree browsed, glossary check copies
   files with it; NONE: `tools.core` = [`list_background_processes`], an
   allowlist that leaves MCP tools and keeps one inert built-in because the
   API answers a request without any function with a 400, plus
@@ -236,7 +234,7 @@ turn's.
   `billing_error` are quota too. The only retry loop is in `run`:
   transient → new session (up to `attempts`) after 30 s without a slot;
   unavailable counts apart, retried after 5 s each until
-  `unavailable_budget_s` (default 300 s; `transcribe` 120 s) has passed since
+  `unavailable_budget_s` (default 300 s) has passed since
   the task's first refusal — wall-clock, since gemini answers a refusal only
   after ~80 s of its own retries. An unavailable
   error carrying `session_id` (the session survived) is retried in that
@@ -253,7 +251,7 @@ turn's.
   `summarize` (final message by length only) and `AgentSessionFinished`.
 - No model-side "cannot hear the audio" escape line: in ~400 archived audio
   sessions every such claim was false (gemini, audio inline), and it failed
-  gemini-3.8-flash/low `transcribe` clips. Delivery is checked mechanically
+  gemini-3.8-flash/low clip transcriptions. Delivery is checked mechanically
   instead: `ATTACHED` media go inline, and agy's unopened audio is an
   adapter defect that resends it.
 
@@ -267,23 +265,27 @@ tools with a sub-config in `ToolSession` exist; a bad manifest exits 2.
 returned as MCP image content (with `pending_frames`: text only, paths appended
 to that file). `check_srt(path)`: skeleton check of an
 absolute path against `reference_srt` → `VALID` / `INVALID` + problems.
-`transcribe(start, end)` (`transcribe.py`, async: parallel calls overlap): cuts
-≤ `max_span_s` anywhere in `video` into `<clips_dir>/<start>-<end>/clip.mp4`
-(`media.video.slice_preview`: 480p, 5 fps, mono AAC, ~1 MB per 20 s) and
-has it watched as a `TextOutput` session of role `transcribe` (`agent_tools`
-builds its own one-role `AgentRunner` from the manifest's `model`/
-`timeout_s` — the proofread stage's fixed `TRANSCRIBE_TIMEOUT_S` (5 min), not
-`timeout_minutes`, so a capacity-stalled gemini cannot eat the caller's turn —
-with its own 4 slots outside `max_concurrent`; the CLI stays in
-the caller's process tree and needs the caller's env, e.g. gemini's
-`GOOGLE_CLOUD_PROJECT`; its cwd is the span's empty `work/` and its
-`ToolAccess` NONE, so the model can only watch the clip); one call per span at a time, and a kept
-`transcript.txt` answers again without a session (so the archive move drops
-the clips: `ProjectLayout.archive_discards`); the caller's tool
-timeout bounds a call. xAI STT was tried as an
-engine and dropped (it loses shouted and overlapping speech, see
-project-architecture `references/asr-provider-evaluation.md`); video beat an
-audio-only clip on names (captions, name cards) for ~10% more tokens.
+`watch_clip(start, end)` (`watch_clip.py`, async: parallel calls overlap, ≤4
+requests at once): cuts ≤ `max_span_s` anywhere in `video` into
+`<clips_dir>/<start>-<end>/clip.mp4` (`media.video.slice_preview`: 480p,
+5 fps, mono AAC, ~1 MB per 20 s) and asks Meta's Muse API directly
+(`meta.py`: no agent session, `openai` SDK imported on use, Responses API, the clip
+inline as a base64 `input_video`, `[watch_clip] model`/`effort`, each
+request bounded by the manifest's `timeout_s`) for 発話 / テロップ / 場面; the
+tool shifts each line's leading `[t]` from clip to video seconds. The key
+is `META_API_KEY`, read by the server from the manifest's `env_file` alone
+(the `.env` path, never the key): gemini's CLI strips every `*KEY*`
+variable from MCP servers. A request billed without an answer leaves a
+`failed-<n>.json` so its spend still counts; one call (retry included) is
+bounded by `timeout_s`. One call per span at a time; a kept
+`watch.json` (`watch_record.py`: answer, usage, `cost_usd` from `meta.PRICES`;
+kept apart so the grill process prices spans without the MCP stack) answers again
+without a request (so the archive move drops the clips:
+`ProjectLayout.archive_discards`). Measured on Muse 1.3: captions and name
+cards are reliable, the speech drops or invents lines (worst below `high`),
+times within ~2 s; the proofread guidance weighs them so. Gemini agent
+sessions did this before (better speech, no captions); xAI STT was tried
+and dropped (project-architecture `references/asr-provider-evaluation.md`).
 `agents/prompt.py` lists the tools (with the window); stages add guidance via
 `core.prompts.frames_guidance`. A new tool = config in `core/tool_session.py`
 (`ToolName` + sub-config) + handler module + registration in `server.py` +

@@ -2,8 +2,11 @@
 proofread of `.work/11_glossary/checked.srt` into
 `.work/12_proofread/proofread.srt`, plus `briefing.json` when it corrected the
 briefing (+ `answer.json`, `report.md`, and the dossier `aligned.tsv`,
-`history.md`). With `[features] proofread_transcribe` the agent also gets the
-`transcribe` tool (role `transcribe`), its spans kept under `transcribe/`.
+`history.md`). With `[features] proofread_watch_clip` the agent also gets the
+`watch_clip` tool (Meta's Muse, `[watch_clip]`), its spans kept under
+`watch_clip/`; the cost of the spans this run requested (each span's
+`watch.json`, cached ones cost nothing) is added to the project's
+`watch_clip_cost_usd`, even when the proofread fails, since it is paid.
 
 Finalize reads `proofread.srt` once it exists (`layout.effective_subtitles`)
 and every later reader the corrected briefing (`layout.effective_briefing`).
@@ -18,9 +21,12 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from grillmaster.agent_tools.meta import MetaError, read_api_key
+from grillmaster.agent_tools.watch_record import billed_records, cost_since
+from grillmaster.config.errors import ConfigError
 from grillmaster.core.model_spec import Role
 from grillmaster.core.stage_key import StageKey
-from grillmaster.core.tool_session import ToolSession, TranscribeTool
+from grillmaster.core.tool_session import ToolSession, WatchClipTool
 from grillmaster.glossary.fixed import (
     FIXED_GLOSSARY_GUIDE_PATH,
     FIXED_GLOSSARY_PATH,
@@ -38,42 +44,57 @@ from grillmaster.stages._common import (
 from grillmaster.stages.base import StageDef, require
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from grillmaster.config.model import AppConfig
-    from grillmaster.core.model_spec import ModelSpec
+    from grillmaster.config.secrets import Secrets
     from grillmaster.stages.base import StageContext
 
 
-# The longest span one `transcribe` call takes: a preview runs ~50 KB/s, so
-# 120 s is ~8 MB once base64'd inline, well under gemini's 100 MB request.
-TRANSCRIBE_MAX_SPAN_S = 120.0
-# One `transcribe` turn's limit, far below the proofread's own: a healthy
-# call takes under 100 s, but gemini short of capacity has stalled one for
-# 20+ minutes, and a call bounded only by `[agents] timeout_minutes` eats
-# the whole proofread turn. A timeout reaches the proofread as a tool error.
-TRANSCRIBE_TIMEOUT_S = 300.0
+# The longest span one `watch_clip` call takes: a preview runs ~50 KB/s, so
+# 120 s is ~8 MB once base64'd inline, well under Meta's 50 MB inline limit.
+WATCH_CLIP_MAX_SPAN_S = 120.0
+# One call's limit, its retry included (gemini's CLI gives an MCP call 10
+# min): a 62 s span at `high` answers in ~30 s. A timeout reaches the
+# proofread as a tool error.
+WATCH_CLIP_TIMEOUT_S = 300.0
 
 
-def transcribe_spec(config: AppConfig) -> ModelSpec | None:
-    """The `transcribe` role's model with `[features] proofread_transcribe`, else `None`."""
-    if not config.features.proofread_transcribe:
+def _preflight(config: AppConfig, secrets: Secrets) -> None:
+    """With `watch_clip`, the Meta key."""
+    if config.features.proofread_watch_clip:
+        secrets.require_meta_api_key()
+
+
+def watch_clip_tool(ctx: StageContext) -> WatchClipTool | None:
+    """`watch_clip` over `video.mp4` into `.work/12_proofread/watch_clip/`
+    when enabled. The tool server reads the key from `.env` alone, so a key
+    only in the environment (which passes the preflight) fails here, before
+    the proofread starts."""
+    if not ctx.config.features.proofread_watch_clip:
         return None
-    return config.agents.roles.spec(Role.TRANSCRIBE)
-
-
-def transcribe_tool(ctx: StageContext) -> TranscribeTool | None:
-    """`transcribe` over `video.mp4` into `.work/12_proofread/transcribe/` when
-    enabled; the runner refuses a transcribe model that cannot watch video
-    before the proofread takes a slot."""
-    spec = transcribe_spec(ctx.config)
-    if spec is None:
-        return None
-    return TranscribeTool(
+    try:
+        read_api_key(ctx.env_file)
+    except MetaError as error:
+        raise ConfigError(
+            f"{error}; the watch_clip tool server reads it from there alone"
+        ) from error
+    settings = ctx.config.watch_clip
+    return WatchClipTool(
         video=require(ctx.layout.video, StageKey.COMBINE),
-        clips_dir=ctx.layout.proofread_transcribe_dir,
-        model=spec,
-        timeout_s=TRANSCRIBE_TIMEOUT_S,
-        max_span_s=TRANSCRIBE_MAX_SPAN_S,
+        clips_dir=ctx.layout.proofread_watch_clip_dir,
+        model=settings.model,
+        effort=settings.effort,
+        env_file=ctx.env_file,
+        timeout_s=WATCH_CLIP_TIMEOUT_S,
+        max_span_s=WATCH_CLIP_MAX_SPAN_S,
     )
+
+
+def _watch_clip_param(config: AppConfig) -> str:
+    if not config.features.proofread_watch_clip:
+        return "off"
+    return f"{config.watch_clip.model}/{config.watch_clip.effort}"
 
 
 def _run(ctx: StageContext) -> str:
@@ -121,26 +142,55 @@ def _run(ctx: StageContext) -> str:
         project_root=layout.root,
         frames=frames_tool(ctx, layout.proofread_frames_dir),
         check_srt=None,
-        transcribe=transcribe_tool(ctx),
+        watch_clip=watch_clip_tool(ctx),
     )
-    answer = proofread_subtitles(
-        inputs, ctx.agents, session_dir=ctx.session_dir(), tools=tools
-    )
+    clips_dir = layout.proofread_watch_clip_dir
+    seen = billed_records(clips_dir)
+    spent = 0.0
+    try:
+        answer = proofread_subtitles(
+            inputs, ctx.agents, session_dir=ctx.session_dir(), tools=tools
+        )
+    finally:
+        if tools.watch_clip is not None:
+            spent = _record_watch_clip_cost(ctx, clips_dir, seen)
     logger.success(
         f"Proofread applied {len(answer.fixes)} fixes and "
         f"{len(answer.briefing_changes)} briefing changes: {layout.proofread_report}"
     )
-    return f"{len(answer.fixes)} fixes, {len(answer.briefing_changes)} briefing changes"
+    result = (
+        f"{len(answer.fixes)} fixes, {len(answer.briefing_changes)} briefing changes"
+    )
+    if tools.watch_clip is None:
+        return result
+    return (
+        f"{result} · watch_clip ${spent:.4f} · "
+        f"project ${ctx.state.watch_clip_cost_usd:.4f}"
+    )
 
 
+def _record_watch_clip_cost(
+    ctx: StageContext, clips_dir: Path, seen: frozenset[str]
+) -> float:
+    """Add the requests billed since `seen` to the project's spend."""
+    requests, spent = cost_since(clips_dir, seen)
+    if requests:
+        ctx.update(lambda state: state.add_watch_clip_cost(spent))
+        logger.info(
+            f"Stage watch_clip cost: ${spent:.4f} for {requests} requests "
+            f"(project total ${ctx.state.watch_clip_cost_usd:.4f})"
+        )
+    return spent
+
+
+# No `clear_state`: `watch_clip_cost_usd` is the project's cumulative spend,
+# and money paid before a reset stays paid.
 STAGE = StageDef(
     key=StageKey.PROOFREAD,
     label="Proofread",
     weight=2,
     run=_run,
     enabled=flag_or_feature("proofread"),
-    params=role_params(
-        Role.PROOFREAD,
-        transcribe=lambda config: str(transcribe_spec(config) or "off"),
-    ),
+    preflight=_preflight,
+    params=role_params(Role.PROOFREAD, watch_clip=_watch_clip_param),
 )

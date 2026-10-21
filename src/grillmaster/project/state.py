@@ -132,8 +132,9 @@ class ProjectState(StrictModel):
     broadcast_date: date | None = None
     source: SourceInfo = Field(default_factory=SourceInfo)
     section: Section = Field(default_factory=Section)
-    # ElevenLabs is the only metered service; agents run on subscriptions.
-    asr_cost_usd: float = Field(default=0.0, ge=0)
+    # The metered services, cumulative; agents run on subscriptions.
+    asr_cost_usd: float = Field(default=0.0, ge=0)  # ElevenLabs
+    watch_clip_cost_usd: float = Field(default=0.0, ge=0)  # Meta, `watch_clip`
     stages: dict[StageKey, StageRecord] = Field(default_factory=dict)
     side_tasks: SideTasks = Field(default_factory=SideTasks)
 
@@ -193,9 +194,10 @@ class ProjectState(StrictModel):
             self.stages.pop(key, None)
 
     def add_asr_cost(self, amount_usd: float) -> None:
-        if amount_usd < 0:
-            raise ValueError(f"ASR cost must be non-negative: {amount_usd}")
-        self.asr_cost_usd += amount_usd
+        self.asr_cost_usd += _spend("ASR", amount_usd)
+
+    def add_watch_clip_cost(self, amount_usd: float) -> None:
+        self.watch_clip_cost_usd += _spend("watch_clip", amount_usd)
 
 
 class _CompletionStamp(BaseModel):
@@ -220,3 +222,10 @@ class ProjectSummary(BaseModel):
     def last_completed_at(self) -> datetime | None:
         """When the latest ledger stage completed; `None` before any did."""
         return max((s.completed_at for s in self.stages.values()), default=None)
+
+
+def _spend(service: str, amount_usd: float) -> float:
+    """`amount_usd`, refused when negative: spend only accumulates."""
+    if amount_usd < 0:
+        raise ValueError(f"{service} cost must be non-negative: {amount_usd}")
+    return amount_usd

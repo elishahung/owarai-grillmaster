@@ -13,9 +13,9 @@ Facts this module is built on (codex-cli 0.160.0):
   web search and MCP flags.
 * MCP servers do not inherit the environment, so the tool-session manifest
   path travels in the server's argv and `mcp_servers.grill.env_vars` names
-  every variable of this process for it to inherit (the `transcribe` tool's own
-  gemini session needs `GOOGLE_CLOUD_PROJECT`); `tool_timeout_sec` (60 s by
-  default) is raised to the turn's timeout, which a `transcribe` call can need.
+  every variable of this process for it to inherit; `tool_timeout_sec` (60 s
+  by default) is raised to the turn's timeout, which a `watch_clip` call can
+  need.
 * `error` records also report recoverable stream retries; only a turn that
   never completes is a failure.
 * Fast mode is `-c service_tier=fast`, which codex maps onto the model's

@@ -12,26 +12,29 @@ from __future__ import annotations
 
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import model_validator
 
 from grillmaster.core.json_artifact import read_model, write_model
-from grillmaster.core.model_spec import ModelSpecField
 from grillmaster.core.models import FrozenModel
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
 SESSION_ENV_VAR = "GRILL_TOOL_SESSION"
-# A `transcribe` span's clip in `<clips_dir>/<start>-<end>/` (`TranscribeTool`).
-TRANSCRIBE_CLIP_FILE = "clip.mp4"
+# Meta's Muse models `watch_clip` takes, each priced in `agent_tools.meta.PRICES`.
+MuseModel = Literal["muse-spark-1.3-contributor", "muse-spark-1.3"]
+# Muse's reasoning efforts besides `none` (refused); contributor models have no `max`.
+MuseEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
+# A `watch_clip` span's clip in `<clips_dir>/<start>-<end>/` (`WatchClipTool`).
+WATCH_CLIP_FILE = "clip.mp4"
 
 
 class ToolName(StrEnum):
     GET_FRAMES = "get_frames"
     CHECK_SRT = "check_srt"
-    TRANSCRIBE = "transcribe"
+    WATCH_CLIP = "watch_clip"
 
 
 class FramesTool(FrozenModel):
@@ -82,24 +85,26 @@ class SrtCheckTool(FrozenModel):
     reference_srt: Path
 
 
-class TranscribeTool(FrozenModel):
-    """`transcribe`: a fresh transcription of a span of `video` by `model`.
+class WatchClipTool(FrozenModel):
+    """`watch_clip`: a span of `video` watched by Meta's `model` at `effort`.
 
-    The tool server runs the transcription as its own agent session (the
-    `transcribe` role, `model` written as a `ModelSpec` string, each turn bounded
-    by `timeout_s`); a span's clip, transcript and session records go to
-    `<clips_dir>/<start>-<end>/`, and an existing transcript is returned
-    again without a new session."""
+    The tool server calls the Meta API itself (no agent session), with the
+    key read from `env_file` or its own environment, each request bounded by
+    `timeout_s`; a span's clip and record go to `<clips_dir>/<start>-<end>/`,
+    and an existing record is returned again without a new request."""
 
     video: Path
     clips_dir: Path
-    model: ModelSpecField
+    model: MuseModel
+    effort: MuseEffort
+    # The `.env` holding `META_API_KEY`; the key itself never enters a manifest.
+    env_file: Path
     timeout_s: float
     # The longest span one call takes, anywhere in the video.
     max_span_s: float
 
     @model_validator(mode="after")
-    def _check_limits(self) -> TranscribeTool:
+    def _check_limits(self) -> WatchClipTool:
         if self.max_span_s <= 0 or self.timeout_s <= 0:
             raise ValueError(
                 f"max_span_s and timeout_s must be positive: "
@@ -112,7 +117,7 @@ class ToolSession(FrozenModel):
     project_root: Path
     frames: FramesTool | None
     check_srt: SrtCheckTool | None
-    transcribe: TranscribeTool | None
+    watch_clip: WatchClipTool | None
 
     @property
     def allowed(self) -> frozenset[ToolName]:
@@ -120,7 +125,7 @@ class ToolSession(FrozenModel):
         tools = {
             ToolName.GET_FRAMES: self.frames,
             ToolName.CHECK_SRT: self.check_srt,
-            ToolName.TRANSCRIBE: self.transcribe,
+            ToolName.WATCH_CLIP: self.watch_clip,
         }
         return frozenset(name for name, config in tools.items() if config is not None)
 

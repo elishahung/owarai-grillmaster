@@ -26,7 +26,7 @@ def status_command(
         ),
     ] = None,
 ) -> None:
-    """Show which stages are done, with their models, timings and ASR cost."""
+    """Show which stages are done, with their models, timings and API costs."""
     if project is None:
         _list_projects(projects_root_or_exit())
         return
@@ -45,6 +45,8 @@ def describe_project(layout: ProjectLayout, state: ProjectState) -> list[str]:
         f"  broadcast date {state.effective_broadcast_date or 'unknown'}",
         f"  ASR cost       ${state.asr_cost_usd:.4f}",
     ]
+    if state.watch_clip_cost_usd:
+        lines.append(f"  watch_clip     ${state.watch_clip_cost_usd:.4f}")
     if state.parent is not None:
         lines.append(f"  parent         {state.parent}")
     if section.is_cut:

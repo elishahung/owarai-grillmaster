@@ -11,7 +11,7 @@ from grillmaster.core.tool_session import (
     SrtCheckTool,
     ToolName,
     ToolSession,
-    TranscribeTool,
+    WatchClipTool,
 )
 
 if TYPE_CHECKING:
@@ -38,7 +38,7 @@ def _session(root: Path, *, frames: bool = True, check_srt: bool = True) -> Tool
             if check_srt
             else None
         ),
-        transcribe=None,
+        watch_clip=None,
     )
 
 
@@ -55,10 +55,10 @@ def test_manifest_matches_the_documented_shape(tmp_path: Path):
         project_root=tmp_path,
         frames=_frames(tmp_path, window=(12.5, 99.0)),
         check_srt=None,
-        transcribe=None,
+        watch_clip=None,
     ).write(path)
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert set(data) == {"project_root", "frames", "check_srt", "transcribe"}
+    assert set(data) == {"project_root", "frames", "check_srt", "watch_clip"}
     assert set(data["frames"]) == {
         "video",
         "frames_dir",
@@ -126,23 +126,25 @@ def test_invalid_frames_config_is_rejected(
         _frames(tmp_path, **overrides)
 
 
-def _transcribe(root: Path, **overrides: Any) -> TranscribeTool:
+def _watch_clip(root: Path, **overrides: Any) -> WatchClipTool:
     fields: dict[str, Any] = {
         "video": root / "video.mp4",
-        "clips_dir": root / "work" / "12_proofread" / "transcribe",
-        "model": "gemini/gemini-3.8-flash/low",
+        "clips_dir": root / "work" / "12_proofread" / "watch_clip",
+        "model": "muse-spark-1.3-contributor",
+        "effort": "high",
+        "env_file": root / ".env",
         "timeout_s": 600.0,
         "max_span_s": 300.0,
     }
     fields.update(overrides)
-    return TranscribeTool(**fields)
+    return WatchClipTool(**fields)
 
 
-def test_transcribe_is_allowed_with_its_config(tmp_path: Path):
+def test_watch_clip_is_allowed_with_its_config(tmp_path: Path):
     session = _session(tmp_path, check_srt=False).model_copy(
-        update={"transcribe": _transcribe(tmp_path)}
+        update={"watch_clip": _watch_clip(tmp_path)}
     )
-    assert session.allowed == {ToolName.GET_FRAMES, ToolName.TRANSCRIBE}
+    assert session.allowed == {ToolName.GET_FRAMES, ToolName.WATCH_CLIP}
     path = tmp_path / "tools.json"
     session.write(path)
     assert ToolSession.load(path) == session
@@ -151,11 +153,10 @@ def test_transcribe_is_allowed_with_its_config(tmp_path: Path):
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"model": "gemini-3.8-flash"},
         {"max_span_s": 0.0},
         {"timeout_s": -1.0},
     ],
 )
-def test_transcribe_rejects_invalid_config(tmp_path: Path, overrides: dict[str, Any]):
+def test_watch_clip_rejects_invalid_config(tmp_path: Path, overrides: dict[str, Any]):
     with pytest.raises(ValidationError):
-        _transcribe(tmp_path, **overrides)
+        _watch_clip(tmp_path, **overrides)

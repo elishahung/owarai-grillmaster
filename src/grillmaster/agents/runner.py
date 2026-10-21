@@ -137,12 +137,6 @@ PENDING_FRAMES_FILE = "frames_pending.txt"
 # asking is stuck, not still reading.
 MAX_FRAME_TURNS = 8
 
-# What the `transcribe` tool's own session needs (`agent_tools.transcribe`: it
-# watches a clip without the CLI's own tools and may take one repair round).
-TRANSCRIBE_REQUIRES = frozenset(
-    {Capability.VIDEO_INPUT, Capability.TOOL_ISOLATION, Capability.RESUME}
-)
-
 # Set while the current context holds a slot; a nested `run` would wait for
 # a slot its own caller holds.
 _holding_slot: contextvars.ContextVar[bool] = contextvars.ContextVar(
@@ -434,17 +428,6 @@ class AgentRunner:
                 f"{task.name}: {spec.backend} cannot provide "
                 f"{', '.join(missing)} (role {task.role}, spec {spec})"
             )
-        if task.tools is not None and task.tools.transcribe is not None:
-            transcribe = task.tools.transcribe.model
-            missing = sorted(
-                (TRANSCRIBE_REQUIRES | _spec_capabilities(transcribe))
-                - self._adapters(transcribe.backend).capabilities
-            )
-            if missing:
-                raise AgentConfigError(
-                    f"{task.name}: the transcribe tool's {transcribe.backend} cannot "
-                    f"provide {', '.join(missing)} (spec {transcribe})"
-                )
         absent = [str(item.path) for item in task.media if not item.path.is_file()]
         if absent:
             raise AgentConfigError(

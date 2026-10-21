@@ -24,6 +24,7 @@ from pydantic import (
 
 from grillmaster.core.model_spec import ModelSpec, ModelSpecField, Role
 from grillmaster.core.stage_key import StageKey
+from grillmaster.core.tool_session import MuseEffort, MuseModel
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -71,13 +72,12 @@ class PathsConfig(BaseModel):
 _ROLE_FALLBACKS = {
     Role.CHAT: Role.UTILITY,
     Role.PROOFREAD: Role.POSTPROCESS,
-    Role.TRANSCRIBE: Role.CHUNK,
 }
 
 
 class AgentRoles(BaseModel):
-    """Model per agent role, as backend/model[/effort][/fast]; all but chat,
-    proofread and transcribe are required."""
+    """Model per agent role, as backend/model[/effort][/fast]; all but chat
+    and proofread are required."""
 
     model_config = _STRICT
 
@@ -87,14 +87,6 @@ class AgentRoles(BaseModel):
     proofread: ModelSpecField | None = Field(
         default=None,
         description="Final proofread after the glossary check; omitted means postprocess.",
-    )
-    transcribe: ModelSpecField | None = Field(
-        default=None,
-        description=(
-            "Transcribes a span of the video for the proofread's transcribe tool "
-            "([features] proofread_transcribe); must watch video (gemini); omitted "
-            "means chunk."
-        ),
     )
     utility: ModelSpecField = Field(
         description=(
@@ -112,8 +104,7 @@ class AgentRoles(BaseModel):
 
     def spec(self, role: Role) -> ModelSpec:
         """The spec for `role`; an omitted optional role falls back
-        (`chat` to `utility`, `proofread` to `postprocess`, `transcribe` to
-        `chunk`)."""
+        (`chat` to `utility`, `proofread` to `postprocess`)."""
         spec: ModelSpec | None = getattr(self, role)
         return spec or self.spec(_ROLE_FALLBACKS[role])
 
@@ -153,6 +144,22 @@ class AsrConfig(BaseModel):
     )
     language: str = Field(
         default="jpn", min_length=1, description="Language code hint for ElevenLabs."
+    )
+
+
+class WatchClipConfig(BaseModel):
+    """The proofread's `watch_clip` tool: a Meta Muse API call per span
+    (`META_API_KEY` in `.env`), not an agent role."""
+
+    model_config = _STRICT
+
+    model: MuseModel = Field(
+        default="muse-spark-1.3-contributor",
+        description="Meta Muse model that watches each span; the contributor tier is the cheap one (Meta may train on the clips).",
+    )
+    effort: MuseEffort = Field(
+        default="high",
+        description="Muse reasoning effort; below high it drops much of the speech.",
     )
 
 
@@ -204,9 +211,9 @@ class FeaturesConfig(BaseModel):
         default=False,
         description="Run the final proofread stage after the glossary check (also --proofread).",
     )
-    proofread_transcribe: bool = Field(
+    proofread_watch_clip: bool = Field(
         default=False,
-        description="Give the proofread a transcribe tool: the transcribe role watches a span of the video and transcribes it afresh.",
+        description="Give the proofread a watch_clip tool: Meta's Muse ([watch_clip]) watches a span of the video and reports its speech, captions and scene.",
     )
     infuse_metadata: bool = Field(
         default=False,
@@ -375,6 +382,7 @@ class AppConfig(BaseModel):
     paths: PathsConfig = Field(default_factory=PathsConfig)
     agents: AgentsConfig
     asr: AsrConfig = Field(default_factory=AsrConfig)
+    watch_clip: WatchClipConfig = Field(default_factory=WatchClipConfig)
     translate: TranslateConfig = Field(default_factory=TranslateConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     package: PackageConfig = Field(default_factory=PackageConfig)

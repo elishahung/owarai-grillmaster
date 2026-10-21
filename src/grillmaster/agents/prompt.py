@@ -97,10 +97,10 @@ def tools_section(
             "- `check_srt(path)`：以參考字幕檢查候選 SRT 的骨架"
             "（區塊數、編號、時間碼、非空），回傳 VALID 或錯誤清單。"
         )
-    if tools.transcribe is not None:
+    if tools.watch_clip is not None:
         lines.append(
-            "- `transcribe(start, end)`：由另一個模型重新看、聽這段影片，"
-            "以純文字回傳日文逐字稿。"
+            "- `watch_clip(start, end)`：由另一個模型看這段影片（畫面與聲音），"
+            "回傳日文的發話、畫面字幕與場景描述。"
         )
     if not lines:
         return ""

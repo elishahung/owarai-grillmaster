@@ -43,6 +43,7 @@ if TYPE_CHECKING:
 @pytest.fixture
 def secrets(monkeypatch: pytest.MonkeyPatch) -> Secrets:
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    monkeypatch.delenv("META_API_KEY", raising=False)
     return Secrets()
 
 

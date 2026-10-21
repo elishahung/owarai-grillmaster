@@ -13,9 +13,9 @@ from grillmaster.agents.schema import strict_json_schema
 from grillmaster.agents.task import SchemaOutput
 from grillmaster.core.briefing import Briefing, SegmentSummary, TermMapping
 from grillmaster.core.json_artifact import read_model, write_model
-from grillmaster.core.model_spec import ModelSpec, Role
+from grillmaster.core.model_spec import Role
 from grillmaster.core.srt import SrtBlock, read_srt_file, write_srt_file
-from grillmaster.core.tool_session import ToolSession, TranscribeTool
+from grillmaster.core.tool_session import ToolSession, WatchClipTool
 from grillmaster.glossary.fixed import (
     FIXED_GLOSSARY_GUIDE_PATH,
     FIXED_GLOSSARY_PATH,
@@ -151,7 +151,7 @@ def tools(tmp_path: Path) -> ToolSession:
         project_root=tmp_path,
         frames=frames_tool(tmp_path),
         check_srt=None,
-        transcribe=None,
+        watch_clip=None,
     )
 
 
@@ -386,7 +386,7 @@ def test_the_official_captions_join_the_instructions(
     assert "## Aligned table (6 blocks)" in task.prompt
 
 
-def test_the_transcribe_tool_brings_its_guidance(
+def test_the_watch_clip_tool_brings_its_guidance(
     inputs: ProofreadInputs, tools: ToolSession, tmp_path: Path
 ):
     def build(session: ToolSession) -> str:
@@ -400,16 +400,18 @@ def test_the_transcribe_tool_brings_its_guidance(
             tools=session,
         ).prompt
 
-    transcribe = TranscribeTool(
+    watch_clip = WatchClipTool(
         video=tmp_path / "video.mp4",
-        clips_dir=tmp_path / "transcribe",
-        model=ModelSpec.parse("gemini/gemini-3.8-flash/low"),
+        clips_dir=tmp_path / "watch_clip",
+        model="muse-spark-1.3-contributor",
+        effort="high",
+        env_file=tmp_path / ".env",
         timeout_s=60.0,
         max_span_s=300.0,
     )
-    assert "`transcribe(start, end)`" not in build(tools)
-    assert "`transcribe(start, end)`" in build(
-        tools.model_copy(update={"transcribe": transcribe})
+    assert "`watch_clip(start, end)`" not in build(tools)
+    assert "`watch_clip(start, end)`" in build(
+        tools.model_copy(update={"watch_clip": watch_clip})
     )
 
 

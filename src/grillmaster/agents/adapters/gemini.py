@@ -43,7 +43,7 @@ one `session/prompt` per turn. Facts this module is built on (gemini-cli
   nothing and declared its inline audio missing) and the request's
   `ToolAccess` (READ: `tools.exclude` of the shell and the writing tools;
   with a shell, a pre-pass searched the web with curl instead of
-  `google_web_search`, and a `transcribe` session ran whisper on its clip
+  `google_web_search`, and a clip-transcription session ran whisper on its clip
   and browsed the project tree; NONE: a `tools.core` allowlist of one inert
   built-in, since the API refuses a request without any function, and
   skills off) go into

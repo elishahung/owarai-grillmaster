@@ -36,7 +36,6 @@ prepass = "agy/gemini-3.1-pro/high"      # whole-film analysis
 chunk = "agy/gemini-3.1-pro/high"        # concurrent chunk translation
 postprocess = "codex/gpt-6.1-sol/high" # refine + glossary check
 proofread = "claude/claude-opus-5-5/high" # final proofread (--proofread); omit to use postprocess
-transcribe = "gemini/gemini-3.8-flash/low"    # the proofread's transcribe tool; must watch video (gemini); omit to use chunk
 utility = "codex/gpt-6.1-sol/medium"         # titles, broadcast-date research, prepass/chunk fixes
 chat = "codex/gpt-6.1-sol/medium"            # live-chat replay; omit to use utility
 image = "codex/gpt-6.1-sol/medium"           # cover; needs image generation (codex)
@@ -45,6 +44,15 @@ image = "codex/gpt-6.1-sol/medium"           # cover; needs image generation (co
 # ElevenLabs speech-to-text model and language hint.
 model = "scribe_v2"
 language = "jpn"
+
+[watch_clip]
+# The proofread's watch_clip tool ([features] proofread_watch_clip): a Meta
+# Muse API call per span, metered (META_API_KEY in .env). The contributor
+# model is the cheap tier (Meta may train on the clips); muse-spark-1.3 is
+# the standard one. Effort: minimal | low | medium | high | xhigh; below high
+# Muse drops much of the speech.
+model = "muse-spark-1.3-contributor"
+effort = "high"
 
 [translate]
 # Target source characters per translation chunk (~5 min of a variety show).
@@ -69,10 +77,10 @@ title_suggestion = false
 # Final proofread after the glossary check: another model fixes names, terms
 # and mistranslations, and corrects the briefing (also --proofread).
 proofread = false
-# Give the proofread a `transcribe` tool: the transcribe role watches a span of the
-# video and transcribes it afresh, a second hearing for lines whose ASR is
-# suspect (captions and name cards help it spell names).
-proofread_transcribe = false
+# Give the proofread a `watch_clip` tool: Meta's Muse ([watch_clip]) watches a
+# span of the video and reports its speech, on-screen captions and name cards,
+# and scene, for lines whose ASR is suspect.
+proofread_watch_clip = false
 # Write video.xml (title, description, broadcast date) beside each archived
 # video.mp4, so Infuse can sort the archive by broadcast date; it ignores the
 # date embedded in the MP4.

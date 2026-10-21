@@ -122,7 +122,7 @@ def tools(inputs: GlossaryInputs, tmp_path: Path) -> ToolSession:
         project_root=tmp_path,
         frames=frames_tool(tmp_path, tmp_path / "work" / "11_glossary" / "frames"),
         check_srt=SrtCheckTool(reference_srt=inputs.refined_srt),
-        transcribe=None,
+        watch_clip=None,
     )
 
 

@@ -10,11 +10,10 @@ from grillmaster.agents.prompt import (
     tools_section,
     view_file_section,
 )
-from grillmaster.core.model_spec import ModelSpec
 from grillmaster.core.tool_session import (
     FramesTool,
     ToolSession,
-    TranscribeTool,
+    WatchClipTool,
 )
 
 if TYPE_CHECKING:
@@ -29,7 +28,7 @@ def _frames_session(tmp_path: Path, window: tuple[float, float | None]) -> ToolS
         max_side=640,
     )
     return ToolSession(
-        project_root=tmp_path, frames=frames, check_srt=None, transcribe=None
+        project_root=tmp_path, frames=frames, check_srt=None, watch_clip=None
     )
 
 
@@ -66,18 +65,20 @@ def test_the_frames_line_says_how_the_images_arrive(
     assert expected in tools_section(session, delivery)
 
 
-def test_the_transcribe_line_leaves_the_limits_to_the_tool(tmp_path: Path):
-    transcribe = TranscribeTool(
+def test_the_watch_clip_line_leaves_the_limits_to_the_tool(tmp_path: Path):
+    watch_clip = WatchClipTool(
         video=tmp_path / "video.mp4",
-        clips_dir=tmp_path / "transcribe",
-        model=ModelSpec.parse("gemini/gemini-3.8-flash/low"),
+        clips_dir=tmp_path / "watch_clip",
+        model="muse-spark-1.3-contributor",
+        effort="high",
+        env_file=tmp_path / ".env",
         timeout_s=60.0,
         max_span_s=300.0,
     )
     session = ToolSession(
-        project_root=tmp_path, frames=None, check_srt=None, transcribe=transcribe
+        project_root=tmp_path, frames=None, check_srt=None, watch_clip=watch_clip
     )
-    assert tools_section(session).endswith("以純文字回傳日文逐字稿。")
+    assert tools_section(session).endswith("回傳日文的發話、畫面字幕與場景描述。")
 
 
 def test_view_file_section_lists_the_paths_by_kind(tmp_path: Path):

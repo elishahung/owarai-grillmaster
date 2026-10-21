@@ -65,11 +65,14 @@ quotes its block's current text, changes it, no empty line, one per block,
 fields equal the explained ones. Python then writes `answer.json`,
 `report.md` (fixes + Python-computed briefing diff), `proofread.srt`
 (checked + fixes) and `briefing.json` only when changed (both deleted at
-stage start). With `[features] proofread_transcribe` the
-session also gets `transcribe` (role `transcribe`, watches a `video.mp4`
-clip; the runner refuses a model that cannot watch video before the slot;
-spans under `.work/12_proofread/transcribe/`) plus
-`proofread_transcribe.md`, for ASR-suspect lines. Finalize reads
+stage start). With `[features] proofread_watch_clip` the
+session also gets `watch_clip` (Meta Muse via `[watch_clip]`, not an agent
+role; the preflight needs `META_API_KEY`;
+spans under `.work/12_proofread/watch_clip/`) plus
+`proofread_watch_clip.md` (テロップ strong evidence, 発話 weak), for
+ASR-suspect lines. The stage adds the cost of the span records new since
+its start to `watch_clip_cost_usd` (also when the proofread fails; never
+cleared on reset) and appends it to its step result. Finalize reads
 `layout.effective_subtitles()` (proofread, else checked); a proofread reached after finalize ran is recorded as skipped (it
 would never be delivered) with a warning naming `grill reset --from proofread`.
 
@@ -168,8 +171,9 @@ not `video|cover|info|refine|glossary_check|proofread`.
 
 ## Settings and invariants
 
-- `grill.toml`: `[agents.roles] postprocess|proofread|transcribe|utility|image`; `[features]
-  cover|date_research|title_suggestion|proofread|proofread_transcribe`; `[paths] package|archive`; `[package]
+- `grill.toml`: `[agents.roles] postprocess|proofread|utility|image`; `[watch_clip]
+  model|effort`; `[features]
+  cover|date_research|title_suggestion|proofread|proofread_watch_clip`; `[paths] package|archive`; `[package]
   remix_pool` (default `"default"`), `[[package.inserts]]`;
   `[programs.series|channel."X"]` `remix`, `inserts`, `instruction.{common,refine,glossary,proofread}`.
 - Agent-written stages discard old output on re-entry: the runner deletes all

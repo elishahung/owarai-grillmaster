@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
     from grillmaster.asr.payload import AsrPayload
 
-# ElevenLabs Scribe list price; the only metered service in the pipeline.
+# ElevenLabs Scribe list price.
 PRICE_PER_HOUR_USD = 0.22
 _REQUEST_TIMEOUT_S = 600.0
 _SECONDS_PER_HOUR = 3600

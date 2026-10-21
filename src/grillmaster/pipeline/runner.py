@@ -330,7 +330,10 @@ class _Run:
     def _steps(self, logs: ProjectLogs) -> ProjectLayout:
         self._stages()
         state = self._store.state
-        logger.info(f"Project {state.id} total ASR cost: ${state.asr_cost_usd:.4f}")
+        logger.info(
+            f"Project {state.id} total ASR cost: ${state.asr_cost_usd:.4f}, "
+            f"watch_clip cost: ${state.watch_clip_cost_usd:.4f}"
+        )
         local = self._store.layout
         if self._archive is not None:
             moved = run_archive(

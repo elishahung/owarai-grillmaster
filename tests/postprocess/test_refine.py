@@ -46,7 +46,7 @@ def tools(inputs: RefineInputs, tmp_path: Path) -> ToolSession:
         project_root=tmp_path,
         frames=frames_tool(tmp_path, tmp_path / "work" / "10_refine" / "frames"),
         check_srt=SrtCheckTool(reference_srt=inputs.translated_srt),
-        transcribe=None,
+        watch_clip=None,
     )
 
 

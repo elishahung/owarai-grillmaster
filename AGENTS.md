@@ -52,9 +52,10 @@ order, and domain packages never import `project` or `config` — only
   challenge solver, `yt-dlp-ejs` via `yt-dlp[default]`; without it YouTube
   formats go missing); the agent CLIs (`agy`, `gemini`, `codex`; Claude runs
   through the SDK) logged in on their subscriptions (`gemini` also needs
-  `GOOGLE_CLOUD_PROJECT`). Only ElevenLabs ASR is metered.
+  `GOOGLE_CLOUD_PROJECT`). Only ElevenLabs ASR and the proofread's Meta
+  `watch_clip` tool are metered.
 - Config: `grill.toml` (see `grill.example.toml`, schema `grill.schema.json`);
-  `.env` holds secrets only (`ELEVENLABS_API_KEY`).
+  `.env` holds secrets only (`ELEVENLABS_API_KEY`, `META_API_KEY`).
 
 ### Definition of done
 

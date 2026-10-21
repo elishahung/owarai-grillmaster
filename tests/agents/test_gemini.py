@@ -234,7 +234,7 @@ def test_only_a_file_writing_task_keeps_the_shell_and_writing_tools(
 ):
     for request in (
         make_request(spec=FLASH_LOW, schema={"type": "object"}),
-        # A text answer (the transcribe transcription) writes no files either.
+        # A text answer writes no files either.
         make_request(spec=FLASH_LOW),
     ):
         _first_turn(request)

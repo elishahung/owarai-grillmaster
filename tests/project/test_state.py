@@ -127,6 +127,15 @@ def test_asr_cost_accumulates_and_rejects_negatives(state: ProjectState):
         state.add_asr_cost(-0.1)
 
 
+def test_watch_clip_cost_accumulates_apart_from_asr(state: ProjectState):
+    state.add_watch_clip_cost(0.002)
+    state.add_watch_clip_cost(0.003)
+    assert state.watch_clip_cost_usd == pytest.approx(0.005)
+    assert state.asr_cost_usd == 0.0
+    with pytest.raises(ValueError, match="non-negative"):
+        state.add_watch_clip_cost(-0.1)
+
+
 @pytest.mark.parametrize(
     ("start", "end"),
     [(10.0, 10.0), (20.0, 5.0), (-1.0, None)],

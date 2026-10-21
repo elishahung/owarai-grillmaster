@@ -134,9 +134,10 @@ def test_stage_lookup():
     assert pipeline.stage(StageKey.AUDIO) is None
 
 
-# Stages whose state writes deliberately survive a reset: ASR adds to the
-# cumulative `asr_cost_usd`, and money paid stays paid.
-KEEPS_STATE_ON_RESET = (StageKey.ASR,)
+# Stages whose state writes deliberately survive a reset: ASR and proofread
+# add to the cumulative `asr_cost_usd` and `watch_clip_cost_usd`, and money
+# paid stays paid.
+KEEPS_STATE_ON_RESET = (StageKey.ASR, StageKey.PROOFREAD)
 _STATE_WRITE = re.compile(r"ctx\.update\(|ctx\.state\.[\w.]+\s*=[^=]")
 
 

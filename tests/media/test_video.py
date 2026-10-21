@@ -250,7 +250,7 @@ def test_concat_copy_needs_an_input(tmp_path: Path):
 
 
 def test_a_preview_is_a_small_clip_cut_once(tmp_path: Path, fake_ffmpeg: FakeFfmpeg):
-    output = tmp_path / "transcribe" / "clip.mp4"
+    output = tmp_path / "watch_clip" / "clip.mp4"
 
     slice_preview(fake_ffmpeg, tmp_path / "video.mp4", output, TimeRange(10.0, 40.5))
     slice_preview(fake_ffmpeg, tmp_path / "video.mp4", output, TimeRange(10.0, 40.5))

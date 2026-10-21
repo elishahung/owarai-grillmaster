@@ -340,6 +340,11 @@ class StageContext:
         return self._loaded.secrets
 
     @property
+    def env_file(self) -> Path:
+        """The `.env` the secrets come from, for a tool server to read again."""
+        return self._loaded.env_file
+
+    @property
     def config_file(self) -> Path:
         """`grill.toml`; only the download stage writes it (new programs)."""
         return self._loaded.path

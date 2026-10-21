@@ -26,6 +26,8 @@ if TYPE_CHECKING:
     from grillmaster.config.secrets import Secrets
 
 CONFIG_FILE_NAME = "grill.toml"
+# Secrets beside `grill.toml` (`secrets.load_secrets`).
+ENV_FILE_NAME = ".env"
 HOME_ENV_VAR = "GRILL_HOME"
 PROJECTS_DIR_NAME = "projects"
 
@@ -39,6 +41,11 @@ class LoadedConfig:
     @property
     def path(self) -> Path:
         return self.root / CONFIG_FILE_NAME
+
+    @property
+    def env_file(self) -> Path:
+        """The `.env` beside `grill.toml`, read by `secrets` (it may not exist)."""
+        return self.root / ENV_FILE_NAME
 
     @property
     def projects_root(self) -> Path:

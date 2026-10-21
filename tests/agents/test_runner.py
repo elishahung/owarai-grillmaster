@@ -68,7 +68,6 @@ from grillmaster.core.process import ABORT, ProcessAbortedError, kill_all
 from grillmaster.core.tool_session import (
     FramesTool,
     ToolSession,
-    TranscribeTool,
     leave_pending_frames,
 )
 from grillmaster.events.context import stage_scope
@@ -211,7 +210,7 @@ def test_session_directory_contents(
             max_side=768,
         ),
         check_srt=None,
-        transcribe=None,
+        watch_clip=None,
     )
     adapter = FakeAdapter([Turn(final=final("ok"), raw=['{"a":1}', '{"b":2}'])])
     task = make_task(tmp_path, TextOutput(), tools=tools)
@@ -328,30 +327,6 @@ def test_frames_for_the_next_message_need_a_resumed_turn_with_images(
         make_runner(adapter).run(task)
 
 
-@pytest.mark.parametrize(
-    "missing",
-    [Capability.VIDEO_INPUT, Capability.TOOL_ISOLATION, Capability.RESUME],
-)
-def test_a_transcribe_model_that_cannot_watch_video_fails_first(
-    missing: Capability, tmp_path: Path, make_runner: Callable[..., AgentRunner]
-):
-    adapter = FakeAdapter(capabilities=frozenset(Capability) - {missing})
-    transcribe = TranscribeTool(
-        video=tmp_path / "video.mp4",
-        clips_dir=tmp_path / "transcribe",
-        model=ModelSpec(adapter.backend, "hears", Effort.LOW),
-        timeout_s=60.0,
-        max_span_s=300.0,
-    )
-    tools = ToolSession(
-        project_root=tmp_path, frames=None, check_srt=None, transcribe=transcribe
-    )
-    task = make_task(tmp_path, TextOutput(), tools=tools, max_repairs=0)
-    with pytest.raises(AgentConfigError, match=f"transcribe tool.*{missing}"):
-        make_runner(adapter).run(task)
-    assert adapter.calls == []
-
-
 def test_a_fast_spec_needs_fast_mode(
     tmp_path: Path, make_runner: Callable[..., AgentRunner]
 ):
@@ -361,20 +336,6 @@ def test_a_fast_spec_needs_fast_mode(
         make_runner(adapter, roles=dict.fromkeys(Role, fast)).run(
             make_task(tmp_path, TextOutput())
         )
-    transcribe = TranscribeTool(
-        video=tmp_path / "video.mp4",
-        clips_dir=tmp_path / "transcribe",
-        model=fast,
-        timeout_s=60.0,
-        max_span_s=300.0,
-    )
-    tools = ToolSession(
-        project_root=tmp_path, frames=None, check_srt=None, transcribe=transcribe
-    )
-    task = make_task(tmp_path, TextOutput(), tools=tools, max_repairs=0)
-    with pytest.raises(AgentConfigError, match=r"transcribe tool.*fast_mode"):
-        make_runner(adapter).run(task)
-    assert adapter.calls == []
 
 
 def test_preflight_failure_happens_before_any_session(
@@ -660,7 +621,7 @@ def _frames_tools(tmp_path: Path) -> ToolSession:
         project_root=tmp_path,
         frames=frames_tool(tmp_path),
         check_srt=None,
-        transcribe=None,
+        watch_clip=None,
     )
 
 

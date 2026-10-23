@@ -156,7 +156,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   (`ja.srt`, `ja.official.srt`, `chat.cht.json`), `.logs/{run,events}-<ts>`.
   Work: `.work/NN_<key>/`, unnumbered `.work/side/<task>/` and `.work/package/`.
   Non-deliverables live in dot dirs so Plex/Infuse skip their videos;
-  `archive_discards()` (`watch_clip` clips) are deleted by `archive_project`.
+  `archive_discards()` (`watch_clip` clips and audio) are deleted by `archive_project`.
   Agent sessions: `session/`, `session_<label>/`, retries `session.2/`,
   handoff `session_fix/` (`core.paths.handoff_path`).
   `effective_briefing()` = proofread's, else glossary's, else pre-pass's briefing; a correcting stage reads `briefing_before(itself)`;
@@ -164,11 +164,11 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   glossary's.
   Add a path here, never inline.
 - `state.py` `ProjectState`: identity (`id`, persisted `platform`), `source`,
-  `section`, `asr_cost_usd` / `watch_clip_cost_usd` (ElevenLabs, Meta: the metered services), the
+  `section`, `asr_cost_usd` / `watch_clip_cost_usd` (ElevenLabs; Azure + Meta: the metered services), the
   `stages` ledger `dict[StageKey, StageRecord]` (unknown key = validation
   error), `side_tasks` (`cover: TaskRecord`, `date_research:
-  DateResearchRecord`). Readers use `effective_broadcast_date`.
-- `store.py`: strict load (no old formats), atomic save, `archive_project`
+  DateResearchRecord`). Readers use `effective_broadcast_date`. Every state model (`StateModel`) ignores unknown fields, so a removed feature's key never blocks loading a project.
+- `store.py`: load (no old formats; unknown fields ignored), atomic save, `archive_project`
   (staged copy, verify, swap; refuses when the ID is already archived under
   any `YY/MM` or `etc/` or the destination holds `project.json`; deletes the local
   `project.json` first so a failed cleanup leaves no project; with
@@ -204,10 +204,11 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 - New setting: add a `Field(description=…)` in `model.py`, document it in
   `grill.example.toml`, regenerate `grill.schema.json` with `uv run poe
   schema` (a test asserts it is current).
-- `.env` holds secrets only (`Secrets`: `ELEVENLABS_API_KEY`, `META_API_KEY`); a
-  missing key fails the ASR / proofread (`watch_clip`) preflight. The tool
-  server reads `META_API_KEY` again itself (`agent_tools.meta`), from the
-  `.env` path in its manifest.
+- `.env` holds secrets only (`Secrets`: `ELEVENLABS_API_KEY`, `META_API_KEY`,
+  `AZURE_SPEECH_KEY`, `AZURE_SPEECH_ENDPOINT`); a missing key fails the ASR /
+  proofread (`watch_clip`) preflight. The tool server reads the
+  `watch_clip` keys again itself (`agent_tools.meta`, `agent_tools.mai`),
+  from the `.env` path in its manifest.
 - `programs.py` `ProgramRules`: channel then series entries merged (`common`
   text before stage text; stage keys `prepass`, `chunks`, `refine`,
   `glossary`, `proofread`). `register_program` (download stage) is the only writer of
@@ -285,7 +286,8 @@ within 10 days) in the searchable `tui.picker` before the run starts. On a TTY t
 - Side tasks join in `finally`; `--break-after` skips side tasks, archive and
   delivery.
 - Every agent call goes through `AgentRunner`; only ElevenLabs (ASR) and
-  Meta (`watch_clip`) are metered, each with its cumulative state field.
+  `watch_clip` (Azure + Meta) are metered, each with its cumulative state
+  field.
 - Windows MAX_PATH 260 (ffmpeg and yt-dlp are not long-path aware): generated
   directory names go through the path budget.
 - Agent-written SRTs may carry a BOM; read them with `core.srt.read_srt_file`.

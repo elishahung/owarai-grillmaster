@@ -12,8 +12,9 @@ and cannot break the skeleton: fixes, each quoting the block's current text
 briefing patch, the replacement of each top-level field it corrects, every
 changed field explained in `briefing_changes`. A violation is a repair round.
 With a `watch_clip` tool in the session, the agent can also have a span of
-the video (picture and sound) watched by another model, which reports its
-speech, on-screen captions and scene, for lines whose ASR is suspect.
+the video heard by a speech recognizer and watched by a video model, which
+report its speech, on-screen captions and scene, for lines whose ASR is
+suspect.
 
 Python then applies the accepted fixes to a copy of the checked SRT, writes
 the patched briefing as this stage's own copy when it changed

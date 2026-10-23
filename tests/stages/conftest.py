@@ -44,6 +44,8 @@ if TYPE_CHECKING:
 def secrets(monkeypatch: pytest.MonkeyPatch) -> Secrets:
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
     monkeypatch.delenv("META_API_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_ENDPOINT", raising=False)
     return Secrets()
 
 

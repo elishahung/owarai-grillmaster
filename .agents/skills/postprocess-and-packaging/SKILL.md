@@ -66,10 +66,12 @@ fields equal the explained ones. Python then writes `answer.json`,
 `report.md` (fixes + Python-computed briefing diff), `proofread.srt`
 (checked + fixes) and `briefing.json` only when changed (both deleted at
 stage start). With `[features] proofread_watch_clip` the
-session also gets `watch_clip` (Meta Muse via `[watch_clip]`, not an agent
-role; the preflight needs `META_API_KEY`;
-spans under `.work/12_proofread/watch_clip/`) plus
-`proofread_watch_clip.md` (テロップ strong evidence, 発話 weak), for
+session also gets `watch_clip` (MAI-Transcribe-2 speech biased toward the
+briefing's cast + Meta Muse captions via `[watch_clip]`, not agent roles;
+the preflight needs `META_API_KEY`, `AZURE_SPEECH_KEY`,
+`AZURE_SPEECH_ENDPOINT`; spans under `.work/12_proofread/watch_clip/`) plus
+`proofread_watch_clip.md` (テロップ ground truth; 発話 a second hearing whose
+spelling is not trusted; agreeing with `zh` keeps it), for
 ASR-suspect lines. The stage adds the cost of the span records new since
 its start to `watch_clip_cost_usd` (also when the proofread fails; never
 cleared on reset) and appends it to its step result. Finalize reads

@@ -1,25 +1,30 @@
-"""`watch_clip`: what a span of the show says and shows, as Meta's Muse reads it.
+"""`watch_clip`: what a span of the show says and shows.
 
 A text-only agent (the proofread on claude or codex) cannot watch the show,
 so an ASR-suspect line it would fix stays unresolved. This tool cuts the
-span from `video.mp4` as a small preview clip (picture and sound) and asks
-Muse (`meta.MetaVideoModel`, one API request, no agent session) through
-`watch_clip.md` for three sections: the speech with approximate times and
-speakers, the on-screen captions and name cards verbatim, and a short scene
-description. Muse's times count from the clip's start; the tool shifts each
-`[t]` line prefix to the video's time so the agent can match `ja.srt`.
+span from `video.mp4` as a small preview clip (picture and sound) and as
+FLAC audio, then asks two services, each once, no agent session:
 
-Measured on Muse 1.3 (2026-10-21): the captions and name cards are read
-reliably and spell the names (西川きよし(80), 石塚英彦(64)); the speech
-drops and occasionally invents lines (at `medium`, mostly echoing the
-captions), and times are within about 2 s.
+- 発話 from Azure's MAI-Transcribe-2 (`mai.MaiSpeechModel`): verbatim,
+  diarized phrases, biased toward the briefing's cast names. It keeps the speech
+  and its times; names and homophones may carry the wrong kanji.
+- テロップ and 場面 from Meta's Muse (`meta.MetaVideoModel`, `watch_clip.md`):
+  every caption and name card verbatim, and a short scene description. Its
+  captions and their times are reliable; its own speech was not (it
+  dropped most lines and copied captions), and gemini, tried in its place,
+  heard well but timed its captions tens of seconds off.
 
-A span's clip and records (`watch_record`: the answer with its model,
-effort, usage and USD cost, plus any request billed without an answer) live
-in `<clips_dir>/<start>-<end>/`; an existing answer is returned again
-without a new request, and the proofread stage adds the cost of each record
-new since its start to the project's spend (`watch_record.cost_since`). The handler is async and runs the request on a worker
-thread, so parallel calls overlap, at most `MAX_CONCURRENT_REQUESTS` at once.
+Both answers count from the clip's start; the tool shifts their times to the
+video's so the agent can match `ja.srt`. A span's clip, audio and records
+(`watch_record`: `speech.json`, `watch.json`, plus any Muse request billed
+without an answer) live in `<clips_dir>/<start>-<end>/`; an existing record
+is reused without a new request, and the proofread stage adds the cost of
+each record new since its start to the project's spend
+(`watch_record.cost_since`). Each section stands on its own: a failed
+request leaves its section naming the failure, the other section still
+answers, and only the failed one is asked again next time. The handler is
+async and runs the requests on a worker thread, so parallel calls overlap,
+at most `MAX_CONCURRENT_REQUESTS` Muse requests at once.
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ from typing import TYPE_CHECKING
 import anyio.to_thread
 from mcp.server.fastmcp.exceptions import ToolError
 
+from grillmaster.agent_tools import mai
 from grillmaster.agent_tools._media import media_duration
 from grillmaster.agent_tools.meta import (
     PRICES,
@@ -43,14 +49,17 @@ from grillmaster.agent_tools.meta import (
 )
 from grillmaster.agent_tools.watch_record import (
     RECORD_FILE,
+    SPEECH_FILE,
     FailedWatch,
+    SpeechRecord,
     WatchRecord,
     failed_path,
 )
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.prompts import load_prompt
 from grillmaster.core.timecode import TimeRange
-from grillmaster.core.tool_session import WATCH_CLIP_FILE
+from grillmaster.core.tool_session import WATCH_AUDIO_FILE, WATCH_CLIP_FILE
+from grillmaster.media.audio import slice_audio
 from grillmaster.media.errors import MediaError
 from grillmaster.media.video import slice_preview
 
@@ -61,7 +70,8 @@ if TYPE_CHECKING:
     from grillmaster.core.tool_session import WatchClipTool
     from grillmaster.media.ffmpeg import FfmpegRunner
 
-# Requests one tool server sends at once (the contributor key allows 150 RPM).
+# Muse requests one tool server sends at once (the contributor key allows 150
+# RPM); the speech requests are seconds long and run unthrottled.
 MAX_CONCURRENT_REQUESTS = 4
 # A time at the start of an answer line, in clip time: `[12.3]` as asked,
 # or the `[12.3s]`, `[0:12.3]` and `- [12.3]` forms a model may slip into.
@@ -76,6 +86,11 @@ def build_model(config: WatchClipTool) -> VideoModel:
     return MetaVideoModel(
         config.model, config.effort, read_api_key(config.env_file), config.timeout_s
     )
+
+
+def build_speech(config: WatchClipTool) -> mai.SpeechModel:
+    """MAI-Transcribe-2; raises `MaiError` without the Azure key or endpoint."""
+    return mai.MaiSpeechModel(mai.read_credentials(config.env_file), config.timeout_s)
 
 
 def span_name(span: TimeRange) -> str:
@@ -93,17 +108,33 @@ def shift_times(text: str, offset_s: float) -> str:
     return _LINE_TIME.sub(shift, text)
 
 
+def render_speech(record: SpeechRecord) -> str:
+    """The `## 発話` section: `[t] 話者N: text` per phrase."""
+    lines = [
+        f"[{line.start_s:.1f}] "
+        + (f"話者{line.speaker}: " if line.speaker is not None else "")
+        + line.text
+        for line in record.phrases
+    ]
+    return "## 発話\n\n" + ("\n".join(lines) or "（発話なし）")
+
+
 class ClipWatcher:
     """Serves `watch_clip` for one session; probes the video duration once."""
 
     def __init__(
-        self, config: WatchClipTool, runner: FfmpegRunner, model: VideoModel
+        self,
+        config: WatchClipTool,
+        runner: FfmpegRunner,
+        model: VideoModel,
+        speech: mai.SpeechModel,
     ) -> None:
         self._config = config
         self._runner = runner
         self._model = model
+        self._speech = speech
         self._requests = threading.Semaphore(MAX_CONCURRENT_REQUESTS)
-        # One lock per span: a repeated span waits for the first record
+        # One lock per span: a repeated span waits for the first records
         # instead of cutting and requesting into the same directory.
         self._span_locks: dict[str, threading.Lock] = {}
         self._locks_guard = threading.Lock()
@@ -111,15 +142,14 @@ class ClipWatcher:
     def describe(self) -> str:
         """Tool description with this session's span limit."""
         return (
-            "Watch the show between `start` and `end` (seconds): a separate "
-            "model watches that clip, picture and sound, and returns three "
-            "sections in Japanese: 発話 (the speech, one utterance per line "
-            "with its approximate start time in video seconds and the speaker "
-            "when visible), テロップ (every on-screen caption, name card and "
-            "label, verbatim, with its time) and 場面 (a short scene "
-            "description). It is independent of ja.srt and takes tens of "
-            f"seconds. The span must lie inside the video and last at most "
-            f"{self._config.max_span_s:g}s."
+            "Hear and watch the show between `start` and `end` (seconds) "
+            "independently of ja.srt, in Japanese: 発話 (a speech recognizer's "
+            "verbatim phrases, `[t] 話者N: text`, times in video seconds; "
+            "話者 numbers only mark a change of speaker within this span), "
+            "テロップ (every on-screen caption, name card and label, verbatim, "
+            "read by a video model, with its time) and 場面 (a short scene "
+            "description). It takes tens of seconds. The span must lie inside "
+            f"the video and last at most {self._config.max_span_s:g}s."
         )
 
     async def call(self, start: float, end: float) -> str:
@@ -131,25 +161,58 @@ class ClipWatcher:
         with self._locks_guard:
             lock = self._span_locks.setdefault(name, threading.Lock())
         with lock:
-            record = self._record(span, self._config.clips_dir / name)
+            clip_dir = self._config.clips_dir / name
+            try:
+                speech = render_speech(self._speech_record(span, clip_dir))
+            except (MediaError, mai.MaiError) as error:
+                speech = f"## 発話\n\n（取得できず: hearing the clip failed: {error}）"
+            try:
+                picture = self._watch_record(span, clip_dir).text
+            except (MediaError, MetaError) as error:
+                picture = (
+                    f"## テロップ\n\n（取得できず: watching the clip failed: {error}）"
+                )
         return (
-            f"Clip {span.start:.3f}s-{span.end:.3f}s "
-            f"(times are video seconds, within about 2 s):\n{record.text}"
+            f"Clip {span.start:.3f}s-{span.end:.3f}s (times are video seconds; "
+            f"テロップ within about 2 s):\n{speech}\n\n{picture}"
         )
 
-    def _record(self, span: TimeRange, clip_dir: Path) -> WatchRecord:
+    def _speech_record(self, span: TimeRange, clip_dir: Path) -> SpeechRecord:
+        """The kept record, else MAI's transcript; raises `MediaError` or
+        `MaiError`."""
+        path = clip_dir / SPEECH_FILE
+        if path.is_file():
+            return read_model(path, SpeechRecord)
+        audio = clip_dir / WATCH_AUDIO_FILE
+        slice_audio(self._runner, self._config.video, audio, span)
+        transcript = self._speech.transcribe(audio, self._config.speech_phrases)
+        record = SpeechRecord(
+            model=mai.MODEL,
+            audio_s=transcript.audio_s,
+            cost_usd=transcript.cost_usd,
+            phrases=[
+                phrase.model_copy(
+                    update={"start_s": round(span.start + phrase.start_s, 3)}
+                )
+                for phrase in transcript.phrases
+            ],
+        )
+        write_model(path, record)
+        return record
+
+    def _watch_record(self, span: TimeRange, clip_dir: Path) -> WatchRecord:
+        """The kept record, else Muse's answer; raises `MediaError` or
+        `MetaError` (a billed one leaves a `FailedWatch`)."""
         path = clip_dir / RECORD_FILE
         if path.is_file():
             return read_model(path, WatchRecord)
         clip = clip_dir / WATCH_CLIP_FILE
+        slice_preview(self._runner, self._config.video, clip, span)
         try:
-            slice_preview(self._runner, self._config.video, clip, span)
             with self._requests:
                 answer = self._model.ask(
                     load_prompt(__package__, "watch_clip.md"), clip
                 )
-        except MediaError as error:
-            raise ToolError(str(error)) from error
         except MetaError as error:
             if error.usage is not None:
                 failed = FailedWatch(
@@ -160,7 +223,7 @@ class ClipWatcher:
                     error=str(error),
                 )
                 write_model(failed_path(clip_dir), failed)
-            raise ToolError(f"watching the clip failed: {error}") from error
+            raise
         record = WatchRecord(
             model=self._config.model,
             effort=self._config.effort,

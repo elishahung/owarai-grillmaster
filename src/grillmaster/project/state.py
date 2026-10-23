@@ -2,9 +2,9 @@
 
 `ProjectState` is the single record of a project: identity, source metadata
 the stages need, the section the video was cut to, metered spend, and the
-stage ledger. The ledger is keyed by `StageKey`, so an unknown key (a renamed
-or removed stage) fails validation instead of being silently ignored; old
-formats are never read.
+stage ledger. Unknown fields are ignored (`StateModel`), but the ledger is
+keyed by `StageKey`, so an unknown key (a renamed or removed stage) fails
+validation instead of silently marking the stage undone.
 
 Ledger `params` are a display snapshot (`grill status`), never a cache key.
 """
@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
-from grillmaster.core.models import StrictModel
 from grillmaster.core.source_id import Platform, SourceId
 from grillmaster.core.stage_key import SideTaskKey, StageKey
 from grillmaster.core.talent import Talent
@@ -32,7 +31,16 @@ def now() -> datetime:
     return datetime.now().astimezone()
 
 
-class SourceInfo(StrictModel):
+class StateModel(BaseModel):
+    """Base of every `project.json` model: an unknown field (one a removed
+    feature left behind) is ignored and dropped on the next save, since a
+    stale key in a project's own record is harmless; a bad assignment still
+    fails."""
+
+    model_config = ConfigDict(extra="ignore", validate_assignment=True)
+
+
+class SourceInfo(StateModel):
     """Program metadata the source platform published.
 
     `series` / `channel` select the program rules in `grill.toml`;
@@ -49,7 +57,7 @@ class SourceInfo(StrictModel):
     talents: list[Talent] = Field(default_factory=list)
 
 
-class Section(StrictModel):
+class Section(StateModel):
     """Source-timeline bounds (seconds) `video.mp4` was cut to; `None` = uncut."""
 
     start: float | None = Field(default=None, ge=0)
@@ -66,7 +74,7 @@ class Section(StrictModel):
         return self.start is not None or self.end is not None
 
 
-class TaskRecord(StrictModel):
+class TaskRecord(StateModel):
     """Completion of a stage or side task."""
 
     completed_at: AwareDatetime
@@ -93,7 +101,7 @@ class DateResearchRecord(TaskRecord):
     broadcast_date: date | None = None
 
 
-class SideTasks(StrictModel):
+class SideTasks(StateModel):
     cover: TaskRecord | None = None
     date_research: DateResearchRecord | None = None
 
@@ -115,7 +123,7 @@ class SideTasks(StrictModel):
                 self.date_research = record
 
 
-class ProjectState(StrictModel):
+class ProjectState(StateModel):
     id: str
     # Persisted rather than re-inferred: a bare ID is ambiguous across
     # platforms (`core.source_id.platform_of`).
@@ -209,8 +217,9 @@ class _CompletionStamp(BaseModel):
 
 
 class ProjectSummary(BaseModel):
-    """The `project.json` fields a project listing shows; everything else is
-    ignored, so one project with a stale field cannot hide the others."""
+    """The `project.json` fields a project listing shows; it reads the ledger
+    by name, not `StageKey`, so one project with a stale stage key cannot
+    hide the others."""
 
     model_config = ConfigDict(extra="ignore")
 

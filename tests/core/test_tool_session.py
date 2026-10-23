@@ -132,6 +132,7 @@ def _watch_clip(root: Path, **overrides: Any) -> WatchClipTool:
         "clips_dir": root / "work" / "12_proofread" / "watch_clip",
         "model": "muse-spark-1.3-contributor",
         "effort": "high",
+        "speech_phrases": ("今井らいぱち",),
         "env_file": root / ".env",
         "timeout_s": 600.0,
         "max_span_s": 300.0,

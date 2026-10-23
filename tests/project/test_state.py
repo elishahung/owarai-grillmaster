@@ -75,14 +75,12 @@ def test_unknown_ledger_key_fails(state: ProjectState):
         ProjectState.model_validate(data)
 
 
-@pytest.mark.parametrize(
-    "extra",
-    [{"is_asr_completed": True}, {"asr_cost": 0.1}, {"parent_project_path": None}],
-    ids=["legacy-flag", "legacy-cost", "legacy-parent"],
-)
-def test_unknown_top_level_fields_fail(state: ProjectState, extra: dict[str, object]):
-    with pytest.raises(ValidationError):
-        ProjectState.model_validate(_dump(state) | extra)
+def test_unknown_fields_are_ignored(state: ProjectState):
+    data = _dump(state) | {"removed_cost_usd": 0.01}
+    data["source"] = {**state.source.model_dump(mode="json"), "removed": 1}
+    loaded = ProjectState.model_validate(data)
+    assert loaded == state
+    assert "removed_cost_usd" not in _dump(loaded)
 
 
 def test_naive_timestamps_are_rejected(state: ProjectState):

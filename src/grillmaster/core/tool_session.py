@@ -29,6 +29,10 @@ MuseModel = Literal["muse-spark-1.3-contributor", "muse-spark-1.3"]
 MuseEffort = Literal["minimal", "low", "medium", "high", "xhigh"]
 # A `watch_clip` span's clip in `<clips_dir>/<start>-<end>/` (`WatchClipTool`).
 WATCH_CLIP_FILE = "clip.mp4"
+# Its audio, cut for the speech service beside the clip.
+WATCH_AUDIO_FILE = "audio.flac"
+# A span's media, which nothing reads once its records are kept.
+WATCH_MEDIA_FILES = (WATCH_CLIP_FILE, WATCH_AUDIO_FILE)
 
 
 class ToolName(StrEnum):
@@ -86,18 +90,23 @@ class SrtCheckTool(FrozenModel):
 
 
 class WatchClipTool(FrozenModel):
-    """`watch_clip`: a span of `video` watched by Meta's `model` at `effort`.
+    """`watch_clip`: a span of `video` heard by Azure's MAI-Transcribe-2
+    (speech, biased toward `speech_phrases`) and watched by Meta's `model` at
+    `effort` (captions and scene).
 
-    The tool server calls the Meta API itself (no agent session), with the
-    key read from `env_file` or its own environment, each request bounded by
-    `timeout_s`; a span's clip and record go to `<clips_dir>/<start>-<end>/`,
-    and an existing record is returned again without a new request."""
+    The tool server calls both APIs itself (no agent session), with the keys
+    read from `env_file`, each request bounded by `timeout_s`; a span's clip,
+    audio and records go to `<clips_dir>/<start>-<end>/`, and existing records
+    are returned again without a new request."""
 
     video: Path
     clips_dir: Path
     model: MuseModel
     effort: MuseEffort
-    # The `.env` holding `META_API_KEY`; the key itself never enters a manifest.
+    # Names and terms (the briefing's) the speech recognition should favour.
+    speech_phrases: tuple[str, ...]
+    # The `.env` holding `META_API_KEY` and the Azure Speech key and endpoint;
+    # no key ever enters a manifest.
     env_file: Path
     timeout_s: float
     # The longest span one call takes, anywhere in the video.

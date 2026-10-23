@@ -3,7 +3,7 @@
 `.env` holds secrets only; everything else lives in `grill.toml`. Other
 variables in the file are ignored because a dotenv file is commonly shared
 with unrelated tools. A missing key surfaces where it is needed (ASR), so
-commands that never call ElevenLabs or Meta run without them.
+commands that never call ElevenLabs, Meta or Azure run without them.
 """
 
 from __future__ import annotations
@@ -26,17 +26,24 @@ class Secrets(BaseSettings):
     )
 
     elevenlabs_api_key: SecretStr | None = None
-    # Read again by the tool server (`agent_tools.meta`) from `.env` alone;
-    # required here so a missing key fails before the run starts.
+    # `watch_clip`'s: read again by the tool server (`agent_tools.meta`,
+    # `agent_tools.mai`) from `.env` alone; required here so a missing key
+    # fails before the run starts. The endpoint is no secret but is tied to
+    # the key's Azure resource.
     meta_api_key: SecretStr | None = None
+    azure_speech_key: SecretStr | None = None
+    azure_speech_endpoint: SecretStr | None = None
 
     def require_elevenlabs_api_key(self) -> str:
         """The ElevenLabs key; `ConfigError` when it is not set."""
         return _require(self.elevenlabs_api_key, "ELEVENLABS_API_KEY")
 
-    def require_meta_api_key(self) -> str:
-        """The Meta key (`watch_clip`); `ConfigError` when it is not set."""
-        return _require(self.meta_api_key, "META_API_KEY")
+    def require_watch_clip_keys(self) -> None:
+        """`watch_clip`'s Meta key and Azure Speech key and endpoint;
+        `ConfigError` when one is not set."""
+        _require(self.meta_api_key, "META_API_KEY")
+        _require(self.azure_speech_key, "AZURE_SPEECH_KEY")
+        _require(self.azure_speech_endpoint, "AZURE_SPEECH_ENDPOINT")
 
 
 def _require(key: SecretStr | None, name: str) -> str:

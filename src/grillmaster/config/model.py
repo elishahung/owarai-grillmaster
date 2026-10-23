@@ -148,18 +148,20 @@ class AsrConfig(BaseModel):
 
 
 class WatchClipConfig(BaseModel):
-    """The proofread's `watch_clip` tool: a Meta Muse API call per span
-    (`META_API_KEY` in `.env`), not an agent role."""
+    """The proofread's `watch_clip` tool: per span, an Azure MAI-Transcribe-2
+    call for the speech (`AZURE_SPEECH_KEY`, `AZURE_SPEECH_ENDPOINT`) and a
+    Meta Muse call for the captions and scene (`META_API_KEY`), not agent
+    roles."""
 
     model_config = _STRICT
 
     model: MuseModel = Field(
         default="muse-spark-1.3-contributor",
-        description="Meta Muse model that watches each span; the contributor tier is the cheap one (Meta may train on the clips).",
+        description="Meta Muse model that reads each span's captions and scene; the contributor tier is the cheap one (Meta may train on the clips).",
     )
     effort: MuseEffort = Field(
         default="high",
-        description="Muse reasoning effort; below high it drops much of the speech.",
+        description="Muse reasoning effort.",
     )
 
 
@@ -213,7 +215,7 @@ class FeaturesConfig(BaseModel):
     )
     proofread_watch_clip: bool = Field(
         default=False,
-        description="Give the proofread a watch_clip tool: Meta's Muse ([watch_clip]) watches a span of the video and reports its speech, captions and scene.",
+        description="Give the proofread a watch_clip tool: Azure's MAI-Transcribe-2 hears a span of the video and Meta's Muse ([watch_clip]) reads its captions and scene.",
     )
     infuse_metadata: bool = Field(
         default=False,

@@ -99,7 +99,7 @@ def tools_section(
         )
     if tools.watch_clip is not None:
         lines.append(
-            "- `watch_clip(start, end)`：由另一個模型看這段影片（畫面與聲音），"
+            "- `watch_clip(start, end)`：另外聽寫並看這段影片，"
             "回傳日文的發話、畫面字幕與場景描述。"
         )
     if not lines:

@@ -46,11 +46,13 @@ model = "scribe_v2"
 language = "jpn"
 
 [watch_clip]
-# The proofread's watch_clip tool ([features] proofread_watch_clip): a Meta
-# Muse API call per span, metered (META_API_KEY in .env). The contributor
-# model is the cheap tier (Meta may train on the clips); muse-spark-1.3 is
-# the standard one. Effort: minimal | low | medium | high | xhigh; below high
-# Muse drops much of the speech.
+# The proofread's watch_clip tool ([features] proofread_watch_clip), both
+# metered: per span, Azure's MAI-Transcribe-2 hears the speech
+# (AZURE_SPEECH_KEY, AZURE_SPEECH_ENDPOINT in .env; $0.10 per audio hour)
+# and Meta's Muse reads the captions and scene (META_API_KEY). The
+# contributor model is the cheap tier (Meta may train on the clips);
+# muse-spark-1.3 is the standard one. Effort: minimal | low | medium | high
+# | xhigh.
 model = "muse-spark-1.3-contributor"
 effort = "high"
 
@@ -77,9 +79,9 @@ title_suggestion = false
 # Final proofread after the glossary check: another model fixes names, terms
 # and mistranslations, and corrects the briefing (also --proofread).
 proofread = false
-# Give the proofread a `watch_clip` tool: Meta's Muse ([watch_clip]) watches a
-# span of the video and reports its speech, on-screen captions and name cards,
-# and scene, for lines whose ASR is suspect.
+# Give the proofread a `watch_clip` tool: a speech recognizer hears a span of
+# the video and a video model reads its captions, name cards and scene
+# ([watch_clip]), for lines whose ASR is suspect.
 proofread_watch_clip = false
 # Write video.xml (title, description, broadcast date) beside each archived
 # video.mp4, so Infuse can sort the archive by broadcast date; it ignores the

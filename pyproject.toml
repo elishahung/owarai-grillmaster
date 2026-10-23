@@ -11,6 +11,7 @@ dependencies = [
     "claude-agent-sdk>=0.2.135",
     "click>=8.1.8",
     "elevenlabs>=2.24.0",
+    "httpx>=0.28.1",
     "loguru>=0.7.3",
     "mcp>=1.28.0",
     "openai>=3.35.1",

@@ -6,9 +6,11 @@ import pytest
 from pydantic import SecretStr, ValidationError
 from tests.fakes import FakeAgentRunner, make_blocks, make_briefing
 
+from grillmaster.agent_tools.mai import Phrase
 from grillmaster.agent_tools.meta import Usage
 from grillmaster.agent_tools.watch_record import (
     FailedWatch,
+    SpeechRecord,
     WatchRecord,
     failed_path,
 )
@@ -16,7 +18,7 @@ from grillmaster.agents.errors import AgentOutputError
 from grillmaster.config.errors import ConfigError
 from grillmaster.config.model import validate_config
 from grillmaster.config.secrets import Secrets
-from grillmaster.core.briefing import Briefing
+from grillmaster.core.briefing import Briefing, Character
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.srt import read_srt_file, write_srt_file
 from grillmaster.core.stage_key import StageKey
@@ -121,6 +123,11 @@ def test_proofreads_in_the_stage_directory(
 
 
 PROOFREAD_WATCH_CLIP = {"features": {"proofread_watch_clip": True}}
+WATCH_CLIP_ENV = (
+    "META_API_KEY=key\n"
+    "AZURE_SPEECH_KEY=key\n"
+    "AZURE_SPEECH_ENDPOINT=https://speech.cognitiveservices.azure.com\n"
+)
 WATCH_USAGE = Usage(
     input_tokens=17_000,
     cached_input_tokens=0,
@@ -135,9 +142,19 @@ def _write_record(clips_dir: Path, span: str, cost_usd: float) -> None:
         effort="high",
         usage=WATCH_USAGE,
         cost_usd=cost_usd,
-        text="## 発話\n[1.0] え",
+        text="## テロップ\n[1.0] え",
     )
     write_model(clips_dir / span / "watch.json", record)
+
+
+def _write_speech(clips_dir: Path, span: str, cost_usd: float) -> None:
+    record = SpeechRecord(
+        model="MAI-Transcribe-2",
+        audio_s=30.0,
+        cost_usd=cost_usd,
+        phrases=[Phrase(start_s=21.0, speaker=0, text="え")],
+    )
+    write_model(clips_dir / span / "speech.json", record)
 
 
 @pytest.mark.parametrize(
@@ -152,7 +169,15 @@ def test_the_feature_adds_the_watch_clip_tool(
     tmp_path: Path,
 ):
     project.video.write_bytes(b"mp4")
-    (tmp_path / ".env").write_text("META_API_KEY=key\n", encoding="utf-8")
+    (tmp_path / ".env").write_text(WATCH_CLIP_ENV, encoding="utf-8")
+    cast = [
+        Character(name_jp=name, name_zh=name, role_note="")
+        for name in ("尾形", " 尾形 ", "高野")
+    ]
+    write_model(
+        project.glossary_briefing,
+        make_briefing(names=("A",)).model_copy(update={"characters": cast}),
+    )
     agents.script[TASK_NAME] = FIX
 
     proofread.STAGE.run(make_context(StageKey.PROOFREAD))
@@ -165,6 +190,8 @@ def test_the_feature_adds_the_watch_clip_tool(
     assert tools.watch_clip.model == "muse-spark-1.3-contributor"
     assert tools.watch_clip.effort == "medium"
     assert tools.watch_clip.env_file == tmp_path / ".env"
+    # The cast only, once each: a proper noun's source may be the mishearing.
+    assert tools.watch_clip.speech_phrases == ("尾形", "高野")
     assert tools.watch_clip.timeout_s == proofread.WATCH_CLIP_TIMEOUT_S
     assert "`watch_clip(start, end)`" in agents.task(TASK_NAME).prompt
 
@@ -179,13 +206,14 @@ def test_the_spans_this_run_requested_add_to_the_project_spend(
     tmp_path: Path,
 ):
     project.video.write_bytes(b"mp4")
-    (tmp_path / ".env").write_text("META_API_KEY=key\n", encoding="utf-8")
+    (tmp_path / ".env").write_text(WATCH_CLIP_ENV, encoding="utf-8")
     clips_dir = project.proofread_watch_clip_dir
     # A span from an earlier run, already counted then.
     _write_record(clips_dir, "0001.000-0010.000", 0.5)
 
     def proofread_with_calls(task: object) -> ProofreadAnswer:
         _write_record(clips_dir, "0020.000-0050.000", 0.002)
+        _write_speech(clips_dir, "0020.000-0050.000", 0.001)
         _write_record(clips_dir, "0060.000-0090.000", 0.002)
         # A request billed without an answer.
         failed = FailedWatch(
@@ -210,15 +238,21 @@ def test_the_spans_this_run_requested_add_to_the_project_spend(
     else:
         result = proofread.STAGE.run(ctx)
         assert result == (
-            "1 fixes, 0 briefing changes · watch_clip $0.0050 · project $1.0050"
+            "1 fixes, 0 briefing changes · watch_clip $0.0060 · project $1.0060"
         )
-    assert ctx.state.watch_clip_cost_usd == pytest.approx(1.005)
-    assert load_state(project).watch_clip_cost_usd == pytest.approx(1.005)
+    assert ctx.state.watch_clip_cost_usd == pytest.approx(1.006)
+    assert load_state(project).watch_clip_cost_usd == pytest.approx(1.006)
 
 
 @pytest.mark.parametrize(
     ("features", "expected"),
-    [({}, "off"), ({"proofread_watch_clip": True}, "muse-spark-1.3-contributor/high")],
+    [
+        ({}, "off"),
+        (
+            {"proofread_watch_clip": True},
+            "MAI-Transcribe-2 + muse-spark-1.3-contributor/high",
+        ),
+    ],
 )
 def test_the_params_record_the_watch_clip_model(
     tmp_path: Path,
@@ -232,7 +266,7 @@ def test_the_params_record_the_watch_clip_model(
     assert proofread.STAGE.params(config)["watch_clip"] == expected
 
 
-def test_the_preflight_needs_the_meta_key_only_with_the_feature(
+def test_the_preflight_needs_the_watch_clip_keys_only_with_the_feature(
     tmp_path: Path, roles: dict[str, str], secrets: Secrets
 ):
     def config(**features: bool) -> AppConfig:
@@ -241,11 +275,17 @@ def test_the_preflight_needs_the_meta_key_only_with_the_feature(
         )
 
     proofread.STAGE.preflight(config(), secrets)
+    key = SecretStr("key")
     proofread.STAGE.preflight(
-        config(proofread_watch_clip=True), Secrets(meta_api_key=SecretStr("key"))
+        config(proofread_watch_clip=True),
+        Secrets(meta_api_key=key, azure_speech_key=key, azure_speech_endpoint=key),
     )
     with pytest.raises(ConfigError, match="META_API_KEY is not set"):
         proofread.STAGE.preflight(config(proofread_watch_clip=True), secrets)
+    with pytest.raises(ConfigError, match="AZURE_SPEECH_KEY is not set"):
+        proofread.STAGE.preflight(
+            config(proofread_watch_clip=True), Secrets(meta_api_key=key)
+        )
 
 
 def test_an_unpriced_watch_clip_model_fails_the_config(
@@ -267,6 +307,7 @@ def test_a_key_only_in_the_environment_fails_before_the_proofread(
 ):
     project.video.write_bytes(b"mp4")
     monkeypatch.setenv("META_API_KEY", "key")
+    monkeypatch.setenv("AZURE_SPEECH_KEY", "key")
     with pytest.raises(ConfigError, match="reads it from there alone"):
         proofread.STAGE.run(make_context(StageKey.PROOFREAD))
     assert agents.tasks == []

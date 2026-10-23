@@ -1,8 +1,10 @@
 """Speech audio: extraction for ASR and translation, and gap detection.
 
 Every extract encodes the same speech target (Opus in Ogg, mono, 16 kHz,
-24 kbit/s) and is written under a dot-prefixed temporary name first, so an
-interrupted run never leaves a truncated file behind under the final name.
+24 kbit/s), or lossless 16 kHz mono FLAC when the output is named `.flac`
+(for a service that takes no Opus), and is written under a dot-prefixed
+temporary name first, so an interrupted run never leaves a truncated file
+behind under the final name.
 """
 
 from __future__ import annotations
@@ -43,6 +45,8 @@ _SPEECH_ENCODE = (
     "-f",
     "ogg",
 )
+# `watch_clip`'s speech service reads WAV, MP3 or FLAC only.
+_FLAC_ENCODE = ("-vn", "-c:a", "flac", "-ac", "1", "-ar", "16000", "-f", "flac")
 
 
 def extract_audio(runner: FfmpegRunner, video: Path, output: Path) -> None:
@@ -53,7 +57,8 @@ def extract_audio(runner: FfmpegRunner, video: Path, output: Path) -> None:
 def extract_audio_segment(
     runner: FfmpegRunner, source: Path, output: Path, span: TimeRange
 ) -> None:
-    """Encode `span` of `source` to `output` with the same speech settings.
+    """Encode `span` of `source` to `output` with the same speech settings
+    (FLAC for a `.flac` output).
 
     Always encodes; callers that cache slices check for `output` first.
     """
@@ -115,9 +120,10 @@ def _encode(
     timeout: float | None,
 ) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
+    encode = _FLAC_ENCODE if output.suffix == ".flac" else _SPEECH_ENCODE
     partial = partial_path(output)
     try:
-        runner.run(ffmpeg(*input_args, *_SPEECH_ENCODE, str(partial)), timeout=timeout)
+        runner.run(ffmpeg(*input_args, *encode, str(partial)), timeout=timeout)
         partial.replace(output)
     finally:
         partial.unlink(missing_ok=True)

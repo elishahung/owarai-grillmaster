@@ -266,26 +266,34 @@ returned as MCP image content (with `pending_frames`: text only, paths appended
 to that file). `check_srt(path)`: skeleton check of an
 absolute path against `reference_srt` → `VALID` / `INVALID` + problems.
 `watch_clip(start, end)` (`watch_clip.py`, async: parallel calls overlap, ≤4
-requests at once): cuts ≤ `max_span_s` anywhere in `video` into
-`<clips_dir>/<start>-<end>/clip.mp4` (`media.video.slice_preview`: 480p,
-5 fps, mono AAC, ~1 MB per 20 s) and asks Meta's Muse API directly
-(`meta.py`: no agent session, `openai` SDK imported on use, Responses API, the clip
-inline as a base64 `input_video`, `[watch_clip] model`/`effort`, each
-request bounded by the manifest's `timeout_s`) for 発話 / テロップ / 場面; the
-tool shifts each line's leading `[t]` from clip to video seconds. The key
-is `META_API_KEY`, read by the server from the manifest's `env_file` alone
-(the `.env` path, never the key): gemini's CLI strips every `*KEY*`
-variable from MCP servers. A request billed without an answer leaves a
-`failed-<n>.json` so its spend still counts; one call (retry included) is
-bounded by `timeout_s`. One call per span at a time; a kept
-`watch.json` (`watch_record.py`: answer, usage, `cost_usd` from `meta.PRICES`;
-kept apart so the grill process prices spans without the MCP stack) answers again
-without a request (so the archive move drops the clips:
-`ProjectLayout.archive_discards`). Measured on Muse 1.3: captions and name
-cards are reliable, the speech drops or invents lines (worst below `high`),
-times within ~2 s; the proofread guidance weighs them so. Gemini agent
-sessions did this before (better speech, no captions); xAI STT was tried
-and dropped (project-architecture `references/asr-provider-evaluation.md`).
+Muse requests at once): cuts ≤ `max_span_s` anywhere in `video` into
+`<clips_dir>/<start>-<end>/` as `audio.flac` (`media.audio.slice_audio`, FLAC by suffix) and
+`clip.mp4` (`media.video.slice_preview`: 480p, 5 fps, mono AAC, ~1 MB per
+20 s), then calls two APIs directly, no agent session, each request
+bounded by the manifest's `timeout_s`:
+- 発話: Azure's MAI-Transcribe-2 (`mai.py`, `httpx` on use, fast
+  transcription REST, `ja`, verbatim, diarized, segment times, the
+  briefing's cast names as `phraseList` = `speech_phrases`; proper nouns stay out, their source is often the mishearing), cached as
+  `speech.json`, priced $0.10 per audio hour. Measured on 13 spans: no
+  speech dropped, times match `ja.srt`, 2–5 s per request; names and
+  homophones often get the wrong kanji, and 話者 numbers are per span
+  and split one speaker in two.
+- テロップ / 場面: Meta's Muse (`meta.py`, `openai` SDK on use, Responses
+  API, the clip inline as a base64 `input_video`, `[watch_clip]
+  model`/`effort`) through `watch_clip.md`, cached as `watch.json`; its
+  captions and their times are reliable. A request billed without an
+  answer leaves a `failed-<n>.json` so its spend still counts.
+Each section stands alone: a failed request leaves its section naming the
+failure, the other still answers, and only the failed one is asked again.
+The tool shifts every time to video seconds. Keys come from the manifest's
+`env_file` alone (`_env.read_env_values`; the `.env` path, never a key): gemini's CLI strips every
+`*KEY*` variable from MCP servers. `watch_record.py` holds the records
+and `cost_since` (apart so the grill process prices spans without the MCP
+stack); the archive move drops the media (`ProjectLayout.archive_discards`).
+Muse alone dropped most speech and copied captions; gemini agent sessions
+heard well but timed captions tens of seconds off (and took minutes per
+call); xAI STT dropped shouted speech (project-architecture
+`references/asr-provider-evaluation.md`).
 `agents/prompt.py` lists the tools (with the window); stages add guidance via
 `core.prompts.frames_guidance`. A new tool = config in `core/tool_session.py`
 (`ToolName` + sub-config) + handler module + registration in `server.py` +

@@ -76,6 +76,17 @@ def test_extract_segment_seeks_before_the_input(
     assert output.read_bytes() == FAKE_JPEG
 
 
+def test_a_flac_output_is_encoded_as_flac(fake_ffmpeg: FakeFfmpeg, tmp_path: Path):
+    extract_audio_segment(
+        fake_ffmpeg, Path("video.mp4"), tmp_path / "audio.flac", TimeRange(0.0, 5.0)
+    )
+
+    (argv,) = fake_ffmpeg.calls
+    assert argv[argv.index("-c:a") + 1] == "flac"
+    assert argv[argv.index("-f") + 1] == "flac"
+    assert "libopus" not in argv
+
+
 @pytest.mark.parametrize("span", [TimeRange(5.0, 5.0), TimeRange(5.0, 4.0)])
 def test_extract_segment_rejects_an_empty_span(
     fake_ffmpeg: FakeFfmpeg, tmp_path: Path, span: TimeRange

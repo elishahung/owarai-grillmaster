@@ -108,18 +108,23 @@ def test_archive_moves_dated_projects_under_year_month(
     assert not layout.root.exists()
 
 
-def test_archive_drops_watch_clip_clips_but_keeps_records(
+def test_archive_drops_watch_clip_media_but_keeps_records(
     layout: ProjectLayout, state: ProjectState, tmp_path: Path
 ):
     span = layout.proofread_watch_clip_dir / "0812.000-0845.500"
     span.mkdir(parents=True)
     (span / "clip.mp4").write_bytes(b"clip")
+    (span / "audio.flac").write_bytes(b"flac")
+    (span / "speech.json").write_text("{}\n", encoding="utf-8")
     (span / "watch.json").write_text("{}\n", encoding="utf-8")
 
     archived = archive_project(layout, state, tmp_path / "archive")
 
     moved = archived.proofread_watch_clip_dir / span.name
-    assert sorted(path.name for path in moved.iterdir()) == ["watch.json"]
+    assert sorted(path.name for path in moved.iterdir()) == [
+        "speech.json",
+        "watch.json",
+    ]
 
 
 def test_archive_puts_undated_projects_under_etc(

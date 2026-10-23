@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING
 
 from grillmaster.core.srt import chunk_range_name
 from grillmaster.core.stage_key import SideTaskKey, StageKey
-from grillmaster.core.tool_session import WATCH_CLIP_FILE
+from grillmaster.core.tool_session import WATCH_MEDIA_FILES
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -337,8 +337,14 @@ class ProjectLayout:
 
     def archive_discards(self) -> tuple[Path, ...]:
         """Existing files the archive move drops: the `watch_clip` tool's
-        clips, which nothing reads once their span's record is kept."""
-        return tuple(sorted(self.proofread_watch_clip_dir.glob(f"*/{WATCH_CLIP_FILE}")))
+        clips and audio, which nothing reads once their span's records are
+        kept."""
+        spans = self.proofread_watch_clip_dir
+        return tuple(
+            sorted(
+                path for name in WATCH_MEDIA_FILES for path in spans.glob(f"*/{name}")
+            )
+        )
 
     @property
     def chat_batches_dir(self) -> Path:

@@ -3,9 +3,10 @@ proofread of `.work/11_glossary/checked.srt` into
 `.work/12_proofread/proofread.srt`, plus `briefing.json` when it corrected the
 briefing (+ `answer.json`, `report.md`, and the dossier `aligned.tsv`,
 `history.md`). With `[features] proofread_watch_clip` the agent also gets the
-`watch_clip` tool (Meta's Muse, `[watch_clip]`), its spans kept under
-`watch_clip/`; the cost of the spans this run requested (each span's
-`watch.json`, cached ones cost nothing) is added to the project's
+`watch_clip` tool (speech from Azure's MAI-Transcribe-2, biased toward the
+briefing's cast names; captions and scene from Meta's Muse, `[watch_clip]`), its
+spans kept under `watch_clip/`; the cost of the requests this run made (each
+span's records, cached ones cost nothing) is added to the project's
 `watch_clip_cost_usd`, even when the proofread fails, since it is paid.
 
 Finalize reads `proofread.srt` once it exists (`layout.effective_subtitles`)
@@ -21,9 +22,13 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from grillmaster.agent_tools.mai import MODEL as MAI_MODEL
+from grillmaster.agent_tools.mai import MaiError, read_credentials
 from grillmaster.agent_tools.meta import MetaError, read_api_key
 from grillmaster.agent_tools.watch_record import billed_records, cost_since
 from grillmaster.config.errors import ConfigError
+from grillmaster.core.briefing import Briefing
+from grillmaster.core.json_artifact import read_model
 from grillmaster.core.model_spec import Role
 from grillmaster.core.stage_key import StageKey
 from grillmaster.core.tool_session import ToolSession, WatchClipTool
@@ -61,21 +66,23 @@ WATCH_CLIP_TIMEOUT_S = 300.0
 
 
 def _preflight(config: AppConfig, secrets: Secrets) -> None:
-    """With `watch_clip`, the Meta key."""
+    """With `watch_clip`, the Meta key and the Azure Speech key and endpoint."""
     if config.features.proofread_watch_clip:
-        secrets.require_meta_api_key()
+        secrets.require_watch_clip_keys()
 
 
-def watch_clip_tool(ctx: StageContext) -> WatchClipTool | None:
+def watch_clip_tool(ctx: StageContext, briefing: Path) -> WatchClipTool | None:
     """`watch_clip` over `video.mp4` into `.work/12_proofread/watch_clip/`
-    when enabled. The tool server reads the key from `.env` alone, so a key
-    only in the environment (which passes the preflight) fails here, before
-    the proofread starts."""
+    when enabled, its speech biased toward the cast in `briefing`. The tool
+    server reads the keys from `.env` alone, so a key only in the
+    environment (which passes the preflight) fails here, before the
+    proofread starts."""
     if not ctx.config.features.proofread_watch_clip:
         return None
     try:
         read_api_key(ctx.env_file)
-    except MetaError as error:
+        read_credentials(ctx.env_file)
+    except (MetaError, MaiError) as error:
         raise ConfigError(
             f"{error}; the watch_clip tool server reads it from there alone"
         ) from error
@@ -85,16 +92,25 @@ def watch_clip_tool(ctx: StageContext) -> WatchClipTool | None:
         clips_dir=ctx.layout.proofread_watch_clip_dir,
         model=settings.model,
         effort=settings.effort,
+        speech_phrases=speech_phrases(read_model(briefing, Briefing)),
         env_file=ctx.env_file,
         timeout_s=WATCH_CLIP_TIMEOUT_S,
         max_span_s=WATCH_CLIP_MAX_SPAN_S,
     )
 
 
+def speech_phrases(briefing: Briefing) -> tuple[str, ...]:
+    """The cast's Japanese names, once each. Proper nouns stay out: their
+    `source` is often the ASR's mishearing (ひろおみ for ひるおび), which
+    would bias the second hearing toward the very error it should catch."""
+    names = (character.name_jp.strip() for character in briefing.characters)
+    return tuple(dict.fromkeys(name for name in names if name))
+
+
 def _watch_clip_param(config: AppConfig) -> str:
     if not config.features.proofread_watch_clip:
         return "off"
-    return f"{config.watch_clip.model}/{config.watch_clip.effort}"
+    return f"{MAI_MODEL} + {config.watch_clip.model}/{config.watch_clip.effort}"
 
 
 def _run(ctx: StageContext) -> str:
@@ -142,7 +158,7 @@ def _run(ctx: StageContext) -> str:
         project_root=layout.root,
         frames=frames_tool(ctx, layout.proofread_frames_dir),
         check_srt=None,
-        watch_clip=watch_clip_tool(ctx),
+        watch_clip=watch_clip_tool(ctx, inputs.briefing),
     )
     clips_dir = layout.proofread_watch_clip_dir
     seen = billed_records(clips_dir)

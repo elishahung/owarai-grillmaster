@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Protocol, cast
 
+from grillmaster.agent_tools._env import read_env_values
 from grillmaster.core.models import FrozenModel
 
 if TYPE_CHECKING:
@@ -178,9 +179,4 @@ class MetaVideoModel:
 
 def read_api_key(env_file: Path) -> str:
     """`META_API_KEY` from `env_file` alone, never the environment."""
-    from dotenv import dotenv_values  # noqa: PLC0415 - imported on use
-
-    key = dotenv_values(env_file, encoding="utf-8").get(API_KEY_ENV)
-    if not key:
-        raise MetaError(f"{API_KEY_ENV} is not set in {env_file}")
-    return key
+    return read_env_values(env_file, (API_KEY_ENV,), MetaError)[API_KEY_ENV]

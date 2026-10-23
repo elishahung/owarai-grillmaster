@@ -405,6 +405,7 @@ def test_the_watch_clip_tool_brings_its_guidance(
         clips_dir=tmp_path / "watch_clip",
         model="muse-spark-1.3-contributor",
         effort="high",
+        speech_phrases=(),
         env_file=tmp_path / ".env",
         timeout_s=60.0,
         max_span_s=300.0,

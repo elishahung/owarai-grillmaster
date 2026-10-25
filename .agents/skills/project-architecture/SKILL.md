@@ -235,8 +235,10 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   `tver`, `abema`) registered in `registry.py`; ID parsing is
   `core/source_id.py`. BiliBili never sends cookies (format list cap); ABEMA
   resets yt-dlp's cached token before downloading. Extras and broadcast dates
-  are best-effort. Downloads keep `skip_unavailable_fragments=False` and fail
-  on audio gaps (a gap drifts ASR timestamps). Fragmented (HLS) download
+  are best-effort. A year-less TVer label takes the latest month/day no later
+  than availability + 30 days (reruns re-list months later), checked against
+  its weekday; inconclusive → `None`, so date research runs. Downloads keep
+  `skip_unavailable_fragments=False` and fail on audio gaps (a gap drifts ASR timestamps). Fragmented (HLS) download
   progress counts fragments; yt-dlp's byte estimate starts at 100%.
 - External processes only via `media/ffmpeg.py` (ffmpeg/ffprobe),
   `agents/process.py` (agent CLIs) or the Claude SDK (its CLI `adopt_tree`d);

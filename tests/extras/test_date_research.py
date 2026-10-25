@@ -161,6 +161,20 @@ def test_context_states_the_archive_broadcast_year() -> None:
     )
 
 
+def test_context_states_a_year_less_label() -> None:
+    context = ResearchContext(
+        platform="tver",
+        source_url="https://tver.jp/episodes/ep123",
+        video_id="ep123",
+        broadcast_label="2月23日(火)放送分",
+    )
+
+    assert (
+        '- Platform on-air label without a year: "2月23日(火)放送分"'
+        in render_context(context)
+    )
+
+
 # --- research and cache -------------------------------------------------------
 
 

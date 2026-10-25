@@ -74,7 +74,9 @@ class ResearchContext:
     """What the project knows about the episode: the research seed.
 
     `broadcast_year` is the year the platform's on-air label states
-    (`broadcast_label`, e.g. "2018年放送"); it marks an archive re-upload.
+    (`broadcast_label`, e.g. "2018年放送"); it marks an archive re-upload. A
+    year-less label ("2月23日(月)放送分") reaches research only when the
+    metadata stage could not date it (typically a rerun of an older episode).
     """
 
     platform: str
@@ -110,6 +112,10 @@ def render_context(context: ResearchContext) -> str:
         lines.append(
             f"- Platform-stated original broadcast year: {context.broadcast_year} "
             f'(source label: "{context.broadcast_label}")'
+        )
+    elif context.broadcast_label:
+        lines.append(
+            f'- Platform on-air label without a year: "{context.broadcast_label}"'
         )
     if context.talents:
         lines.append("- Official source cast/talent metadata:")

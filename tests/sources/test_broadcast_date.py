@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from calendar import FRIDAY, MONDAY, TUESDAY
 from datetime import date
 
 import pytest
@@ -7,8 +8,8 @@ import pytest
 from grillmaster.sources.broadcast_date import (
     CST,
     JST,
+    date_for_month_day,
     date_from_epoch,
-    nearest_date_for_month_day,
     parse_broadcast_label_year,
     parse_upload_date,
     resolve_tver_broadcast_date,
@@ -16,6 +17,8 @@ from grillmaster.sources.broadcast_date import (
 
 # 2026-07-08 22:00 JST
 TVER_START_AT = 1783515600
+# 2026-10-24 JST: a rerun re-listed with its original label.
+RERUN_START_AT = 1792855800
 
 
 def test_date_from_epoch_without_epoch():
@@ -42,21 +45,26 @@ def test_zones_shift_the_date_across_midnight(epoch: int, jst: date, cst: date):
 
 
 @pytest.mark.parametrize(
-    ("month", "day", "reference", "expected"),
+    ("month", "day", "weekday", "availability", "expected"),
     [
-        (7, 8, date(2026, 7, 10), date(2026, 7, 8)),
+        (7, 8, None, date(2026, 7, 10), date(2026, 7, 8)),
         # December broadcast, availability in early January.
-        (12, 28, date(2026, 1, 3), date(2025, 12, 28)),
+        (12, 28, None, date(2026, 1, 3), date(2025, 12, 28)),
         # Advance distribution (先行配信): the label date follows availability.
-        (1, 2, date(2025, 12, 30), date(2026, 1, 2)),
+        (1, 2, FRIDAY, date(2025, 12, 30), date(2026, 1, 2)),
         # Feb 29 only exists in the leap year.
-        (2, 29, date(2024, 3, 5), date(2024, 2, 29)),
+        (2, 29, None, date(2024, 3, 5), date(2024, 2, 29)),
+        # Rerun re-listed months later: the past date, not next year's.
+        (2, 23, MONDAY, date(2026, 10, 24), date(2026, 2, 23)),
+        (2, 23, None, date(2026, 10, 24), date(2026, 2, 23)),
+        # 2026-02-23 is a Monday: a Tuesday episode is older, research decides.
+        (2, 23, TUESDAY, date(2026, 10, 24), None),
     ],
 )
-def test_nearest_date_for_month_day(
-    month: int, day: int, reference: date, expected: date
+def test_date_for_month_day(
+    month: int, day: int, weekday: int | None, availability: date, expected: date | None
 ):
-    assert nearest_date_for_month_day(month, day, reference) == expected
+    assert date_for_month_day(month, day, weekday, availability) == expected
 
 
 @pytest.mark.parametrize(
@@ -75,6 +83,20 @@ def test_nearest_date_for_month_day(
 )
 def test_resolve_tver_broadcast_date(label: str | None, expected: date | None):
     assert resolve_tver_broadcast_date(label, TVER_START_AT) == expected
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("2月23日(月)放送分", date(2026, 2, 23)),
+        ("2月23日（月・祝）放送分", date(2026, 2, 23)),
+        ("2月23日(火)放送分", None),
+        # An impossible day is not dated by the availability start either.
+        ("2月30日放送分", None),
+    ],
+)
+def test_resolve_tver_broadcast_date_of_a_rerun(label: str, expected: date | None):
+    assert resolve_tver_broadcast_date(label, RERUN_START_AT) == expected
 
 
 def test_resolve_tver_broadcast_date_without_availability():

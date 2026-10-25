@@ -102,6 +102,8 @@ exit even when a stage failed, skipped entirely by `--break-after`; done =
   dir): verdict cached at `.work/side/date_research/result.json` (corrupt = redo);
   `DateResearchRecord` feeds `effective_broadcast_date`. Moot once a date or
   record exists; a cached verdict is applied even when skipped (`_on_skip`).
+  The context carries the TVer on-air label: a stated year or a year-less
+  month/day is authoritative in the prompt.
 - **Titles** (package step; role `utility`, `WEB_SEARCH`, `workdir=None`): three
   titles from the effective briefing, cached at `.work/package/titles.json`;
   `[features] title_suggestion` gates only generating a missing one; failure warns.

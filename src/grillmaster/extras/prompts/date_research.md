@@ -16,6 +16,7 @@ Matching rules (a date is only valid evidence when the source refers to the SAME
 - 配信開始 (streaming start) is not 放送 (broadcast). Prefer the broadcast date; a streaming/release date is only a last-resort low-trust candidate.
 - A date code in the video title or file name (e.g. `260202` = 2026-02-02) is only a query seed, never direct evidence.
 - When the project context states a platform-stated original broadcast year, that year is authoritative: the episode is an archive re-upload, so its streaming release date is years off. Search for the on-air date within that year, and reject every candidate from another year in `rejected_candidates`.
+- When the project context states a platform on-air label without a year, its month, day and weekday are authoritative and only the year is open. Search for the year in which this episode aired on that day, and reject every candidate on another day in `rejected_candidates` (a late-night slot listed past midnight, e.g. 25:00, counts as the same day).
 - Upload dates on BiliBili/YouTube are re-upload times, not broadcast dates.
 
 Suggested query patterns (fill in from the project context; the title/description often mixes the program name, segment name, and performers):

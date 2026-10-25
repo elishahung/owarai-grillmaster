@@ -16,9 +16,16 @@ from loguru import logger
 JST = timezone(timedelta(hours=9))
 CST = timezone(timedelta(hours=8))
 
+# Japanese weekday initials in `date.weekday()` order.
+_WEEKDAYS = "月火水木金土日"
 _FULL_DATE_PATTERN = re.compile(r"(\d{4})年\s*(\d{1,2})月\s*(\d{1,2})日")
-_MONTH_DAY_PATTERN = re.compile(r"(\d{1,2})月(\d{1,2})日")
+# "2月23日(月)放送分", "2月23日（月・祝）"; the weekday is optional.
+_MONTH_DAY_PATTERN = re.compile(
+    rf"(\d{{1,2}})月(\d{{1,2}})日(?:\s*[(（]([{_WEEKDAYS}]))?"
+)
 _YEAR_PATTERN = re.compile(r"(\d{4})年")
+# A generous bound on how early 先行配信 opens an episode (days in practice).
+_ADVANCE_RELEASE = timedelta(days=30)
 
 
 def date_from_epoch(epoch: int | None, tz: timezone) -> date | None:
@@ -33,23 +40,33 @@ def date_from_epoch(epoch: int | None, tz: timezone) -> date | None:
         return None
 
 
-def nearest_date_for_month_day(month: int, day: int, reference: date) -> date | None:
-    """The year that puts month/day closest to `reference`.
+def date_for_month_day(
+    month: int, day: int, weekday: int | None, availability: date
+) -> date | None:
+    """The on-air date a year-less TVer label means.
 
-    TVer's on-air label has no year. The availability start is at most days
-    after (見逃し) or before (先行配信) the broadcast, so the nearest candidate
-    across adjacent years is the right one, including across a year boundary.
-    Invalid candidates (Feb 29 in a non-leap year) are skipped.
+    The availability start bounds the broadcast from one side only: advance
+    distribution (先行配信) opens an episode at most `_ADVANCE_RELEASE`
+    before it airs, while a rerun or re-listing opens it any time after (a
+    February episode re-listed with its original label in October). So the
+    answer is the latest month/day no later than that bound. A stated
+    `weekday` (0 = Monday) must agree with it: a mismatch means the episode
+    is older than the label can tell, so the year is left to research
+    (`None`). Invalid dates (Feb 29 in a non-leap year) are skipped.
     """
+    latest = availability + _ADVANCE_RELEASE
     candidates: list[date] = []
-    for year in (reference.year - 1, reference.year, reference.year + 1):
+    for year in (latest.year - 1, latest.year):
         try:
             candidates.append(date(year, month, day))
         except ValueError:
             continue
-    if not candidates:
-        return None
-    return min(candidates, key=lambda candidate: abs(candidate - reference))
+    aired = max(
+        (candidate for candidate in candidates if candidate <= latest), default=None
+    )
+    if aired is None or weekday in (None, aired.weekday()):
+        return aired
+    return None
 
 
 def parse_broadcast_label_year(label: str | None) -> int | None:
@@ -68,32 +85,41 @@ def resolve_tver_broadcast_date(
     A label stating its own year is authoritative: an explicit
     year/month/day is taken as-is, and a year-only archive label
     ("2018年放送") resolves to `None` rather than to the availability start,
-    which for a re-upload is years away from the on-air date. Only a
-    year-less month/day label borrows the year from the availability start;
-    without a usable label the availability date itself is the answer.
+    which for a re-upload is years away from the on-air date. A year-less
+    month/day label is dated by `date_for_month_day`; only without a usable
+    label is the availability date itself the answer.
     """
-    reference = date_from_epoch(release_timestamp, JST)
+    availability = date_from_epoch(release_timestamp, JST)
     if not label:
-        return reference
+        return availability
     if full_match := _FULL_DATE_PATTERN.search(label):
         try:
             return date(*(int(group) for group in full_match.groups()))
         except ValueError:
             logger.warning(f"Invalid date in TVer label: {label}")
-    month_day_match = _MONTH_DAY_PATTERN.search(label)
-    if month_day_match and reference is not None:
-        resolved = nearest_date_for_month_day(
-            int(month_day_match.group(1)), int(month_day_match.group(2)), reference
-        )
-        if resolved is not None:
-            return resolved
     if _YEAR_PATTERN.search(label):
         logger.info(
             f"TVer label states a year but no on-air day ({label}); the "
             "availability start is unrelated to the broadcast date"
         )
         return None
-    return reference
+    if month_day_match := _MONTH_DAY_PATTERN.search(label):
+        if availability is None:
+            return None
+        month, day, weekday = month_day_match.groups()
+        aired = date_for_month_day(
+            int(month),
+            int(day),
+            _WEEKDAYS.index(weekday) if weekday else None,
+            availability,
+        )
+        if aired is None:
+            logger.info(
+                f"TVer label {label} names no date the availability start "
+                f"({availability:%Y-%m-%d}) can confirm; left to research"
+            )
+        return aired
+    return availability
 
 
 def parse_upload_date(upload_date: str | None) -> date | None:

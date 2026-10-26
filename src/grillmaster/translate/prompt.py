@@ -65,6 +65,13 @@ class PromptSection:
     )
 
     @staticmethod
+    def preceding(blocks: Sequence[SrtBlock]) -> str:
+        return (
+            f"【前文（index {blocks[0].index}–{blocks[-1].index}，"  # noqa: RUF001 - en dash in prompt text
+            "上一塊的結尾，僅供理解語境：不要翻譯、不要輸出）】"
+        )
+
+    @staticmethod
     def srt_slice(chunk: Chunk) -> str:
         return (
             f"【SRT 區段（index {chunk.from_index}–{chunk.to_index}，"  # noqa: RUF001 - en dash in prompt text
@@ -200,7 +207,8 @@ def chunk_instruction(program_instruction: str, *, has_audio: bool) -> str:
 
 def chunk_message(inputs: ChunkInputs) -> str:
     """Assignment, time range, frame times, the briefing narrowed to this
-    chunk's segment summary, the overlapping CC lines, and the SRT slice."""
+    chunk's segment summary, the overlapping CC lines, the read-only
+    preceding blocks, and the voiced SRT slice."""
     chunk = inputs.chunk
     span = chunk.time_range
     if inputs.briefing.segment_summary_for(*chunk.index_range) is None:
@@ -226,7 +234,14 @@ def chunk_message(inputs: ChunkInputs) -> str:
         if official
         else ""
     )
-    srt_slice = "\n\n".join(block.raw for block in chunk.blocks)
+    preceding_section = (
+        f"{PromptSection.preceding(inputs.preceding)}\n---\n"
+        + "\n\n".join(block.raw for block in inputs.preceding)
+        + "\n\n"
+        if inputs.preceding
+        else ""
+    )
+    srt_slice = "\n\n".join(block.raw for block in inputs.voiced)
     return (
         f"你是第 {inputs.position + 1}/{inputs.total} 塊翻譯員，負責 SRT index "
         f"{chunk.from_index}–{chunk.to_index}。\n\n"  # noqa: RUF001 - en dash in prompt text
@@ -237,6 +252,7 @@ def chunk_message(inputs: ChunkInputs) -> str:
         f"{PromptSection.BRIEFING}\n"
         f"{inputs.briefing.render_for_prompt(chunk=chunk.index_range)}\n\n"
         f"{official_section}"
+        f"{preceding_section}"
         f"{PromptSection.srt_slice(chunk)}\n"
         f"---\n{srt_slice}"
     )

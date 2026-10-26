@@ -63,7 +63,7 @@ members is a layout change. `pipeline/registry.py` holds the only lists:
 | 4 | `chat_fetch` | `--chat` only (see live-chat) |
 | 5 | `audio` | `.work/05_audio/audio.ogg` |
 | 6 | `asr` | `.work/06_asr/asr.json`; adds `asr_cost_usd` (an existing `asr.json` costs nothing) |
-| 7 | `transcript` | `.subs/ja.srt` |
+| 7 | `transcript` | `.subs/ja.srt` + `ja.voiced.srt` (same blocks, diarized `[V<n>] ` tags for the agents) |
 | 8–11 | `prepass`, `chunks`, `refine`, `glossary` | work dirs only (translate-pipeline, postprocess-and-packaging) |
 | 12 | `proofread` | `--proofread` / `[features] proofread` only: work dir only; adds `watch_clip_cost_usd` (postprocess-and-packaging) |
 | 13 | `finalize` | `video.cht.srt`, `video.cht.ass` (root, `video.mp4`'s stem: players auto-load them; under `.subs/` they did not) |
@@ -153,7 +153,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 - `layout.py` `ProjectLayout` is the **only** place that spells a project
   path (pure calculator, never creates dirs). Root: `project.json`,
   `video.mp4` + `video.cht.{srt,ass}`, `poster.jpg`, `cover.png`, `.subs/`
-  (`ja.srt`, `ja.official.srt`, `chat.cht.json`), `.logs/{run,events}-<ts>`.
+  (`ja.srt`, `ja.voiced.srt`, `ja.official.srt`, `chat.cht.json`), `.logs/{run,events}-<ts>`.
   Work: `.work/NN_<key>/`, unnumbered `.work/side/<task>/` and `.work/package/`.
   Non-deliverables live in dot dirs so Plex/Infuse skip their videos;
   `archive_discards()` (`watch_clip` clips and audio) are deleted by `archive_project`.

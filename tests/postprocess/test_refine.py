@@ -30,7 +30,7 @@ def inputs(tmp_path: Path) -> RefineInputs:
     write_srt_file(translated, REFERENCE)
     return RefineInputs(
         translated_srt=translated,
-        ja_srt=tmp_path / "subs" / "ja.srt",
+        ja_voiced_srt=tmp_path / "subs" / "ja.voiced.srt",
         briefing=tmp_path / "work" / "08_prepass" / "briefing.json",
         prepass_frames_dir=tmp_path / "work" / "08_prepass" / "frames",
         chunks_dir=tmp_path / "work" / "09_chunks",
@@ -88,7 +88,7 @@ def test_prompt_names_inputs_by_absolute_path(inputs: RefineInputs, tools: ToolS
 
     for path in (
         inputs.translated_srt,
-        inputs.ja_srt,
+        inputs.ja_voiced_srt,
         inputs.briefing,
         inputs.prepass_frames_dir,
         inputs.output_srt,

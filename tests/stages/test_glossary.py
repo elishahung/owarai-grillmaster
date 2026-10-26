@@ -31,7 +31,7 @@ CORRECTED = BRIEFING.model_copy(update={"summary": "fixed"})
 @pytest.fixture
 def project(layout: ProjectLayout) -> ProjectLayout:
     write_srt_file(layout.refined_srt, make_blocks(3))
-    write_srt_file(layout.ja_srt, make_blocks(3))
+    write_srt_file(layout.ja_voiced_srt, make_blocks(3))
     write_model(layout.prepass_briefing, BRIEFING)
     return layout
 

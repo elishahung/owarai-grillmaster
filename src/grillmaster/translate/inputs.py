@@ -59,7 +59,12 @@ class PrepassInputs:
 
 @dataclass(frozen=True, slots=True)
 class ChunkInputs:
-    """One chunk translation call; `position` is 0-based among `total`."""
+    """One chunk translation call; `position` is 0-based among `total`.
+
+    `voiced` is the chunk's blocks with voice tags (what the agent reads in
+    place of `chunk.blocks`); `preceding` the voiced source blocks just
+    before the chunk, shown read-only so the first lines keep their context.
+    """
 
     source: SourceContext
     chunk: Chunk
@@ -67,6 +72,8 @@ class ChunkInputs:
     total: int
     briefing: Briefing
     assets: MediaAssets
+    voiced: tuple[SrtBlock, ...]
+    preceding: tuple[SrtBlock, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,11 +82,13 @@ class ChunkBatchInputs:
 
     `audio` is the full track for an audio-capable backend (each chunk gets
     its slice), `None` otherwise. `project_root` scopes the `get_frames`
-    tool session; frames come from `video`.
+    tool session; frames come from `video`. `voiced` is the whole voiced
+    source SRT, block for block the source the chunks were cut from.
     """
 
     source: SourceContext
     chunks: tuple[Chunk, ...]
+    voiced: tuple[SrtBlock, ...]
     briefing: Briefing
     video: Path
     audio: Path | None

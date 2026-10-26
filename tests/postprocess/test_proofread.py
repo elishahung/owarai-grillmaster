@@ -107,7 +107,7 @@ def inputs(tmp_path: Path) -> ProofreadInputs:
     stage = work / "12_proofread"
     stage.mkdir(parents=True)
     paths = {
-        "ja": tmp_path / "subs" / "ja.srt",
+        "ja": tmp_path / "subs" / "ja.voiced.srt",
         "merged": work / "09_chunks" / "merged.srt",
         "refined": work / "10_refine" / "refined.srt",
         "checked": work / "11_glossary" / "checked.srt",
@@ -125,7 +125,7 @@ def inputs(tmp_path: Path) -> ProofreadInputs:
         checked_srt=paths["checked"],
         refined_srt=paths["refined"],
         merged_srt=paths["merged"],
-        ja_srt=paths["ja"],
+        ja_voiced_srt=paths["ja"],
         official_srt=None,
         briefing=briefing,
         refine_report=work / "10_refine" / "report.md",

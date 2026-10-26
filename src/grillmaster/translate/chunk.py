@@ -3,9 +3,10 @@ and the SRT rebuilt from it.
 
 The agent returns `{blocks: [{index, text}]}` through the native schema
 channel and never writes timecodes; Python puts each text back under its
-source block's index and timecode. Blank lines and lines holding only a
-speaker dash (`-`) are debris (the first would break the SRT, the second is
-what models leave after a two-speaker line): rebuilding drops them, and the
+source block's index and timecode. Voice tags echoed from the voiced source,
+blank lines and lines holding only a speaker dash (`-`) are debris (a blank
+line would break the SRT, a lone dash is what models leave after a
+two-speaker line): rebuilding drops them, and the
 validator judges a block's text as it will be emitted, so a block that is
 nothing but debris counts as empty and goes back for repair.
 
@@ -26,7 +27,7 @@ from grillmaster.core.id_coverage import id_coverage
 from grillmaster.core.json_artifact import load_model, write_model
 from grillmaster.core.model_spec import Role
 from grillmaster.core.models import StrictModel
-from grillmaster.core.srt import chunk_range_name, reindex
+from grillmaster.core.srt import chunk_range_name, reindex, strip_voice_tags
 from grillmaster.core.tool_session import FramesTool, ToolSession
 from grillmaster.translate import prompt
 from grillmaster.translate.assets import prepare_chunk_assets
@@ -48,6 +49,9 @@ if TYPE_CHECKING:
     type ChunkPath = Callable[[int, int], Path]
 
 _DEBRIS_LINES = frozenset({"", "-"})
+# Source blocks before a chunk shown read-only: enough to carry who was just
+# called on or what was asked across a chunk seam.
+PRECEDING_CONTEXT_BLOCKS = 10
 
 
 class ChunkLine(StrictModel):
@@ -182,6 +186,10 @@ def _chunk_task(
         check_srt=None,
         watch_clip=None,
     )
+    # Chunks are contiguous runs of the source, which `voiced` mirrors.
+    first = next(
+        at for at, block in enumerate(inputs.voiced) if block.index == chunk.from_index
+    )
     return build_chunk_task(
         ChunkInputs(
             source=inputs.source,
@@ -190,6 +198,8 @@ def _chunk_task(
             total=len(inputs.chunks),
             briefing=inputs.briefing,
             assets=assets,
+            voiced=inputs.voiced[first : first + len(chunk.blocks)],
+            preceding=inputs.voiced[max(0, first - PRECEDING_CONTEXT_BLOCKS) : first],
         ),
         session_dir=files.session_dir(*chunk.index_range),
         workdir=files.workdir(*chunk.index_range),
@@ -288,8 +298,11 @@ def merge_chunks(chunks: Iterable[Sequence[SrtBlock]]) -> list[SrtBlock]:
 
 
 def clean_text(text: str) -> str:
-    """`text` without blank lines (an SRT block cannot hold one) and without
-    lines that hold nothing but a speaker dash."""
+    """`text` without voice tags copied from the voiced source, blank lines
+    (an SRT block cannot hold one) and lines that hold nothing but a speaker
+    dash."""
     return "\n".join(
-        line for line in text.splitlines() if line.strip() not in _DEBRIS_LINES
+        line
+        for line in strip_voice_tags(text).splitlines()
+        if line.strip() not in _DEBRIS_LINES
     )

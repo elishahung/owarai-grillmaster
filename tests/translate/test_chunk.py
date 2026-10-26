@@ -87,9 +87,14 @@ def test_rebuild_restores_source_timecodes_and_order(chunk: Chunk) -> None:
         ("- 第一人。\n- 第二人。", "- 第一人。\n- 第二人。"),
         ("上\n\n下", "上\n下"),
         ("- \n-", ""),
+        ("[V2] 我很喜歡", "我很喜歡"),
+        ("-[V1] 才不是\n-[V3] 是啦", "-才不是\n-是啦"),
+        ("[V2]", ""),
     ],
 )
-def test_clean_text_drops_dash_only_and_blank_lines(text: str, cleaned: str) -> None:
+def test_clean_text_drops_voice_tags_dash_only_and_blank_lines(
+    text: str, cleaned: str
+) -> None:
     assert clean_text(text) == cleaned
 
 

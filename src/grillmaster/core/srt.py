@@ -17,6 +17,19 @@ if TYPE_CHECKING:
 _BLOCK_SEPARATOR = re.compile(r"\r?\n(?:[ \t]*\r?\n)+")
 # Index and timecode lines; the text body may be empty.
 _MIN_BLOCK_LINES = 2
+# A diarized voice label at a line start (after any dialogue dash), as the
+# voiced source SRT writes it: `[V2] ...` or `-[V2] ...`.
+VOICE_TAG = re.compile(r"^(-?)\[V\d+\] ?", re.MULTILINE)
+
+
+def voice_tag(number: int) -> str:
+    """`[V<number>] `: the prefix that marks which diarized voice speaks."""
+    return f"[V{number}] "
+
+
+def strip_voice_tags(text: str) -> str:
+    """`text` with every line-start voice tag removed (dialogue dashes kept)."""
+    return VOICE_TAG.sub(r"\1", text)
 
 
 def chunk_range_name(from_index: int, to_index: int) -> str:

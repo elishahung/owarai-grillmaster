@@ -6,7 +6,7 @@ Official CC reference (present for this project):
   timestamps are approximate against the ASR timeline — match lines by content
   and rough position, not exact timecodes.
 - Where a CC line covers an utterance, it is the ground-truth source wording:
-  prefer it over `ja.srt` when they conflict, both for terminology and
+  prefer it over `ja.voiced.srt` when they conflict, both for terminology and
   for the name-form audit (judge honorific and name-span parity against the CC
   line when one covers the utterance).
 - CC spellings of names and terms are official. Consult the CC as decisive

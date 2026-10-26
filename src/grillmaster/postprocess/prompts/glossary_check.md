@@ -21,9 +21,11 @@ this stage's own directory, where your outputs go):
   catchphrases, tone notes, and segment summaries. Never edit this file. Only
   when you verify it is wrong, write a corrected copy to `{briefing_out}` in the
   current working directory.
-- `ja.srt` (`{ja_srt}`) — ASR Japanese source. It may be wrong, but it is useful
+- `ja.voiced.srt` (`{ja_voiced_srt}`) — ASR Japanese source. It may be wrong, but it is useful
   when a Chinese term looks suspicious and you need to recover the source
-  wording.
+  wording. Each speaker turn starts with a diarized voice tag such as `[V2]`:
+  a changed tag means a different voice, the same tag does not prove the same
+  person, and tags never belong in the subtitles.
 
 Procedure:
 
@@ -41,7 +43,7 @@ Procedure:
 Name-form audit (final defense, required):
 
 - After all terminology fixes above, sweep `{output_srt}`
-  against `ja.srt` in stable windows of about 200 blocks (`1-200`,
+  against `ja.voiced.srt` in stable windows of about 200 blocks (`1-200`,
   `201-400`, …). Treat the stage as incomplete until every window has been
   audited.
 - In each window, for every block that mentions a person or carries an
@@ -66,7 +68,10 @@ Name-form audit (final defense, required):
     subjects, and an invented subject frequently points at the wrong person
     (他 for the speaker's own words, or the reverse). Prefer deleting the
     unsupported subject over guessing the intended person. If the source line
-    does speak a subject, the Chinese subject must match that person.
+    does speak a subject, the Chinese subject must match that person:
+    `自分` is reflexive (我 only when the speaker means themself), and a
+    `俺 / 僕 / 私` the speaker voices for someone else stays inside「」or
+    becomes 他. Use the voice tags to see whose run a line belongs to.
   - The ASR line may itself mis-hear the name; use the briefing's
     characters/proper_nouns to identify WHO is meant, but take the span and
     the honorific from the source line.
@@ -86,7 +91,7 @@ Write scope:
 - Do not modify the pre-pass briefing itself; corrections go to
   `{briefing_out}` only.
 - Do not touch `project.json`. The outer Python workflow owns progress flags.
-- Do not modify `refined.srt`, `ja.srt`, fixed glossary files,
+- Do not modify `refined.srt`, `ja.voiced.srt`, fixed glossary files,
   media files, or unrelated cache directories.
 - Do not run scripts that mutate `project.json` or re-run pipeline stages.
 
@@ -145,7 +150,7 @@ If you changed `{output_srt}` or wrote `{briefing_out}`,
 write `{report}` as a compact Traditional Chinese debug note,
 not a formal audit table. Group repeated subtitle edits by correction, mention
 representative block numbers, and include the decisive evidence (frame filename,
-web source, or `ja.srt` line) only where it mattered. Name-form audit
+web source, or `ja.voiced.srt` line) only where it mattered. Name-form audit
 fixes (honorific/name-span/subject) are grouped and reported the same way. If the briefing
 changed, add a short `Pre-pass corrections` section listing only changed fields
 as `field: old -> new; reason/evidence`. If you changed nothing, do not create

@@ -2,7 +2,8 @@
 
 Words are grouped into utterances (speaker change, silence, punctuation,
 length), utterances into subtitle blocks (close turns become `-` dialogue),
-then timings are de-overlapped and held briefly after speech ends.
+then timings are de-overlapped and held briefly after speech ends. The same
+blocks are also rendered with diarized voice tags for the agents.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from typing import TYPE_CHECKING
 
 from grillmaster.asr.errors import AsrError
 from grillmaster.asr.payload import word_items
-from grillmaster.core.srt import SrtBlock
+from grillmaster.core.srt import SrtBlock, voice_tag
 from grillmaster.core.timecode import format_timecode_line
 
 if TYPE_CHECKING:
@@ -137,12 +138,26 @@ class SubtitleBlock:
     utterances: list[Utterance]
 
 
+@dataclass(frozen=True, slots=True)
+class SourceSrt:
+    """The Japanese source SRT, plain and voiced.
+
+    `voiced` has the same blocks with each utterance's first line prefixed by
+    its diarized voice (`core.srt.voice_tag`), numbered by first appearance.
+    Diarization only marks voice changes: one voice number can cover several
+    people, and one person can surface under two numbers.
+    """
+
+    blocks: list[SrtBlock]
+    voiced: list[SrtBlock]
+
+
 _DEFAULT_OPTIONS = SrtFormatOptions()
 
 
 def build_srt_blocks(
     payload: AsrPayload, options: SrtFormatOptions = _DEFAULT_OPTIONS
-) -> list[SrtBlock]:
+) -> SourceSrt:
     """Subtitle blocks, numbered from 1, for an ElevenLabs response.
 
     Production passes no `options`; overrides are for tests and tuning
@@ -162,7 +177,11 @@ def build_srt_blocks(
             )
     _resolve_block_overlaps(blocks)
     _extend_subtitle_hold_times(blocks, options)
-    return _render_srt(blocks, options)
+    voices = _voice_numbers(blocks)
+    return SourceSrt(
+        blocks=_render_srt(blocks, options, voices=None),
+        voiced=_render_srt(blocks, options, voices=voices),
+    )
 
 
 def _extract_tokens(payload: AsrPayload) -> list[WordToken]:
@@ -602,31 +621,57 @@ def _can_merge_into_block(
     return _block_text_length(block) + len(utterance.text) <= options.max_segment_chars
 
 
+def _voice_numbers(blocks: list[SubtitleBlock]) -> dict[str, int]:
+    """Each speaker id's voice number, from 1 in order of first appearance."""
+    numbers: dict[str, int] = {}
+    for block in blocks:
+        for utterance in block.utterances:
+            if utterance.speaker_id is not None:
+                numbers.setdefault(utterance.speaker_id, len(numbers) + 1)
+    return numbers
+
+
 def _render_srt(
-    blocks: list[SubtitleBlock], options: SrtFormatOptions
+    blocks: list[SubtitleBlock],
+    options: SrtFormatOptions,
+    *,
+    voices: dict[str, int] | None,
 ) -> list[SrtBlock]:
     return [
         SrtBlock(
             index=index,
             timecode=format_timecode_line(block.start, block.end),
-            text="\n".join(_render_block_text(block, options)),
+            text="\n".join(_render_block_text(block, options, voices=voices)),
         )
         for index, block in enumerate(blocks, start=1)
     ]
 
 
-def _render_block_text(block: SubtitleBlock, options: SrtFormatOptions) -> list[str]:
+def _render_block_text(
+    block: SubtitleBlock,
+    options: SrtFormatOptions,
+    *,
+    voices: dict[str, int] | None,
+) -> list[str]:
+    """The block's lines; with `voices`, each voice turn's first line (a
+    single-voice block's very first line) carries its voice tag."""
     use_dialogue = len({item.speaker_id for item in block.utterances}) > 1
     rendered: list[str] = []
-    for utterance in block.utterances:
+    for position, utterance in enumerate(block.utterances):
         text = utterance.text.strip()
         if not text:
             continue
-        for line in _wrap_text(text, options, max_lines=options.max_lines_per_block):
-            if use_dialogue:
-                rendered.append(f"{DIALOGUE_PREFIX}{line}")
-            else:
-                rendered.append(line)
+        tag = ""
+        if (
+            voices is not None
+            and utterance.speaker_id is not None
+            and (use_dialogue or position == 0)
+        ):
+            tag = voice_tag(voices[utterance.speaker_id])
+        wrapped = _wrap_text(text, options, max_lines=options.max_lines_per_block)
+        for line_number, line in enumerate(wrapped):
+            body = f"{tag}{line}" if line_number == 0 else line
+            rendered.append(f"{DIALOGUE_PREFIX}{body}" if use_dialogue else body)
     return rendered
 
 

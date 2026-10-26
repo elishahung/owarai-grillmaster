@@ -187,11 +187,30 @@ def test_chunk_message(chunk_inputs: Callable[..., ChunkInputs]) -> None:
     assert "segment_summaries" not in message
     assert message.endswith(
         "【SRT 區段（index 1–3，共 3 block）】\n---\n"  # noqa: RUF001
-        "1\n00:00:02,000 --> 00:00:03,500\nline 1\n\n"
-        "2\n00:00:04,000 --> 00:00:05,500\nline 2\n\n"
-        "3\n00:00:06,000 --> 00:00:07,500\nline 3"
+        "1\n00:00:02,000 --> 00:00:03,500\n[V1] line 1\n\n"
+        "2\n00:00:04,000 --> 00:00:05,500\n[V1] line 2\n\n"
+        "3\n00:00:06,000 --> 00:00:07,500\n[V1] line 3"
     )
     assert PromptSection.CHUNK_OFFICIAL_CC not in message
+    assert "【前文" not in message
+
+
+def test_chunk_message_shows_the_preceding_blocks_before_the_slice(
+    chunk_inputs: Callable[..., ChunkInputs],
+) -> None:
+    preceding = (
+        SrtBlock(8, "00:00:00,500 --> 00:00:01,000", "[V2] お願いします。"),
+        SrtBlock(9, "00:00:01,000 --> 00:00:01,800", "[V1] はい。"),
+    )
+    message = prompt.chunk_message(chunk_inputs(preceding=preceding))
+
+    section = message[message.index(PromptSection.preceding(preceding)) :]
+    assert section.startswith(
+        "【前文（index 8–9，上一塊的結尾，僅供理解語境：不要翻譯、不要輸出）】\n---\n"  # noqa: RUF001
+        "8\n00:00:00,500 --> 00:00:01,000\n[V2] お願いします。\n\n"
+        "9\n00:00:01,000 --> 00:00:01,800\n[V1] はい。\n\n"
+        "【SRT 區段"
+    )
 
 
 def test_chunk_message_slices_official_cc_with_padding(

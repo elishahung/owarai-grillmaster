@@ -39,6 +39,10 @@ def test_builds_the_japanese_srt(make_context: MakeContext, layout: ProjectLayou
         "2\n00:00:02,000 --> 00:00:03,000\n後です。\n"
     )
     assert [block.index for block in read_srt_file(layout.ja_srt)] == [1, 2]
+    assert layout.ja_voiced_srt.read_text(encoding="utf-8") == (
+        "1\n00:00:00,000 --> 00:00:01,000\n[V1] 先です。\n\n"
+        "2\n00:00:02,000 --> 00:00:03,000\n[V2] 後です。\n"
+    )
     assert not layout.work_dir(StageKey.TRANSCRIPT).exists()
 
 
@@ -48,3 +52,4 @@ def test_response_without_words_fails(make_context: MakeContext, layout: Project
     with pytest.raises(AsrError, match="timed words"):
         transcript.STAGE.run(make_context(StageKey.TRANSCRIPT))
     assert not layout.ja_srt.exists()
+    assert not layout.ja_voiced_srt.exists()

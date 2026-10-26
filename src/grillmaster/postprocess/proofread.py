@@ -164,7 +164,7 @@ class ProofreadInputs:
     checked_srt: Path
     refined_srt: Path
     merged_srt: Path
-    ja_srt: Path
+    ja_voiced_srt: Path
     # Normalized platform captions; `None` when the project has none.
     official_srt: Path | None
     briefing: Path
@@ -254,7 +254,7 @@ def write_dossier(inputs: ProofreadInputs, checked: list[SrtBlock]) -> tuple[str
     """`aligned.tsv` and `history.md`, written and returned; `PostprocessError`
     when a version does not keep the checked SRT's skeleton."""
     versions = {
-        "ja.srt": read_reference(inputs.ja_srt, "Japanese SRT"),
+        "voiced ja.srt": read_reference(inputs.ja_voiced_srt, "voiced Japanese SRT"),
         "merged chunk SRT": read_reference(inputs.merged_srt, "merged chunk SRT"),
         "refined SRT": read_reference(inputs.refined_srt, "refined SRT"),
     }
@@ -263,7 +263,7 @@ def write_dossier(inputs: ProofreadInputs, checked: list[SrtBlock]) -> tuple[str
             raise PostprocessError(
                 f"{name} does not align with the checked SRT: {'; '.join(problems)}"
             )
-    aligned = render_aligned(versions["ja.srt"], checked)
+    aligned = render_aligned(versions["voiced ja.srt"], checked)
     history = render_history(
         versions["merged chunk SRT"],
         versions["refined SRT"],

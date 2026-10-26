@@ -65,6 +65,13 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
 - `ja.srt` stays the sole block/timecode scaffold; official CC is a wording
   reference only (pre-pass gets all of it, a chunk the blocks overlapping its
   time range ±2 s).
+- Chunks are cut from `ja.srt`, but the agent reads `ja.voiced.srt`
+  (`stages._common.voiced_source`, checked block-for-block against
+  `ja.srt`; a mismatch fails naming `reset --only transcript`): its own slice
+  plus the `PRECEDING_CONTEXT_BLOCKS` (10) blocks before it, read-only, so a
+  chunk seam does not hide who was called on. `clean_text` strips echoed
+  `[V<n>]` tags. Voice tags only mark voice changes (one id can cover
+  several people); the pre-pass still reads plain `ja.srt`.
 
 ## Contracts
 

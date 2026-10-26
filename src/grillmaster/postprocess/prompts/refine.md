@@ -5,7 +5,7 @@ Goal: medium refinement, not a rewrite. Produce natural Traditional Chinese subt
 Files (read them at these absolute paths; the current working directory is this stage's own directory):
 
 - `merged.srt` (`{translated_srt}`) — original Traditional Chinese subtitles to refine.
-- `ja.srt` (`{ja_srt}`) — Japanese source-language reference (account for ASR mistakes).
+- `ja.voiced.srt` (`{ja_voiced_srt}`) — Japanese source-language reference (account for ASR mistakes). Each speaker turn starts with a diarized voice tag such as `[V2]` (per `-` line in a dialogue block): a changed tag means a different voice took over, but the same tag does not prove the same person. Tags never belong in the subtitles.
 - `briefing.json` (`{briefing}`) — summary, cast, term glossary, segment summaries.
 - Optional visual references under `{prepass_frames_dir}` and `{chunks_dir}/<range>/frames/`.
 - The `get_frames` tool to extract extra frames from any moment of the video when the pre-sampled ones do not cover what you need to check.
@@ -13,7 +13,7 @@ Files (read them at these absolute paths; the current working directory is this 
 Write scope (strict): you may only create or modify `{output_srt}` and `{report}` in the current working directory. Do **not** touch any other file, in particular:
 
 - `project.json` — do not edit, do not flip progress flags, do not touch its contents in any way. The outer Python workflow owns this file and will mark progress after validating your output.
-- `merged.srt` and `ja.srt` — read-only sources.
+- `merged.srt` and `ja.voiced.srt` — read-only sources.
 - The other stage directories under `.work/` — read-only caches.
 - `video.mp4`, `audio.ogg`, `poster.jpg`, etc. — unrelated to subtitle refinement.
 
@@ -24,14 +24,14 @@ Rules:
 - Do not change SRT indexes or timecodes.
 - Do not merge or split blocks.
 - Keep the block count identical to `merged.srt`.
-- Treat `merged.srt` as the refinement baseline. Do not retranslate every block from `ja.srt`. Consult `ja.srt`, `briefing.json`, and optional frames when the Chinese line is awkward, inconsistent, semantically suspicious, or conflicts with recurring terms/context.
-- Treat source conflicts as context-dependent: `ja.srt` is ASR output and may be wrong, while `merged.srt` was translated by an LLM with video/audio input and may sometimes be more accurate than the ASR Japanese. When they disagree, judge by nearby context, `briefing.json`, optional frames, and the overall segment meaning instead of blindly trusting either file.
-- Avoid unsupported subject insertion: When comparing against `ja.srt`, remove explicit Chinese subjects such as「我 / 你 / 他 / 她 / 我們 / 大家」or specific names if they were added only for smoothness and are not stated or clearly implied by the Japanese source, immediate context, audio, visuals, or `briefing.json`. Prefer natural subjectless Chinese when the actor is ambiguous.
+- Treat `merged.srt` as the refinement baseline. Do not retranslate every block from `ja.voiced.srt`. Consult `ja.voiced.srt`, `briefing.json`, and optional frames when the Chinese line is awkward, inconsistent, semantically suspicious, or conflicts with recurring terms/context.
+- Treat source conflicts as context-dependent: `ja.voiced.srt` is ASR output and may be wrong, while `merged.srt` was translated by an LLM with video/audio input and may sometimes be more accurate than the ASR Japanese. When they disagree, judge by nearby context, `briefing.json`, optional frames, and the overall segment meaning instead of blindly trusting either file.
+- Avoid unsupported subject insertion: When comparing against `ja.voiced.srt`, remove explicit Chinese subjects such as「我 / 你 / 他 / 她 / 我們 / 大家」or specific names if they were added only for smoothness and are not stated or clearly implied by the Japanese source, immediate context, audio, visuals, or `briefing.json`. Prefer natural subjectless Chinese when the actor is ambiguous.
 - The refined subtitle text must be Traditional Chinese. Do not leave Japanese in the subtitle text unless it is an intentional proper noun, title, service name, or quoted term that should remain untranslated.
 - Use `briefing.json` for `summary`, `characters`, `proper_nouns`, `glossary`, `catchphrases`, `tone_notes`, and `segment_summaries`. Apply `tone_notes` to register/honorific decisions and `catchphrases` to keep recurring jokes phrased identically across blocks.
 - Use frames proactively but selectively. If a concrete subtitle edit depends on
   on-screen text, a visible name/title, a prop, a scoreboard, a reaction shot, a
-  visual gag, or a conflict between `ja.srt` and `merged.srt`, fetch the
+  visual gag, or a conflict between `ja.voiced.srt` and `merged.srt`, fetch the
   exact frame when the pre-sampled images do not cover that timestamp. Do not
   use frames for routine fluency edits that are already settled by text context.
 - Prefer editing only text lines inside each block.
@@ -68,7 +68,7 @@ Review workflow:
   catchphrases.
 - For large SRT files, work in stable index windows of about 200 blocks
   (`1-200`, `201-400`, etc.). Within each window, compare `merged.srt` with
-  nearby `ja.srt`, the relevant `segment_summaries`, and surrounding
+  nearby `ja.voiced.srt`, the relevant `segment_summaries`, and surrounding
   blocks. Track replacements by original block index and stitch the edited text
   back into the original SRT skeleton; never generate a newly reindexed file.
 - In each window, prioritize concrete defects: mistranslation, missing
@@ -85,6 +85,15 @@ Review workflow:
   the Japanese source line. If the source speaks no subject and the immediate
   context does not unambiguously support it, remove the subject and restore
   subjectless phrasing rather than guessing the intended person.
+- Judge subjects per speaker run, not only per block: follow the voice tags
+  to see who holds the floor (who was just called on, whose answer is being
+  explained) and check that the run's 我 / 他 point at the right person.
+  Neighboring blocks that carry the same unchecked subject are not support
+  for it. A subject the source does speak can still be mistranslated:
+  `自分` is reflexive, so it is 我 only when the speaker talks about
+  themself; when a speaker presents, retells (`〜らしい`, `〜って`) or
+  voices another person's thoughts, that person's `俺 / 僕 / 私` belongs
+  inside「」or becomes 他.
 - When a candidate edit is visually grounded and the timestamp is known, use the
   `get_frames` tool before committing the edit if the pre-sampled frames do
   not already settle it.

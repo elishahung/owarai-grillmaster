@@ -133,7 +133,7 @@ def _run(ctx: StageContext) -> str:
         checked_srt=require(layout.glossary_checked_srt, StageKey.GLOSSARY),
         refined_srt=require(layout.refined_srt, StageKey.REFINE),
         merged_srt=require(layout.merged_srt, StageKey.CHUNKS),
-        ja_srt=layout.ja_srt,
+        ja_voiced_srt=layout.ja_voiced_srt,
         official_srt=official_srt(layout),
         briefing=require(layout.briefing_before(StageKey.PROOFREAD), StageKey.PREPASS),
         refine_report=layout.refine_report,

@@ -26,6 +26,7 @@ from grillmaster.stages._common import (
     role_params,
     source_context,
     split_source,
+    voiced_source,
 )
 from grillmaster.stages.base import StageDef, require
 from grillmaster.translate.chunk import ChunkFiles, translate_chunks
@@ -41,7 +42,7 @@ if TYPE_CHECKING:
 def _run(ctx: StageContext) -> None:
     layout = ctx.layout
     options = ctx.config.translate
-    _blocks, chunks = split_source(ctx)
+    blocks, chunks = split_source(ctx)
     briefing = read_model(
         require(layout.effective_briefing(), StageKey.PREPASS), Briefing
     )
@@ -49,6 +50,7 @@ def _run(ctx: StageContext) -> None:
     inputs = ChunkBatchInputs(
         source=source_context(ctx, StageKey.CHUNKS, with_parent=False),
         chunks=chunks,
+        voiced=voiced_source(ctx, blocks),
         briefing=briefing,
         video=require(layout.video, StageKey.COMBINE),
         audio=require(layout.audio, StageKey.AUDIO) if has_audio else None,

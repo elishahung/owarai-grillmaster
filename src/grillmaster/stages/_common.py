@@ -10,7 +10,7 @@ from grillmaster.agents.adapters.base import Capability
 from grillmaster.config.programs import resolve_program_rules
 from grillmaster.core.briefing import Briefing
 from grillmaster.core.json_artifact import read_model
-from grillmaster.core.srt import read_srt_file
+from grillmaster.core.srt import read_srt_file, strip_voice_tags
 from grillmaster.core.stage_key import StageKey
 from grillmaster.core.tool_session import FramesTool
 from grillmaster.project.layout import ProjectLayout
@@ -22,7 +22,7 @@ from grillmaster.translate.errors import TranslateError
 from grillmaster.translate.inputs import SourceContext
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
     from pathlib import Path
 
     from grillmaster.agents.runner import AgentRunner
@@ -138,6 +138,26 @@ def split_source(ctx: StageContext) -> tuple[tuple[SrtBlock, ...], tuple[Chunk, 
         raise TranslateError(f"No subtitle blocks to translate in {ctx.layout.ja_srt}")
     chunks = tuple(split_into_chunks(blocks, ctx.config.translate.chunk_char_limit))
     return blocks, chunks
+
+
+def voiced_source(
+    ctx: StageContext, blocks: Sequence[SrtBlock]
+) -> tuple[SrtBlock, ...]:
+    """`.subs/ja.voiced.srt`, checked to be `blocks` (the source `ja.srt`)
+    with voice tags; a missing or diverging one fails loudly."""
+    path = require(ctx.layout.ja_voiced_srt, StageKey.TRANSCRIPT)
+    voiced = tuple(read_srt_file(path))
+    matches = len(voiced) == len(blocks) and all(
+        (tagged.index, tagged.timecode, strip_voice_tags(tagged.text))
+        == (plain.index, plain.timecode, plain.text)
+        for tagged, plain in zip(voiced, blocks, strict=True)
+    )
+    if not matches:
+        raise TranslateError(
+            f"{path} does not match {ctx.layout.ja_srt}; rebuild both with "
+            f"`grill reset {ctx.state.id} --only transcript`"
+        )
+    return voiced
 
 
 def source_context(

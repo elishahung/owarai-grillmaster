@@ -22,7 +22,10 @@ briefing, and the workflow applies both.
 Below this task are your main reading surface, already in full:
 
 - The **aligned table**: one row per block, `index`, `start`, `ja`, `zh` (the
-  current subtitle). Line breaks inside a block are written ` / `.
+  current subtitle). Line breaks inside a block are written ` / `. Each
+  speaker turn in `ja` starts with a diarized voice tag such as `[V2]`: a
+  changed tag means a different voice took over, the same tag does not prove
+  the same person.
 - The **edit history**: the earlier versions of every block a pass changed
   (its current text is in the table), the chunk seams, and the blocks still
   carrying Latin or kana.
@@ -51,7 +54,8 @@ Priorities, in order:
    differently in different blocks.
 2. **Mistranslations and omissions** that refine did not fix: meaning
    reversed, wrong referent, a punchline or a callback lost, a line that does
-   not answer the line it replies to.
+   not answer the line it replies to, a run of lines told from the wrong
+   person's point of view (我 for someone the speaker is describing).
 3. **Regressions** introduced by refine or glossary check (see the edit history):
    an edit that changed the meaning, or a term applied where it does not
    belong.
@@ -65,7 +69,9 @@ deterministically after you, so never change a line only for those.
 
 Subtitle conventions the earlier passes followed, which a revision keeps:
 natural Traditional Chinese (Taiwan); no subject (我／你／他／名字) the Japanese
-does not state or clearly imply; honorifics already rendered (桑、醬、君、前輩)
+does not state or clearly imply, and a stated one points at the right person
+(`自分` is reflexive; a `俺` voiced for someone else stays in「」or becomes
+他); honorifics already rendered (桑、醬、君、前輩)
 stay; a proper noun without a common Traditional Chinese rendering uses the
 briefing's rendering, else an official romanization, never raw kana.
 

@@ -95,6 +95,12 @@ class ProjectLayout:
         return self.subs_dir / "ja.srt"
 
     @property
+    def ja_voiced_srt(self) -> Path:
+        """`ja_srt` with diarized voice tags (`[V2] `) for the agents
+        (transcript stage)."""
+        return self.subs_dir / "ja.voiced.srt"
+
+    @property
     def ja_official_srt(self) -> Path:
         """Normalized platform closed captions (combine stage; often absent)."""
         return self.subs_dir / "ja.official.srt"

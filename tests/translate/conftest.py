@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -14,8 +15,10 @@ from grillmaster.translate.chunker import Chunk
 from grillmaster.translate.inputs import ChunkInputs, PrepassInputs, SourceContext
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterable
     from pathlib import Path
+
+    from grillmaster.core.srt import SrtBlock
 
 
 @pytest.fixture
@@ -34,9 +37,19 @@ def tools(tmp_path: Path) -> ToolSession:
     )
 
 
+def voiced(blocks: Iterable[SrtBlock]) -> tuple[SrtBlock, ...]:
+    """`blocks` as the voiced source renders them, every block voice 1."""
+    return tuple(replace(block, text=f"[V1] {block.text}") for block in blocks)
+
+
 @pytest.fixture
 def chunk_inputs(tmp_path: Path, chunk: Chunk) -> Callable[..., ChunkInputs]:
-    def make(*, audio: bool = True, source: SourceContext | None = None) -> ChunkInputs:
+    def make(
+        *,
+        audio: bool = True,
+        source: SourceContext | None = None,
+        preceding: tuple[SrtBlock, ...] = (),
+    ) -> ChunkInputs:
         return ChunkInputs(
             source=source or SourceContext(),
             chunk=chunk,
@@ -50,6 +63,8 @@ def chunk_inputs(tmp_path: Path, chunk: Chunk) -> Callable[..., ChunkInputs]:
                 ),
                 audio=tmp_path / "audio.ogg" if audio else None,
             ),
+            voiced=voiced(chunk.blocks),
+            preceding=preceding,
         )
 
     return make

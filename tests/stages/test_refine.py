@@ -44,7 +44,7 @@ def config_sections() -> dict[str, Any]:
 @pytest.fixture
 def project(layout: ProjectLayout) -> ProjectLayout:
     write_srt_file(layout.merged_srt, BLOCKS)
-    write_srt_file(layout.ja_srt, BLOCKS)
+    write_srt_file(layout.ja_voiced_srt, BLOCKS)
     write_model(layout.prepass_briefing, BRIEFING)
     return layout
 

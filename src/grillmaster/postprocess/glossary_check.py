@@ -83,7 +83,7 @@ class GlossaryInputs:
     """
 
     refined_srt: Path
-    ja_srt: Path
+    ja_voiced_srt: Path
     briefing: Path
     # Normalized platform captions; `None` when the project has none.
     official_srt: Path | None
@@ -238,7 +238,7 @@ def build_glossary_task(
             PROMPTS,
             "glossary_check.md",
             refined_srt=str(inputs.refined_srt),
-            ja_srt=str(inputs.ja_srt),
+            ja_voiced_srt=str(inputs.ja_voiced_srt),
             briefing=str(inputs.briefing),
             fixed_glossary=str(glossary_copy),
             fixed_glossary_guide=str(guide_copy),

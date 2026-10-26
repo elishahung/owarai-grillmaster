@@ -25,12 +25,15 @@ readable via `add_dirs`. Tools: `get_frames` (into the stage's `frames/`) and
 `check_srt` against the pass's input SRT. Prompts (`postprocess/prompts/*.md`)
 own semantic rules and get `ProgramRules.instruction_text(<stage>)` appended.
 
+- The Japanese source refine, glossary check and proofread (`aligned.tsv`
+  `ja` column) see is `.subs/ja.voiced.srt` (diarized `[V<n>]` voice tags);
+  their prompts judge subject/point of view per speaker run, not per block.
 - **Refine** (`RefineInputs`): `.work/09_chunks/merged.srt` →
   `.work/10_refine/refined.srt` (required) + `report.md` (optional); reads the
   effective briefing.
 - **Glossary** (`GlossaryInputs`): `refined.srt` → `.work/11_glossary/checked.srt`
   (required), optional `report.md` and `briefing.candidate.json`. Reads the
-  pre-pass briefing, `.subs/ja.srt`, and `.subs/ja.official.srt` if present
+  pre-pass briefing, `.subs/ja.voiced.srt`, and `.subs/ja.official.srt` if present
   (adds `official_subtitle_reference.md`: CC outranks ASR). The fixed glossary
   (`glossary/fixed_glossary.json` + `.md`) is copied into the workdir and
   removed in `finally`. Latin/kana-run blocks are listed as priority hints

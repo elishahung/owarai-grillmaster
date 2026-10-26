@@ -102,7 +102,7 @@ def inputs(tmp_path: Path) -> GlossaryInputs:
     write_model(briefing, BRIEFING)
     return GlossaryInputs(
         refined_srt=refined,
-        ja_srt=tmp_path / "subs" / "ja.srt",
+        ja_voiced_srt=tmp_path / "subs" / "ja.voiced.srt",
         briefing=briefing,
         official_srt=None,
         fixed_glossary=GLOSSARY,
@@ -167,7 +167,7 @@ def test_prompt_paths_and_sections(inputs: GlossaryInputs, tools: ToolSession):
 
     for path in (
         inputs.refined_srt,
-        inputs.ja_srt,
+        inputs.ja_voiced_srt,
         inputs.briefing,
         inputs.workdir / "fixed_glossary.json",
         inputs.workdir / "fixed_glossary.md",

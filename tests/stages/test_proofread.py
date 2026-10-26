@@ -86,6 +86,7 @@ def config_sections() -> dict[str, Any]:
 def project(layout: ProjectLayout) -> ProjectLayout:
     for path in (
         layout.ja_srt,
+        layout.ja_voiced_srt,
         layout.merged_srt,
         layout.refined_srt,
         layout.glossary_checked_srt,

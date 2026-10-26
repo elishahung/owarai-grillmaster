@@ -1,6 +1,7 @@
-"""Transcript stage: build the Japanese source SRT `.subs/ja.srt` from the
-ElevenLabs response. Platform captions play no part here; translation reads
-them separately as ground truth."""
+"""Transcript stage: build the Japanese source SRT `.subs/ja.srt`, and its
+voice-tagged twin `.subs/ja.voiced.srt` for the agents, from the ElevenLabs
+response. Platform captions play no part here; translation reads them
+separately as ground truth."""
 
 from __future__ import annotations
 
@@ -24,13 +25,16 @@ if TYPE_CHECKING:
 
 def _run(ctx: StageContext) -> None:
     layout = ctx.layout
-    blocks = build_srt_blocks(read_payload(require(layout.asr_json, StageKey.ASR)))
-    write_srt_file(layout.ja_srt, blocks)
-    logger.success(f"Wrote {len(blocks)} Japanese subtitle blocks: {layout.ja_srt}")
+    source = build_srt_blocks(read_payload(require(layout.asr_json, StageKey.ASR)))
+    write_srt_file(layout.ja_voiced_srt, source.voiced)
+    write_srt_file(layout.ja_srt, source.blocks)
+    logger.success(
+        f"Wrote {len(source.blocks)} Japanese subtitle blocks: {layout.ja_srt}"
+    )
 
 
 def _outputs(layout: ProjectLayout) -> Sequence[Path]:
-    return (layout.ja_srt,)
+    return (layout.ja_srt, layout.ja_voiced_srt)
 
 
 STAGE = StageDef(

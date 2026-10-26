@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, override
 
 import pytest
@@ -61,9 +62,14 @@ def script() -> dict[str, object]:
     return {task_name(chunk): _translated(chunk) for chunk in _CHUNKS}
 
 
+def _voiced(blocks: Sequence[SrtBlock]) -> list[SrtBlock]:
+    return [replace(block, text=f"[V{block.index}] {block.text}") for block in blocks]
+
+
 @pytest.fixture(autouse=True)
 def inputs(layout: ProjectLayout) -> None:
     write_srt_file(layout.ja_srt, _BLOCKS)
+    write_srt_file(layout.ja_voiced_srt, _voiced(_BLOCKS))
     write_model(
         layout.prepass_briefing, make_briefing(*(c.index_range for c in _CHUNKS))
     )
@@ -385,3 +391,39 @@ def test_reads_the_effective_briefing_and_official_cc(
     assert '"summary": "checked"' in first.prompt
     assert "公式" in first.prompt
     assert all("公式" not in task.prompt for task in rest)
+
+
+def test_chunks_read_the_voiced_source_and_the_blocks_before_them(
+    make_context: MakeContext, agents: FakeAgentRunner
+) -> None:
+    chunks.STAGE.run(make_context(StageKey.CHUNKS))
+
+    prompts = {task.name: task.prompt for task in agents.tasks}
+    first = prompts[task_name(_CHUNKS[0])]
+    third = prompts[task_name(_CHUNKS[2])]
+    assert "【前文" not in first
+    assert "[V1] line 1" in first
+    # Fewer blocks precede chunk 5-6 than the context size: all of them show.
+    preceding = third[third.index("【前文") : third.index("【SRT 區段")]
+    assert all(f"[V{index}] line {index}" in preceding for index in range(1, 5))
+    assert "[V5] line 5" in third[third.index("【SRT 區段") :]
+
+
+def test_missing_voiced_source_names_the_transcript_stage(
+    make_context: MakeContext, layout: ProjectLayout
+) -> None:
+    layout.ja_voiced_srt.unlink()
+
+    with pytest.raises(MissingArtifactError, match="transcript"):
+        chunks.STAGE.run(make_context(StageKey.CHUNKS))
+
+
+def test_voiced_source_that_diverges_from_ja_srt_fails_loudly(
+    make_context: MakeContext, layout: ProjectLayout
+) -> None:
+    stale = _voiced(_BLOCKS)
+    stale[2] = replace(stale[2], text="[V3] old wording")
+    write_srt_file(layout.ja_voiced_srt, stale)
+
+    with pytest.raises(TranslateError, match="--only transcript"):
+        chunks.STAGE.run(make_context(StageKey.CHUNKS))

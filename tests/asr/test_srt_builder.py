@@ -22,13 +22,18 @@ def word(
     }
 
 
-def render(payload: dict[str, Any], options: SrtFormatOptions | None = None) -> str:
-    blocks = (
+def render(
+    payload: dict[str, Any],
+    options: SrtFormatOptions | None = None,
+    *,
+    voiced: bool = False,
+) -> str:
+    source = (
         build_srt_blocks(payload)
         if options is None
         else build_srt_blocks(payload, options)
     )
-    return serialize_srt(blocks)
+    return serialize_srt(source.voiced if voiced else source.blocks)
 
 
 def test_splits_japanese_hard_punctuation():
@@ -72,6 +77,37 @@ def test_merges_close_speaker_turns_as_dialogue_without_speaker_ids():
     assert "-あれは嫌だもう。" in srt
     assert "speaker_0" not in srt
     assert "speaker_1" not in srt
+
+
+def test_voiced_blocks_tag_each_voice_turn_by_first_appearance():
+    payload = {
+        "words": [
+            word("先です。", 0.0, 0.5, "speaker_3"),
+            word("馬の", 2.0, 2.3, "speaker_1"),
+            word("頭企画", 2.3, 2.8, "speaker_1"),
+            word("とかより", 2.8, 3.2, "speaker_1"),
+            word("いいでしょ。", 3.2, 3.7, "speaker_1"),
+            word("あれは", 3.95, 4.2, "speaker_3"),
+            word("嫌だ", 4.2, 4.45, "speaker_3"),
+            word("もう。", 4.45, 4.7, "speaker_3"),
+        ]
+    }
+    options = SrtFormatOptions(merge_speaker_turns_gap_s=0.5)
+
+    voiced = render(payload, options, voiced=True)
+
+    assert voiced == (
+        "1\n00:00:00,000 --> 00:00:01,000\n[V1] 先です。\n\n"
+        "2\n00:00:02,000 --> 00:00:05,200\n"
+        "-[V2] 馬の頭企画とかよりいいでしょ。\n-[V1] あれは嫌だもう。\n"
+    )
+    assert "[V" not in render(payload, options)
+
+
+def test_voiced_blocks_skip_words_without_speaker_ids():
+    payload = {"words": [{"text": "先です。", "start": 0.0, "end": 0.5}]}
+
+    assert render(payload, voiced=True) == render(payload)
 
 
 def test_does_not_start_segment_with_japanese_particle():

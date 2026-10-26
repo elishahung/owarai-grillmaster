@@ -45,7 +45,7 @@ class RefineInputs:
     """
 
     translated_srt: Path
-    ja_srt: Path
+    ja_voiced_srt: Path
     briefing: Path
     prepass_frames_dir: Path
     chunks_dir: Path
@@ -81,7 +81,7 @@ def build_refine_task(
             PROMPTS,
             "refine.md",
             translated_srt=str(inputs.translated_srt),
-            ja_srt=str(inputs.ja_srt),
+            ja_voiced_srt=str(inputs.ja_voiced_srt),
             briefing=str(inputs.briefing),
             prepass_frames_dir=str(inputs.prepass_frames_dir),
             chunks_dir=str(inputs.chunks_dir),

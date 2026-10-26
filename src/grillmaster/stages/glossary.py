@@ -39,7 +39,7 @@ def _run(ctx: StageContext) -> None:
     refined = require(layout.refined_srt, StageKey.REFINE)
     inputs = GlossaryInputs(
         refined_srt=refined,
-        ja_srt=layout.ja_srt,
+        ja_voiced_srt=layout.ja_voiced_srt,
         briefing=require(layout.briefing_before(StageKey.GLOSSARY), StageKey.PREPASS),
         official_srt=official_srt(layout),
         fixed_glossary=load_fixed_glossary(),

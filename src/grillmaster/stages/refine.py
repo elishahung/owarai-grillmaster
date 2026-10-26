@@ -28,7 +28,7 @@ def _run(ctx: StageContext) -> None:
     merged = require(layout.merged_srt, StageKey.CHUNKS)
     inputs = RefineInputs(
         translated_srt=merged,
-        ja_srt=layout.ja_srt,
+        ja_voiced_srt=layout.ja_voiced_srt,
         briefing=layout.effective_briefing(),
         prepass_frames_dir=layout.prepass_frames_dir,
         chunks_dir=layout.work_dir(StageKey.CHUNKS),

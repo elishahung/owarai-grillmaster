@@ -336,27 +336,31 @@ class _Touch(Enum):
     DIAGONAL = "diagonal"
 
 
-# Axes of a box: `_ACROSS_ROWS` spans a row's height, `_ACROSS_COLUMNS` a
-# column's width.
-_ACROSS_ROWS = 1
-_ACROSS_COLUMNS = 0
-
-
-def _in_line(a: Box, b: Box, axis: int) -> bool:
-    """Whether two boxes share a row (or column) along `axis`."""
-    smaller = min(a[axis + 2] - a[axis], b[axis + 2] - b[axis])
-    shared = min(a[axis + 2], b[axis + 2]) - max(a[axis], b[axis])
+def _in_line(a: Box, b: Box) -> bool:
+    """Whether two boxes share a row."""
+    smaller = min(a[3] - a[1], b[3] - b[1])
+    shared = min(a[3], b[3]) - max(a[1], b[1])
     return shared >= _ROW_OVERLAP * smaller
+
+
+def _transposed(box: Box) -> Box:
+    """A vertical line's box with its columns, right to left, turned into
+    rows, top to bottom, so it is measured and read like a horizontal one
+    (its character width as its height)."""
+    return (box[1] * _ASPECT, -box[2] / _ASPECT, box[3] * _ASPECT, -box[0] / _ASPECT)
 
 
 def _touch(a: Box, b: Box) -> _Touch | None:
     """How two boxes touch, if they do. Gaps count in the smaller line's
     height, so a big line does not reach far (map labels, a logo near a
     card); only a corner label may sit as far sideways as the bigger line
-    is high."""
+    is high. Two vertical lines are measured as columns, in their character
+    width."""
+    if _is_vertical(a) and _is_vertical(b):
+        a, b = _transposed(a), _transposed(b)
     height = min(a[3] - a[1], b[3] - b[1])
     gap_x = max(a[0], b[0]) - min(a[2], b[2])
-    if _in_line(a, b, _ACROSS_ROWS):
+    if _in_line(a, b):
         return _Touch.ROW if gap_x <= _ROW_GAP * height * _ASPECT else None
     if max(a[1], b[1]) - min(a[3], b[3]) > _STACK_GAP * height:
         return None
@@ -438,20 +442,20 @@ def _reading_order(lines: Sequence[_Line]) -> list[_Line]:
     first of the row when they overlap vertically (a smaller group name
     before a name stays first). A vertical card reads in columns instead,
     right to left, each top to bottom."""
-    if set_vertically([line.box for line in lines]):
-        axis, first, along = _ACROSS_COLUMNS, (lambda box: -box[2]), 1
-    else:
-        axis, first, along = _ACROSS_ROWS, (lambda box: box[1]), 0
-    bands: list[list[_Line]] = []
-    for line in sorted(lines, key=lambda line: first(line.box)):
-        if bands and _in_line(bands[-1][0].box, line.box, axis):
-            bands[-1].append(line)
+    vertical = set_vertically([line.box for line in lines])
+    boxes = {
+        id(line): _transposed(line.box) if vertical else line.box for line in lines
+    }
+    rows: list[list[_Line]] = []
+    for line in sorted(lines, key=lambda line: boxes[id(line)][1]):
+        if rows and _in_line(boxes[id(rows[-1][0])], boxes[id(line)]):
+            rows[-1].append(line)
         else:
-            bands.append([line])
+            rows.append([line])
     return [
         line
-        for band in bands
-        for line in sorted(band, key=lambda line: line.box[along])
+        for row in rows
+        for line in sorted(row, key=lambda line: boxes[id(line)][0])
     ]
 
 

@@ -106,7 +106,9 @@ location show), not settings.
   Lines read row by row, left to right.
 - **Orientation**: a line ≥ 1.2× taller than wide (pixels) is vertical; a
   card is vertical when its biggest-character line is, and reads in columns
-  right to left. A vertical and a horizontal line (fresh or a recurring
+  right to left. Two vertical lines are measured transposed: columns side
+  by side are stacked rows, gaps in character width (a vertical group name
+  labels its name plate). A vertical and a horizontal line (fresh or a recurring
   label) join only as label and text: the label ≤ 6 characters and ≤ 0.75
   of the other's character size (このあと, 私の好きは, 理由 stay; a speech
   bubble beside a vertical caption, a corner title over one split; owner's

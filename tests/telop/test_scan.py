@@ -483,6 +483,31 @@ def test_a_long_running_title_does_not_label_a_vertical_caption_through_a_tag():
     assert {line.text for line in card.lines} == {"へぼを見せてらう", "えっ"}
 
 
+def test_a_long_running_group_name_labels_the_vertical_name_plate_it_heads():
+    # Columns side by side are measured like stacked rows, so the group name
+    # (on screen all episode) is the plate's label, read first.
+    group = read((0.871, 0.056, 0.918, 0.380), "かまいたち")
+    name = read((0.821, 0.053, 0.884, 0.393), "濱家隆")
+    frames = [[group] for _ in range(130)] + [[group, name]] * 4
+
+    (card,) = build_cards(scan_of(*frames), []).offered
+
+    assert card.vertical
+    assert card.text == "かまいたち / 濱家隆"
+
+
+def test_vertical_captions_a_column_apart_are_two_cards():
+    # No reviewed episode had one yet: the caption's real box, and a second
+    # one a column's width to its left (a column-length share let them join).
+    right = read((0.45573, 0.09537, 0.54896, 0.81389), "へぼを見せてらう")
+    left = read((0.27, 0.09537, 0.36323, 0.81389), "まだまだ")
+    frames = [[right, left]] * 4
+
+    cards = build_cards(scan_of(*frames), []).cards
+
+    assert sorted(card.text for card in cards) == ["へぼを見せてらう", "まだまだ"]
+
+
 def test_a_long_running_vertical_tag_still_labels_the_text_beside_it():
     tag = read((0.033, 0.777, 0.086, 0.956), "理由")
     who = read((0.029, 0.692, 0.315, 0.756), "ケツナダル(ワースト2)")

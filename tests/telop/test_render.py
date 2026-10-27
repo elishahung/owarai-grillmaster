@@ -269,6 +269,20 @@ def test_a_vertical_card_s_translation_is_set_vertically_right_of_it():
     assert abs(middle - (CAPTION[1] + CAPTION[3]) / 2 * 1080) < FONT_SIZE / 2
 
 
+def test_a_vertical_label_translated_alone_follows_its_horizontal_card():
+    # The selector is told the card's way, from all its lines (real boxes:
+    # a vertical 理由 tag beside a horizontal reason).
+    tag: Box = (0.033, 0.777, 0.086, 0.956)
+    others: list[Box] = [(0.029, 0.692, 0.315, 0.756), (0.078, 0.770, 0.958, 0.970)]
+
+    ass = render_telop_ass(
+        TelopSubtitles(items=[subtitle("理由", boxes=[tag], beside=others)])
+    )
+
+    assert not columns(ass)
+    assert len(events(ass)) == 1
+
+
 def test_a_vertical_card_at_the_right_edge_has_its_translation_left_of_it():
     edge: Box = (0.95, 0.1, 0.99, 0.9)
 

@@ -146,7 +146,8 @@ the card is up longer than that plus `SHOWN_TOLERANCE_S` (owner's call:
 long cards stayed up long after they were read); its card
 stays an obstacle until the card itself leaves. `telop.cht.json` keeps the
 card's real times.
-A vertical card's translation is set vertically (owner's call, 2026-10-28):
+A vertical card's translation is set vertically (owner's call, 2026-10-28;
+the card's way from `boxes` + `beside`, as the selector's table marks it):
 libass's own vertical mode (`\fn@<font>` + `\frz270`, one event per
 column), right of the card or left when right does not fit, centred on it
 top to bottom. That mode turns Latin runs but keeps horizontal glyphs for

@@ -281,7 +281,8 @@ def _card(item: TelopSubtitle, frame: PictureBox) -> _Card | None:
 
     own = [rect(box) for box in item.boxes]
     beside = [rect(box) for box in item.beside]
-    if set_vertically(item.boxes):
+    # The card's way, as the selector was told it, from all its lines.
+    if set_vertically([*item.boxes, *item.beside]):
         return _Card(item, lines, own, beside, _vertical_layouts(lines, frame))
     widths = [text_width(line, FONT_SIZE) for line in lines]
     room = frame.width - 2 * MARGIN_H

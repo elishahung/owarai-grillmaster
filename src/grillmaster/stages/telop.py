@@ -2,7 +2,9 @@
 the cards from the scan (waiting for the scan side task, or scanning now
 when it did not finish), let the utility agent keep and translate the
 worthwhile ones beside the final subtitles and the effective briefing, and
-write `.subs/telop.cht.json`, which packaging burns in beside each card.
+write `.subs/telop.cht.json`, which packaging burns in beside each card, and
+`video.cht.telop.ass` (the dialogue ASS with the telops added) beside the
+video for external playback.
 
 Runs when `--telop`, `[features] telop` or the program's `telop = true` asks
 for it (`stages._telop`). `.work/15_telop/` keeps `cards.json` (the rules'
@@ -30,6 +32,7 @@ from grillmaster.stages.base import StageDef, require
 from grillmaster.subtitles.structure import check_aligned
 from grillmaster.telop.errors import TelopError
 from grillmaster.telop.ocr import require_packages
+from grillmaster.telop.render import write_with_dialogue
 from grillmaster.telop.scan import build_cards
 from grillmaster.telop.select import (
     SelectInputs,
@@ -90,12 +93,16 @@ def _run(ctx: StageContext) -> str:
         )
         result = to_subtitles(offered, answer.output)
     write_model(layout.telop_cht_json, result)
-    logger.success(f"Selected {len(result.items)} telops: {layout.telop_cht_json}")
+    write_with_dialogue(subtitles, result, layout.cht_telop_ass)
+    logger.success(
+        f"Selected {len(result.items)} telops: {layout.telop_cht_json}, "
+        f"{layout.cht_telop_ass}"
+    )
     return f"{len(result.items)} telops"
 
 
 def _outputs(layout: ProjectLayout) -> Sequence[Path]:
-    return (layout.telop_cht_json,)
+    return (layout.telop_cht_json, layout.cht_telop_ass)
 
 
 def _preflight(_config: AppConfig, _secrets: Secrets) -> None:

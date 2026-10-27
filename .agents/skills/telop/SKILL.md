@@ -56,7 +56,11 @@ the stage alike).
    id, once, non-empty `zh`. A translation that normalizes to its card's
    text (a kanji place name) is dropped by Python. Deliverable
    `.subs/telop.cht.json` (`TelopSubtitles`, the stage's declared output), hand-editable;
-   `grill reset <id> --only telop` selects again.
+   `grill reset <id> --only telop` selects again. The stage also writes
+   `video.cht.telop.ass` at the root (`render.render_with_dialogue`: the
+   `video.cht.srt` dialogue plus the full-picture telop layer, telops first
+   so the dialogue draws on top) for external playback; a hand edit of the
+   JSON does not refresh it.
 4. **`grill telop <dir|id>`** runs the stage on a finished or archived
    project (`pipeline.delivery.as_delivery_step`, alone in
    `registry.TELOP_ONLY`) whatever the ledger says — archives cannot be

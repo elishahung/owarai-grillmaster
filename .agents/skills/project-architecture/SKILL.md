@@ -68,7 +68,7 @@ members is a layout change. `pipeline/registry.py` holds the only lists:
 | 12 | `proofread` | `--proofread` / `[features] proofread` only: work dir only; adds `watch_clip_cost_usd` (postprocess-and-packaging) |
 | 13 | `finalize` | `video.cht.srt`, `video.cht.ass` (root, `video.mp4`'s stem: players auto-load them; under `.subs/` they did not) |
 | 14 | `chat_translate` | `--chat` only: `.subs/chat.cht.json` |
-| 15 | `telop` | telops on only (`applies` per program): `.subs/telop.cht.json` (see telop) |
+| 15 | `telop` | telops on only (`applies` per program): `.subs/telop.cht.json`, `video.cht.telop.ass` (root; see telop) |
 
 Side tasks: `cover` (after `download`), `date_research` (after `metadata`),
 `telop_scan` (after `combine`; glossary, proofread and `telop` wait for it).

@@ -28,6 +28,7 @@ _NAMED_PATHS: list[tuple[Callable[[ProjectLayout], Path], str]] = [
     (lambda p: p.ja_official_srt, ".subs/ja.official.srt"),
     (lambda p: p.cht_srt, "video.cht.srt"),
     (lambda p: p.cht_ass, "video.cht.ass"),
+    (lambda p: p.cht_telop_ass, "video.cht.telop.ass"),
     (lambda p: p.chat_cht_json, ".subs/chat.cht.json"),
     (lambda p: p.logs_dir, ".logs"),
     (lambda p: p.metadata_info, ".work/01_metadata/info.json"),

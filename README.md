@@ -151,6 +151,7 @@ AZURE_SPEECH_ENDPOINT=https://<資源名稱>.cognitiveservices.azure.com
 - `video.mp4`、`poster.jpg`、`cover.png`（有開封面時）
 - `video.cht.ass`：套好樣式的繁中字幕，與影片同名，播放器會自動載入
 - `video.cht.srt`：給不支援 ASS 的播放器
+- `video.cht.telop.ass`：開 telop 時才有，對白字幕再加上翻譯的畫面字卡，外掛播放時選這條就看得到 telop
 - `.subs/ja.srt`：日文原文字幕（`ja.official.srt` 為平台官方字幕，有才有）
 - `project.json`：專案狀態與各 stage 完成紀錄
 - `.work/NN_<stage>/`：各 stage 的中間產物與 agent session 紀錄

@@ -3,8 +3,17 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from grillmaster.subtitles.ass import PictureBox
-from grillmaster.telop.render import FONT_SIZE, STYLE_NAME, render_telop_ass
+from grillmaster.core.srt import SrtBlock
+from grillmaster.core.timecode import format_timecode_line
+from grillmaster.subtitles.ass import DIALOGUE_STYLE_NAME, PictureBox
+from grillmaster.subtitles.finalize import dialogue_line
+from grillmaster.telop.render import (
+    FONT_SIZE,
+    STYLE_NAME,
+    WITH_DIALOGUE_HEADER,
+    render_telop_ass,
+    render_with_dialogue,
+)
 from grillmaster.telop.select import TelopSubtitle, TelopSubtitles
 
 if TYPE_CHECKING:
@@ -70,6 +79,19 @@ def test_no_cards_render_a_valid_empty_layer():
 
     assert "[Events]" in ass
     assert "Dialogue:" not in ass
+
+
+def test_the_dialogue_draws_over_the_telops_in_one_script():
+    dialogue = [SrtBlock(1, format_timecode_line(1.0, 2.0), "第一句\n第二行")]
+
+    ass = render_with_dialogue(dialogue, TelopSubtitles(items=[subtitle("卡")]))
+
+    assert ass.startswith(WITH_DIALOGUE_HEADER)
+    assert f"Style: {DIALOGUE_STYLE_NAME}," in ass
+    assert f"Style: {STYLE_NAME}," in ass
+    telop, line = events(ass)
+    assert f",{STYLE_NAME},,60,60,28,," in telop
+    assert line == dialogue_line(dialogue[0])
 
 
 def test_translations_of_cards_side_by_side_stay_in_their_columns():

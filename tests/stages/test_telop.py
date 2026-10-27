@@ -121,6 +121,10 @@ def test_selects_beside_the_final_subtitles_after_the_scan(
     ]
     cards = read_model(project.telop_cards, TelopCards)
     assert [card.text for card in cards.cards] == [CAPTION_TEXT]
+    combined = project.cht_telop_ass.read_text(encoding="utf-8")
+    assert "還是什麼都不知道" in combined
+    assert combined.rstrip().endswith(",Default,,0,0,0,,第2句")
+    assert project.cht_telop_ass in STAGE.outputs(project)
     task = agents.task(TASK_NAME)
     assert "line 1\t第1句" in task.prompt
     assert task.session_dir == project.work_dir(StageKey.TELOP) / "session"

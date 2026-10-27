@@ -1,7 +1,7 @@
 """Every path inside a project directory, and nothing else.
 
 Deliverables live at the root (`video.mp4` with its `video.cht.srt` /
-`video.cht.ass` and the optional `video.xml` beside it, `poster.jpg`, `cover.png`, `.subs/`); each stage keeps its intermediates in its own `.work/NN_<stage>/`
+`video.cht.ass` and the optional `video.cht.telop.ass` / `video.xml` beside it, `poster.jpg`, `cover.png`, `.subs/`); each stage keeps its intermediates in its own `.work/NN_<stage>/`
 (`NN` = `StageKey.number`); side tasks and packaging get unnumbered
 `.work/side/<task>/` and `.work/package/`. No other module spells a project
 path: stages and the pipeline ask this class and hand the paths on (to
@@ -115,6 +115,12 @@ class ProjectLayout:
     def cht_ass(self) -> Path:
         """Styled Traditional Chinese ASS, beside `video` like `cht_srt`."""
         return self._beside_video("cht.ass")
+
+    @property
+    def cht_telop_ass(self) -> Path:
+        """`cht_ass` with the translated telops added (telop stage), beside
+        `video` for players that show one subtitle track."""
+        return self._beside_video("cht.telop.ass")
 
     @property
     def infuse_metadata(self) -> Path:

@@ -10,6 +10,10 @@ where the card is: right below it (one side for every item of a list),
 right above only when below does not fit in the picture, and away from the
 other translations and cards up with it. Positions follow `frame`, the
 picture's box on the canvas (a side layout shrinks it).
+
+The telop stage also writes the full-picture layer together with the
+dialogue as one script beside the video, for playing it with external
+subtitles.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ from grillmaster.core.fs import atomic_write_text
 from grillmaster.core.timecode import ass_centiseconds, format_ass_centiseconds
 from grillmaster.subtitles.ass import (
     CANVAS_INFO,
+    DIALOGUE_STYLE,
     FONT_NAME,
     FULL_PICTURE,
     PLAY_RES_X,
@@ -31,11 +36,13 @@ from grillmaster.subtitles.ass import (
     script_header,
     text_width,
 )
+from grillmaster.subtitles.finalize import dialogue_line
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
+    from grillmaster.core.srt import SrtBlock
     from grillmaster.telop.select import TelopSubtitle, TelopSubtitles
 
 STYLE_NAME = "Telop"
@@ -52,6 +59,7 @@ STYLE = (
     f"{MARGIN_H},{MARGIN_H},{MARGIN_V},1"
 )
 HEADER = script_header(CANVAS_INFO, [STYLE])
+WITH_DIALOGUE_HEADER = script_header(CANVAS_INFO, [DIALOGUE_STYLE, STYLE])
 # Room between a translation and its card.
 _GAP = 8
 # What covering a share of a placed translation costs, against `_AWAY` for
@@ -191,9 +199,7 @@ def _anchor(rect: _Rect, own: _Rect) -> str:
     return f"{{\\an8\\pos({x:.0f},{rect.y0:.0f})}}"
 
 
-def render_telop_ass(
-    subtitles: TelopSubtitles, frame: PictureBox = FULL_PICTURE
-) -> str:
+def _events(subtitles: TelopSubtitles, frame: PictureBox) -> list[str]:
     # Event margins keep the wrapping width inside the picture.
     margins = (
         f"{frame.x + MARGIN_H},{PLAY_RES_X - frame.x - frame.width + MARGIN_H},"
@@ -225,7 +231,26 @@ def render_telop_ass(
             f"{margins},,{_anchor(rect, card.box)}"
             + "\\N".join(escape_text(line) for line in card.lines)
         )
-    return HEADER + "".join(f"{event}\n" for event in events)
+    return events
+
+
+def render_telop_ass(
+    subtitles: TelopSubtitles, frame: PictureBox = FULL_PICTURE
+) -> str:
+    return HEADER + "".join(f"{event}\n" for event in _events(subtitles, frame))
+
+
+def render_with_dialogue(
+    dialogue: Sequence[SrtBlock], subtitles: TelopSubtitles
+) -> str:
+    """The finalized dialogue and the telops in one script, for players that
+    show one subtitle track: the telops come first, so the dialogue draws on
+    top of them as it does when burned in."""
+    events = [
+        *_events(subtitles, FULL_PICTURE),
+        *(dialogue_line(block) for block in dialogue),
+    ]
+    return WITH_DIALOGUE_HEADER + "".join(f"{event}\n" for event in events)
 
 
 def write_telop_ass(
@@ -233,3 +258,9 @@ def write_telop_ass(
 ) -> None:
     # Atomic and BOM-less UTF-8, like the dialogue ASS.
     atomic_write_text(path, render_telop_ass(subtitles, frame))
+
+
+def write_with_dialogue(
+    dialogue: Sequence[SrtBlock], subtitles: TelopSubtitles, path: Path
+) -> None:
+    atomic_write_text(path, render_with_dialogue(dialogue, subtitles))

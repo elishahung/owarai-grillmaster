@@ -57,6 +57,7 @@ from grillmaster.postprocess._shared import (
     session_copies,
     session_copy_paths,
     settle_briefing,
+    telop_section,
 )
 from grillmaster.postprocess.errors import PostprocessError
 from grillmaster.postprocess.glossary_check import suspect_blocks
@@ -184,6 +185,8 @@ class ProofreadInputs:
     report: Path
     # The program's configured proofread text; empty when none.
     program_instruction: str = ""
+    # The on-screen text table (`telop.reference`); `None` without telops.
+    telop_reference: str | None = None
 
     @property
     def glossary_copies(self) -> tuple[Path, Path]:
@@ -372,6 +375,7 @@ def build_proofread_task(
         f"## Aligned table ({len(checked)} blocks)\n\n```tsv\n{aligned}```",
         f"## Edit history\n\n{history}",
         f"## Briefing\n\n```json\n{briefing.model_dump_json(indent=2)}\n```",
+        telop_section(inputs.telop_reference),
         frames_guidance(load_prompt(PROMPTS, "proofread_frames.md")),
         (
             load_prompt(PROMPTS, "proofread_watch_clip.md")

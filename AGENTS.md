@@ -12,7 +12,7 @@ touching (paths under `src/grillmaster/`):
 | `translate/`, `stages/prepass.py`, `stages/chunks.py`, `core/briefing.py` | **translate-pipeline** |
 | `postprocess/`, `extras/`, `subtitles/`, `package/`, their stages, side tasks, delivery | **postprocess-and-packaging** |
 | `live_chat/`, `stages/chat_fetch.py`, `stages/chat_translate.py` (`--chat`) | **live-chat** |
-| `telop/`, `stages/telop.py` (`--telop`, `grill telop`) | **telop** |
+| `telop/`, `stages/telop.py`, `stages/telop_scan.py`, `stages/_telop.py` (`--telop`, `grill telop`) | **telop** |
 
 For a change that spans packages (new stage, new setting, new platform), start
 with **project-architecture** — it holds the pipeline contract and the
@@ -30,10 +30,10 @@ it left off.
 Pipeline at a glance (stage keys, in order; `.work/NN_<key>/` per stage with
 intermediates):
 `metadata → download → combine → (chat_fetch) → audio → asr → transcript →
-prepass → chunks → refine → glossary → (proofread) → finalize → (chat_translate)`, then
-`(archive)` and delivery `(package)`, which reads the archived copy. Side
-tasks `(cover)`, `(date_research)` and `(telop)` run beside the stages. Parentheses
-mark optional steps.
+prepass → chunks → refine → glossary → (proofread) → finalize → (chat_translate) →
+(telop)`, then `(archive)` and delivery `(package)`, which reads the archived
+copy. Side tasks `(cover)`, `(date_research)` and `(telop_scan)` run beside
+the stages. Parentheses mark optional steps.
 
 Commands (`bin/grill.bat` is the PATH launcher; `scripts/` holds dev tools):
 `grill <SOURCE> [HINT]` (= `grill run`), `grill serial`,

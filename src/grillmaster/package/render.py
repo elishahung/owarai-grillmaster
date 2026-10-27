@@ -40,8 +40,8 @@ if TYPE_CHECKING:
 
     from grillmaster.events.bus import EventSink
     from grillmaster.events.progress import Advance
-    from grillmaster.live_chat.render import PictureBox
     from grillmaster.media.ffmpeg import FfmpegRunner
+    from grillmaster.subtitles.ass import PictureBox
 
 BURN_IN_DURATION_TOLERANCE_SECONDS = 2.0
 PACKAGE_TEMPO = 1.03
@@ -195,16 +195,16 @@ class BurnPlan:
 
     By default the graded frame fills the package frame. With `picture` it
     is shrunk into that box on a black canvas of the package frame size, so
-    the output still concats with full-frame segments. `layers` then burn in
-    order — later layers draw on top.
+    the output still concats with full-frame segments. The `under` layers
+    then burn in order (later ones draw on top), and `top`, the dialogue,
+    last: nothing may cover it.
     """
 
-    layers: tuple[SubtitleLayer, ...]
+    top: SubtitleLayer
+    under: tuple[SubtitleLayer, ...] = ()
     picture: PictureBox | None = None
 
     def __post_init__(self) -> None:
-        if not self.layers:
-            raise ValueError("a burn plan needs at least one subtitle layer")
         box = self.picture
         if box is None:
             return
@@ -222,7 +222,12 @@ class BurnPlan:
     @classmethod
     def dialogue(cls, path: Path) -> BurnPlan:
         """Only the dialogue subtitles, on the full frame."""
-        return cls(layers=(SubtitleLayer(path),))
+        return cls(SubtitleLayer(path))
+
+    @property
+    def layers(self) -> tuple[SubtitleLayer, ...]:
+        """Every layer in burn order, the dialogue last."""
+        return (*self.under, self.top)
 
     @property
     def canvas_filter(self) -> str | None:

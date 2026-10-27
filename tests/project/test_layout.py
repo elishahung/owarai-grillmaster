@@ -100,6 +100,7 @@ def test_every_stage_has_a_numbered_work_dir():
         ".work/12_proofread",
         ".work/13_finalize",
         ".work/14_chat_translate",
+        ".work/15_telop",
     ]
 
 
@@ -133,9 +134,9 @@ def test_session_and_frames_enumerations():
         ".work/11_glossary",
         ".work/12_proofread",
         ".work/14_chat_translate",
+        ".work/15_telop",
         ".work/side/cover",
         ".work/side/date_research",
-        ".work/side/telop",
         ".work/package",
     ]
     assert [_rel(path) for path in layout.frames_dirs((1, 119))] == [
@@ -144,7 +145,7 @@ def test_session_and_frames_enumerations():
         ".work/10_refine/frames",
         ".work/11_glossary/frames",
         ".work/12_proofread/frames",
-        ".work/side/telop/frames",
+        ".work/15_telop/frames",
     ]
 
 

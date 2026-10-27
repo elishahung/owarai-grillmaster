@@ -50,7 +50,7 @@ from grillmaster.project.state import now as local_now
 from grillmaster.project.store import archive_project, load_state, project_lock
 from grillmaster.sources.http import UrllibJsonHttp
 from grillmaster.sources.ytdlp import YtDlpLibrary
-from grillmaster.stages.base import Externals, StageContext
+from grillmaster.stages.base import NO_SIDE_TASKS, Externals, StageContext
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -62,7 +62,12 @@ if TYPE_CHECKING:
     from grillmaster.pipeline.delivery import Archive
     from grillmaster.project.layout import ProjectLayout
     from grillmaster.project.state import ProjectState
-    from grillmaster.stages.base import RunOptions, StageDef, StepOutcome
+    from grillmaster.stages.base import (
+        RunOptions,
+        SideTaskWaiter,
+        StageDef,
+        StepOutcome,
+    )
 
 
 def run_project(
@@ -375,7 +380,7 @@ class _Run:
         ) as side_tasks:
             stages = self._pipeline.stages
             for index, stage in enumerate(stages):
-                self._run_stage(stage)
+                self._run_stage(stage, side_tasks)
                 side_tasks.stage_passed(stage.key)
                 if self._options.break_after == stage.key:
                     logger.warning(
@@ -390,7 +395,9 @@ class _Run:
         leaves them pending; disabled and already complete ones keep the
         reason a full run would give them."""
         for stage in stages:
-            if not stage.enabled(self._options, self._loaded.config):
+            if self._disabled(
+                stage, self._context(self._store.layout.work_dir(stage.key))
+            ):
                 reason = SkipReason.DISABLED
             elif self._store.state.is_done(stage.key):
                 reason = SkipReason.ALREADY_COMPLETE
@@ -398,12 +405,18 @@ class _Run:
                 reason = SkipReason.BREAKPOINT
             self._events.emit(StepSkipped(stage.key, PlanKind.STAGE, reason))
 
-    def _run_stage(self, stage: StageDef) -> None:
+    def _disabled(self, stage: StageDef, ctx: StageContext) -> bool:
+        """Off for this run (`enabled`) or for this project (`applies`)."""
+        return not stage.enabled(self._options, self._loaded.config) or (
+            stage.applies is not None and not stage.applies(ctx)
+        )
+
+    def _run_stage(self, stage: StageDef, side_tasks: SideTaskWaiter) -> None:
         key = stage.key
-        if not stage.enabled(self._options, self._loaded.config):
+        ctx = self._context(self._store.layout.work_dir(key), side_tasks)
+        if self._disabled(stage, ctx):
             self._events.emit(StepSkipped(key, PlanKind.STAGE, SkipReason.DISABLED))
             return
-        ctx = self._context(self._store.layout.work_dir(key))
         if self._store.state.is_done(key):
             with stage_scope(key):
                 if stage.on_skip is not None:
@@ -435,7 +448,9 @@ class _Run:
             finish=record,
         )
 
-    def _context(self, workdir: Path) -> StageContext:
+    def _context(
+        self, workdir: Path, side_tasks: SideTaskWaiter = NO_SIDE_TASKS
+    ) -> StageContext:
         return StageContext(
             layout=self._store.layout,
             store=self._store,
@@ -445,4 +460,5 @@ class _Run:
             events=self._events,
             externals=self._externals,
             workdir=workdir,
+            side_tasks=side_tasks,
         )

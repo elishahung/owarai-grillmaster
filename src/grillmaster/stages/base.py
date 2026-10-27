@@ -168,6 +168,9 @@ class StageDef:
     `Pipeline.check` runs it before any stage does work. `on_reset` runs
     when `grill reset` clears the stage, before any file is deleted, for
     an output that must go back upstream rather than be deleted.
+    `applies`, checked when the stage's turn comes and the project's
+    program is known, can still skip an enabled stage as disabled
+    (per-program switches), like `SideTaskDef.applies`.
     """
 
     key: StageKey
@@ -176,6 +179,7 @@ class StageDef:
     run: Callable[[StageContext], str | None]
     outputs: Callable[[ProjectLayout], Sequence[Path]] = no_outputs
     enabled: Callable[[RunOptions, AppConfig], bool] = always
+    applies: Callable[[StageContext], bool] | None = None
     on_skip: Callable[[StageContext], None] | None = None
     params: Callable[[AppConfig], dict[str, str]] = no_params
     clear_state: Callable[[ProjectState], None] = no_clear
@@ -273,6 +277,22 @@ class StateAccess(Protocol):
     def update(self, change: Callable[[ProjectState], None]) -> None: ...
 
 
+class SideTaskWaiter(Protocol):
+    """Waits for a side task of the run (the pipeline's `SideTaskManager`)."""
+
+    def wait(self, key: SideTaskKey) -> None: ...
+
+
+class _NoSideTasks:
+    """The waiter of a step that runs beside no side task."""
+
+    def wait(self, key: SideTaskKey) -> None:
+        pass
+
+
+NO_SIDE_TASKS: SideTaskWaiter = _NoSideTasks()
+
+
 class StageContext:
     """What a stage, side task or delivery step runs with.
 
@@ -281,7 +301,9 @@ class StageContext:
     (`.work/NN_<stage>/`, `.work/side/<task>/` or the delivery step's declared
     one), created on first access so stages without intermediates leave no
     empty directory. `ffmpeg`, `ytdlp`, `http` and `speech_to_text` are the
-    run's `Externals`.
+    run's `Externals`. `side_tasks.wait(key)` blocks until that side task,
+    if this run started it, has finished (a stage reading its output); it
+    returns at once otherwise.
     """
 
     __slots__ = (
@@ -295,6 +317,7 @@ class StageContext:
         "http",
         "layout",
         "options",
+        "side_tasks",
         "speech_to_text",
         "ytdlp",
     )
@@ -310,6 +333,7 @@ class StageContext:
         events: EventSink,
         externals: Externals,
         workdir: Path,
+        side_tasks: SideTaskWaiter = NO_SIDE_TASKS,
     ) -> None:
         self.layout = layout
         self.options = options
@@ -319,6 +343,7 @@ class StageContext:
         self.ytdlp = externals.ytdlp
         self.http = externals.http
         self.speech_to_text = externals.speech_to_text
+        self.side_tasks = side_tasks
         self._store = store
         self._loaded = loaded
         self._workdir = workdir

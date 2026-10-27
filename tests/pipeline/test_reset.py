@@ -62,6 +62,7 @@ def test_reset_from_clears_the_stage_and_everything_after(
         StageKey.PROOFREAD,
         StageKey.FINALIZE,
         StageKey.CHAT_TRANSLATE,
+        StageKey.TELOP,
     )
     assert result.stages == cleared
     assert result.removed == (
@@ -71,6 +72,7 @@ def test_reset_from_clears_the_stage_and_everything_after(
         layout.cht_srt,
         layout.cht_ass,
         layout.work_dir(StageKey.CHAT_TRANSLATE),
+        layout.work_dir(StageKey.TELOP),
     )
     saved = load_state(layout)
     assert [key for key in StageKey if saved.is_done(key)] == [
@@ -110,6 +112,7 @@ def test_stages_from():
     assert stages_from(StageKey.FINALIZE) == (
         StageKey.FINALIZE,
         StageKey.CHAT_TRANSLATE,
+        StageKey.TELOP,
     )
 
 

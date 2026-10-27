@@ -32,9 +32,12 @@ from grillmaster.subtitles.ass import (
     MARGIN_H,
     PLAY_RES_X,
     PLAY_RES_Y,
+    PictureBox,
     bgr,
+    char_width,
     escape_text,
     script_header,
+    text_width,
 )
 
 if TYPE_CHECKING:
@@ -65,10 +68,6 @@ NAME_COLOR = "B8B8B8"
 NAME_LINE_HEIGHT = 26
 BODY_FONT_SIZE = 27
 BODY_LINE_HEIGHT = 30
-# Glyph advance per font-size unit libass lays out with FONT_NAME: CJK
-# measures ~0.89; Latin is proportional (0.49-0.57), so take its wide end.
-FULL_WIDTH_ADVANCE = 0.9
-HALF_WIDTH_ADVANCE = 0.57
 MAX_BODY_LINES = 4
 PAID_COLOR = "E8A317"
 PAID_ALPHA = "40"
@@ -97,21 +96,6 @@ AVATAR_COLORS = (
 )
 
 _SCROLL_CS = math.ceil(SCROLL_MS / 10)
-
-# Code points laid out at the half-width advance: everything below the CJK
-# radicals block, and the half-width forms.
-_FULL_WIDTH_START = 0x2E80
-_HALF_WIDTH_FORMS = (0xFF61, 0xFFDC)
-
-
-@dataclass(frozen=True, slots=True)
-class PictureBox:
-    """Where the graded picture is shrunk to on the package frame (pixels)."""
-
-    x: int
-    y: int
-    width: int
-    height: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,7 +321,7 @@ class _Item:
         self.paid = message.kind == "paid"
         amount = message.amount or ""
         # The amount follows the name after two spaces.
-        amount_width = _text_width(f"  {amount}", NAME_FONT_SIZE) if amount else 0
+        amount_width = text_width(f"  {amount}", NAME_FONT_SIZE) if amount else 0
         # Model output may carry line breaks; a raw newline would split the
         # Dialogue line, so every user/model string is laid out as one line.
         name = _truncate(
@@ -438,18 +422,6 @@ def _panel_event(duration: int, panel: _Panel) -> str:
     )
 
 
-def _char_width(char: str, font_size: int) -> float:
-    """Approximate advance in `font_size` units, measured with libass."""
-    code = ord(char)
-    low, high = _HALF_WIDTH_FORMS
-    half = code < _FULL_WIDTH_START or low <= code <= high
-    return font_size * (HALF_WIDTH_ADVANCE if half else FULL_WIDTH_ADVANCE)
-
-
-def _text_width(text: str, font_size: int) -> float:
-    return sum(_char_width(char, font_size) for char in text)
-
-
 def wrap(text: str, font_size: int, width: int) -> list[str]:
     """Break `text` into panel lines of at most `width` px; past
     `MAX_BODY_LINES` the last kept line ends in an ellipsis."""
@@ -458,7 +430,7 @@ def wrap(text: str, font_size: int, width: int) -> list[str]:
     lines = [""]
     used = 0.0
     for char in text:
-        advance = _char_width(char, font_size)
+        advance = char_width(char, font_size)
         if lines[-1] and used + advance > width:
             lines.append("")
             used = 0.0
@@ -471,14 +443,14 @@ def wrap(text: str, font_size: int, width: int) -> list[str]:
 
 
 def _truncate(text: str, font_size: int, width: float) -> str:
-    if _text_width(text, font_size) <= width:
+    if text_width(text, font_size) <= width:
         return text
     ellipsis = "…"
-    budget = width - _char_width(ellipsis, font_size)
+    budget = width - char_width(ellipsis, font_size)
     kept = ""
     used = 0.0
     for char in text:
-        advance = _char_width(char, font_size)
+        advance = char_width(char, font_size)
         if used + advance > budget:
             break
         kept += char

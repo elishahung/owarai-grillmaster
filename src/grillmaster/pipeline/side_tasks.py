@@ -3,9 +3,10 @@
 A side task starts on a worker thread once the pipeline has passed its
 `start_after` stage (ran it, found it already complete, or found it
 disabled for this run). It never fails the run: a failure is reported and
-logged. Every started task is joined when the stages end, including when a
-stage failed, because its cost is already paid. A `--break-after` run skips
-side tasks entirely.
+logged. A later stage that reads its output waits for it
+(`StageContext.side_tasks`). Every started task is joined when the stages
+end, including when a stage failed, because its cost is already paid. A
+`--break-after` run skips side tasks entirely.
 """
 
 from __future__ import annotations
@@ -20,22 +21,26 @@ from loguru import logger
 
 from grillmaster.events.types import PlanKind, SkipReason, StepSkipped
 from grillmaster.pipeline.steps import UsageCollector, execute_step
-from grillmaster.stages.base import DeliveryStepDef, StepOutcome
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
-    from pathlib import Path
     from types import TracebackType
 
     from grillmaster.config.model import AppConfig
-    from grillmaster.core.stage_key import StageKey
+    from grillmaster.core.stage_key import SideTaskKey, StageKey
     from grillmaster.events.bus import EventSink
-    from grillmaster.project.layout import ProjectLayout
-    from grillmaster.stages.base import RunOptions, SideTaskDef, StageContext
+    from grillmaster.stages.base import (
+        RunOptions,
+        SideTaskDef,
+        StageContext,
+        StepOutcome,
+    )
 
 # How long an interrupted run (Ctrl-C) waits for running side tasks before it
 # leaves them to die with the process (their threads are daemons).
 INTERRUPT_WAIT_S = 2.0
+# A wait polls: a thread join is not interruptible on Windows.
+_WAIT_POLL_S = 0.5
 
 
 class SideTaskManager:
@@ -67,7 +72,7 @@ class SideTaskManager:
         self._usage = usage
         self._clock = clock
         self._interrupt_wait_s = interrupt_wait_s
-        self._threads: list[threading.Thread] = []
+        self._threads: dict[SideTaskKey, threading.Thread] = {}
 
     def __enter__(self) -> SideTaskManager:
         return self
@@ -87,10 +92,19 @@ class SideTaskManager:
             if task.start_after == key:
                 self._dispatch(task)
 
+    def wait(self, key: SideTaskKey) -> None:
+        """Block until task `key` has finished, if this run started it."""
+        thread = self._threads.get(key)
+        if thread is None or not thread.is_alive():
+            return
+        logger.info(f"Waiting for the {key} side task")
+        while thread.is_alive():
+            thread.join(_WAIT_POLL_S)
+
     def join(self, timeout: float | None = None) -> None:
         """Wait for the started tasks; with `timeout`, at most that long in all."""
         deadline = None if timeout is None else time.monotonic() + timeout
-        for thread in self._threads:
+        for thread in self._threads.values():
             remaining = None if deadline is None else deadline - time.monotonic()
             thread.join(None if remaining is None else max(0.0, remaining))
             if thread.is_alive():
@@ -118,7 +132,7 @@ class SideTaskManager:
             name=f"side-{task.key}",
             daemon=True,
         )
-        self._threads.append(thread)
+        self._threads[task.key] = thread
         thread.start()
 
     def _skip(
@@ -144,29 +158,3 @@ class SideTaskManager:
                 usage=self._usage,
                 finish=finish,
             )
-
-
-def as_delivery_step[T](task: SideTaskDef[T]) -> DeliveryStepDef:
-    """`task` as the one step of a run on an existing project, local or
-    archived (`grill telop`): the same work, label and params, in the task's
-    side directory, recorded in `state.side_tasks` like a side task (elapsed
-    time only). Unlike a side task, a failure fails that run."""
-
-    def run(ctx: StageContext) -> str | None:
-        started = time.monotonic()
-        value = task.run(ctx)
-        outcome = StepOutcome(value, elapsed=time.monotonic() - started, usage=None)
-        ctx.update(lambda state: task.store(state, outcome))
-        return task.describe(value)
-
-    def workdir(layout: ProjectLayout) -> Path:
-        return layout.side_dir(task.key)
-
-    return DeliveryStepDef(
-        key=task.key.value,
-        label=task.label,
-        weight=task.weight,
-        run=run,
-        workdir=workdir,
-        params=task.params,
-    )

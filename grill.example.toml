@@ -83,9 +83,10 @@ proofread = false
 # the video and a video model reads its captions, name cards and scene
 # ([watch_clip]), for lines whose ASR is suspect.
 proofread_watch_clip = false
-# OCR the on-screen text cards (telops) on the GPU while the translation runs,
-# let the utility agent keep and translate the ones the dialogue does not
-# carry, and burn them in at the top of the package (also --telop, or a
+# OCR the on-screen text cards (telops) on the GPU while the translation runs
+# (the glossary check and proofread read them as a reference), then, once the
+# subtitles are final, let the utility agent keep and translate the ones the
+# dialogue does not carry, and burn them in the package (also --telop, or a
 # program's `telop = true`; `grill telop <dir>` adds them to a finished
 # project). Needs `uv sync --extra telop`.
 telop = false

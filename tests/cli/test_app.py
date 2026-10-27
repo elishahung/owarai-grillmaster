@@ -166,7 +166,7 @@ def test_reset_from(cli: CliRunner, layout: ProjectLayout, finished: ProjectStat
     result = cli.invoke(app, ["reset", "epabc123", "--from", "refine", "--yes"])
     assert result.exit_code == 0, result.output
     assert (
-        "Reset refine, glossary, proofread, finalize, chat_translate of epabc123"
+        "Reset refine, glossary, proofread, finalize, chat_translate, telop of epabc123"
         in (result.output)
     )
     assert f"removed {layout.work_dir(StageKey.REFINE)}" in result.output

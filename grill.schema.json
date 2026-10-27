@@ -165,7 +165,7 @@
         },
         "telop": {
           "default": false,
-          "description": "OCR the on-screen text cards (telops) on the GPU and burn the worthwhile ones in, translated, at the top of the package (side task; also --telop or a program's telop = true). Needs `uv sync --extra telop`.",
+          "description": "OCR the on-screen text cards (telops) on the GPU and burn the worthwhile ones in, translated (also --telop or a program's telop = true). Needs `uv sync --extra telop`.",
           "title": "Telop",
           "type": "boolean"
         },
@@ -380,7 +380,7 @@
             }
           ],
           "default": null,
-          "description": "Telop selection and translation (side task): which on-screen cards to keep and how to render them.",
+          "description": "Telop selection and translation: which on-screen cards to keep and how to render them.",
           "title": "Telop"
         }
       },

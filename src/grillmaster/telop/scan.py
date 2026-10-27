@@ -5,17 +5,20 @@ A scan samples the video at `SAMPLE_FPS` and keeps every text box OCR read
 into a line with a start, an end and its most trusted reading; a new
 reading in the same place (the next memo in the same frame) starts a new
 line. `build_cards` then drops OCR noise, joins lines that share their
-timing and touch on screen into cards (a recurring label stays with the
-text it names), and labels each card:
+timing and touch on screen into cards (stacked, or close on one row: a card
+beside another stays apart), copies a recurring label that stays up across
+several cards into each card it sits on, and labels each card:
 
 - `recurring`: every line's text is on screen for over `RECURRING_S`
   across the episode (corner logos and titles, shirt prints, bottle
   labels); near-identical reads and longer texts a line is a fragment of
   count towards it, never a fragment towards a longer text;
 - `speech`: every other line repeats the ASR transcript around it;
-- `candidate`: anything else, the selector's only input.
+- `candidate`: anything else.
 
-`cards.json` keeps every label, so tuning sees what the rules dropped.
+The selector sees every card but the recurring ones (`TelopCards.offered`),
+speech-like ones marked: a card can echo the speech and still add a label
+or a point. `cards.json` keeps every label, so tuning sees the rules' view.
 Boxes are fractions of the frame, so every threshold here is scale-free.
 The thresholds were tuned on two episodes (a memo show and a commentary-
 card location show); they are not settings.
@@ -28,7 +31,7 @@ import unicodedata
 from collections import Counter
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
-from enum import StrEnum
+from enum import Enum, StrEnum
 from typing import TYPE_CHECKING
 
 from grillmaster.core.models import StrictModel
@@ -55,7 +58,7 @@ CARD_TIMING_S = 1.0
 # A box continues a track at (box overlap, reading match) of at least one
 # of these pairs. The match counts a fading-in fragment as a full match,
 # and a box in the same place with a different text starts a new line.
-_CONTINUES = ((0.5, 0.5), (0.3, 0.9))
+_CONTINUES = ((0.5, 0.75), (0.3, 0.9))
 _MIN_OVERLAP = min(overlap for overlap, _ in _CONTINUES)
 # Share of a text that must match another for the other to count as it.
 _SAME_TEXT = 0.8
@@ -117,6 +120,12 @@ class TelopCards(StrictModel):
     """The labelled cards of one episode (`cards.json`)."""
 
     cards: list[TelopCard]
+
+    @property
+    def offered(self) -> list[TelopCard]:
+        """The cards the selector and the reference tables see: all but the
+        recurring ones."""
+        return [card for card in self.cards if card.kind is not CardKind.RECURRING]
 
 
 @dataclass(slots=True)
@@ -253,18 +262,65 @@ def _repeats_speech(line: _Line, cues: Sequence[tuple[float, float, str]]) -> bo
 # Boxes are fractions of a 16:9 frame: a height fraction spans 16/9 as many
 # pixels as the same width fraction.
 _ASPECT = 9 / 16
+# Lines of one card sit at most `_STACK_GAP` of a line height apart above
+# each other (straight or diagonally, at most a line height sideways), or on
+# one row at most `_ROW_GAP` of it apart (a space inside a line; name
+# plates or memos side by side sit further apart), and a wider gap above
+# is a separate label (map annotations).
+_STACK_GAP = 0.5
+_ROW_GAP = 0.25
+# Share of the shorter line two boxes must share vertically to be on one row.
+_ROW_OVERLAP = 0.5
 
 
-def _adjacent(a: Box, b: Box) -> bool:
-    """Stacked within about a line height, overlapping or near sideways."""
-    height = max(a[3] - a[1], b[3] - b[1])
-    gap_y = max(a[1], b[1]) - min(a[3], b[3])
+class _Touch(Enum):
+    ROW = "row"
+    STACKED = "stacked"
+    DIAGONAL = "diagonal"
+
+
+def _same_row(a: Box, b: Box) -> bool:
+    shorter = min(a[3] - a[1], b[3] - b[1])
+    return min(a[3], b[3]) - max(a[1], b[1]) >= _ROW_OVERLAP * shorter
+
+
+def _touch(a: Box, b: Box) -> _Touch | None:
+    """How two boxes touch, if they do. Gaps count in the smaller line's
+    height, so a big line does not reach far (map labels, a logo near a
+    card); only a corner label may sit as far sideways as the bigger line
+    is high."""
+    height = min(a[3] - a[1], b[3] - b[1])
     gap_x = max(a[0], b[0]) - min(a[2], b[2])
-    return gap_y <= 0.8 * height and gap_x <= height * _ASPECT
+    if _same_row(a, b):
+        return _Touch.ROW if gap_x <= _ROW_GAP * height * _ASPECT else None
+    if max(a[1], b[1]) - min(a[3], b[3]) > _STACK_GAP * height:
+        return None
+    if gap_x < 0:
+        return _Touch.STACKED
+    bigger = max(a[3] - a[1], b[3] - b[1])
+    return _Touch.DIAGONAL if gap_x <= bigger * _ASPECT else None
+
+
+_ABOVE_OR_BELOW = (_Touch.STACKED, _Touch.DIAGONAL)
 
 
 def _group(lines: Sequence[_Line]) -> list[list[_Line]]:
-    """Lines (sorted by start) that share their timing and touch on screen."""
+    """Lines (sorted by start) that share their timing and touch on screen.
+
+    A diagonal neighbour joins unless both lines already have a line
+    straight above or below: a memo's corner label belongs to the text
+    under it, but the label over the right of two memos side by side does
+    not join the left one's text.
+    """
+    touching: list[tuple[int, int, _Touch]] = []
+    for i, a in enumerate(lines):
+        for j in range(i + 1, len(lines)):
+            b = lines[j]
+            if b.start - a.start > CARD_TIMING_S:
+                break
+            if abs(a.end - b.end) <= CARD_TIMING_S and (touch := _touch(a.box, b.box)):
+                touching.append((i, j, touch))
+    stacked = {k for i, j, touch in touching if touch is _Touch.STACKED for k in (i, j)}
     parent = list(range(len(lines)))
 
     def root(i: int) -> int:
@@ -273,17 +329,46 @@ def _group(lines: Sequence[_Line]) -> list[list[_Line]]:
             i = parent[i]
         return i
 
-    for i, a in enumerate(lines):
-        for j in range(i + 1, len(lines)):
-            b = lines[j]
-            if b.start - a.start > CARD_TIMING_S:
-                break
-            if abs(a.end - b.end) <= CARD_TIMING_S and _adjacent(a.box, b.box):
-                parent[root(i)] = root(j)
+    for i, j, touch in touching:
+        if touch is not _Touch.DIAGONAL or not {i, j} <= stacked:
+            parent[root(i)] = root(j)
     groups: dict[int, list[_Line]] = {}
     for i, line in enumerate(lines):
         groups.setdefault(root(i), []).append(line)
     return sorted(groups.values(), key=lambda group: group[0].start)
+
+
+def _labels_of(
+    group: Sequence[_Line], start: float, end: float, labels: Sequence[_Line]
+) -> list[_Line]:
+    """Recurring `labels` that stay on screen across `group` (on from `start`
+    to `end`), start or end with it and sit above or below it: a label kept
+    up while the cards it names change (whose memo, which corner), copied
+    into each of them."""
+    return [
+        label
+        for label in labels
+        if label.start <= start + CARD_TIMING_S
+        and label.end >= end - CARD_TIMING_S
+        and (
+            abs(label.start - start) <= CARD_TIMING_S
+            or abs(label.end - end) <= CARD_TIMING_S
+        )
+        and any(_touch(label.box, line.box) in _ABOVE_OR_BELOW for line in group)
+    ]
+
+
+def _reading_order(lines: Sequence[_Line]) -> list[_Line]:
+    """Rows top to bottom, each left to right; a line shares a row with the
+    first of the row when they overlap vertically (a smaller group name
+    before a name stays first)."""
+    rows: list[list[_Line]] = []
+    for line in sorted(lines, key=lambda line: line.box[1]):
+        if rows and _same_row(rows[-1][0].box, line.box):
+            rows[-1].append(line)
+        else:
+            rows.append([line])
+    return [line for row in rows for line in sorted(row, key=lambda line: line.box[0])]
 
 
 def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:
@@ -305,23 +390,38 @@ def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:
         (block.time_range.start, block.time_range.end, normalize(block.text))
         for block in transcript
     ]
+    # Fixtures never join fresh lines into one card (a logo under a row of
+    # name plates would chain them together); one only labels a card.
+    labels = [line for line in lines if recurring[id(line)]]
+    fresh = [line for line in lines if not recurring[id(line)]]
+    groups = sorted(
+        [
+            *((group, False) for group in _group(fresh)),
+            *((group, True) for group in _group(labels)),
+        ],
+        key=lambda tagged: tagged[0][0].start,
+    )
     cards: list[TelopCard] = []
-    for group in _group(lines):
-        fresh = [line for line in group if not recurring[id(line)]]
-        if not fresh:
+    for group, is_fixture in groups:
+        start = min(line.start for line in group)
+        end = max(line.end for line in group)
+        if is_fixture:
             kind = CardKind.RECURRING
-        elif all(_repeats_speech(line, cues) for line in fresh):
-            kind = CardKind.SPEECH
         else:
-            kind = CardKind.CANDIDATE
-        group.sort(key=lambda line: (line.box[1], line.box[0]))
+            kind = (
+                CardKind.SPEECH
+                if all(_repeats_speech(line, cues) for line in group)
+                else CardKind.CANDIDATE
+            )
+            group.extend(_labels_of(group, start, end, labels))
+        ordered = _reading_order(group)
         cards.append(
             TelopCard(
                 id=len(cards) + 1,
-                start=round(min(line.start for line in group), 2),
-                end=round(max(line.end for line in group), 2),
+                start=round(start, 2),
+                end=round(end, 2),
                 kind=kind,
-                lines=[CardLine(text=line.text, box=line.box) for line in group],
+                lines=[CardLine(text=line.text, box=line.box) for line in ordered],
             )
         )
     return TelopCards(cards=cards)

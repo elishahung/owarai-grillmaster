@@ -293,6 +293,21 @@ def test_disabled_stage_is_not_recorded(
     assert not state.is_done(StageKey.CHAT_FETCH)
 
 
+def test_a_stage_that_does_not_apply_to_the_project_is_skipped_disabled(
+    run: Runner, journal: Journal, state: ProjectState, recording_sink: RecordingSink
+):
+    stage = replace(fake_stage(StageKey.CHAT_FETCH, journal), applies=lambda ctx: False)
+
+    run(Pipeline((stage,)))
+
+    assert journal.entries == []
+    assert not state.is_done(StageKey.CHAT_FETCH)
+    assert (
+        StepSkipped(StageKey.CHAT_FETCH, PlanKind.STAGE, SkipReason.DISABLED)
+        in recording_sink.events
+    )
+
+
 def test_break_after_stops_and_skips_side_tasks_delivery_and_archive(
     run: Runner,
     journal: Journal,
@@ -363,6 +378,21 @@ def test_break_after_reports_every_later_stage_skipped(
         StepSkipped("chat_fetch", PlanKind.STAGE, SkipReason.DISABLED),
         StepSkipped("audio", PlanKind.STAGE, SkipReason.BREAKPOINT),
     ]
+
+
+def test_break_after_reports_a_stage_off_for_this_project_disabled(
+    run: Runner, journal: Journal, recording_sink: RecordingSink
+):
+    pipeline = Pipeline(
+        (
+            fake_stage(StageKey.METADATA, journal),
+            replace(fake_stage(StageKey.AUDIO, journal), applies=lambda ctx: False),
+        )
+    )
+    run(pipeline, break_after=StageKey.METADATA)
+    assert steps(recording_sink.events)[-1] == StepSkipped(
+        "audio", PlanKind.STAGE, SkipReason.DISABLED
+    )
 
 
 def test_break_after_reports_later_completed_stages_as_complete(

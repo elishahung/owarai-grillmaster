@@ -23,7 +23,7 @@ from pydantic import (
 )
 
 from grillmaster.core.model_spec import ModelSpec, ModelSpecField, Role
-from grillmaster.core.stage_key import SideTaskKey, StageKey
+from grillmaster.core.stage_key import StageKey
 from grillmaster.core.tool_session import MuseEffort, MuseModel
 
 if TYPE_CHECKING:
@@ -219,7 +219,7 @@ class FeaturesConfig(BaseModel):
     )
     telop: bool = Field(
         default=False,
-        description="OCR the on-screen text cards (telops) on the GPU and burn the worthwhile ones in, translated, at the top of the package (side task; also --telop or a program's telop = true). Needs `uv sync --extra telop`.",
+        description="OCR the on-screen text cards (telops) on the GPU and burn the worthwhile ones in, translated (also --telop or a program's telop = true). Needs `uv sync --extra telop`.",
     )
     infuse_metadata: bool = Field(
         default=False,
@@ -287,15 +287,15 @@ class PackageConfig(BaseModel):
         return self
 
 
-# Stages and side tasks that accept program instructions, in prompt order.
-# Field names of `ProgramInstruction` equal these keys.
-INSTRUCTION_STAGES: tuple[StageKey | SideTaskKey, ...] = (
+# Stages that accept program instructions, in prompt order. Field names of
+# `ProgramInstruction` equal these stage keys.
+INSTRUCTION_STAGES = (
     StageKey.PREPASS,
     StageKey.CHUNKS,
     StageKey.REFINE,
     StageKey.GLOSSARY,
     StageKey.PROOFREAD,
-    SideTaskKey.TELOP,
+    StageKey.TELOP,
 )
 
 
@@ -329,10 +329,10 @@ class ProgramInstruction(BaseModel):
     )
     telop: str | None = Field(
         default=None,
-        description="Telop selection and translation (side task): which on-screen cards to keep and how to render them.",
+        description="Telop selection and translation: which on-screen cards to keep and how to render them.",
     )
 
-    def stage_text(self, stage: StageKey | SideTaskKey) -> str | None:
+    def stage_text(self, stage: StageKey) -> str | None:
         """This program's own text for `stage` (without `common`)."""
         if stage not in INSTRUCTION_STAGES:
             raise ValueError(

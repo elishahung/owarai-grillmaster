@@ -11,8 +11,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from grillmaster.events.types import PlanEntry, PlanKind
-from grillmaster.pipeline.delivery import archive_entry
-from grillmaster.pipeline.side_tasks import as_delivery_step
+from grillmaster.pipeline.delivery import archive_entry, as_delivery_step
 from grillmaster.stages import (
     asr,
     audio,
@@ -31,6 +30,7 @@ from grillmaster.stages import (
     proofread,
     refine,
     telop,
+    telop_scan,
     transcript,
 )
 
@@ -182,15 +182,16 @@ STAGES: tuple[StageDef, ...] = (
     proofread.STAGE,
     finalize.STAGE,
     chat_translate.STAGE,
+    telop.STAGE,
 )
 SIDE_TASKS: tuple[SideTaskDef[Any], ...] = (
     cover.TASK,
     date_research.TASK,
-    telop.TASK,
+    telop_scan.TASK,
 )
 DELIVERY: tuple[DeliveryStepDef, ...] = (package.STEP,)
 
 PIPELINE = Pipeline(STAGES, SIDE_TASKS, DELIVERY)
-# `grill telop`: the telop side task on an existing project, as its only
-# delivery step.
-TELOP_ONLY = Pipeline((), delivery=(as_delivery_step(telop.TASK),))
+# `grill telop`: the telop stage on an existing project (it scans first when
+# no scan is kept), as its only delivery step.
+TELOP_ONLY = Pipeline((), delivery=(as_delivery_step(telop.STAGE),))

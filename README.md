@@ -30,7 +30,7 @@
 先對整部片做一份簡報（人物、專有名詞、梗的譯法、語氣），再把字幕切塊平行翻譯。翻譯時會參考音檔，模型也能透過 grill 自帶的 MCP 工具（`get_frames`）自己挑時間點截圖，辨識人物、場景與畫面上的文字
 
 ```
-下載影片 → 語音辨識 → 全片簡報 → 分塊翻譯 → 潤飾 → 名詞校對 → 最終審閱（可選）→ 輸出 ASS + SRT → 歸檔（可選）→ 燒錄字幕（可選）
+下載影片 → 語音辨識 → 全片簡報 → 分塊翻譯 → 潤飾 → 名詞校對 → 最終審閱（可選）→ 輸出 ASS + SRT → 字卡翻譯（可選）→ 歸檔（可選）→ 燒錄字幕（可選）
 ```
 
 ## 安裝
@@ -43,6 +43,8 @@
 uv sync
 uv tool install --editable .   # 把 grill 裝到 PATH
 ```
+
+要用字卡翻譯的話改用 `uv sync --extra telop`（多裝 GPU 文字辨識套件；之後單純 `uv sync` 會把它移除）
 
 或者把 `bin/` 加到 PATH，用 `bin/grill.bat` 執行 repo 內 `.venv` 的 `grill`（`bin/` 只放這個啟動器；`scripts/` 是開發工具，不要加進 PATH）
 
@@ -84,7 +86,7 @@ grill reset <專案 ID> --from refine
 grill status [專案 ID]
 ```
 
-其他選項：`--cover`（產生封面）、`--date-research`（查不到播出日時上網找）、`--proofread`（名詞校對後再用另一個模型做最終校對，修正字幕與 briefing）、`--chat`（翻譯 YouTube 聊天室並燒進畫面，`--chat-layout side|overlay|none`）、`--remix [素材池]`、`--parent <專案資料夾>`（不帶值時，從最近十天處理完的 archived 專案中搜尋挑選）。完整說明見 `grill --help`
+其他選項：`--cover`（產生封面）、`--date-research`（查不到播出日時上網找）、`--proofread`（名詞校對後再用另一個模型做最終校對，修正字幕與 briefing）、`--telop`（字卡翻譯）、`--chat`（翻譯 YouTube 聊天室並燒進畫面，`--chat-layout side|overlay|none`）、`--remix [素材池]`、`--parent <專案資料夾>`（不帶值時，從最近十天處理完的 archived 專案中搜尋挑選）。完整說明見 `grill --help`
 
 可以同時開多個 `grill` 處理不同影片：每個 agent 工具伺服器都是各自獨立的子行程，互不衝突；同一個 ID 同時只能有一個 `grill` 在處理，第二個會直接報錯
 
@@ -117,6 +119,7 @@ date_research = true                # 查不到播出日時上網找
 title_suggestion = true             # 燒錄時產生候選標題
 proofread = true                    # 名詞校對後再跑最終校對（同 --proofread）
 proofread_watch_clip = true         # 讓最終校對能請 watch_clip 看可疑段落（發話、畫面字幕、場景）
+telop = false                       # 字卡翻譯（同 --telop）；也可以只對特定節目開，見下方節目設定
 ```
 
 其他可調參數（切塊大小、併發數、抽圖頻率、remix 素材池等）請見 `grill.example.toml`。併發數 `[agents] max_concurrent` 預設 10，是每個 `grill` 行程各自的上限
@@ -127,7 +130,8 @@ proofread_watch_clip = true         # 讓最終校對能請 watch_clip 看可疑
 
 - `remix`：`true` 時打包一律用 remix（同 `--remix`）
 - `inserts`：打包時要附上的素材（對應 `[[package.inserts]]`）
-- `instruction`：給各步驟模型的額外指示，鍵為 `prepass`、`chunks`、`refine`、`glossary`、`proofread`；`common` 會加到上述每個步驟。頻道與系列都有設定時兩者都會帶入
+- `telop`：`true` 時這個節目一律做字卡翻譯（同 `--telop`）
+- `instruction`：給各步驟模型的額外指示，鍵為 `prepass`、`chunks`、`refine`、`glossary`、`proofread`、`telop`；`common` 會加到上述每個步驟。頻道與系列都有設定時兩者都會帶入。`telop` 可以寫節目專屬的字卡慣例，例如「MEMO 字卡要標出是誰的筆記」
 
 ### `.env`
 

@@ -45,7 +45,7 @@ TelopOption = Annotated[
         "--telop",
         help=(
             "OCR the on-screen text cards on the GPU and burn the worthwhile "
-            "ones in, translated, at the top (needs `uv sync --extra telop`)."
+            "ones in, translated, beside each card (needs `uv sync --extra telop`)."
         ),
     ),
 ]
@@ -114,8 +114,8 @@ def run_command(
         typer.Option(
             "--break-after",
             help=(
-                "Stop after this stage. Side tasks (cover, date research, telop) and "
-                "delivery are skipped entirely."
+                "Stop after this stage. Side tasks (cover, date research, telop "
+                "scan) and delivery are skipped entirely."
             ),
             show_default=False,
         ),

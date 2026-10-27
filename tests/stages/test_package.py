@@ -421,7 +421,7 @@ def test_chat_panel_is_rendered_into_the_package_workdir(
     ) in chain
 
 
-def test_telops_burn_on_top_unless_left_out(
+def test_telops_burn_under_the_dialogue_unless_left_out(
     make: MakeContext, finished: ProjectLayout, package_root: Path
 ):
     telop = TelopSubtitle(
@@ -433,7 +433,7 @@ def test_telops_burn_on_top_unless_left_out(
     package.STEP.run(make(fake))
 
     chain = arg_after(next(a for a in encodes(fake) if "-vf" in a), "-vf")
-    assert "subtitles=video.cht.ass,subtitles=.work/package/telop.ass," in chain
+    assert "subtitles=.work/package/telop.ass,subtitles=video.cht.ass," in chain
 
     left_out = burn_in_fake(finished, package_root)
     package.STEP.run(make(left_out, burn_telops=False))

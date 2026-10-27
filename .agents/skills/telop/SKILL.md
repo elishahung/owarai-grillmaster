@@ -3,76 +3,126 @@ name: telop
 description: >-
   On-screen text cards (telops) under `src/grillmaster/telop/`: GPU OCR of
   sampled frames (`ocr.py`, optional `telop` extra), rule tracking and
-  pre-filter into cards (`scan.py`), the utility agent that keeps and
-  translates them (`select.py`, `prompts/select.md`) and the top-centred ASS
-  layer packaging burns in (`render.py`); glue `stages/telop.py` (side task
-  and `grill telop`). Read this before changing the OCR engine, the
-  pre-filter thresholds, the selector, the telop layer or how they reach the
-  package.
+  grouping into cards (`scan.py`), the utility agent that keeps and
+  translates them (`select.py`, `prompts/select.md`), the reference table
+  glossary/proofread read (`reference.py`) and the ASS layer packaging burns
+  in beside each card (`render.py`); glue `stages/telop_scan.py`
+  (side task), `stages/telop.py` (last stage, `grill telop`) and
+  `stages/_telop.py`. Read this before changing the OCR engine, the
+  grouping thresholds, the selector, the placement or how telops reach the
+  other stages and the package.
 ---
 
 # Telops
 
 Japanese variety shows put much of their content in edited on-screen cards
-(commentary/ツッコミ captions, memo cards, name and profile cards, segment
-titles) that ASR never hears. This subsystem finds them, lets an agent pick
-the ones the dialogue subtitles do not carry, and burns the translations in
-at the top of the package.
+(commentary/ツッコミ captions, memo cards, name and profile cards, maps)
+that ASR never hears. This subsystem reads them, gives them to the
+glossary check and proofread as evidence, lets an agent pick and translate
+the ones the dialogue subtitles do not carry, and burns those in.
 
 ## Flow and artifacts
 
-Side task `telop` (`start_after = prepass`: it needs `ja.srt` and the
-briefing; it runs beside chunks → proofread, off the critical path).
-Enabled by `--telop`, `[features] telop`, or a program's `telop = true`;
-`SideTaskDef.applies` checks the program at the start point, since
-`enabled` sees no state (it stays on while any program sets `telop`).
-`grill telop <dir|id>` runs the same task on a finished or archived project
-(`pipeline.side_tasks.as_delivery_step`, alone in `registry.TELOP_ONLY`;
-recorded in `state.side_tasks.telop` like the side task), then `grill
-package` burns it.
+On for a project with `--telop`, `[features] telop`, or its program's
+`telop = true` (`stages._telop.enabled` sees no project and stays on while
+any program may ask; `applies` decides per project, for the side task and
+the stage alike).
 
-1. **Scan** (`.work/side/telop/scan.json`, fixed-name cache): ffmpeg samples
-   the video at `SAMPLE_FPS` (2) at exactly 1920x1080 into a local temp dir
-   (`media.frames.sample_frames`; a gigabyte of stills, and the project may
-   be on the NAS), then `ocr.read_frames` OCRs each one. Boxes are stored as
-   fractions of the frame.
-2. **Pre-filter** (`scan.build_cards` → `cards.json`, rewritten every run,
-   deterministic): track boxes into lines (IoU + reading similarity, a 2-frame
-   gap allowed, most-trusted reading wins; a different reading in the same
-   box starts a new line, so the next memo in the same frame is its own
-   card) → drop noise (< 1 s, one char, confidence < 0.7) → mark lines
-   recurring (> 60 s episode-wide; a text counts the time of near-identical
-   reads and of longer texts it is a fragment of, never of its own
-   fragments, or a memo quoting a recurring phrase would vanish) and
-   speech-like (≥ 60 % of chars in the ASR ±3 s) → union lines sharing
-   timing (±1 s) **and** touching on screen into cards → kind: `recurring`
-   (all lines recurring), `speech` (all fresh lines speech-like), else
-   `candidate`. Recurrence is judged per line but applied per card, so a
-   recurring label stays attached to the fresh text it names.
-3. **Select** (role `utility`, `SchemaOutput(TelopSelection)`, `get_frames`
-   into `.work/side/telop/frames/`): candidates only as a TSV (seconds,
-   coarse position, lines joined ` / `), the plain ASR transcript, the
-   effective briefing, `instruction.telop`. Answer = kept cards only
-   (`{id, zh}`); validation: known id, once, non-empty `zh`.
-4. **Deliverable** `.subs/telop.cht.json` (`TelopSubtitles`: id, start, end,
-   ja, zh, box). Hand-editable; an existing file is a hit (no agent). Delete
-   it to select again from the kept scan; delete `scan.json` to re-OCR.
-5. **Package**: `package.assemble.with_telops` renders it to
-   `.work/package/telop.ass` as the top layer over `build_burn_plan`'s
-   dialogue and chat; over a shrunk `side`-layout picture it gets
-   `telop.render.telop_force_style` margins. `grill package --no-telop`
-   (`RunOptions.burn_telops`, package only) leaves the layer out. Not part of
-   `video.cht.ass` (finalize ran long before the side task joins).
+1. **Scan** — side task `telop_scan`, after `combine`
+   (`.work/side/telop_scan/scan.json`, fixed-name cache; delete it to
+   re-OCR): ffmpeg samples the video at `SAMPLE_FPS` (2) at exactly
+   1920x1080 into a local temp dir (`media.frames.sample_frames`; a
+   gigabyte of stills, and the project may be on the NAS), then
+   `ocr.read_frames`. Boxes are fractions of the frame. It runs beside
+   audio → refine, off the critical path.
+2. **Reference** — glossary and proofread call `_telop.reference`: wait for
+   the scan (`StageContext.side_tasks.wait`), build the cards, pass the
+   offered ones as a table (`reference.render_reference`, prompt
+   `postprocess/prompts/telop_reference.md`): only texts with kana or
+   kanji (Latin-only reads were 28 % of rows, nearly all prints and
+   garbage), a repeated text one row with all its times. Waiting keeps
+   their input deterministic; no scan (failed task) → no table, a warning.
+   Measured on 有吉 (2026-10-27): used as cited evidence by both passes, no
+   sign it misled them.
+3. **Select** — stage `telop` (15, after `chat_translate`, so no work dir
+   was renumbered; `.work/15_telop/` holds `cards.json`, the session and
+   `frames/`): waits for the scan, else scans itself; `scan.build_cards`
+   (rewritten every run); the utility agent gets the offered cards as a TSV
+   (seconds, coarse position, `echoes_speech`, lines joined ` / `), the
+   dialogue as `seconds | ja | final zh` (`ja.srt` paired by index with
+   `video.cht.srt`; the two must align, `check_aligned`, else the stage
+   fails), the effective briefing and `instruction.telop`, plus
+   `get_frames`. Answer = kept cards only (`{id, zh}`); validation: known
+   id, once, non-empty `zh`. A translation that normalizes to its card's
+   text (a kanji place name) is dropped by Python. Deliverable
+   `.subs/telop.cht.json` (`TelopSubtitles`, the stage's declared output), hand-editable;
+   `grill reset <id> --only telop` selects again.
+4. **`grill telop <dir|id>`** runs the stage on a finished or archived
+   project (`pipeline.delivery.as_delivery_step`, alone in
+   `registry.TELOP_ONLY`) whatever the ledger says — archives cannot be
+   reset — and records it in the ledger; it scans first when no scan is kept.
+5. **Package** — `package.assemble.with_telops` renders
+   `.work/package/telop.ass` inside the picture (a `side` layout's shrunk
+   box is passed as `subtitles.ass.PictureBox`) and burns it **under the dialogue** (`BurnPlan.top`),
+   which is always the top layer. `grill package --no-telop`
+   (`RunOptions.burn_telops`) leaves it out.
+
+## Cards (`scan.py`)
+
+Rules only shape the selector's input; the agent decides what a viewer
+sees. Thresholds are tuned constants (on a memo show and a caption-heavy
+location show), not settings.
+
+- **Tracking**: a box continues a line at (overlap, reading match) ≥ (0.5,
+  0.75) or (0.3, 0.9); the match is over the shorter reading, so a fade-in
+  fragment matches fully, but a new name in a label's place (熊元MEMO →
+  小橋MEMO) starts a new line. Noise: < 1 s, one char, confidence < 0.7.
+- **Recurring**: > 60 s on screen episode-wide (asymmetric: a text counts
+  near-identical reads and longer texts it is a fragment of). Recurring
+  lines never join fresh lines into a card (a logo under a row of name
+  plates chained them); they form their own `recurring` cards, never
+  offered, and a recurring line set flush on a card (≤ half the smaller
+  line height above/below) that stays up across it and starts or ends with
+  it is copied in as its label (`熊元MEMO` over successive memos).
+- **Grouping**: same timing (±1 s) and touching: stacked ≤ 0.5 of the
+  smaller line height apart, on one row ≤ 0.25 of it apart (a space; two
+  memos or name plates side by side sit further apart), or diagonal within
+  the bigger line's height sideways unless both lines already have a line
+  straight above/below (a memo's corner label joins its text; the label of
+  the right one of two side-by-side memos does not join the left). Lines
+  read row by row, left to right.
+- **Kinds**: `speech` (every fresh line ≥ 60 % found in the ASR ±3 s) is
+  offered marked `echoes_speech` — a card can echo the line and still add
+  a label or a point; `candidate`; `recurring`.
+
+## Placement (`render.py`)
+
+Every translation sits beside its own card (`\pos`, pale yellow, size 42;
+owner's call: one place for the eye, where the card is — a top line plus
+some beside cards made the gaze drift): right below it (one side for every
+item of a list), right above only when below does not fit in the picture;
+anchored on the edge facing the card, so the estimated height never opens
+a gap. Each spot is costed: share covered by another
+translation (×10) or an original card (×1), distance from the preferred
+spot (×3 per picture height, sideways too), being nearer another card than
+its own (+1); spots tried are centred or against any obstacle's side
+edges, times above/below or against any obstacle's top/bottom edges, kept
+inside the picture. Widths are estimated (wide char = 1 em, other 0.55).
+The dialogue is another layer on top: this one never avoids it (owner's
+call: a translation away from its card is worse than one under a cue). A
+card that groups wrongly lands wrongly, so fix grouping, not placement.
 
 ## OCR engine
 
 PP-OCRv5 server detection + PP-OCRv6 medium Japanese recognition through
 RapidOCR on onnxruntime-gpu (CUDA EP, `cudnn_conv_algo_search=HEURISTIC`,
 `arena_extend_strategy=kSameAsRequested`). Missing extra or CUDA provider →
-`TelopError` (side task fails loudly, no CPU fallback). Install with
-`uv sync --extra telop`; `[tool.uv] required-environments` pins the lock to
-Windows wheels (the newest CUDA runtime wheels are Linux-only). A plain
-`uv sync` removes the extra again.
+`TelopError` (no CPU fallback; the side task logs it and the stage fails
+on its own retry). The stage's `preflight` checks the extra is installed
+whenever telops are enabled, so a missing one fails before any stage
+rather than after the whole translation. Install with `uv sync --extra telop`; `[tool.uv]
+required-environments` pins the lock to Windows wheels (the newest CUDA
+runtime wheels are Linux-only). A plain `uv sync` removes the extra again.
 
 Chosen in a 2026-10 benchmark (44 hand-labelled frames, RTX 5090; gate:
 whole-episode OCR ≤ half the runtime, i.e. ≥ 4 frames/s at 2 fps):
@@ -89,26 +139,20 @@ whole-episode OCR ≤ half the runtime, i.e. ≥ 4 frames/s at 2 fps):
 
 Whole-frame OCR-VLMs (PaddleOCR-VL, HunyuanOCR, DeepSeek-OCR-2) run at
 0.3–0.8 fps; general VLMs (Qwen-VL) are out by the owner's choice (VRAM,
-time). Measured end to end on two 24-min episodes read from the NAS: ~10 min
-scan (sampling, then OCR; streaming the sampling into the OCR would hide
-1–2 min) + ~5 min selection.
+time). Measured on two 24-min episodes read from the NAS: ~10 min scan
+(beside the translation) + ~5 min selection (now on the critical path,
+accepted for selecting beside the final subtitles).
 
-## Selection policy and tuning
+## Policy
 
 - The chunk translator never selects or sees telops: the weaker model only
-  translates. Selection belongs to `utility`.
-- Recurring cards (corner/segment titles) are not offered: shown at the
-  top they stayed up far too long (owner's call, 2026-10-27).
-- `prompts/select.md` stays show-agnostic: no one show's card conventions
-  (how to render a memo label) and no examples quoted from the episodes it
-  was tested on, which would inflate those tests and hide consistency gaps.
-  It asks for episode-wide consistency in general; a show's convention goes
-  in its `instruction.telop`.
-- Rules only shrink the selector's input; they never decide what a viewer
-  sees. Scene text (shirt prints, labels, signage) survives the rules on
-  location shows; the selector drops it, with frames when the text is
-  ambiguous. A rule based on the look of one show's cards was rejected
-  (cards differ per show).
-- Telops do not feed refine/glossary/proofread (they run on the critical
-  path; the side task joins later). Revisit only with a measured benefit.
-- Thresholds in `scan.py` are tuned constants, not settings.
+  translates. Selection belongs to `utility`, after finalize, so card
+  wording follows the final subtitles and briefing.
+- Recurring cards are never offered: translated they stayed up far
+  too long (owner's call, 2026-10-27).
+- `prompts/select.md` and `telop_reference.md` stay show-agnostic: no one
+  show's card conventions and no examples quoted from the test episodes
+  (they inflate those tests and hide consistency gaps). A show's convention
+  goes in its `instruction.telop`.
+- Do not force what OCR cannot read (a card missing from the scan stays
+  missing); guide the rules and the agent instead.

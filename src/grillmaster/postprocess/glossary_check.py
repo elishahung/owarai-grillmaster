@@ -44,6 +44,7 @@ from grillmaster.postprocess._shared import (
     session_copies,
     session_copy_paths,
     settle_briefing,
+    telop_section,
     workdir_name,
 )
 from grillmaster.postprocess.errors import PostprocessError
@@ -97,6 +98,8 @@ class GlossaryInputs:
     corrected_briefing: Path
     # The program's configured glossary text; empty when none.
     program_instruction: str = ""
+    # The on-screen text table (`telop.reference`); `None` without telops.
+    telop_reference: str | None = None
 
     @property
     def glossary_copies(self) -> tuple[Path, Path]:
@@ -263,6 +266,7 @@ def build_glossary_task(
             PROMPTS, "glossary_suspects.md", suspects=render_suspect_list(suspects)
         ),
         frames_guidance(load_prompt(PROMPTS, "glossary_frames.md")),
+        telop_section(inputs.telop_reference),
     )
     return AgentTask(
         name=TASK_NAME,

@@ -2,7 +2,8 @@
 proofread of `.work/11_glossary/checked.srt` into
 `.work/12_proofread/proofread.srt`, plus `briefing.json` when it corrected the
 briefing (+ `answer.json`, `report.md`, and the dossier `aligned.tsv`,
-`history.md`). With `[features] proofread_watch_clip` the agent also gets the
+`history.md`; with telops on, the on-screen text once the telop scan has
+finished). With `[features] proofread_watch_clip` the agent also gets the
 `watch_clip` tool (speech from Azure's MAI-Transcribe-2, biased toward the
 briefing's cast names; captions and scene from Meta's Muse, `[watch_clip]`), its
 spans kept under `watch_clip/`; the cost of the requests this run made (each
@@ -38,6 +39,7 @@ from grillmaster.glossary.fixed import (
     load_fixed_glossary,
 )
 from grillmaster.postprocess.proofread import ProofreadInputs, proofread_subtitles
+from grillmaster.stages import _telop
 from grillmaster.stages._common import (
     flag_or_feature,
     frames_tool,
@@ -153,6 +155,7 @@ def _run(ctx: StageContext) -> str:
         program_instruction=program_rules(
             ctx.config, ctx.state.source
         ).instruction_text(StageKey.PROOFREAD),
+        telop_reference=_telop.reference(ctx),
     )
     tools = ToolSession(
         project_root=layout.root,

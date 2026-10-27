@@ -31,7 +31,7 @@ if TYPE_CHECKING:
         ProgramInstruction,
         ProgramsConfig,
     )
-    from grillmaster.core.stage_key import SideTaskKey, StageKey
+    from grillmaster.core.stage_key import StageKey
 
 _BOM = "﻿"
 # A registration holds the lock for one small read and write; waiting
@@ -48,7 +48,7 @@ class ProgramRules:
     inserts: tuple[InsertRule, ...] = ()
     instructions: tuple[ProgramInstruction, ...] = ()
 
-    def instruction_text(self, stage: StageKey | SideTaskKey) -> str:
+    def instruction_text(self, stage: StageKey) -> str:
         """Configured text for `stage` (per entry, `common` then the stage's own).
 
         Empty when nothing is configured; prompts wrap it with

@@ -186,9 +186,9 @@ class ProjectLayout:
             self.work_dir(StageKey.GLOSSARY),
             self.work_dir(StageKey.PROOFREAD),
             self.work_dir(StageKey.CHAT_TRANSLATE),
+            self.work_dir(StageKey.TELOP),
             self.side_dir(SideTaskKey.COVER),
             self.side_dir(SideTaskKey.DATE_RESEARCH),
-            self.side_dir(SideTaskKey.TELOP),
             self.package_work_dir,
         )
 
@@ -377,17 +377,17 @@ class ProjectLayout:
     @property
     def telop_scan(self) -> Path:
         """Per-frame OCR reads of the telop scan (fixed-name cache)."""
-        return self.side_dir(SideTaskKey.TELOP) / "scan.json"
+        return self.side_dir(SideTaskKey.TELOP_SCAN) / "scan.json"
 
     @property
     def telop_cards(self) -> Path:
         """Telop cards after the rule pre-filter, the selector's input."""
-        return self.side_dir(SideTaskKey.TELOP) / "cards.json"
+        return self.work_dir(StageKey.TELOP) / "cards.json"
 
     @property
     def telop_frames_dir(self) -> Path:
         """Stills the telop selector fetched with `get_frames`."""
-        return self.side_dir(SideTaskKey.TELOP) / "frames"
+        return self.work_dir(StageKey.TELOP) / "frames"
 
     @property
     def telop_cht_json(self) -> Path:

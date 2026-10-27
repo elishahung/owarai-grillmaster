@@ -383,6 +383,24 @@ def test_the_official_captions_join_the_instructions(
     assert str(official) in task.instructions
     assert "Keep 說." in task.instructions
     assert "  - (none)" in task.instructions
+
+
+def test_on_screen_text_follows_the_briefing(
+    inputs: ProofreadInputs, tools: ToolSession, tmp_path: Path
+):
+    table = "seconds\ttext\n12.0-14.5\t熊元MEMO / 山添さん嬉しい"
+    task = build_proofread_task(
+        replace(inputs, telop_reference=table),
+        blocks(CHECKED),
+        BRIEFING,
+        aligned="",
+        history="",
+        session_dir=tmp_path,
+        tools=tools,
+    )
+
+    assert table in task.prompt
+    assert task.prompt.index("## Briefing") < task.prompt.index("## On-screen text")
     assert "## Aligned table (6 blocks)" in task.prompt
 
 

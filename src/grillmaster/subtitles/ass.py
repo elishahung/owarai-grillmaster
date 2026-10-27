@@ -1,13 +1,15 @@
 """ASS canvas, typeface, margins, colours and script headers.
 
-The dialogue subtitles (finalize) and the live-chat panel are burned in as
-two ASS layers on the same 1920x1080 canvas in the same font, so both take
-these values from here. Values are the tuned originals; changing one changes
+The dialogue subtitles (finalize), the live-chat panel and the telops are
+burned in as ASS layers on the same 1920x1080 canvas in the same font, so they
+take these values (and the picture box, the measured glyph widths) from
+here. Values are the tuned originals; changing one changes
 every packaged video.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -38,6 +40,41 @@ DIALOGUE_STYLE = (
     "&H00000000,&H7D000000,0,0,0,0,100,100,0,0,1,6,2,2,"
     f"{MARGIN_H},{MARGIN_H},{MARGIN_V},1"
 )
+
+
+# Glyph advance per font-size unit libass lays out with FONT_NAME: CJK
+# measures ~0.89; Latin is proportional (0.49-0.57), so take its wide end.
+FULL_WIDTH_ADVANCE = 0.9
+HALF_WIDTH_ADVANCE = 0.57
+# Code points laid out at the half-width advance: everything below the CJK
+# radicals block, and the half-width forms.
+_FULL_WIDTH_START = 0x2E80
+_HALF_WIDTH_FORMS = (0xFF61, 0xFFDC)
+
+
+@dataclass(frozen=True, slots=True)
+class PictureBox:
+    """Where the graded picture is shrunk to on the package frame (pixels)."""
+
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+FULL_PICTURE = PictureBox(0, 0, PLAY_RES_X, PLAY_RES_Y)
+
+
+def char_width(char: str, font_size: int) -> float:
+    """Approximate advance in `font_size` units, measured with libass."""
+    code = ord(char)
+    low, high = _HALF_WIDTH_FORMS
+    half = code < _FULL_WIDTH_START or low <= code <= high
+    return font_size * (HALF_WIDTH_ADVANCE if half else FULL_WIDTH_ADVANCE)
+
+
+def text_width(text: str, font_size: int) -> float:
+    return sum(char_width(char, font_size) for char in text)
 
 
 # User or model text loses its ASS override syntax to the full-width

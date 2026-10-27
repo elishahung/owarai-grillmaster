@@ -1,13 +1,15 @@
 """The selector: one agent call keeps the cards worth translating and
 translates them.
 
-It gets the pre-filtered cards as a table, the Japanese transcript (to
-recognise cards that only repeat the speech) and the briefing (names and
-terms shared with the dialogue subtitles), and may look at any card with
-`get_frames`. Its answer lists only the kept cards; Python checks every id
-names a card, once, with a translation, then writes `TelopSubtitles`: the
-deliverable packaging burns in, readable and editable by hand (delete an
-entry or change its `zh`, then `grill package`).
+It runs once the dialogue subtitles are final and gets the offered cards
+as a table (speech-like ones marked), the dialogue as Japanese beside the
+final Chinese subtitles (to recognise cards that only repeat the speech,
+and to word the cards like the subtitles), and the effective briefing; it
+may look at any card with `get_frames`. Its answer lists only the kept
+cards; Python checks every id names a card, once, with a translation, then
+writes `TelopSubtitles`: the deliverable packaging burns in, readable and
+editable by hand (delete an entry or change its `zh`, then `grill
+package`).
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from grillmaster.core.prompts import (
     load_prompt,
     render_program_instruction,
 )
-from grillmaster.telop.scan import Box
+from grillmaster.telop.scan import Box, CardKind, normalize
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -73,8 +75,12 @@ class TelopSubtitles(StrictModel):
 
 @dataclass(frozen=True, slots=True)
 class SelectInputs:
+    """`transcript` is `ja.srt`, `subtitles` the final Chinese subtitles of
+    the same blocks (`video.cht.srt`)."""
+
     cards: Sequence[TelopCard]
     transcript: Sequence[SrtBlock]
+    subtitles: Sequence[SrtBlock]
     briefing: Briefing
     program_instruction: str
 
@@ -90,18 +96,28 @@ def _position(box: Box) -> str:
 def render_cards(cards: Sequence[TelopCard]) -> str:
     """The card table; times in seconds, as `get_frames` takes them."""
     rows = [
-        f"{card.id}\t{card.start:.1f}-{card.end:.1f}\t"
-        f"{_position(card.box)}\t{card.text}"
+        f"{card.id}\t{card.start:.1f}-{card.end:.1f}\t{_position(card.box)}\t"
+        f"{'yes' if card.kind is CardKind.SPEECH else ''}\t{card.text}"
         for card in cards
     ]
-    return "id\tseconds\tposition\ttext\n" + "\n".join(rows)
+    return "id\tseconds\tposition\techoes_speech\ttext\n" + "\n".join(rows)
 
 
-def render_transcript(blocks: Sequence[SrtBlock]) -> str:
-    return "\n".join(
-        f"[{block.time_range.start:.1f}] {' '.join(block.text.splitlines())}"
-        for block in blocks
-    )
+def _flat(text: str) -> str:
+    return " / ".join(line.strip() for line in text.splitlines() if line.strip())
+
+
+def render_dialogue(
+    transcript: Sequence[SrtBlock], subtitles: Sequence[SrtBlock]
+) -> str:
+    """Each block's start, Japanese and final Chinese, paired by index."""
+    zh = {block.index: block.text for block in subtitles}
+    rows = [
+        f"{block.time_range.start:.1f}\t{_flat(block.text)}\t"
+        f"{_flat(zh.get(block.index, ''))}"
+        for block in transcript
+    ]
+    return "seconds\tja\tzh\n" + "\n".join(rows)
 
 
 def build_select_task(
@@ -109,7 +125,8 @@ def build_select_task(
 ) -> AgentTask[TelopSelection]:
     prompt = join_sections(
         f"## Cards ({len(inputs.cards)})\n\n```tsv\n{render_cards(inputs.cards)}\n```",
-        f"## Japanese transcript (ASR)\n\n{render_transcript(inputs.transcript)}",
+        "## Dialogue (Japanese ASR beside the final Chinese subtitles)\n\n"
+        f"```tsv\n{render_dialogue(inputs.transcript, inputs.subtitles)}\n```",
         f"## Briefing\n\n```json\n{inputs.briefing.render_for_prompt()}\n```",
         frames_guidance(),
     )
@@ -155,11 +172,15 @@ def make_validator(ids: set[int]) -> Callable[[TelopSelection], None]:
 def to_subtitles(
     cards: Sequence[TelopCard], selection: TelopSelection
 ) -> TelopSubtitles:
-    """The kept cards with their translations, in time order."""
+    """The kept cards with their translations, in time order; a translation
+    that reads exactly like its card (a place name in kanji) tells the viewer
+    nothing and is dropped."""
     by_id = {card.id: card for card in cards}
     items: list[TelopSubtitle] = []
     for kept in selection.kept:
         card = by_id[kept.id]
+        if normalize(kept.zh) == normalize("".join(line.text for line in card.lines)):
+            continue
         items.append(
             TelopSubtitle(
                 id=card.id,

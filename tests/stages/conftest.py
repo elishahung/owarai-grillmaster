@@ -25,7 +25,12 @@ from grillmaster.events.bus import EventBus
 from grillmaster.pipeline.state_store import StateStore
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.store import save_state
-from grillmaster.stages.base import RunOptions, StageContext, StepOutcome
+from grillmaster.stages.base import (
+    NO_SIDE_TASKS,
+    RunOptions,
+    StageContext,
+    StepOutcome,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -35,7 +40,7 @@ if TYPE_CHECKING:
 
     from grillmaster.core.stage_key import SideTaskKey
     from grillmaster.project.state import ProjectState
-    from grillmaster.stages.base import Externals, SideTaskDef
+    from grillmaster.stages.base import Externals, SideTaskDef, SideTaskWaiter
 
     type MakeContext = Callable[..., StageContext]
 
@@ -125,10 +130,15 @@ def make_context(
     externals: Externals,
 ) -> MakeContext:
     """`StageContext` for stage `key` (workdir `work/NN_<key>/`) or side task
-    `key` (`work/side/<key>/`); keyword arguments replace `Externals` seams."""
+    `key` (`work/side/<key>/`); `side_tasks` is its waiter, other keyword
+    arguments replace `Externals` seams."""
     store = StateStore(layout, state)
 
-    def make(key: StageKey | SideTaskKey, **seams: Any) -> StageContext:
+    def make(
+        key: StageKey | SideTaskKey,
+        side_tasks: SideTaskWaiter = NO_SIDE_TASKS,
+        **seams: Any,
+    ) -> StageContext:
         workdir = (
             layout.work_dir(key) if isinstance(key, StageKey) else layout.side_dir(key)
         )
@@ -141,6 +151,7 @@ def make_context(
             events=bus,
             externals=replace(externals, **seams),
             workdir=workdir,
+            side_tasks=side_tasks,
         )
 
     return make

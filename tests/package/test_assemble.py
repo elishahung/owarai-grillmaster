@@ -12,7 +12,6 @@ from grillmaster.core.briefing import Briefing, TermMapping
 from grillmaster.core.json_artifact import write_model
 from grillmaster.core.paths import measure
 from grillmaster.live_chat.layout import ChatLayout
-from grillmaster.live_chat.render import PictureBox
 from grillmaster.live_chat.schema import TranslatedChatLog, TranslatedChatMessage
 from grillmaster.package.assemble import (
     FIXED_ENTRY_NAMES,
@@ -30,6 +29,7 @@ from grillmaster.package.inserts import (
     INSERT_SUFFIX_ALLOWANCE,
 )
 from grillmaster.package.render import BurnPlan
+from grillmaster.subtitles.ass import PictureBox
 from grillmaster.telop.select import TelopSubtitle, TelopSubtitles
 
 BRIEFING = Briefing(
@@ -264,29 +264,36 @@ def write_telops(path: Path) -> None:
     write_model(path, subtitles)
 
 
-def test_telops_burn_over_the_dialogue_on_the_full_frame(project: Path):
+def test_telops_burn_under_the_dialogue_on_the_full_frame(project: Path):
     write_telops(project / "subs" / "telop.cht.json")
 
     plan = telop_plan_for(project, ChatLayout.SIDE)
 
+    # The dialogue stays the top layer.
     assert [layer.filter(project) for layer in plan.layers] == [
-        "subtitles=video.cht.ass",
         "subtitles=work/package/telop.ass",
+        "subtitles=video.cht.ass",
     ]
     ass = (project / "work" / "package" / "telop.ass").read_text(encoding="utf-8")
-    assert "Dialogue: 0,0:00:02.00,0:00:03.50,Telop,,0,0,0,,突然的鏈條" in ass
+    assert "Dialogue: 0,0:00:02.00,0:00:03.50,Telop,,60,60,28,," in ass
+    assert ass.rstrip().endswith("突然的鏈條")
 
 
-def test_telops_stay_over_a_shrunk_picture(project: Path):
+def test_telops_stay_over_a_shrunk_picture_under_chat_and_dialogue(project: Path):
     write_chat(project / "subs" / "chat.cht.json")
     write_telops(project / "subs" / "telop.cht.json")
 
     plan = telop_plan_for(project, ChatLayout.SIDE)
 
-    assert plan.layers[-1].filter(project) == (
-        "subtitles=work/package/telop.ass:"
-        "force_style='MarginL=60,MarginR=444,MarginV=136'"
-    )
+    assert [layer.filter(project) for layer in plan.layers][:2] == [
+        "subtitles=work/package/chat.ass",
+        "subtitles=work/package/telop.ass",
+    ]
+    assert plan.layers[-1].path == project / "video.cht.ass"
+    ass = (project / "work" / "package" / "telop.ass").read_text(encoding="utf-8")
+    # Inside the picture box (x 0..1536, y 108..972): under the card at
+    # x 0.0-0.5, y 0.8-0.9 of it.
+    assert ",Telop,,60,444,136,,{\\an8\\pos(384,894)}突然的鏈條" in ass
 
 
 def test_unreadable_telops_are_left_out(project: Path):

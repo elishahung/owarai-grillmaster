@@ -1,7 +1,7 @@
-"""What the post-processing passes share: their prompt package, naming the
-files the agent writes, session copies of package files, reading the input
-SRT, the skeleton check of an agent-written SRT and settling a corrected
-briefing."""
+"""What the post-processing passes share: their prompt package, the
+on-screen text section, naming the files the agent writes, session copies
+of package files, reading the input SRT, the skeleton check of an
+agent-written SRT and settling a corrected briefing."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from grillmaster.agents.errors import ValidationFailure
 from grillmaster.core.json_artifact import write_model
+from grillmaster.core.prompts import render_template
 from grillmaster.core.srt import read_srt_file
 from grillmaster.postprocess.errors import PostprocessError
 from grillmaster.subtitles.structure import check_aligned, unreadable_problem
@@ -25,6 +26,13 @@ if TYPE_CHECKING:
 
 # Where refine and glossary check keep their prompt templates.
 PROMPTS = "grillmaster.postprocess"
+
+
+def telop_section(table: str | None) -> str | None:
+    """The on-screen text reference section, when the project has one."""
+    if table is None:
+        return None
+    return render_template(PROMPTS, "telop_reference.md", telops=table)
 
 
 def workdir_name(path: Path, workdir: Path) -> str:

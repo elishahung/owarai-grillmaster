@@ -68,16 +68,19 @@ members is a layout change. `pipeline/registry.py` holds the only lists:
 | 12 | `proofread` | `--proofread` / `[features] proofread` only: work dir only; adds `watch_clip_cost_usd` (postprocess-and-packaging) |
 | 13 | `finalize` | `video.cht.srt`, `video.cht.ass` (root, `video.mp4`'s stem: players auto-load them; under `.subs/` they did not) |
 | 14 | `chat_translate` | `--chat` only: `.subs/chat.cht.json` |
+| 15 | `telop` | telops on only (`applies` per program): `.subs/telop.cht.json` (see telop) |
 
 Side tasks: `cover` (after `download`), `date_research` (after `metadata`),
-`telop` (after `prepass`; see telop).
+`telop_scan` (after `combine`; glossary, proofread and `telop` wait for it).
 Delivery: `package`. Archive is not a step definition; the runner does it
 between the stages and delivery.
 
 **Stage API (`stages/base.py`, below `pipeline`):**
-- `StageDef(key, label, weight, run, outputs, enabled, on_skip, params,
+- `StageDef(key, label, weight, run, outputs, enabled, applies, on_skip, params,
   clear_state, preflight, on_reset)`. `run(ctx)` returns optional `StepCompleted` result
-  text. `enabled(options, config)`, like side tasks and delivery steps. `outputs(layout)` = root deliverables it writes (what `grill reset`
+  text. `enabled(options, config)`, like side tasks and delivery steps;
+  `applies(ctx)` skips an enabled stage as disabled per project (program
+  rules), like `SideTaskDef.applies`. `outputs(layout)` = root deliverables it writes (what `grill reset`
   deletes, with the work dir). `clear_state` resets the state fields it writes.
   `params(config)` is a display/ledger snapshot, **never a cache key**.
   `preflight(config, secrets)` raises before any stage runs (missing ASR key).
@@ -94,9 +97,14 @@ between the stages and delivery.
   save; use it for any state change a side task may race), `config`,
   `secrets`, `config_file`, `options` (`RunOptions`), `agents`
   (`AgentRunner`), `events`, lazily created `workdir`, `session_dir(label)`,
-  and the `Externals` seams `ffmpeg`, `ytdlp`, `http`, `speech_to_text` (built
+  `side_tasks.wait(key)` (a stage blocks until that side task of this run
+  has finished; returns at once when it never started), and the `Externals`
+  seams `ffmpeg`, `ytdlp`, `http`, `speech_to_text` (built
   once by `pipeline.runner.real_externals`; tests pass fakes from
   `tests/fakes.py`).
+- `pipeline.delivery.as_delivery_step(stage)` runs a stage as the only
+  delivery step on an existing (even archived) project whatever its ledger
+  says, then records it (`grill telop`).
 - Read upstream artifacts through `require(path, produced_by)`; a missing file
   raises `MissingArtifactError` naming the `grill reset --from` to run.
 - Stages are plain modules exporting `STAGE` / `TASK` / `STEP`. Shared glue
@@ -133,7 +141,8 @@ retries only `deliver_project`.
 
 **Side tasks (`pipeline/side_tasks.py`):** start on a daemon thread with a
 copied contextvars context when the loop passes `start_after`; never fail the
-run; always joined in the manager's `__exit__` — also when a stage failed,
+run (a stage that needs the output waits via `StageContext.side_tasks` and
+redoes or skips the work itself); always joined in the manager's `__exit__` — also when a stage failed,
 because the agent cost is already paid (an interrupt waits only
 `INTERRUPT_WAIT_S`).
 
@@ -213,7 +222,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   from the `.env` path in its manifest.
 - `programs.py` `ProgramRules`: channel then series entries merged (`common`
   text before stage text; stage keys `prepass`, `chunks`, `refine`,
-  `glossary`, `proofread`, side task `telop`; `remix`/`telop` flags OR-merge). `register_program` (download stage) is the only writer of
+  `glossary`, `proofread`, `telop`; `remix`/`telop` flags OR-merge). `register_program` (download stage) is the only writer of
   `grill.toml`, appending empty entries with `tomlkit` under
   `grill.toml.lock`, re-reading the file inside it (concurrent processes).
 

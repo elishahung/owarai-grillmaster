@@ -201,6 +201,18 @@ def test_official_reference_follows_the_template(
     assert reference < task.instructions.index("GLOSSARY RULE")
 
 
+def test_on_screen_text_joins_the_prompt_only_with_telops(
+    inputs: GlossaryInputs, tools: ToolSession
+):
+    table = "seconds\ttext\n12.0-14.5\t熊元MEMO / 山添さん嬉しい"
+
+    assert "On-screen text (OCR)" not in build(inputs, tools).prompt
+    prompt = build(replace(inputs, telop_reference=table), tools).prompt
+
+    assert "## On-screen text (OCR)" in prompt
+    assert table in prompt
+
+
 def test_suspects_reach_the_prompt(inputs: GlossaryInputs, tools: ToolSession):
     inputs.refined_srt.write_text(
         HAN_ONLY_SRT.replace("完全沒有英文或假名", "他在コーナー登場"), encoding="utf-8"

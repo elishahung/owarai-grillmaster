@@ -16,6 +16,7 @@ rather than falling back to the CPU.
 from __future__ import annotations
 
 import importlib
+import importlib.util
 from typing import TYPE_CHECKING, Any
 
 from grillmaster.telop.errors import TelopError
@@ -50,16 +51,30 @@ def _reads(result: Any) -> list[TextRead]:
     return reads
 
 
+_PACKAGES = ("onnxruntime", "rapidocr")
+
+
+def _missing(name: str) -> TelopError:
+    return TelopError(
+        f"Telop OCR needs the optional packages ({name} is missing): "
+        "run `uv sync --extra telop`"
+    )
+
+
+def require_packages() -> None:
+    """`TelopError` unless the optional extra is installed; cheap (nothing
+    is imported), for a check before a run starts."""
+    for name in _PACKAGES:
+        if importlib.util.find_spec(name) is None:
+            raise _missing(name)
+
+
 def gpu_engine() -> OcrEngine:
     """The RapidOCR engine on CUDA; `TelopError` without the extra or CUDA."""
     try:
-        onnxruntime = importlib.import_module("onnxruntime")
-        rapidocr = importlib.import_module("rapidocr")
+        onnxruntime, rapidocr = map(importlib.import_module, _PACKAGES)
     except ImportError as error:
-        raise TelopError(
-            f"Telop OCR needs the optional packages ({error.name} is missing): "
-            "run `uv sync --extra telop`"
-        ) from error
+        raise _missing(error.name or "?") from error
     onnxruntime.preload_dlls()
     if _CUDA not in onnxruntime.get_available_providers():
         raise TelopError(

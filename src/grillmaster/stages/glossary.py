@@ -1,7 +1,8 @@
 """Glossary stage: the agent terminology check of `.work/10_refine/refined.srt`
 into `.work/11_glossary/checked.srt` (+ `report.md` on changes, `briefing.json`
 on an accepted briefing correction, which then becomes the effective
-briefing).
+briefing). With telops on, it first waits for the telop scan and gets the
+on-screen text as a reference.
 
 The agent's files are declared outputs, deleted before each fresh attempt;
 its correction is a candidate promoted only after acceptance.
@@ -22,6 +23,7 @@ from grillmaster.glossary.fixed import (
     load_fixed_glossary,
 )
 from grillmaster.postprocess.glossary_check import GlossaryInputs, check_glossary
+from grillmaster.stages import _telop
 from grillmaster.stages._common import (
     frames_tool,
     official_srt,
@@ -53,6 +55,7 @@ def _run(ctx: StageContext) -> None:
         program_instruction=program_rules(
             ctx.config, ctx.state.source
         ).instruction_text(StageKey.GLOSSARY),
+        telop_reference=_telop.reference(ctx),
     )
     tools = ToolSession(
         project_root=layout.root,

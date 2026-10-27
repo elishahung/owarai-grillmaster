@@ -26,6 +26,7 @@ class StageKey(StrEnum):
     PROOFREAD = "proofread"
     FINALIZE = "finalize"
     CHAT_TRANSLATE = "chat_translate"
+    TELOP = "telop"
 
     @property
     def number(self) -> int:
@@ -39,4 +40,4 @@ _NUMBERS = {key: position for position, key in enumerate(StageKey, start=1)}
 class SideTaskKey(StrEnum):
     COVER = "cover"
     DATE_RESEARCH = "date_research"
-    TELOP = "telop"
+    TELOP_SCAN = "telop_scan"

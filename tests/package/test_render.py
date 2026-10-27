@@ -11,7 +11,6 @@ from tests.package.conftest import PackageFfmpeg, arg_after, encodes
 
 from grillmaster.core.timecode import TimeRange
 from grillmaster.events.types import ProgressAdvanced, ProgressFinished, ProgressStarted
-from grillmaster.live_chat.render import PictureBox
 from grillmaster.media.errors import MediaError
 from grillmaster.package.errors import PackageError
 from grillmaster.package.render import (
@@ -35,6 +34,7 @@ from grillmaster.package.render import (
     run_in_pool,
     split_range,
 )
+from grillmaster.subtitles.ass import PictureBox
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -59,10 +59,8 @@ SIDE_PLAN_LAYERS = (
 
 def side_plan(root: Path) -> BurnPlan:
     return BurnPlan(
-        layers=(
-            SubtitleLayer(root / "work" / "package" / "chat.ass"),
-            SubtitleLayer(root / "video.cht.ass", "MarginR=394,MarginV=24"),
-        ),
+        SubtitleLayer(root / "video.cht.ass", "MarginR=394,MarginV=24"),
+        under=(SubtitleLayer(root / "work" / "package" / "chat.ass"),),
         picture=PictureBox(0, 108, 1536, 864),
     )
 
@@ -126,12 +124,14 @@ def test_dialogue_plan_has_no_canvas(project: Path):
 )
 def test_picture_box_must_fit_the_frame_on_even_pixels(project: Path, box: PictureBox):
     with pytest.raises(ValueError, match="picture box"):
-        BurnPlan(layers=(SubtitleLayer(project / "a.ass"),), picture=box)
+        BurnPlan(SubtitleLayer(project / "a.ass"), picture=box)
 
 
-def test_plan_needs_a_layer():
-    with pytest.raises(ValueError, match="at least one"):
-        BurnPlan(layers=())
+def test_the_dialogue_burns_last_over_every_other_layer(project: Path):
+    plan = side_plan(project)
+
+    assert plan.layers == (*plan.under, plan.top)
+    assert plan.layers[-1].path == project / "video.cht.ass"
 
 
 def test_usable_duration_rejects_a_video_inside_the_lead_trim():

@@ -123,6 +123,72 @@ def test_a_short_recurring_phrase_does_not_make_a_longer_card_recurring():
     ]
 
 
+def test_a_new_name_in_a_label_s_place_starts_a_new_line():
+    first = [read(LABEL, "熊元MEMO")]
+    second = [read(LABEL, "小橋MEMO")]
+
+    lines = track_lines(scan_of(first, first, second, second))
+
+    assert [line.text for line in lines] == ["熊元MEMO", "小橋MEMO"]
+
+
+def test_memos_side_by_side_stay_apart_each_with_its_label():
+    frames = [
+        [
+            read((0.02, 0.76, 0.20, 0.83), "左MEMO"),
+            read((0.03, 0.84, 0.48, 0.96), "左のメモです"),
+            read((0.51, 0.76, 0.76, 0.83), "右MEMO"),
+            read((0.52, 0.84, 0.97, 0.96), "右のメモです"),
+        ]
+    ] * 4
+
+    cards = build_cards(scan_of(*frames), []).cards
+
+    assert sorted(card.text for card in cards) == [
+        "右MEMO / 右のメモです",
+        "左MEMO / 左のメモです",
+    ]
+
+
+def test_a_label_kept_up_across_two_memos_labels_each():
+    # The label is a fixture (shown for over a minute in all); it stays up
+    # while the memo under it changes.
+    frames = [[read(LABEL, "熊元MEMO")] for _ in range(130)]
+    frames += [[]] * 4
+    frames += [[read(LABEL, "熊元MEMO"), read(MEMO, "山添さん嬉しい")]] * 6
+    frames += [[read(LABEL, "熊元MEMO"), read(MEMO, "お腹空きすぎた")]] * 6
+
+    cards = build_cards(scan_of(*frames), []).offered
+
+    assert [(card.text, card.start, card.end) for card in cards] == [
+        ("熊元MEMO / 山添さん嬉しい", 67.0, 70.0),
+        ("熊元MEMO / お腹空きすぎた", 70.0, 73.0),
+    ]
+
+
+def test_a_fixture_does_not_chain_cards_together():
+    logo = (0.2, 0.75, 0.8, 0.95)
+    plates = [
+        [read((0.1, 0.6, 0.3, 0.67), "せいや"), read((0.7, 0.6, 0.9, 0.67), "有吉弘行")]
+    ]
+    frames = [[read(logo, "有吉クイズ")] for _ in range(130)]
+    frames += [[*plate, read(logo, "有吉クイズ")] for plate in plates * 4]
+
+    cards = build_cards(scan_of(*frames), []).offered
+
+    assert sorted(card.text for card in cards) == ["せいや", "有吉弘行"]
+
+
+def test_lines_of_a_card_read_row_by_row_left_to_right():
+    group = (0.16, 0.932, 0.21, 0.971)
+    name = (0.205, 0.922, 0.29, 0.975)
+    frames = [[read(name, "兼近(35)"), read(group, "EXIT")]] * 4
+
+    (card,) = build_cards(scan_of(*frames), []).cards
+
+    assert card.text == "EXIT / 兼近(35)"
+
+
 def test_simultaneous_texts_apart_on_screen_stay_separate_cards():
     shirt = (0.6, 0.3, 0.8, 0.4)
     frames = [[read(MEMO, "相変わらず何も知らない"), read(shirt, "LAUGHING")]] * 4

@@ -23,8 +23,9 @@ def telop_command(
         ),
     ],
 ) -> None:
-    """OCR and translate the on-screen text cards of a finished project into
-    .subs/telop.cht.json; `grill package` then burns them in."""
+    """OCR (unless a scan is kept) and translate the on-screen text cards of
+    a finished project into .subs/telop.cht.json, replacing any earlier
+    selection; `grill package` then burns them in."""
     from grillmaster.pipeline.registry import TELOP_ONLY
     from grillmaster.pipeline.runner import deliver_project
     from grillmaster.stages.base import RunOptions

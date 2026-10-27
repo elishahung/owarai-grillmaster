@@ -38,6 +38,11 @@ own semantic rules and get `ProgramRules.instruction_text(<stage>)` appended.
   (`glossary/fixed_glossary.json` + `.md`) is copied into the workdir and
   removed in `finally`. Latin/kana-run blocks are listed as priority hints
   (`suspect_blocks`; an exact curated `zh` term cancels a flag).
+- **On-screen text**: with telops on for the project, glossary and proofread
+  first wait for the telop scan, then get its offered cards as a reference
+  table in the prompt (`telop_reference.md`: evidence for names and misheard
+  lines, a lead not ground truth, never copied into the dialogue). No scan
+  → none (a warning).
 - **Validation** (failure = repair round): `_shared.check_skeleton` →
   `subtitles.structure.check_aligned` (count, indexes, timecodes, non-empty).
   Glossary also needs `report.md` if the SRT or briefing changed, and a
@@ -137,8 +142,9 @@ if present, inserts), then the render. Destination
 
 **Burn plan**: dialogue alone, or with translated chat and layout ≠ `none` the
 panel at `.work/package/chat.ass`; `side` also shrinks the picture into a box
-(scale+pad after the look), `overlay` keeps the full frame. Translated
-telops (`.subs/telop.cht.json`, telop skill) burn last, from `.work/package/telop.ass`.
+(scale+pad after the look), `overlay` keeps the full frame. The dialogue is
+always the last layer (`BurnPlan.top`; other layers go in `under`): nothing may cover it. Translated telops
+(`.subs/telop.cht.json`, telop skill) slide in under it, from `.work/package/telop.ass`.
 Layers must sit under the video's dir (ffmpeg runs there with relative names).
 
 **Render recipe** (`package/render.py`; every value measured, do not "clean

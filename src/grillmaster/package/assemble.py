@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import shutil
 from contextlib import contextmanager
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from loguru import logger
@@ -31,7 +32,8 @@ from grillmaster.package.inserts import (
     INSERT_SUFFIX_ALLOWANCE,
 )
 from grillmaster.package.render import BurnPlan, SubtitleLayer
-from grillmaster.telop.render import telop_force_style, write_telop_ass
+from grillmaster.subtitles.ass import FULL_PICTURE
+from grillmaster.telop.render import write_telop_ass
 from grillmaster.telop.select import TelopSubtitles
 
 if TYPE_CHECKING:
@@ -152,26 +154,25 @@ def build_burn_plan(
         return BurnPlan.dialogue(dialogue)
     logger.info(f"Rendered {layout} chat panel: {chat_ass}")
     return BurnPlan(
-        layers=(
-            SubtitleLayer(chat_ass),
-            SubtitleLayer(dialogue, placement.dialogue_style),
-        ),
+        SubtitleLayer(dialogue, placement.dialogue_style),
+        under=(SubtitleLayer(chat_ass),),
         picture=placement.picture,
     )
 
 
 def with_telops(plan: BurnPlan, telop: Path, telop_ass: Path) -> BurnPlan:
-    """`plan` with the translated telops on top, when `telop` exists: rendered
-    to `telop_ass` and kept over a shrunk picture. Ones that cannot be
-    rendered are left out with a warning."""
+    """`plan` with the translated telops, when `telop` exists: rendered to
+    `telop_ass` inside the (possibly shrunk) picture and burned under the
+    dialogue, which stays the top layer. Ones that cannot be rendered are
+    left out with a warning."""
     if not telop.exists():
         return plan
     try:
-        write_telop_ass(read_model(telop, TelopSubtitles), telop_ass)
+        write_telop_ass(
+            read_model(telop, TelopSubtitles), telop_ass, plan.picture or FULL_PICTURE
+        )
     except (OSError, UnicodeDecodeError, ValidationError) as error:
         logger.warning(f"Telops skipped ({telop}): {error}")
         return plan
     logger.info(f"Rendered telops: {telop_ass}")
-    box = plan.picture
-    style = None if box is None else telop_force_style(box.x, box.y, box.width)
-    return BurnPlan(layers=(*plan.layers, SubtitleLayer(telop_ass, style)), picture=box)
+    return replace(plan, under=(*plan.under, SubtitleLayer(telop_ass)))

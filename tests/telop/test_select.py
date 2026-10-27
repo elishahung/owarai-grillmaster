@@ -35,7 +35,7 @@ CARDS = [
         id=9,
         start=1.0,
         end=80.0,
-        kind=CardKind.CANDIDATE,
+        kind=CardKind.SPEECH,
         lines=[
             CardLine(text="何度も転生?", box=(0.03, 0.03, 0.3, 0.06)),
             CardLine(text="亀姫の前世", box=(0.03, 0.06, 0.3, 0.1)),
@@ -44,20 +44,22 @@ CARDS = [
 ]
 
 
-def test_the_card_table_gives_seconds_and_position():
+def test_the_card_table_gives_seconds_position_and_speech_echoes():
     assert render_cards(CARDS).splitlines() == [
-        "id\tseconds\tposition\ttext",
-        "4\t20.5-26.0\tbottom-left\t相変わらず何も知らない",
-        "9\t1.0-80.0\ttop-left\t何度も転生? / 亀姫の前世",
+        "id\tseconds\tposition\techoes_speech\ttext",
+        "4\t20.5-26.0\tbottom-left\t\t相変わらず何も知らない",
+        "9\t1.0-80.0\ttop-left\tyes\t何度も転生? / 亀姫の前世",
     ]
 
 
-def test_the_task_carries_the_cards_transcript_briefing_and_program_text(
+def test_the_task_carries_the_cards_dialogue_briefing_and_program_text(
     tmp_path: Path,
 ):
+    timecode = format_timecode_line(19.0, 21.0)
     inputs = SelectInputs(
         cards=CARDS,
-        transcript=[SrtBlock(1, format_timecode_line(19.0, 21.0), "いや\n知らない")],
+        transcript=[SrtBlock(1, timecode, "いや\n知らない")],
+        subtitles=[SrtBlock(1, timecode, "不是\n我不知道")],
         briefing=make_briefing(names=("濱家",)),
         program_instruction="Keep every 説 card.",
     )
@@ -68,7 +70,7 @@ def test_the_task_carries_the_cards_transcript_briefing_and_program_text(
     task = build_select_task(inputs, session_dir=tmp_path / "session", tools=tools)
 
     assert task.workdir is None
-    assert "[19.0] いや 知らない" in task.prompt
+    assert "19.0\tいや / 知らない\t不是 / 我不知道" in task.prompt
     assert "相変わらず何も知らない" in task.prompt
     assert "濱家" in task.prompt
     assert "Keep every 説 card." in task.instructions
@@ -108,3 +110,23 @@ def test_kept_cards_become_subtitles_in_time_order():
     ]
     assert subtitles.items[0].ja == "何度も転生? / 亀姫の前世"
     assert subtitles.items[0].box == (0.03, 0.03, 0.3, 0.1)
+
+
+def test_a_translation_reading_like_its_card_is_dropped():
+    place = TelopCard(
+        id=12,
+        start=30.0,
+        end=34.0,
+        kind=CardKind.CANDIDATE,
+        lines=[
+            CardLine(text="東京都", box=(0.1, 0.7, 0.2, 0.75)),
+            CardLine(text="六本木", box=(0.1, 0.76, 0.2, 0.8)),
+        ],
+    )
+    selection = TelopSelection(
+        kept=[KeptTelop(id=12, zh="東京都\n六本木"), KeptTelop(id=4, zh="還是不知道")]
+    )
+
+    subtitles = to_subtitles([*CARDS, place], selection)
+
+    assert [item.id for item in subtitles.items] == [4]

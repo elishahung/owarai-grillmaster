@@ -169,6 +169,29 @@ def test_a_task_that_does_not_apply_to_the_project_is_skipped_disabled(
     assert load_state(layout).side_tasks.cover is None
 
 
+def test_a_stage_can_wait_for_a_running_task(
+    make_manager: Callable[..., SideTaskManager], layout: ProjectLayout
+):
+    release = threading.Event()
+
+    def slow(ctx: StageContext) -> str:
+        release.wait(timeout=10)
+        return "scanned"
+
+    task = fake_side_task(
+        SideTaskKey.TELOP_SCAN, StageKey.COMBINE, Journal(), action=slow
+    )
+    with make_manager(task) as manager:
+        # Nothing started yet: returns at once.
+        manager.wait(SideTaskKey.TELOP_SCAN)
+        manager.stage_passed(StageKey.COMBINE)
+        threading.Timer(0.1, release.set).start()
+
+        manager.wait(SideTaskKey.TELOP_SCAN)
+
+        assert load_state(layout).side_tasks.telop_scan is not None
+
+
 def test_an_interrupt_does_not_wait_for_running_side_tasks(
     make_manager: Callable[..., SideTaskManager],
 ):

@@ -11,10 +11,12 @@ archive is configured.
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 from grillmaster.events.types import PlanEntry, PlanKind, SkipReason, StepSkipped
 from grillmaster.pipeline.steps import execute_step
+from grillmaster.stages.base import DeliveryStepDef
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -25,7 +27,7 @@ if TYPE_CHECKING:
     from grillmaster.pipeline.logs import ProjectLogs
     from grillmaster.pipeline.steps import UsageCollector
     from grillmaster.project.layout import ProjectLayout
-    from grillmaster.stages.base import DeliveryStepDef, RunOptions, StageContext
+    from grillmaster.stages.base import RunOptions, StageContext, StageDef
 
 ARCHIVE_KEY = "archive"
 _ARCHIVE_LABEL = "Archive"
@@ -65,6 +67,37 @@ def run_delivery(
             usage=usage,
             finish=lambda outcome: outcome.value,
         )
+
+
+def as_delivery_step(stage: StageDef) -> DeliveryStepDef:
+    """`stage` as the one step of a run on an existing project, local or
+    archived (`grill telop`): the same work, label and params in the stage's
+    work directory, run whatever the ledger says (archived projects cannot
+    be reset) and then recorded in it (elapsed time only)."""
+
+    def run(ctx: StageContext) -> str | None:
+        started = time.monotonic()
+        result = stage.run(ctx)
+        elapsed = time.monotonic() - started
+        params = stage.params(ctx.config)
+        ctx.update(
+            lambda state: state.mark_done(
+                stage.key, elapsed_s=elapsed, params=params, agent_usage=None
+            )
+        )
+        return result
+
+    def workdir(layout: ProjectLayout) -> Path:
+        return layout.work_dir(stage.key)
+
+    return DeliveryStepDef(
+        key=stage.key.value,
+        label=stage.label,
+        weight=stage.weight,
+        run=run,
+        workdir=workdir,
+        params=stage.params,
+    )
 
 
 def _skip_reason(

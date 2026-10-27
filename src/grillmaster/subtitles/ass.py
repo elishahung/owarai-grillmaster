@@ -40,6 +40,16 @@ DIALOGUE_STYLE = (
 )
 
 
+# User or model text loses its ASS override syntax to the full-width
+# lookalikes of the backslash and the braces.
+_ESCAPES = str.maketrans({"\\": chr(0xFF3C), "{": chr(0xFF5B), "}": chr(0xFF5D)})
+
+
+def escape_text(text: str) -> str:
+    """Neutralize ASS override syntax inside text drawn as-is."""
+    return text.translate(_ESCAPES)
+
+
 def bgr(rgb: str) -> str:
     """ASS colour order for an `RRGGBB` hex colour: `BBGGRR`."""
     return rgb[4:6] + rgb[2:4] + rgb[0:2]
@@ -65,14 +75,14 @@ def script_header(info: Sequence[str], styles: Sequence[str]) -> str:
     )
 
 
-# The header of the finalized dialogue ASS.
-DIALOGUE_HEADER = script_header(
-    [
-        "WrapStyle: 0",
-        "ScaledBorderAndShadow: yes",
-        "YCbCr Matrix: TV.709",
-        f"PlayResX: {PLAY_RES_X}",
-        f"PlayResY: {PLAY_RES_Y}",
-    ],
-    [DIALOGUE_STYLE],
+# `[Script Info]` of every full-canvas layer burned over the picture.
+CANVAS_INFO = (
+    "WrapStyle: 0",
+    "ScaledBorderAndShadow: yes",
+    "YCbCr Matrix: TV.709",
+    f"PlayResX: {PLAY_RES_X}",
+    f"PlayResY: {PLAY_RES_Y}",
 )
+
+# The header of the finalized dialogue ASS.
+DIALOGUE_HEADER = script_header(CANVAS_INFO, [DIALOGUE_STYLE])

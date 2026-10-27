@@ -39,3 +39,4 @@ _NUMBERS = {key: position for position, key in enumerate(StageKey, start=1)}
 class SideTaskKey(StrEnum):
     COVER = "cover"
     DATE_RESEARCH = "date_research"
+    TELOP = "telop"

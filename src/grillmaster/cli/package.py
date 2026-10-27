@@ -53,6 +53,16 @@ def package_command(
             case_sensitive=False,
         ),
     ] = DEFAULT_CHAT_LAYOUT,
+    no_telop: Annotated[
+        bool,
+        typer.Option(
+            "--no-telop",
+            help=(
+                "Leave the translated telops out of the burn-in; "
+                ".subs/telop.cht.json is kept."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Build the deliverable of a finished project without running any stage."""
     from grillmaster.pipeline.runner import deliver_project
@@ -65,6 +75,7 @@ def package_command(
     options = RunOptions(
         source=state.source_id,
         chat_layout=chat_layout,
+        burn_telops=not no_telop,
         remix=resolve_remix(remix, loaded.config.package.remix_pool),
     )
     pipeline = pipeline_from(ctx)

@@ -188,6 +188,7 @@ class ProjectLayout:
             self.work_dir(StageKey.CHAT_TRANSLATE),
             self.side_dir(SideTaskKey.COVER),
             self.side_dir(SideTaskKey.DATE_RESEARCH),
+            self.side_dir(SideTaskKey.TELOP),
             self.package_work_dir,
         )
 
@@ -202,6 +203,7 @@ class ProjectLayout:
             self.refine_frames_dir,
             self.glossary_frames_dir,
             self.proofread_frames_dir,
+            self.telop_frames_dir,
         )
 
     # --- per-stage artifacts ------------------------------------------------
@@ -371,6 +373,31 @@ class ProjectLayout:
     def date_research_result(self) -> Path:
         """The research agent's full verdict and evidence."""
         return self.side_dir(SideTaskKey.DATE_RESEARCH) / "result.json"
+
+    @property
+    def telop_scan(self) -> Path:
+        """Per-frame OCR reads of the telop scan (fixed-name cache)."""
+        return self.side_dir(SideTaskKey.TELOP) / "scan.json"
+
+    @property
+    def telop_cards(self) -> Path:
+        """Telop cards after the rule pre-filter, the selector's input."""
+        return self.side_dir(SideTaskKey.TELOP) / "cards.json"
+
+    @property
+    def telop_frames_dir(self) -> Path:
+        """Stills the telop selector fetched with `get_frames`."""
+        return self.side_dir(SideTaskKey.TELOP) / "frames"
+
+    @property
+    def telop_cht_json(self) -> Path:
+        """Selected, translated telops; burned in at package time."""
+        return self.subs_dir / "telop.cht.json"
+
+    @property
+    def telop_ass(self) -> Path:
+        """Telop ASS layer rendered at package time."""
+        return self.package_work_dir / "telop.ass"
 
     @property
     def titles(self) -> Path:

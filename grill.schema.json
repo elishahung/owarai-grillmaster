@@ -163,6 +163,12 @@
           "title": "Proofread Watch Clip",
           "type": "boolean"
         },
+        "telop": {
+          "default": false,
+          "description": "OCR the on-screen text cards (telops) on the GPU and burn the worthwhile ones in, translated, at the top of the package (side task; also --telop or a program's telop = true). Needs `uv sync --extra telop`.",
+          "title": "Telop",
+          "type": "boolean"
+        },
         "infuse_metadata": {
           "default": false,
           "description": "Write an Infuse metadata sidecar (video.xml: title, description, broadcast date) beside each archived video.mp4.",
@@ -363,6 +369,19 @@
           "default": null,
           "description": "Optional final proofread of the checked subtitles ([features] proofread).",
           "title": "Proofread"
+        },
+        "telop": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Telop selection and translation (side task): which on-screen cards to keep and how to render them.",
+          "title": "Telop"
         }
       },
       "title": "ProgramInstruction",
@@ -385,6 +404,12 @@
           },
           "title": "Inserts",
           "type": "array"
+        },
+        "telop": {
+          "default": false,
+          "description": "Translate this program's telops even without --telop or [features] telop.",
+          "title": "Telop",
+          "type": "boolean"
         },
         "instruction": {
           "$ref": "#/$defs/ProgramInstruction",

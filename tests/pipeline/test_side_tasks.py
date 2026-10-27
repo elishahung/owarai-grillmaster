@@ -13,6 +13,7 @@ from grillmaster.events.types import (
     AgentSessionFinished,
     PlanKind,
     SessionOutcome,
+    SkipReason,
     StepCompleted,
 )
 from grillmaster.pipeline.side_tasks import SideTaskManager
@@ -149,6 +150,22 @@ def test_a_failed_task_is_not_recorded(
     with make_manager(task) as manager:
         manager.stage_passed(StageKey.METADATA)
 
+    assert load_state(layout).side_tasks.cover is None
+
+
+def test_a_task_that_does_not_apply_to_the_project_is_skipped_disabled(
+    make_manager: Callable[..., SideTaskManager], layout: ProjectLayout
+):
+    journal = Journal()
+    task = replace(
+        fake_side_task(SideTaskKey.COVER, StageKey.METADATA, journal),
+        applies=lambda ctx: False,
+    )
+
+    with make_manager(task) as manager:
+        manager.stage_passed(StageKey.METADATA)
+
+    assert journal.entries == [f"side_skip:{SideTaskKey.COVER}:{SkipReason.DISABLED}"]
     assert load_state(layout).side_tasks.cover is None
 
 

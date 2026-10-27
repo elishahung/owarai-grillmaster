@@ -39,6 +39,16 @@ ProofreadOption = Annotated[
         ),
     ),
 ]
+TelopOption = Annotated[
+    bool,
+    typer.Option(
+        "--telop",
+        help=(
+            "OCR the on-screen text cards on the GPU and burn the worthwhile "
+            "ones in, translated, at the top (needs `uv sync --extra telop`)."
+        ),
+    ),
+]
 ChatOption = Annotated[
     bool,
     typer.Option(
@@ -104,7 +114,7 @@ def run_command(
         typer.Option(
             "--break-after",
             help=(
-                "Stop after this stage. Side tasks (cover, date research) and "
+                "Stop after this stage. Side tasks (cover, date research, telop) and "
                 "delivery are skipped entirely."
             ),
             show_default=False,
@@ -115,6 +125,7 @@ def run_command(
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
     proofread: ProofreadOption = False,
+    telop: TelopOption = False,
     chat: ChatOption = False,
     chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
     remix: RemixOption = None,
@@ -163,6 +174,7 @@ def run_command(
         cover=cover,
         date_research=date_research,
         proofread=proofread,
+        telop=telop,
         chat=chat,
         chat_layout=chat_layout,
         remix=resolve_remix(remix, loaded.config.package.remix_pool),

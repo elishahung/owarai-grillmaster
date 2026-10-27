@@ -33,6 +33,7 @@ from grillmaster.subtitles.ass import (
     PLAY_RES_X,
     PLAY_RES_Y,
     bgr,
+    escape_text,
     script_header,
 )
 
@@ -101,9 +102,6 @@ _SCROLL_CS = math.ceil(SCROLL_MS / 10)
 # radicals block, and the half-width forms.
 _FULL_WIDTH_START = 0x2E80
 _HALF_WIDTH_FORMS = (0xFF61, 0xFFDC)
-# User text loses its ASS override syntax to the full-width lookalikes of
-# the backslash and the braces.
-_ESCAPES = str.maketrans({"\\": chr(0xFF3C), "{": chr(0xFF5B), "}": chr(0xFF5D)})
 
 
 @dataclass(frozen=True, slots=True)
@@ -358,13 +356,17 @@ class _Item:
         ).hexdigest()
         color = AVATAR_COLORS[int(digest, 16) % len(AVATAR_COLORS)]
         self.avatar = f"\\p1\\c&H{bgr(color)}&}}{_AVATAR_SHAPE}"
-        self.initial = "}" + _escape((message.author.lstrip("@")[:1] or "?").upper())
-        text = "}" + _escape(name)
+        self.initial = "}" + escape_text(
+            (message.author.lstrip("@")[:1] or "?").upper()
+        )
+        text = "}" + escape_text(name)
         if amount:
-            text += f"  {{\\b1\\c&H{bgr(PAID_AMOUNT_COLOR)}&}}{_escape(amount)}"
+            text += f"  {{\\b1\\c&H{bgr(PAID_AMOUNT_COLOR)}&}}{escape_text(amount)}"
         if body_lines:
             # The Chat style is the body text style.
-            text += "\\N{\\rChat}" + "\\N".join(_escape(line) for line in body_lines)
+            text += "\\N{\\rChat}" + "\\N".join(
+                escape_text(line) for line in body_lines
+            )
         self.text = text
         self.highlight = (
             f"\\p1\\c&H{bgr(PAID_COLOR)}&\\1a&H{PAID_ALPHA}&}}"
@@ -486,11 +488,6 @@ def _truncate(text: str, font_size: int, width: float) -> str:
 
 def _single_line(text: str) -> str:
     return " ".join(text.split())
-
-
-def _escape(text: str) -> str:
-    """Neutralize ASS override syntax inside user text."""
-    return text.translate(_ESCAPES)
 
 
 # Chat: body text (the \rChat target). ChatName: the name line. ChatShape:

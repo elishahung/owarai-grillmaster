@@ -23,7 +23,7 @@ from pydantic import (
 )
 
 from grillmaster.core.model_spec import ModelSpec, ModelSpecField, Role
-from grillmaster.core.stage_key import StageKey
+from grillmaster.core.stage_key import SideTaskKey, StageKey
 from grillmaster.core.tool_session import MuseEffort, MuseModel
 
 if TYPE_CHECKING:
@@ -217,6 +217,10 @@ class FeaturesConfig(BaseModel):
         default=False,
         description="Give the proofread a watch_clip tool: Azure's MAI-Transcribe-2 hears a span of the video and Meta's Muse ([watch_clip]) reads its captions and scene.",
     )
+    telop: bool = Field(
+        default=False,
+        description="OCR the on-screen text cards (telops) on the GPU and burn the worthwhile ones in, translated, at the top of the package (side task; also --telop or a program's telop = true). Needs `uv sync --extra telop`.",
+    )
     infuse_metadata: bool = Field(
         default=False,
         description="Write an Infuse metadata sidecar (video.xml: title, description, broadcast date) beside each archived video.mp4.",
@@ -283,14 +287,15 @@ class PackageConfig(BaseModel):
         return self
 
 
-# Stages that accept program instructions, in prompt order. Field names of
-# `ProgramInstruction` equal these stage keys.
-INSTRUCTION_STAGES = (
+# Stages and side tasks that accept program instructions, in prompt order.
+# Field names of `ProgramInstruction` equal these keys.
+INSTRUCTION_STAGES: tuple[StageKey | SideTaskKey, ...] = (
     StageKey.PREPASS,
     StageKey.CHUNKS,
     StageKey.REFINE,
     StageKey.GLOSSARY,
     StageKey.PROOFREAD,
+    SideTaskKey.TELOP,
 )
 
 
@@ -322,8 +327,12 @@ class ProgramInstruction(BaseModel):
         default=None,
         description="Optional final proofread of the checked subtitles ([features] proofread).",
     )
+    telop: str | None = Field(
+        default=None,
+        description="Telop selection and translation (side task): which on-screen cards to keep and how to render them.",
+    )
 
-    def stage_text(self, stage: StageKey) -> str | None:
+    def stage_text(self, stage: StageKey | SideTaskKey) -> str | None:
         """This program's own text for `stage` (without `common`)."""
         if stage not in INSTRUCTION_STAGES:
             raise ValueError(
@@ -346,6 +355,10 @@ class ProgramRule(BaseModel):
     inserts: list[str] = Field(
         default_factory=list,
         description="Outputs of [[package.inserts]] enabled for this program.",
+    )
+    telop: bool = Field(
+        default=False,
+        description="Translate this program's telops even without --telop or [features] telop.",
     )
     instruction: ProgramInstruction = Field(
         default_factory=ProgramInstruction,

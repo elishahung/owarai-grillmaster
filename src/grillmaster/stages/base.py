@@ -40,8 +40,9 @@ if TYPE_CHECKING:
 class RunOptions:
     """Everything one `grill run` invocation asks for.
 
-    `cover` / `date_research` / `proofread` are the per-run flags; their steps
-    combine them with `[features]`. `remix` is a resolved pool name (a bare `--remix`
+    `cover` / `date_research` / `proofread` / `telop` are the per-run flags;
+    their steps combine them with `[features]`. `burn_telops = False`
+    (`grill package --no-telop`) leaves translated telops out of the burn-in. `remix` is a resolved pool name (a bare `--remix`
     already became `package.remix_pool`). `section` is where `--start` /
     `--to` cut the source; it only applies while the combine stage has not
     run.
@@ -54,8 +55,10 @@ class RunOptions:
     cover: bool = False
     date_research: bool = False
     proofread: bool = False
+    telop: bool = False
     chat: bool = False
     chat_layout: ChatLayout = DEFAULT_CHAT_LAYOUT
+    burn_telops: bool = True
     remix: str | None = None
     section: Section = field(default_factory=Section)
 
@@ -193,8 +196,10 @@ class SideTaskDef[T]:
     the state lock: `record(state, outcome)` when given (a task-specific
     record shape), else a plain `TaskRecord` of the step's elapsed time and
     agent usage. `describe` turns the payload into the `StepCompleted`
-    result text. `enabled` combines the run flag with `[features]`.
-    `is_done` overrides the default completion check
+    result text. `enabled` combines the run flag with `[features]`;
+    `applies`, checked at the start point where the project's program is
+    known, can still skip it as disabled (per-program switches). `is_done`
+    overrides the default completion check
     (`state.side_tasks.is_done(key)`), e.g. date research is moot once the
     metadata found a date. `on_skip` runs on the pipeline thread whenever
     the task is not started at its start point, with the reason.
@@ -206,6 +211,7 @@ class SideTaskDef[T]:
     start_after: StageKey
     run: Callable[[StageContext], T]
     enabled: Callable[[RunOptions, AppConfig], bool]
+    applies: Callable[[StageContext], bool] | None = None
     record: Callable[[ProjectState, StepOutcome[T]], None] | None = None
     describe: Callable[[T], str | None] = describe
     is_done: Callable[[ProjectState], bool] | None = None

@@ -1,5 +1,5 @@
 """The `grill` Typer app: `run` (also the bare `grill <src>`), `serial`,
-`package`, `archive`, `reset`, `status`, `doctor`."""
+`package`, `telop`, `archive`, `reset`, `status`, `doctor`."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from grillmaster.cli.reset import reset_command
 from grillmaster.cli.run import run_command
 from grillmaster.cli.serial import serial_command
 from grillmaster.cli.status import status_command
+from grillmaster.cli.telop import telop_command
 
 DEFAULT_COMMAND = "run"
 
@@ -47,6 +48,7 @@ app = typer.Typer(
 app.command(DEFAULT_COMMAND)(run_command)
 app.command("serial")(serial_command)
 app.command("package")(package_command)
+app.command("telop")(telop_command)
 app.command("archive")(archive_command)
 app.command("reset")(reset_command)
 app.command("status")(status_command)

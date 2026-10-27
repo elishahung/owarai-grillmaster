@@ -20,20 +20,18 @@ from loguru import logger
 
 from grillmaster.events.types import PlanKind, SkipReason, StepSkipped
 from grillmaster.pipeline.steps import UsageCollector, execute_step
+from grillmaster.stages.base import DeliveryStepDef, StepOutcome
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from pathlib import Path
     from types import TracebackType
 
     from grillmaster.config.model import AppConfig
     from grillmaster.core.stage_key import StageKey
     from grillmaster.events.bus import EventSink
-    from grillmaster.stages.base import (
-        RunOptions,
-        SideTaskDef,
-        StageContext,
-        StepOutcome,
-    )
+    from grillmaster.project.layout import ProjectLayout
+    from grillmaster.stages.base import RunOptions, SideTaskDef, StageContext
 
 # How long an interrupted run (Ctrl-C) waits for running side tasks before it
 # leaves them to die with the process (their threads are daemons).
@@ -104,7 +102,9 @@ class SideTaskManager:
         if not self._options.complete_run:
             self._skip(task, ctx, SkipReason.BREAKPOINT)
             return
-        if not task.enabled(self._options, self._config):
+        if not task.enabled(self._options, self._config) or (
+            task.applies is not None and not task.applies(ctx)
+        ):
             self._skip(task, ctx, SkipReason.DISABLED)
             return
         if task.done(ctx.state):
@@ -144,3 +144,29 @@ class SideTaskManager:
                 usage=self._usage,
                 finish=finish,
             )
+
+
+def as_delivery_step[T](task: SideTaskDef[T]) -> DeliveryStepDef:
+    """`task` as the one step of a run on an existing project, local or
+    archived (`grill telop`): the same work, label and params, in the task's
+    side directory, recorded in `state.side_tasks` like a side task (elapsed
+    time only). Unlike a side task, a failure fails that run."""
+
+    def run(ctx: StageContext) -> str | None:
+        started = time.monotonic()
+        value = task.run(ctx)
+        outcome = StepOutcome(value, elapsed=time.monotonic() - started, usage=None)
+        ctx.update(lambda state: task.store(state, outcome))
+        return task.describe(value)
+
+    def workdir(layout: ProjectLayout) -> Path:
+        return layout.side_dir(task.key)
+
+    return DeliveryStepDef(
+        key=task.key.value,
+        label=task.label,
+        weight=task.weight,
+        run=run,
+        workdir=workdir,
+        params=task.params,
+    )

@@ -31,7 +31,7 @@ cli
 tui | pipeline
 stages
 translate | postprocess | extras | package
-live_chat | agent_tools
+live_chat | agent_tools | telop
 sources | asr | subtitles
 agents
 project | config
@@ -69,7 +69,8 @@ members is a layout change. `pipeline/registry.py` holds the only lists:
 | 13 | `finalize` | `video.cht.srt`, `video.cht.ass` (root, `video.mp4`'s stem: players auto-load them; under `.subs/` they did not) |
 | 14 | `chat_translate` | `--chat` only: `.subs/chat.cht.json` |
 
-Side tasks: `cover` (after `download`), `date_research` (after `metadata`).
+Side tasks: `cover` (after `download`), `date_research` (after `metadata`),
+`telop` (after `prepass`; see telop).
 Delivery: `package`. Archive is not a step definition; the runner does it
 between the stages and delivery.
 
@@ -82,9 +83,10 @@ between the stages and delivery.
   `preflight(config, secrets)` raises before any stage runs (missing ASR key).
   `on_reset(layout)` runs on `grill reset` before deletion (combine moves an
   uncut `video.mp4` back to `full.mp4`).
-- `SideTaskDef[T](key, start_after, run, enabled, record, describe, is_done,
-  on_skip, …)`: `run` returns a payload; the manager writes the record
-  (default `TaskRecord`) under the state lock.
+- `SideTaskDef[T](key, start_after, run, enabled, applies, record, describe,
+  is_done, on_skip, …)`: `run` returns a payload; the manager writes the record
+  (default `TaskRecord`) under the state lock. `applies(ctx)` skips it as
+  disabled per project (program rules are known only at the start point).
 - `DeliveryStepDef(key, run, workdir, enabled, preflight, …)`: no ledger,
   re-runs on every complete run; `preflight(options, config, state|None)`
   runs in `Pipeline.check` (package: root dir and pools).
@@ -153,7 +155,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 - `layout.py` `ProjectLayout` is the **only** place that spells a project
   path (pure calculator, never creates dirs). Root: `project.json`,
   `video.mp4` + `video.cht.{srt,ass}`, `poster.jpg`, `cover.png`, `.subs/`
-  (`ja.srt`, `ja.voiced.srt`, `ja.official.srt`, `chat.cht.json`), `.logs/{run,events}-<ts>`.
+  (`ja.srt`, `ja.voiced.srt`, `ja.official.srt`, `chat.cht.json`, `telop.cht.json`), `.logs/{run,events}-<ts>`.
   Work: `.work/NN_<key>/`, unnumbered `.work/side/<task>/` and `.work/package/`.
   Non-deliverables live in dot dirs so Plex/Infuse skip their videos;
   `archive_discards()` (`watch_clip` clips and audio) are deleted by `archive_project`.
@@ -211,7 +213,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   from the `.env` path in its manifest.
 - `programs.py` `ProgramRules`: channel then series entries merged (`common`
   text before stage text; stage keys `prepass`, `chunks`, `refine`,
-  `glossary`, `proofread`). `register_program` (download stage) is the only writer of
+  `glossary`, `proofread`, side task `telop`; `remix`/`telop` flags OR-merge). `register_program` (download stage) is the only writer of
   `grill.toml`, appending empty entries with `tomlkit` under
   `grill.toml.lock`, re-reading the file inside it (concurrent processes).
 
@@ -263,8 +265,8 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 ## CLI (`cli/`)
 
 `grill <src> [HINT]` = `grill run`; options `--break-after <key>`, `--parent [dir]`,
-`--cover`, `--date-research`, `--proofread`, `--chat`, `--chat-layout`, `--remix [pool]`,
-`--start`, `--to`. Also `serial`, `package <dir|id>`, `archive <id>`,
+`--cover`, `--date-research`, `--proofread`, `--telop`, `--chat`, `--chat-layout`, `--remix [pool]`,
+`--start`, `--to`. Also `serial`, `package <dir|id>`, `telop <dir|id>`, `archive <id>`,
 `reset <id> --from|--only <key>`, `status [<id>]`, `doctor`. `package`,
 `archive` and `status` resolve an ID locally only (pass an archived
 project's directory). Commands import

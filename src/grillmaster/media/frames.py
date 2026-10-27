@@ -1,4 +1,5 @@
-"""JPEG stills at given timestamps, cached by file name.
+"""JPEG stills at given timestamps, cached by file name, and a whole video
+sampled at a fixed rate (`sample_frames`, the telop scan's input).
 
 A frame is named `frame_<seconds:010.3f>_<max_side>.jpg`; an existing file is
 a hit and is never re-extracted. Each still is written to a dot-prefixed temp
@@ -100,3 +101,35 @@ def _extract_one(
         partial.unlink(missing_ok=True)
         raise MediaError(f"No frame extracted at {time:.3f}s from {video}")
     partial.replace(path)
+
+
+def sample_frames(
+    runner: FfmpegRunner,
+    video: Path,
+    out_dir: Path,
+    *,
+    fps: float,
+    size: tuple[int, int],
+) -> list[Path]:
+    """Every `1/fps` seconds of `video` as a JPEG of exactly `size` in the
+    existing, empty `out_dir`, in time order (`00001.jpg` is at 0 s)."""
+    width, height = size
+    runner.run(
+        ffmpeg(
+            "-hwaccel",
+            "auto",
+            "-i",
+            str(video),
+            "-map",
+            "0:v:0",
+            "-vf",
+            f"fps={fps:g},scale={width}:{height}",
+            "-q:v",
+            _JPEG_QUALITY,
+            str(out_dir / "%05d.jpg"),
+        ),
+    )
+    frames = sorted(out_dir.glob("*.jpg"))
+    if not frames:
+        raise MediaError(f"No frames sampled from {video}")
+    return frames

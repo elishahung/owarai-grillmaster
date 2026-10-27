@@ -104,6 +104,7 @@ class DateResearchRecord(TaskRecord):
 class SideTasks(StateModel):
     cover: TaskRecord | None = None
     date_research: DateResearchRecord | None = None
+    telop: TaskRecord | None = None
 
     def is_done(self, key: SideTaskKey) -> bool:
         match key:
@@ -111,6 +112,8 @@ class SideTasks(StateModel):
                 return self.cover is not None
             case SideTaskKey.DATE_RESEARCH:
                 return self.date_research is not None
+            case SideTaskKey.TELOP:
+                return self.telop is not None
 
     def record(self, key: SideTaskKey, record: TaskRecord) -> None:
         """Store `record` as `key`'s completion (validated for the field)."""
@@ -121,6 +124,8 @@ class SideTasks(StateModel):
                 if not isinstance(record, DateResearchRecord):
                     raise TypeError("date research records a DateResearchRecord")
                 self.date_research = record
+            case SideTaskKey.TELOP:
+                self.telop = record
 
 
 class ProjectState(StateModel):

@@ -83,6 +83,12 @@ proofread = false
 # the video and a video model reads its captions, name cards and scene
 # ([watch_clip]), for lines whose ASR is suspect.
 proofread_watch_clip = false
+# OCR the on-screen text cards (telops) on the GPU while the translation runs,
+# let the utility agent keep and translate the ones the dialogue does not
+# carry, and burn them in at the top of the package (also --telop, or a
+# program's `telop = true`; `grill telop <dir>` adds them to a finished
+# project). Needs `uv sync --extra telop`.
+telop = false
 # Write video.xml (title, description, broadcast date) beside each archived
 # video.mp4, so Infuse can sort the archive by broadcast date; it ignores the
 # date embedded in the MP4.
@@ -110,9 +116,12 @@ when = "remix"     # "remix": remix deliverables only; "always": every one
 remix = true
 # Outputs of [[package.inserts]] enabled for this program.
 inserts = ["judge"]
+# Translate this program's telops even without --telop or [features] telop.
+telop = true
 
 # Extra model instructions. `common` goes to every stage, ahead of the
-# stage's own text; stages: prepass, chunks, refine, glossary, proofread.
+# stage's own text; stages: prepass, chunks, refine, glossary, proofread,
+# telop (the telop selector).
 [programs.series."水曜日のダウンタウン".instruction]
 common = "Each segment opens with a 説 (hypothesis) title card; keep 説 as 「說」 and render the title cards consistently."
 prepass = "List every 説 title card in proper_nouns with its exact on-screen wording."
@@ -120,6 +129,7 @@ chunks = "The studio panel's commentary is overlaid on VTR footage; keep the pan
 refine = "Keep the narrator's deadpan tone; do not add exclamation marks to narration."
 glossary = "Panelist names follow fixed_glossary even when the on-screen caption abbreviates them."
 proofread = "Check 説 title cards against the frames before any other fix."
+telop = "Keep every 説 title card and the VTR's narration captions."
 
 [programs.channel."日テレ"]
 remix = true

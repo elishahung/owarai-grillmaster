@@ -1,8 +1,8 @@
 """Per-program rules: merge the matching `[programs.*]` entries, register new ones.
 
 A program matches up to two entries, its channel and its series. They merge
-broadest first (channel, then series): `remix` is on when either entry sets
-it, and each stage's instruction text is every entry's `common` text followed
+broadest first (channel, then series): `remix` and `telop` are on when either
+entry sets them, and each stage's instruction text is every entry's `common` text followed
 by its stage text, in that order. Inserts are the ones no program lists plus
 the ones a matching entry lists, in declaration order.
 
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
         ProgramInstruction,
         ProgramsConfig,
     )
-    from grillmaster.core.stage_key import StageKey
+    from grillmaster.core.stage_key import SideTaskKey, StageKey
 
 _BOM = "﻿"
 # A registration holds the lock for one small read and write; waiting
@@ -44,10 +44,11 @@ class ProgramRules:
     """The merged rules of every entry matching one program."""
 
     remix: bool = False
+    telop: bool = False
     inserts: tuple[InsertRule, ...] = ()
     instructions: tuple[ProgramInstruction, ...] = ()
 
-    def instruction_text(self, stage: StageKey) -> str:
+    def instruction_text(self, stage: StageKey | SideTaskKey) -> str:
         """Configured text for `stage` (per entry, `common` then the stage's own).
 
         Empty when nothing is configured; prompts wrap it with
@@ -86,6 +87,7 @@ def resolve_program_rules(
     listed = {name for rule in entries for name in rule.inserts}
     return ProgramRules(
         remix=any(rule.remix for rule in entries),
+        telop=any(rule.telop for rule in entries),
         inserts=tuple(
             insert
             for insert in package.inserts

@@ -34,4 +34,4 @@ def test_keys_are_plain_strings():
 
 
 def test_side_task_keys():
-    assert [key.value for key in SideTaskKey] == ["cover", "date_research"]
+    assert [key.value for key in SideTaskKey] == ["cover", "date_research", "telop"]

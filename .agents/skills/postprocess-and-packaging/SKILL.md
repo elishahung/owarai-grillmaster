@@ -137,7 +137,8 @@ if present, inserts), then the render. Destination
 
 **Burn plan**: dialogue alone, or with translated chat and layout ≠ `none` the
 panel at `.work/package/chat.ass`; `side` also shrinks the picture into a box
-(scale+pad after the look), `overlay` keeps the full frame.
+(scale+pad after the look), `overlay` keeps the full frame. Translated
+telops (`.subs/telop.cht.json`, telop skill) burn last, from `.work/package/telop.ass`.
 Layers must sit under the video's dir (ffmpeg runs there with relative names).
 
 **Render recipe** (`package/render.py`; every value measured, do not "clean

@@ -5,7 +5,9 @@ Runs after the last stage of every complete run, and alone via `grill
 package`; in a run it reads the project where it lives after the archive
 move (the archived copy when `[paths] archive` is set). Title
 suggestions are generated here (cached in `.work/package/titles.json`), the
-chat panel is rendered to `.work/package/chat.ass`. A remix comes from
+chat panel is rendered to `.work/package/chat.ass` and the translated
+telops (`.subs/telop.cht.json`, when present and not `--no-telop`) to
+`.work/package/telop.ass`. A remix comes from
 `--remix [pool]` or a program rule (`remix = true`, using `package.remix_pool`);
 inserts follow `[[package.inserts]]` and the program's `inserts`. Pools are
 checked and the remix segments picked before any pool cursor moves; the
@@ -39,6 +41,7 @@ from grillmaster.package.assemble import (
     copy_reports,
     deliverable_dir,
     require_inputs,
+    with_telops,
     write_info,
 )
 from grillmaster.package.errors import PackageError
@@ -105,6 +108,8 @@ def _run(ctx: StageContext) -> str:
         chat_ass=layout.chat_panel_ass,
         layout=ctx.options.chat_layout,
     )
+    if ctx.options.burn_telops:
+        burn = with_telops(burn, layout.telop_cht_json, layout.telop_ass)
     with deliverable_dir(destination) as target:
         copy_cover(cover=layout.cover, poster=layout.poster, target_dir=target)
         write_info(

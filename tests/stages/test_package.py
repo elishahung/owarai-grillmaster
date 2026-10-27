@@ -27,6 +27,7 @@ from grillmaster.package.render import (
 from grillmaster.pipeline.state_store import StateStore
 from grillmaster.stages import package
 from grillmaster.stages.base import RunOptions, StageContext
+from grillmaster.telop.select import TelopSubtitle, TelopSubtitles
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -418,6 +419,27 @@ def test_chat_panel_is_rendered_into_the_package_workdir(
         "pad=1920:1080:0:108:black,subtitles=.work/package/chat.ass,"
         "subtitles=video.cht.ass:force_style='MarginR=394,MarginV=24',"
     ) in chain
+
+
+def test_telops_burn_on_top_unless_left_out(
+    make: MakeContext, finished: ProjectLayout, package_root: Path
+):
+    telop = TelopSubtitle(
+        id=1, start=1.0, end=2.0, ja="ja", zh="字卡", box=(0, 0, 1, 1)
+    )
+    write_model(finished.telop_cht_json, TelopSubtitles(items=[telop]))
+    fake = burn_in_fake(finished, package_root)
+
+    package.STEP.run(make(fake))
+
+    chain = arg_after(next(a for a in encodes(fake) if "-vf" in a), "-vf")
+    assert "subtitles=video.cht.ass,subtitles=.work/package/telop.ass," in chain
+
+    left_out = burn_in_fake(finished, package_root)
+    package.STEP.run(make(left_out, burn_telops=False))
+
+    chain = arg_after(next(a for a in encodes(left_out) if "-vf" in a), "-vf")
+    assert "telop.ass" not in chain
 
 
 def test_enabled_only_with_a_package_root(loaded: LoadedConfig, state: ProjectState):

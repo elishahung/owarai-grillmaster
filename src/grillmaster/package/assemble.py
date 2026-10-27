@@ -31,6 +31,8 @@ from grillmaster.package.inserts import (
     INSERT_SUFFIX_ALLOWANCE,
 )
 from grillmaster.package.render import BurnPlan, SubtitleLayer
+from grillmaster.telop.render import telop_force_style, write_telop_ass
+from grillmaster.telop.select import TelopSubtitles
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -156,3 +158,20 @@ def build_burn_plan(
         ),
         picture=placement.picture,
     )
+
+
+def with_telops(plan: BurnPlan, telop: Path, telop_ass: Path) -> BurnPlan:
+    """`plan` with the translated telops on top, when `telop` exists: rendered
+    to `telop_ass` and kept over a shrunk picture. Ones that cannot be
+    rendered are left out with a warning."""
+    if not telop.exists():
+        return plan
+    try:
+        write_telop_ass(read_model(telop, TelopSubtitles), telop_ass)
+    except (OSError, UnicodeDecodeError, ValidationError) as error:
+        logger.warning(f"Telops skipped ({telop}): {error}")
+        return plan
+    logger.info(f"Rendered telops: {telop_ass}")
+    box = plan.picture
+    style = None if box is None else telop_force_style(box.x, box.y, box.width)
+    return BurnPlan(layers=(*plan.layers, SubtitleLayer(telop_ass, style)), picture=box)

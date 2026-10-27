@@ -1,0 +1,327 @@
+"""From per-frame OCR reads to telop cards, by rules alone.
+
+A scan samples the video at `SAMPLE_FPS` and keeps every text box OCR read
+(`TelopScan`). `track_lines` follows each box through consecutive frames
+into a line with a start, an end and its most trusted reading; a new
+reading in the same place (the next memo in the same frame) starts a new
+line. `build_cards` then drops OCR noise, joins lines that share their
+timing and touch on screen into cards (a "○○MEMO" label stays with its
+memo), and labels each card:
+
+- `recurring`: every line's text is on screen for over `RECURRING_S`
+  across the episode (corner logos and titles, shirt prints, bottle
+  labels); near-identical reads and longer texts a line is a fragment of
+  count towards it, never a fragment towards a longer text;
+- `speech`: every other line repeats the ASR transcript around it;
+- `candidate`: anything else, the selector's only input.
+
+`cards.json` keeps every label, so tuning sees what the rules dropped.
+Boxes are fractions of the frame, so every threshold here is scale-free.
+The thresholds were tuned on two episodes (a memo show and a commentary-
+card location show); they are not settings.
+"""
+
+from __future__ import annotations
+
+import re
+import unicodedata
+from collections import Counter
+from dataclasses import dataclass, field
+from difflib import SequenceMatcher
+from enum import StrEnum
+from typing import TYPE_CHECKING
+
+from grillmaster.core.models import StrictModel
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from grillmaster.core.srt import SrtBlock
+
+SAMPLE_FPS = 2.0
+# A track survives this many sampled frames without a matching box.
+MAX_GAP_FRAMES = 2
+# Lines shorter than this, of one character, or read with less confidence
+# are OCR noise (single-frame shirt prints, set decoration).
+MIN_LINE_S = 1.0
+MIN_CONFIDENCE = 0.7
+# Episode-wide seconds after which a text is a fixture, not a card.
+RECURRING_S = 60.0
+# Share of a line's characters found in the transcript near it.
+SPEECH_OVERLAP = 0.6
+SPEECH_WINDOW_S = 3.0
+# Lines of one card appear and vanish within this of each other.
+CARD_TIMING_S = 1.0
+# A box continues a track at (box overlap, reading match) of at least one
+# of these pairs. The match counts a fading-in fragment as a full match,
+# and a box in the same place with a different text starts a new line.
+_CONTINUES = ((0.5, 0.5), (0.3, 0.9))
+_MIN_OVERLAP = min(overlap for overlap, _ in _CONTINUES)
+# Share of a text that must match another for the other to count as it.
+_SAME_TEXT = 0.8
+
+type Box = tuple[float, float, float, float]
+
+
+class TextRead(StrictModel):
+    """One OCR box: `box` is (x0, y0, x1, y1) as fractions of the frame."""
+
+    box: Box
+    text: str
+    score: float
+
+
+class TelopScan(StrictModel):
+    """Every sampled frame's OCR reads (the scan cache); frame `i` is at
+    `i / fps` seconds."""
+
+    fps: float
+    frames: list[list[TextRead]]
+
+
+class CardKind(StrEnum):
+    CANDIDATE = "candidate"
+    RECURRING = "recurring"
+    SPEECH = "speech"
+
+
+class CardLine(StrictModel):
+    text: str
+    box: Box
+
+
+class TelopCard(StrictModel):
+    id: int
+    start: float
+    end: float
+    kind: CardKind
+    lines: list[CardLine]
+
+    @property
+    def text(self) -> str:
+        """The lines top to bottom, joined with ` / `."""
+        return " / ".join(line.text for line in self.lines)
+
+    @property
+    def box(self) -> Box:
+        """The box around every line."""
+        return (
+            min(line.box[0] for line in self.lines),
+            min(line.box[1] for line in self.lines),
+            max(line.box[2] for line in self.lines),
+            max(line.box[3] for line in self.lines),
+        )
+
+
+class TelopCards(StrictModel):
+    """The labelled cards of one episode (`cards.json`)."""
+
+    cards: list[TelopCard]
+
+
+@dataclass(slots=True)
+class TrackedLine:
+    """One text box followed through consecutive frames."""
+
+    first: int
+    last: int
+    box: Box
+    reading: str
+    # Summed OCR confidence per raw reading.
+    reads: dict[str, float] = field(default_factory=dict[str, float])
+    hits: int = 0
+
+    @property
+    def text(self) -> str:
+        """The reading with the highest summed confidence."""
+        return max(self.reads, key=self.reads.__getitem__)
+
+    @property
+    def confidence(self) -> float:
+        return sum(self.reads.values()) / self.hits
+
+
+def normalize(text: str) -> str:
+    """NFKC without spaces and the punctuation OCR drops or doubles."""
+    text = unicodedata.normalize("NFKC", text)
+    return re.sub(r"[\s。、.,・…!?！？~〜ー\-]+", "", text)
+
+
+def _iou(a: Box, b: Box) -> float:
+    inter = max(0.0, min(a[2], b[2]) - max(a[0], b[0])) * max(
+        0.0, min(a[3], b[3]) - max(a[1], b[1])
+    )
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union else 0.0
+
+
+def _matched(a: str, b: str) -> int:
+    """Characters `a` and `b` share in order."""
+    blocks = SequenceMatcher(None, a, b, autojunk=False).get_matching_blocks()
+    return sum(block.size for block in blocks)
+
+
+def _same_track(line: TrackedLine, box: Box, reading: str) -> float:
+    """How well a box continues `line` (0 = not at all)."""
+    overlap = _iou(line.box, box)
+    if overlap < _MIN_OVERLAP:
+        return 0.0
+    match = _matched(line.reading, reading) / min(len(line.reading), len(reading))
+    if any(overlap >= least and match >= most for least, most in _CONTINUES):
+        return overlap + match
+    return 0.0
+
+
+def track_lines(scan: TelopScan) -> list[TrackedLine]:
+    """Every box followed from frame to frame into lines, by start frame."""
+    open_lines: list[TrackedLine] = []
+    closed: list[TrackedLine] = []
+    for index, reads in enumerate(scan.frames):
+        taken: set[int] = set()
+        for read in reads:
+            reading = normalize(read.text)
+            if not reading:
+                continue
+            best, best_score = None, 0.0
+            for line in open_lines:
+                if id(line) not in taken:
+                    score = _same_track(line, read.box, reading)
+                    if score > best_score:
+                        best, best_score = line, score
+            if best is None:
+                best = TrackedLine(first=index, last=index, box=read.box, reading="")
+                open_lines.append(best)
+            best.last = index
+            best.box = read.box
+            best.reading = reading
+            best.reads[read.text] = best.reads.get(read.text, 0.0) + read.score
+            best.hits += 1
+            taken.add(id(best))
+        closed.extend(line for line in open_lines if index - line.last > MAX_GAP_FRAMES)
+        open_lines = [
+            line for line in open_lines if index - line.last <= MAX_GAP_FRAMES
+        ]
+    closed.extend(open_lines)
+    return sorted(closed, key=lambda line: (line.first, line.box[1]))
+
+
+@dataclass(frozen=True, slots=True)
+class _Line:
+    start: float
+    end: float
+    text: str
+    normalized: str
+    box: Box
+
+
+def _recurring(lines: Sequence[_Line]) -> list[bool]:
+    """Whether each line's text is on screen for over `RECURRING_S` in all,
+    counting every distinct text that holds most of it."""
+    seconds: dict[str, float] = {}
+    for line in lines:
+        seconds[line.normalized] = (
+            seconds.get(line.normalized, 0.0) + line.end - line.start
+        )
+    texts = list(seconds)
+    chars = [Counter(text) for text in texts]
+    total = dict(seconds)
+    for i, a in enumerate(texts):
+        for j in range(i + 1, len(texts)):
+            b = texts[j]
+            # Shared characters bound the in-order match from above.
+            if (chars[i] & chars[j]).total() < _SAME_TEXT * min(len(a), len(b)):
+                continue
+            matched = _matched(a, b)
+            if matched >= _SAME_TEXT * len(a):
+                total[a] += seconds[b]
+            if matched >= _SAME_TEXT * len(b):
+                total[b] += seconds[a]
+    return [total[line.normalized] > RECURRING_S for line in lines]
+
+
+def _repeats_speech(line: _Line, cues: Sequence[tuple[float, float, str]]) -> bool:
+    near = "".join(
+        cue
+        for start, end, cue in cues
+        if end >= line.start - SPEECH_WINDOW_S and start <= line.end + SPEECH_WINDOW_S
+    )
+    return bool(near) and (
+        _matched(line.normalized, near) >= SPEECH_OVERLAP * len(line.normalized)
+    )
+
+
+# Boxes are fractions of a 16:9 frame: a height fraction spans 16/9 as many
+# pixels as the same width fraction.
+_ASPECT = 9 / 16
+
+
+def _adjacent(a: Box, b: Box) -> bool:
+    """Stacked within about a line height, overlapping or near sideways."""
+    height = max(a[3] - a[1], b[3] - b[1])
+    gap_y = max(a[1], b[1]) - min(a[3], b[3])
+    gap_x = max(a[0], b[0]) - min(a[2], b[2])
+    return gap_y <= 0.8 * height and gap_x <= height * _ASPECT
+
+
+def _group(lines: Sequence[_Line]) -> list[list[_Line]]:
+    """Lines (sorted by start) that share their timing and touch on screen."""
+    parent = list(range(len(lines)))
+
+    def root(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for i, a in enumerate(lines):
+        for j in range(i + 1, len(lines)):
+            b = lines[j]
+            if b.start - a.start > CARD_TIMING_S:
+                break
+            if abs(a.end - b.end) <= CARD_TIMING_S and _adjacent(a.box, b.box):
+                parent[root(i)] = root(j)
+    groups: dict[int, list[_Line]] = {}
+    for i, line in enumerate(lines):
+        groups.setdefault(root(i), []).append(line)
+    return sorted(groups.values(), key=lambda group: group[0].start)
+
+
+def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:
+    """The episode's labelled cards (see the module doc)."""
+    lines: list[_Line] = []
+    for tracked in track_lines(scan):
+        start, end = tracked.first / scan.fps, (tracked.last + 1) / scan.fps
+        text = tracked.text
+        normalized = normalize(text)
+        if (
+            end - start >= MIN_LINE_S
+            and len(normalized) > 1
+            and tracked.confidence >= MIN_CONFIDENCE
+        ):
+            lines.append(_Line(start, end, text, normalized, tracked.box))
+    lines.sort(key=lambda line: line.start)
+    recurring = dict(zip(map(id, lines), _recurring(lines), strict=True))
+    cues = [
+        (block.time_range.start, block.time_range.end, normalize(block.text))
+        for block in transcript
+    ]
+    cards: list[TelopCard] = []
+    for group in _group(lines):
+        fresh = [line for line in group if not recurring[id(line)]]
+        if not fresh:
+            kind = CardKind.RECURRING
+        elif all(_repeats_speech(line, cues) for line in fresh):
+            kind = CardKind.SPEECH
+        else:
+            kind = CardKind.CANDIDATE
+        group.sort(key=lambda line: (line.box[1], line.box[0]))
+        cards.append(
+            TelopCard(
+                id=len(cards) + 1,
+                start=round(min(line.start for line in group), 2),
+                end=round(max(line.end for line in group), 2),
+                kind=kind,
+                lines=[CardLine(text=line.text, box=line.box) for line in group],
+            )
+        )
+    return TelopCards(cards=cards)

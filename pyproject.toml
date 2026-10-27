@@ -26,6 +26,14 @@ dependencies = [
     "yt-dlp[default]>=2026.8.19",
 ]
 
+[project.optional-dependencies]
+# `--telop` / `[features] telop`: GPU OCR of on-screen text cards. Kept out of
+# the base install for its size (CUDA and cuDNN wheels); `uv sync --extra telop`.
+telop = [
+    "onnxruntime-gpu[cuda,cudnn]>=1.31.1",
+    "rapidocr>=3.10.0",
+]
+
 [project.scripts]
 grill = "grillmaster.cli:main"
 
@@ -40,6 +48,9 @@ dev = [
 
 [tool.uv]
 package = true
+# The lock must hold Windows wheels: the newest CUDA runtime wheels behind the
+# telop extra ship for Linux only.
+required-environments = ["sys_platform == 'win32' and platform_machine == 'AMD64'"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/grillmaster"]

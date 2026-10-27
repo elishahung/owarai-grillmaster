@@ -135,6 +135,7 @@ def test_session_and_frames_enumerations():
         ".work/14_chat_translate",
         ".work/side/cover",
         ".work/side/date_research",
+        ".work/side/telop",
         ".work/package",
     ]
     assert [_rel(path) for path in layout.frames_dirs((1, 119))] == [
@@ -143,6 +144,7 @@ def test_session_and_frames_enumerations():
         ".work/10_refine/frames",
         ".work/11_glossary/frames",
         ".work/12_proofread/frames",
+        ".work/side/telop/frames",
     ]
 
 

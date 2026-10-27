@@ -9,6 +9,7 @@ from tests.package.conftest import PackageFfmpeg
 from grillmaster.config import model as config_model
 from grillmaster.config.model import RESERVED_INSERT_STEMS
 from grillmaster.core.briefing import Briefing, TermMapping
+from grillmaster.core.json_artifact import write_model
 from grillmaster.core.paths import measure
 from grillmaster.live_chat.layout import ChatLayout
 from grillmaster.live_chat.render import PictureBox
@@ -20,6 +21,7 @@ from grillmaster.package.assemble import (
     copy_reports,
     deliverable_dir,
     require_inputs,
+    with_telops,
     write_info,
 )
 from grillmaster.package.errors import PackageError
@@ -28,6 +30,7 @@ from grillmaster.package.inserts import (
     INSERT_SUFFIX_ALLOWANCE,
 )
 from grillmaster.package.render import BurnPlan
+from grillmaster.telop.select import TelopSubtitle, TelopSubtitles
 
 BRIEFING = Briefing(
     summary="demo",
@@ -187,6 +190,14 @@ def plan_for(project: Path, layout: ChatLayout) -> BurnPlan:
     )
 
 
+def telop_plan_for(project: Path, layout: ChatLayout) -> BurnPlan:
+    return with_telops(
+        plan_for(project, layout),
+        project / "subs" / "telop.cht.json",
+        project / "work" / "package" / "telop.ass",
+    )
+
+
 def test_dialogue_alone_without_chat_or_with_layout_none(project: Path):
     dialogue_only = BurnPlan.dialogue(project / "video.cht.ass")
     assert plan_for(project, ChatLayout.SIDE) == dialogue_only
@@ -237,5 +248,51 @@ def test_undecodable_chat_falls_back_to_dialogue_only(project: Path):
     chat = project / "subs" / "chat.cht.json"
     chat.write_bytes(b'{"messages": ["\xff\xfe"]}')
     assert plan_for(project, ChatLayout.SIDE) == BurnPlan.dialogue(
+        project / "video.cht.ass"
+    )
+
+
+def write_telops(path: Path) -> None:
+    subtitles = TelopSubtitles(
+        items=[
+            TelopSubtitle(
+                id=3, start=2.0, end=3.5, ja="唐突チェーン", zh="突然的鏈條",
+                box=(0.0, 0.8, 0.5, 0.9),
+            )
+        ]
+    )  # fmt: skip
+    write_model(path, subtitles)
+
+
+def test_telops_burn_over_the_dialogue_on_the_full_frame(project: Path):
+    write_telops(project / "subs" / "telop.cht.json")
+
+    plan = telop_plan_for(project, ChatLayout.SIDE)
+
+    assert [layer.filter(project) for layer in plan.layers] == [
+        "subtitles=video.cht.ass",
+        "subtitles=work/package/telop.ass",
+    ]
+    ass = (project / "work" / "package" / "telop.ass").read_text(encoding="utf-8")
+    assert "Dialogue: 0,0:00:02.00,0:00:03.50,Telop,,0,0,0,,突然的鏈條" in ass
+
+
+def test_telops_stay_over_a_shrunk_picture(project: Path):
+    write_chat(project / "subs" / "chat.cht.json")
+    write_telops(project / "subs" / "telop.cht.json")
+
+    plan = telop_plan_for(project, ChatLayout.SIDE)
+
+    assert plan.layers[-1].filter(project) == (
+        "subtitles=work/package/telop.ass:"
+        "force_style='MarginL=60,MarginR=444,MarginV=136'"
+    )
+
+
+def test_unreadable_telops_are_left_out(project: Path):
+    telop = project / "subs" / "telop.cht.json"
+    telop.parent.mkdir(parents=True, exist_ok=True)
+    telop.write_text("not json", encoding="utf-8")
+    assert telop_plan_for(project, ChatLayout.SIDE) == BurnPlan.dialogue(
         project / "video.cht.ass"
     )

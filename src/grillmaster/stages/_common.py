@@ -68,7 +68,7 @@ def tool_params(name: str) -> Callable[[AppConfig], dict[str, str]]:
 
 
 def flag_or_feature(
-    name: Literal["cover", "date_research", "proofread"],
+    name: Literal["cover", "date_research", "proofread", "telop"],
 ) -> Callable[[RunOptions, AppConfig], bool]:
     """`enabled` of an optional step: the run flag `name` or `[features] <name>`."""
 

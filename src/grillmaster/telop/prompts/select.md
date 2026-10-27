@@ -13,7 +13,7 @@ Keep a card when it adds something the dialogue subtitles do not carry:
 Drop a card when it:
 
 - only repeats what someone is saying (that line already has a subtitle), even when the wording differs a little. `echoes_speech` marks the likely ones; keep a marked card when it carries more than the line does (a label saying whose card it is, a point the subtitle leaves out);
-- is scene text: clothing prints, product labels, signage, posters, licence plates, set decoration — anything that belongs to the filmed place rather than added in editing;
+- is scene text: clothing prints, product labels, signage, posters, licence plates, set decoration, screens and monitors in the set — anything that belongs to the filmed place rather than added in editing;
 - is the show's own logo, a corner or segment title, a broadcast-date or channel bug, a credit or a promotional banner;
 - is unreadable OCR garbage, or a fragment of a card you already kept;
 - would only repeat a name the subtitles already show.

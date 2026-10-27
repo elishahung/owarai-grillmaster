@@ -57,6 +57,28 @@ def test_a_card_is_translated_right_under_it_on_the_source_timeline():
     assert 0.36 * 1080 < y <= 0.36 * 1080 + 10
 
 
+def test_a_long_card_s_translation_leaves_after_ten_seconds_but_stays_an_obstacle():
+    long = subtitle("長卡", box=(0.4, 0.3, 0.6, 0.36), start=1.0, end=40.0, id=1)
+    # Right above the long card: its spot below would cover that card.
+    later = subtitle("後來", box=(0.4, 0.22, 0.6, 0.28), start=20.0, end=22.0, id=2)
+
+    ass = render_telop_ass(TelopSubtitles(items=[long, later]))
+
+    assert events(ass)[0].startswith(f"Dialogue: 0,0:00:01.00,0:00:11.00,{STYLE_NAME}")
+    # The long card is still up at 20 s, so the later translation goes above
+    # its own card, though the long card's translation has left.
+    (alignment, _, y) = anchors(ass)[1]
+    assert (alignment, y) == (2, round(0.22 * 1080) - 8)
+
+
+def test_a_card_up_a_little_past_ten_seconds_keeps_its_translation():
+    ass = render_telop_ass(
+        TelopSubtitles(items=[subtitle("稍長", start=1.0, end=15.0)])
+    )
+
+    assert events(ass)[0].startswith(f"Dialogue: 0,0:00:01.00,0:00:15.00,{STYLE_NAME}")
+
+
 def test_positions_follow_a_shrunk_picture():
     ass = render_telop_ass(
         TelopSubtitles(items=[subtitle("卡")]), PictureBox(0, 108, 1536, 864)

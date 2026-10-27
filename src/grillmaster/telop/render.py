@@ -8,7 +8,8 @@ pale yellow keeps the cards apart from the white dialogue.
 Every translation sits next to the card it translates, so the eye finds it
 where the card is: right below it (one side for every item of a list),
 right above only when below does not fit in the picture, and away from the
-other translations and cards up with it. Positions follow `frame`, the
+other translations and cards up with it. It leaves with its card, or after
+`MAX_SHOWN_S` when the card stays well past that. Positions follow `frame`, the
 picture's box on the canvas (a side layout shrinks it).
 
 The telop stage also writes the full-picture layer together with the
@@ -73,6 +74,11 @@ _AWAY = 3.0
 _AMBIGUOUS = 1.0
 # A rendered line's height, outline included, per font size.
 _LINE_HEIGHT = 1.2
+# A card up longer than `MAX_SHOWN_S + SHOWN_TOLERANCE_S` has its
+# translation leave `MAX_SHOWN_S` after it appears: by then it is read
+# (owner's call; most cards are up 4-8 s). A shorter card keeps it to the end.
+MAX_SHOWN_S = 10.0
+SHOWN_TOLERANCE_S = 5.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,8 +118,22 @@ class _Card:
     width: float
     height: float
 
-    def up_with(self, other: _Card) -> bool:
-        return self.item.start < other.item.end and other.item.start < self.item.end
+    @property
+    def shown_until(self) -> float:
+        """When the translation leaves: with its card, or `MAX_SHOWN_S` in
+        when the card stays well past that."""
+        if self.item.end - self.item.start > MAX_SHOWN_S + SHOWN_TOLERANCE_S:
+            return self.item.start + MAX_SHOWN_S
+        return self.item.end
+
+    def card_up_with(self, other: _Card) -> bool:
+        """Whether `other`'s card is on screen while this translation is."""
+        return other.item.start < self.shown_until and self.item.start < other.item.end
+
+    def shown_with(self, other: _Card) -> bool:
+        return (
+            self.item.start < other.shown_until and other.item.start < self.shown_until
+        )
 
 
 def _card(item: TelopSubtitle, frame: PictureBox) -> _Card | None:
@@ -219,15 +239,15 @@ def _events(subtitles: TelopSubtitles, frame: PictureBox) -> list[str]:
             others=[
                 other.box
                 for other in cards
-                if other is not card and other.up_with(card)
+                if other is not card and card.card_up_with(other)
             ],
-            translations=[rect for other, rect in placed if other.up_with(card)],
+            translations=[rect for other, rect in placed if other.shown_with(card)],
         )
         placed.append((card, rect))
-        item = card.item
+        start = format_ass_centiseconds(ass_centiseconds(card.item.start))
+        end = format_ass_centiseconds(ass_centiseconds(card.shown_until))
         events.append(
-            f"Dialogue: 0,{format_ass_centiseconds(ass_centiseconds(item.start))},"
-            f"{format_ass_centiseconds(ass_centiseconds(item.end))},{STYLE_NAME},,"
+            f"Dialogue: 0,{start},{end},{STYLE_NAME},,"
             f"{margins},,{_anchor(rect, card.box)}"
             + "\\N".join(escape_text(line) for line in card.lines)
         )

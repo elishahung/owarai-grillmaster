@@ -16,13 +16,12 @@ def card(id: int, start: float, text: str) -> TelopCard:  # noqa: A002 - the mod
     )
 
 
-def test_latin_only_reads_are_left_out_and_repeats_share_a_row():
+def test_repeats_share_a_row():
     table = render_reference(
         [
             card(1, 10.0, "東京都"),
-            card(2, 11.0, "ALPHARD"),
-            card(3, 12.0, "初期メン!!"),
-            card(4, 50.0, "東京都"),
+            card(2, 12.0, "初期メン!!"),
+            card(3, 50.0, "東京都"),
         ]
     )
 

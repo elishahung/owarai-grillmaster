@@ -16,9 +16,10 @@ several cards into each card it sits on, and labels each card:
 - `speech`: every other line repeats the ASR transcript around it;
 - `candidate`: anything else.
 
-The selector sees every card but the recurring ones (`TelopCards.offered`),
-speech-like ones marked: a card can echo the speech and still add a label
-or a point. `cards.json` keeps every label, so tuning sees the rules' view.
+The selector sees every card with Japanese text but the recurring ones
+(`TelopCards.offered`), speech-like ones marked: a card can echo the speech
+and still add a label or a point. `cards.json` keeps every label, so tuning
+sees the rules' view.
 Boxes are fractions of the frame, so every threshold here is scale-free.
 The thresholds were tuned on two episodes (a memo show and a commentary-
 card location show); they are not settings.
@@ -62,6 +63,10 @@ _CONTINUES = ((0.5, 0.75), (0.3, 0.9))
 _MIN_OVERLAP = min(overlap for overlap, _ in _CONTINUES)
 # Share of a text that must match another for the other to count as it.
 _SAME_TEXT = 0.8
+
+# A kana or kanji letter (half-width katakana too; not the middle dot or the
+# long-vowel mark alone).
+_JAPANESE = re.compile(r"[ぁ-ゖァ-ヺｦ-ﾝ㐀-鿿々]")
 
 type Box = tuple[float, float, float, float]
 
@@ -123,9 +128,14 @@ class TelopCards(StrictModel):
 
     @property
     def offered(self) -> list[TelopCard]:
-        """The cards the selector and the reference tables see: all but the
-        recurring ones."""
-        return [card for card in self.cards if card.kind is not CardKind.RECURRING]
+        """The cards the selector and the reference tables see: those with
+        Japanese text (the others are timer digits, prints, badges, English
+        marks and OCR garbage), but not the recurring ones."""
+        return [
+            card
+            for card in self.cards
+            if card.kind is not CardKind.RECURRING and _JAPANESE.search(card.text)
+        ]
 
 
 @dataclass(slots=True)

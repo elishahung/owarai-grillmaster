@@ -38,10 +38,9 @@ the stage alike).
 2. **Reference** — glossary and proofread call `_telop.reference`: wait for
    the scan (`StageContext.side_tasks.wait`), build the cards, pass the
    offered ones as a table (`reference.render_reference`, prompt
-   `postprocess/prompts/telop_reference.md`): only texts with kana or
-   kanji (Latin-only reads were 28 % of rows, nearly all prints and
-   garbage), a repeated text one row with all its times. Waiting keeps
-   their input deterministic; no scan (failed task) → no table, a warning.
+   `postprocess/prompts/telop_reference.md`), a repeated text one row
+   with all its times. Waiting keeps their input deterministic; no scan
+   (failed task) → no table, a warning.
    Measured on 有吉 (2026-10-27): used as cited evidence by both passes, no
    sign it misled them.
 3. **Select** — stage `telop` (15, after `chat_translate`, so no work dir
@@ -98,6 +97,13 @@ location show), not settings.
 - **Kinds**: `speech` (every fresh line ≥ 60 % found in the ASR ±3 s) is
   offered marked `echoes_speech` — a card can echo the line and still add
   a label or a point; `candidate`; `recurring`.
+- **Offered** (`TelopCards.offered`, per card after grouping): also needs
+  kana or kanji; the rest (~25–35 % on six episodes) are timer digits,
+  prints, English marks, garbage. `cards.json` keeps them.
+- **Kanji-only cards** are offered; the selector drops those a Chinese
+  viewer reads right as written (owner's call, 2026-10-27). A Python rule
+  was measured and rejected: it also dropped Japanese-only terms (対抗,
+  芸歴) and a profile plate's kanji half when grouping split the plate.
 
 ## Placement (`render.py`)
 
@@ -112,6 +118,11 @@ spot (×3 per picture height, sideways too), being nearer another card than
 its own (+1); spots tried are centred or against any obstacle's side
 edges, times above/below or against any obstacle's top/bottom edges, kept
 inside the picture. Widths are estimated (wide char = 1 em, other 0.55).
+A translation leaves with its card, or `MAX_SHOWN_S` after it appears when
+the card is up longer than that plus `SHOWN_TOLERANCE_S` (owner's call:
+long cards stayed up long after they were read); its card
+stays an obstacle until the card itself leaves. `telop.cht.json` keeps the
+card's real times.
 The dialogue is another layer on top: this one never avoids it (owner's
 call: a translation away from its card is worse than one under a cue). A
 card that groups wrongly lands wrongly, so fix grouping, not placement.
@@ -160,3 +171,57 @@ accepted for selecting beside the final subtitles).
   goes in its `instruction.telop`.
 - Do not force what OCR cannot read (a card missing from the scan stays
   missing); guide the rules and the agent instead.
+
+## Acting on feedback
+
+The owner reviews episodes and reports cards by timestamp. Use
+`scripts/telop_probe.py` (run it from the Bash tool, which shows its UTF-8
+output as is; its docstring lists the commands) rather than ad-hoc scripts.
+It rebuilds cards with the working tree's rules from the kept scan, so no
+OCR or agent run is needed. Per item:
+
+1. Trace it down the chain before changing anything: `cards <id> <m:ss>`
+   (grouping, kind, offered, the last translation), `lines <id> <regex>`
+   (raw OCR lines with pixel boxes; match the raw text, since `normalize`
+   drops ー・… and punctuation), `frames <id> <m:ss>...` to look. Name the
+   stage that went wrong.
+2. Fix it at the layer that owns it (below), as a class of card, never
+   this episode's text.
+3. Measure a rule change on every scanned project: `diff <HEAD's scan.py>`
+   (`git show HEAD:src/grillmaster/telop/scan.py > "$TEMP/old_scan.py"`;
+   ~30 s over the archive). Read what it lets in or drops elsewhere. A
+   rule that fixes the episode but admits logos, sponsor marks, ad copy or
+   board entries elsewhere is rejected. OCR boxes include decoration and
+   vary for the same text (one corner title 46 px vs 77 px tall), so size
+   thresholds are weak signals.
+4. When no general fix exists, report the cause and the options instead
+   of forcing one. Mind intro cards: name, group, age and profile lines
+   group into one card; a rule on single lines (length, digits) splits or
+   strips them.
+
+Where a fix belongs:
+
+- **Pre-filter rules** (`scan.py`, deterministic, before any agent): only
+  what one line's or card's text, box and timing decide and is noise in
+  every show: confidence, duration, one character, no kana/kanji,
+  long-running fixtures; speech echo is marked, not dropped. The bar: the
+  cross-episode diff loses no real card.
+- **Selector agent** (`select.md`, show-agnostic): anything needing
+  meaning or context: edited caption vs scene text, logos/titles/ads,
+  running readouts, echoes of speech, what a viewer needs, wording and
+  consistency, English parts. A show's own convention goes in its
+  `instruction.telop`.
+- **New step or algorithm** (propose with measurements, owner decides):
+  when the signal is across lines or time rather than in one line, so
+  neither a single-line rule nor the prompt can see it: same text in
+  another place or form (below), a box whose text keeps changing (a
+  readout), boards. Expect these to need a richer model of the scan
+  (positions, layouts, sequences), not another threshold.
+
+Known gap (2026-10-27): recurrence is judged by text alone, wherever and
+however it appears. A corner label's text reused elsewhere is absorbed: a
+full-screen title card or break bumper repeating the corner title, an
+intro name plate whose name is also a long-running label. Size/orientation
+"set apart" exceptions were measured and rejected (on other episodes they
+mostly admitted logos, sponsor marks and boards). Position-aware
+recurrence is the open lead.

@@ -83,6 +83,29 @@ def test_noise_is_dropped_before_any_card():
     assert build_cards(scan_of(*frames), []).cards == []
 
 
+def test_a_card_without_japanese_is_kept_but_not_offered():
+    frames = [
+        [
+            read(CORNER, "REPLAY"),
+            read((0.80, 0.40, 0.95, 0.48), "0:00:10"),
+            read((0.80, 0.60, 0.95, 0.68), "★・★"),
+            read(MEMO, "ゴミ焼いてる"),
+            read((0.02, 0.40, 0.20, 0.48), "ｻﾝｷｭｰ"),
+        ]
+    ] * 4
+
+    cards = build_cards(scan_of(*frames), [])
+
+    assert sorted(card.text for card in cards.cards) == [
+        "0:00:10",
+        "REPLAY",
+        "★・★",
+        "ゴミ焼いてる",
+        "ｻﾝｷｭｰ",
+    ]
+    assert sorted(card.text for card in cards.offered) == ["ゴミ焼いてる", "ｻﾝｷｭｰ"]
+
+
 def test_a_card_repeating_the_speech_is_speech():
     frames = [[read(MEMO, "次回からは恋愛続けます!!")]] * 4
     transcript = [cue(1, 0.5, 2.0, "次回からはまたちょっと恋愛続けますか？")]

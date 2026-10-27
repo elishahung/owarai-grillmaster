@@ -425,7 +425,7 @@ def test_telops_burn_under_the_dialogue_unless_left_out(
     make: MakeContext, finished: ProjectLayout, package_root: Path
 ):
     telop = TelopSubtitle(
-        id=1, start=1.0, end=2.0, ja="ja", zh="字卡", box=(0, 0, 1, 1)
+        id=1, start=1.0, end=2.0, ja="ja", zh="字卡", boxes=[(0, 0, 1, 1)], beside=[]
     )
     write_model(finished.telop_cht_json, TelopSubtitles(items=[telop]))
     fake = burn_in_fake(finished, package_root)

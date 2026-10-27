@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from grillmaster.core.briefing import Briefing
     from grillmaster.core.srt import SrtBlock
     from grillmaster.core.tool_session import ToolSession
-    from grillmaster.telop.scan import TelopCard
+    from grillmaster.telop.scan import CardLine, TelopCard
 
 TASK_NAME = "telop"
 
@@ -62,15 +62,17 @@ class TelopSelection(StrictModel):
 
 
 class TelopSubtitle(StrictModel):
-    """One translated card: on screen from `start` to `end` (seconds), `box`
-    as fractions of the frame (for a future placement beside the card)."""
+    """One translated card: on screen from `start` to `end` (seconds); boxes
+    are fractions of the frame, one per line: `boxes` the translated lines
+    it sits beside, `beside` the card's other lines, which it only avoids."""
 
     id: int
     start: float
     end: float
     ja: str
     zh: str
-    box: Box
+    boxes: list[Box] = Field(min_length=1)
+    beside: list[Box]
 
 
 class TelopSubtitles(StrictModel):
@@ -199,28 +201,29 @@ def to_subtitles(
     cards: Sequence[TelopCard], selection: TelopSelection
 ) -> TelopSubtitles:
     """The kept cards with their translations, in time order, each with the
-    text and box of the lines it covers; a translation that reads exactly
-    like those lines (a place name in kanji) tells the viewer nothing and is
-    dropped."""
+    text and boxes of the lines it covers, and the boxes of the card's other
+    lines; a translation that reads exactly like those lines (a place name in
+    kanji) tells the viewer nothing and is dropped."""
     by_id = {card.id: card for card in cards}
     items: list[TelopSubtitle] = []
     for kept in selection.kept:
         card = by_id[kept.id]
-        covered = card.model_copy(
-            update={"lines": [card.lines[number - 1] for number in sorted(kept.lines)]}
-        )
-        if normalize(kept.zh) == normalize(
-            "".join(line.text for line in covered.lines)
-        ):
+        numbers = set(kept.lines)
+        covered: list[CardLine] = []
+        beside: list[CardLine] = []
+        for number, line in enumerate(card.lines, 1):
+            (covered if number in numbers else beside).append(line)
+        if normalize(kept.zh) == normalize("".join(line.text for line in covered)):
             continue
         items.append(
             TelopSubtitle(
                 id=card.id,
                 start=card.start,
                 end=card.end,
-                ja=covered.text,
+                ja=card.model_copy(update={"lines": covered}).text,
                 zh=kept.zh.strip(),
-                box=covered.box,
+                boxes=[line.box for line in covered],
+                beside=[line.box for line in beside],
             )
         )
     return TelopSubtitles(items=sorted(items, key=lambda item: (item.start, item.id)))

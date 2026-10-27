@@ -148,7 +148,8 @@ def test_kept_cards_become_subtitles_in_time_order():
         (4, 20.5, "還是什麼都不知道"),
     ]
     assert subtitles.items[0].ja == "何度も転生? / 亀姫の前世"
-    assert subtitles.items[0].box == (0.03, 0.03, 0.3, 0.1)
+    assert subtitles.items[0].boxes == [(0.03, 0.03, 0.3, 0.06), (0.03, 0.06, 0.3, 0.1)]
+    assert subtitles.items[0].beside == []
 
 
 def test_a_translation_of_some_lines_sits_on_those_lines():
@@ -159,7 +160,9 @@ def test_a_translation_of_some_lines_sits_on_those_lines():
     (item,) = to_subtitles([PLATE], selection).items
 
     assert item.ja == "ラランド / サーヤ"
-    assert item.box == (0.826, 0.577, 0.943, 0.724)
+    assert item.boxes == [(0.832, 0.577, 0.928, 0.652), (0.826, 0.622, 0.943, 0.724)]
+    # The caption left out is still on screen: the translation avoids it.
+    assert item.beside == [(0.003, 0.731, 0.996, 0.999)]
 
 
 def test_a_translation_reading_like_its_card_is_dropped():

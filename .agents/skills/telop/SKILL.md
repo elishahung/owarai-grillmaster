@@ -54,8 +54,9 @@ the stage alike).
    fails), the effective briefing and `instruction.telop`, plus
    `get_frames`. Answer = kept cards only (`{id, lines, zh}`); validation:
    known id, once, non-empty `zh`, `lines` non-empty, unique, on the card.
-   The item's `ja` and `box` are those lines', so the translation sits
-   beside them: a name plate grouping joined to a caption that repeats the
+   The item's `ja` and `boxes` (one per line) are those lines', its
+   `beside` the boxes of the card's other lines (avoided, not anchored
+   on), so the translation sits beside them: a name plate grouping joined to a caption that repeats the
    speech is translated alone, beside the plate (grouping cannot split
    them, see the strict xfails in `test_scan.py`). A translation that
    normalizes to its lines' text (a kanji place name) is dropped by Python. Deliverable
@@ -118,8 +119,11 @@ owner's call: one place for the eye, where the card is — a top line plus
 some beside cards made the gaze drift): right below it (one side for every
 item of a list), right above only when below does not fit in the picture;
 anchored on the edge facing the card, so the estimated height never opens
-a gap. Each spot is costed: share covered by another
-translation (×10) or an original card (×1), distance from the preferred
+a gap. Above/below is measured per line, on the translated lines sharing
+its columns (a tab or corner label off to one side made the union box
+push it away, 2026-10-28). Each spot is costed: share covered by another
+translation (×10) or any line of an up translated card, kept or `beside`
+(×1), distance from the preferred
 spot (×3 per picture height, sideways too), being nearer another card than
 its own (+1); spots tried are centred or against any obstacle's side
 edges, times above/below or against any obstacle's top/bottom edges, kept

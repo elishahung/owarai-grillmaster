@@ -257,7 +257,7 @@ def write_telops(path: Path) -> None:
         items=[
             TelopSubtitle(
                 id=3, start=2.0, end=3.5, ja="唐突チェーン", zh="突然的鏈條",
-                box=(0.0, 0.8, 0.5, 0.9),
+                boxes=[(0.0, 0.8, 0.5, 0.9)], beside=[],
             )
         ]
     )  # fmt: skip

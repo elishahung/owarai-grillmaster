@@ -8,7 +8,9 @@ pale yellow keeps the cards apart from the white dialogue.
 Every translation sits next to the card it translates, so the eye finds it
 where the card is: right below it (one side for every item of a list),
 right above only when below does not fit in the picture, and away from the
-other translations and cards up with it. It leaves with its card, or after
+other translations and cards up with it. Above and below are measured on
+the card lines it shares columns with, so a tab or corner label off to one
+side does not push it away from the rest. It leaves with its card, or after
 `MAX_SHOWN_S` when the card stays well past that. Positions follow `frame`, the
 picture's box on the canvas (a side layout shrinks it).
 
@@ -44,6 +46,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from grillmaster.core.srt import SrtBlock
+    from grillmaster.telop.scan import Box
     from grillmaster.telop.select import TelopSubtitle, TelopSubtitles
 
 STYLE_NAME = "Telop"
@@ -106,17 +109,39 @@ class _Rect:
         return math.hypot(gap_x, gap_y)
 
 
+def _span(rects: Sequence[_Rect]) -> _Rect:
+    return _Rect(
+        min(rect.x0 for rect in rects),
+        min(rect.y0 for rect in rects),
+        max(rect.x1 for rect in rects),
+        max(rect.y1 for rect in rects),
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class _Card:
-    """One translation to draw: its lines, its card's box on the canvas and
-    its estimated size (libass's measured glyph advances; a line wider than
-    the picture wraps)."""
+    """One translation to draw: its lines, the boxes on the canvas of the
+    card lines it translates (`own`) and of the card's other lines
+    (`beside`), and its estimated size (libass's measured glyph advances; a
+    line wider than the picture wraps)."""
 
     item: TelopSubtitle
     lines: list[str]
-    box: _Rect
+    own: list[_Rect]
+    beside: list[_Rect]
     width: float
     height: float
+
+    def facing(self, x0: float, x1: float) -> _Rect:
+        """The box around the translated lines a translation spanning `x0` to
+        `x1` sits above or below: those it shares columns with, so a card's
+        line set off to the side (a corner label, a tab) does not push it
+        away from the rest; all of them when it shares none."""
+        shared = [rect for rect in self.own if rect.x0 < x1 and x0 < rect.x1]
+        return _span(shared or self.own)
+
+    def distance(self, rect: _Rect) -> float:
+        return min(rect.distance(own) for own in self.own)
 
     @property
     def shown_until(self) -> float:
@@ -143,15 +168,23 @@ def _card(item: TelopSubtitle, frame: PictureBox) -> _Card | None:
     widths = [text_width(line, FONT_SIZE) for line in lines]
     room = frame.width - 2 * MARGIN_H
     rows = sum(max(1, math.ceil(width / room)) for width in widths)
-    x0, y0, x1, y1 = item.box
-    box = _Rect(
-        frame.x + x0 * frame.width,
-        frame.y + y0 * frame.height,
-        frame.x + x1 * frame.width,
-        frame.y + y1 * frame.height,
-    )
+
+    def rect(box: Box) -> _Rect:
+        x0, y0, x1, y1 = box
+        return _Rect(
+            frame.x + x0 * frame.width,
+            frame.y + y0 * frame.height,
+            frame.x + x1 * frame.width,
+            frame.y + y1 * frame.height,
+        )
+
     return _Card(
-        item, lines, box, min(max(widths), room), rows * FONT_SIZE * _LINE_HEIGHT
+        item,
+        lines,
+        [rect(box) for box in item.boxes],
+        [rect(box) for box in item.beside],
+        min(max(widths), room),
+        rows * FONT_SIZE * _LINE_HEIGHT,
     )
 
 
@@ -159,32 +192,37 @@ def _place(
     card: _Card,
     frame: PictureBox,
     *,
-    others: Sequence[_Rect],
+    others: Sequence[_Card],
     translations: Sequence[_Rect],
 ) -> _Rect:
-    """Where to draw `card`, among the `others` cards and the `translations`
-    already placed that are up with it.
+    """Where to draw `card`, among the `others` translated cards and the
+    `translations` already placed that are up with it.
 
-    Every spot is costed: the share of it each obstacle covers, weighted
+    Every spot is costed: the share of it each obstacle (every line of these
+    cards, translated or not, and the translations) covers, weighted
     (another translation most), its distance from the preferred spot (right
-    below the card and centred on it, or right above it when below does not
-    fit), and being nearer another card than its own. Spots tried: centred
-    or against a side edge of any obstacle, times above or below the card or
-    against a top or bottom edge of any obstacle, kept inside the picture.
+    below the lines it faces and centred on the card, or right above them
+    when below does not fit), and being nearer another card's line than its
+    own.
+    Spots tried: centred or against a side edge of any obstacle, times above
+    or below the lines it faces or against a top or bottom edge of any
+    obstacle, kept inside the picture.
     """
-    own, width, height = card.box, card.width, card.height
+    width, height = card.width, card.height
     left = frame.x + MARGIN_H
     right = frame.x + frame.width - MARGIN_H - width
     lowest = frame.y + MARGIN_V
     # A translation taller than the picture starts at its top.
     highest = max(lowest, frame.y + frame.height - MARGIN_V - height)
-    centred = (own.x0 + own.x1 - width) / 2
-    above = own.y0 - _GAP - height
-    below = own.y1 + _GAP
+    span = _span(card.own)
+    centred = min(max((span.x0 + span.x1 - width) / 2, left), right)
+    facing = card.facing(centred, centred + width)
+    above = facing.y0 - _GAP - height
+    below = facing.y1 + _GAP
     preferred = below if below <= highest else above
+    their_lines = [rect for other in others for rect in (*other.own, *other.beside)]
     obstacles = [
-        (own, _COVER_CARD),
-        *((other, _COVER_CARD) for other in others),
+        *((rect, _COVER_CARD) for rect in (*card.own, *card.beside, *their_lines)),
         *((rect, _COVER_TRANSLATION) for rect in translations),
     ]
     lefts = {centred}
@@ -192,28 +230,32 @@ def _place(
     for rect, _ in obstacles:
         lefts |= {rect.x0 - _GAP - width, rect.x1 + _GAP}
         tops |= {rect.y0 - _GAP - height, rect.y1 + _GAP}
-
-    def spot(x0: float, top: float) -> _Rect:
-        x0 = min(max(x0, left), right)
-        top = min(max(top, lowest), highest)
-        return _Rect(x0, top, x0 + width, top + height)
+    # Kept inside the picture before pairing, so the edges past it collapse
+    # into one spot instead of repeating it.
+    lefts = {min(max(x0, left), right) for x0 in lefts}
+    tops = {min(max(top, lowest), highest) for top in tops}
 
     def cost(rect: _Rect) -> float:
         covered = sum(weight * rect.overlap(o) for o, weight in obstacles)
         away = (abs(rect.y0 - preferred) + abs(rect.x0 - centred)) / frame.height
-        nearest = rect.distance(own)
-        ambiguous = any(rect.distance(other) < nearest for other in others)
+        nearest = card.distance(rect)
+        ambiguous = any(rect.distance(line) < nearest for line in their_lines)
         return covered / rect.area + _AWAY * away + _AMBIGUOUS * ambiguous
 
-    spots = (spot(x0, top) for x0 in sorted(lefts) for top in sorted(tops))
+    spots = (
+        _Rect(x0, top, x0 + width, top + height)
+        for x0 in sorted(lefts)
+        for top in sorted(tops)
+    )
     return min(spots, key=cost)
 
 
-def _anchor(rect: _Rect, own: _Rect) -> str:
+def _anchor(rect: _Rect, card: _Card) -> str:
     """Override tags drawing a translation in `rect`, anchored on the edge
-    facing its card (`own`), so the estimated height never opens a gap
+    facing its card's lines, so the estimated height never opens a gap
     there."""
     x = (rect.x0 + rect.x1) / 2
+    own = card.facing(rect.x0, rect.x1)
     if (rect.y0 + rect.y1) < (own.y0 + own.y1):
         return f"{{\\an2\\pos({x:.0f},{rect.y1:.0f})}}"
     return f"{{\\an8\\pos({x:.0f},{rect.y0:.0f})}}"
@@ -237,7 +279,7 @@ def _events(subtitles: TelopSubtitles, frame: PictureBox) -> list[str]:
             card,
             frame,
             others=[
-                other.box
+                other
                 for other in cards
                 if other is not card and card.card_up_with(other)
             ],
@@ -248,7 +290,7 @@ def _events(subtitles: TelopSubtitles, frame: PictureBox) -> list[str]:
         end = format_ass_centiseconds(ass_centiseconds(card.shown_until))
         events.append(
             f"Dialogue: 0,{start},{end},{STYLE_NAME},,"
-            f"{margins},,{_anchor(rect, card.box)}"
+            f"{margins},,{_anchor(rect, card)}"
             + "\\N".join(escape_text(line) for line in card.lines)
         )
     return events

@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
+import pytest
+
 from grillmaster.core.srt import SrtBlock
 from grillmaster.core.timecode import format_timecode_line
 from grillmaster.subtitles.ass import DIALOGUE_STYLE_NAME, PictureBox
@@ -17,6 +19,8 @@ from grillmaster.telop.render import (
 from grillmaster.telop.select import TelopSubtitle, TelopSubtitles
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from grillmaster.telop.scan import Box
 
 _POS = re.compile(r"\\an(\d)\\pos\((\d+),(\d+)\)")
@@ -25,12 +29,22 @@ CARD: Box = (0.4, 0.3, 0.6, 0.36)
 
 def subtitle(
     zh: str,
-    box: Box = CARD,
+    *,
+    boxes: Sequence[Box] = (CARD,),
+    beside: Sequence[Box] = (),
     start: float = 1.0,
     end: float = 2.5,
     id: int = 1,  # noqa: A002 - the model's field
 ) -> TelopSubtitle:
-    return TelopSubtitle(id=id, start=start, end=end, ja="ja", zh=zh, box=box)
+    return TelopSubtitle(
+        id=id,
+        start=start,
+        end=end,
+        ja="ja",
+        zh=zh,
+        boxes=list(boxes),
+        beside=list(beside),
+    )
 
 
 def events(ass: str) -> list[str]:
@@ -58,9 +72,9 @@ def test_a_card_is_translated_right_under_it_on_the_source_timeline():
 
 
 def test_a_long_card_s_translation_leaves_after_ten_seconds_but_stays_an_obstacle():
-    long = subtitle("長卡", box=(0.4, 0.3, 0.6, 0.36), start=1.0, end=40.0, id=1)
+    long = subtitle("長卡", boxes=[(0.4, 0.3, 0.6, 0.36)], start=1.0, end=40.0, id=1)
     # Right above the long card: its spot below would cover that card.
-    later = subtitle("後來", box=(0.4, 0.22, 0.6, 0.28), start=20.0, end=22.0, id=2)
+    later = subtitle("後來", boxes=[(0.4, 0.22, 0.6, 0.28)], start=20.0, end=22.0, id=2)
 
     ass = render_telop_ass(TelopSubtitles(items=[long, later]))
 
@@ -120,8 +134,8 @@ def test_translations_of_cards_side_by_side_stay_in_their_columns():
     ass = render_telop_ass(
         TelopSubtitles(
             items=[
-                subtitle("左邊\n名牌", box=(0.05, 0.3, 0.3, 0.4), id=1),
-                subtitle("右邊\n名牌", box=(0.7, 0.3, 0.95, 0.4), id=2),
+                subtitle("左邊\n名牌", boxes=[(0.05, 0.3, 0.3, 0.4)], id=1),
+                subtitle("右邊\n名牌", boxes=[(0.7, 0.3, 0.95, 0.4)], id=2),
             ]
         )
     )
@@ -135,8 +149,8 @@ def test_translations_of_stacked_cards_do_not_overlap():
     ass = render_telop_ass(
         TelopSubtitles(
             items=[
-                subtitle("上面那張卡", box=(0.4, 0.3, 0.6, 0.34), id=1),
-                subtitle("下面那張卡", box=(0.4, 0.4, 0.6, 0.44), id=2),
+                subtitle("上面那張卡", boxes=[(0.4, 0.3, 0.6, 0.34)], id=1),
+                subtitle("下面那張卡", boxes=[(0.4, 0.4, 0.6, 0.44)], id=2),
             ]
         )
     )
@@ -145,14 +159,71 @@ def test_translations_of_stacked_cards_do_not_overlap():
     assert tops[1] - tops[0] >= FONT_SIZE * 1.2
 
 
+@pytest.mark.parametrize(
+    ("zh", "boxes", "facing_top"),
+    [
+        pytest.param(
+            "前三名預測\n理由：忠於搞笑教科書",
+            [
+                (0.778, 0.685, 0.969, 0.764),  # トップ3予想, a tab on the right
+                (0.080, 0.766, 0.943, 0.976),  # お笑いの教科書に忠実
+                (0.033, 0.776, 0.085, 0.957),  # 理由
+            ],
+            0.766,
+            id="tab over a full-width caption",
+        ),
+        pytest.param(
+            "【熊元筆記】會先在意有沒有人抽菸嗎？",
+            [
+                (0.025, 0.768, 0.197, 0.834),  # 熊元MEMO, a corner label
+                (0.107, 0.844, 0.893, 0.956),  # まず喫煙者がいるか気になるかな？
+            ],
+            0.844,
+            id="memo under its corner label",
+        ),
+    ],
+)
+def test_a_translation_sits_on_the_lines_it_shares_columns_with(
+    zh: str, boxes: list[Box], facing_top: float
+):
+    # On the bottom edge, so above: right on the caption, not on the box
+    # the tab or label sticking up beside it would make.
+    ass = render_telop_ass(TelopSubtitles(items=[subtitle(zh, boxes=boxes)]))
+
+    ((alignment, _, y),) = anchors(ass)
+    assert (alignment, y) == (2, round(facing_top * 1080) - 8)
+
+
+def test_a_translation_avoids_the_lines_of_its_card_it_leaves_out():
+    ranks = [
+        (0.080, 0.712, 0.153, 0.796),
+        (0.271, 0.710, 0.347, 0.797),
+        (0.463, 0.712, 0.539, 0.797),
+        (0.656, 0.713, 0.730, 0.798),
+        (0.848, 0.709, 0.921, 0.799),
+    ]
+    title = (0.042, 0.794, 0.961, 0.999)
+
+    ass = render_telop_ass(
+        TelopSubtitles(
+            items=[subtitle("Westland井口的預測", boxes=[title], beside=ranks)]
+        )
+    )
+
+    # Right above the title is the row of rank labels: it goes over them.
+    ((alignment, _, y),) = anchors(ass)
+    assert alignment == 2
+    assert y <= min(rank[1] for rank in ranks) * 1080
+
+
 def test_a_translation_goes_above_only_when_below_does_not_fit():
     # Low in the picture but with room below: still below, like the rest of
     # a list. On the bottom edge: above, anchored on its bottom edge.
     ass = render_telop_ass(
         TelopSubtitles(
             items=[
-                subtitle("清單最後一項", box=(0.4, 0.80, 0.6, 0.84), id=1),
-                subtitle("底部名牌", box=(0.05, 0.92, 0.3, 0.98), id=2),
+                subtitle("清單最後一項", boxes=[(0.4, 0.80, 0.6, 0.84)], id=1),
+                subtitle("底部名牌", boxes=[(0.05, 0.92, 0.3, 0.98)], id=2),
             ]
         )
     )

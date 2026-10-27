@@ -7,7 +7,7 @@ The cards below were read by OCR from frames sampled twice a second and pre-filt
 Keep a card when it adds something the dialogue subtitles do not carry:
 
 - editorial commentary and ツッコミ captions, narration and questions put to the cast;
-- information: places, dates, names with their group or age, profile tables, rankings, timelines, rules, prices that matter to the story, explanations of a word;
+- information: places, dates, names with their group or age, profile tables, timelines, rules, prices that matter to the story, explanations of a word;
 - thoughts, notes or messages the cast wrote, shown as text.
 
 Drop a card when it:
@@ -18,7 +18,7 @@ Drop a card when it:
 - is a running readout: a timer, clock, counter or meter graphic and its label, whose numbers change while it is up (a card announcing a final result is not one);
 - is unreadable OCR garbage, or a fragment of a card you already kept;
 - would only repeat a name the subtitles already show;
-- is in kanji alone (with numbers or symbols) and a Chinese viewer reads it right as written: a name, a place, a date, a count, a word that means the same in Chinese. Keep it when a word means something else in Chinese or is not used there, and when it is part of a card you keep that the rules split in two (shown at the same time right beside it, one plate or panel): then translate both parts.
+- is in kanji alone (with numbers or symbols) and a Chinese viewer reads it right as written: a name, a place, a date, a count, a rank, a word that means the same in Chinese. Keep it when a word means something else in Chinese or is not used there, and when it is part of a card you keep that the rules split in two (shown at the same time right beside it, one plate or panel): then translate both parts.
 
 When you cannot tell from the text whether a card is an edited caption or scene text, look at it: call `get_frames` with the card's start times (many cards in one call). Do not fetch frames for cards whose text already decides it.
 
@@ -27,7 +27,7 @@ Translation rules:
 - Translate what the card means in context, in the tone of the show; captions are punchy, keep them short.
 - Agree with the dialogue subtitles: use their renderings of names, terms and phrases the card shares with the speech, and the briefing's names (`characters` for talents). The subtitles are the reference for wording, not text to copy into a card.
 - Keep the whole episode consistent: cards of one kind (the same recurring label, caption style or card format) get one rendering of their recurring parts and one layout, and the same Japanese wording gets the same translation wherever it appears. A label that says whose card it is belongs in the translation.
-- Translate only the lines a viewer needs, and list them in `lines`; the translation sits beside those lines. The rules sometimes join two things into one card: a name plate or photo label beside a big caption. When the caption only repeats the dialogue, translate the plate or label alone and leave the caption's lines out; when both add something, keep them in one translation.
+- Translate only the lines a viewer needs, and list them in `lines`; the translation sits beside those lines. The rules sometimes join two things into one card: a name plate or photo label beside a big caption. When the caption only repeats the dialogue, translate the plate or label alone and leave the caption's lines out; when both add something, keep them in one translation. The kanji rule above also applies line by line: leave out a line a Chinese viewer reads right as written that the rest of the card does not need, but keep one that says whose card or answer it is.
 - One card is one entry. Use `\n` for a line break only where the card itself breaks into separate items (a name and a profile line); at most three lines.
 - OCR may misread a character. Translate the card that is on screen, not the misreading; fetch a frame when it matters.
 - No Japanese left in the translation except a proper noun with no Chinese rendering.

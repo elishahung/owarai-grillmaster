@@ -76,7 +76,7 @@ def _kept(layout: ProjectLayout) -> dict[tuple[float, str], str]:
 
 
 def _box(box: tuple[float, float, float, float]) -> str:
-    return f"({box[0]:.2f},{box[1]:.2f})-({box[2]:.2f},{box[3]:.2f})"
+    return f"({box[0]:.3f},{box[1]:.3f})-({box[2]:.3f},{box[3]:.3f})"
 
 
 def cards_command(project: str, start: str, end: str | None) -> None:

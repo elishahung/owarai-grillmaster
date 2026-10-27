@@ -17,9 +17,9 @@ several cards into each card it sits on, and labels each card:
 - `candidate`: anything else.
 
 The selector sees every card with Japanese text but the recurring ones
-(`TelopCards.offered`), speech-like ones marked: a card can echo the speech
-and still add a label or a point. `cards.json` keeps every label, so tuning
-sees the rules' view.
+(`TelopCards.offered`), each line that repeats the speech marked: a card
+can echo the speech and still add a label or a point. `cards.json` keeps
+every label, so tuning sees the rules' view.
 Boxes are fractions of the frame, so every threshold here is scale-free.
 The thresholds were tuned on two episodes (a memo show and a commentary-
 card location show); they are not settings.
@@ -94,8 +94,11 @@ class CardKind(StrEnum):
 
 
 class CardLine(StrictModel):
+    """`echoes_speech`: the line repeats the ASR transcript around it."""
+
     text: str
     box: Box
+    echoes_speech: bool = False
 
 
 class TelopCard(StrictModel):
@@ -415,14 +418,12 @@ def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:
     for group, is_fixture in groups:
         start = min(line.start for line in group)
         end = max(line.end for line in group)
+        echoes = set[int]()
         if is_fixture:
             kind = CardKind.RECURRING
         else:
-            kind = (
-                CardKind.SPEECH
-                if all(_repeats_speech(line, cues) for line in group)
-                else CardKind.CANDIDATE
-            )
+            echoes = {id(line) for line in group if _repeats_speech(line, cues)}
+            kind = CardKind.SPEECH if len(echoes) == len(group) else CardKind.CANDIDATE
             group.extend(_labels_of(group, start, end, labels))
         ordered = _reading_order(group)
         cards.append(
@@ -431,7 +432,12 @@ def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:
                 start=round(start, 2),
                 end=round(end, 2),
                 kind=kind,
-                lines=[CardLine(text=line.text, box=line.box) for line in ordered],
+                lines=[
+                    CardLine(
+                        text=line.text, box=line.box, echoes_speech=id(line) in echoes
+                    )
+                    for line in ordered
+                ],
             )
         )
     return TelopCards(cards=cards)

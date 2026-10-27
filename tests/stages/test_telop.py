@@ -53,7 +53,11 @@ def config_sections() -> dict[str, Any]:
 
 @pytest.fixture
 def script() -> dict[str, object]:
-    return {TASK_NAME: TelopSelection(kept=[KeptTelop(id=1, zh="還是什麼都不知道")])}
+    return {
+        TASK_NAME: TelopSelection(
+            kept=[KeptTelop(id=1, lines=[1], zh="還是什麼都不知道")]
+        )
+    }
 
 
 @pytest.fixture
@@ -163,7 +167,7 @@ def test_speech_like_cards_reach_the_selector_marked(
 
     STAGE.run(make_context(StageKey.TELOP))
 
-    assert f"\tyes\t{CAPTION_TEXT}" in agents.task(TASK_NAME).prompt
+    assert f"\t1\t[1] {CAPTION_TEXT}" in agents.task(TASK_NAME).prompt
 
 
 def test_no_offered_card_writes_none_without_an_agent(

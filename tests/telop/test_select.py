@@ -37,18 +37,41 @@ CARDS = [
         end=80.0,
         kind=CardKind.SPEECH,
         lines=[
-            CardLine(text="何度も転生?", box=(0.03, 0.03, 0.3, 0.06)),
-            CardLine(text="亀姫の前世", box=(0.03, 0.06, 0.3, 0.1)),
+            CardLine(
+                text="何度も転生?", box=(0.03, 0.03, 0.3, 0.06), echoes_speech=True
+            ),
+            CardLine(text="亀姫の前世", box=(0.03, 0.06, 0.3, 0.1), echoes_speech=True),
         ],
     ),
 ]
+# A name plate the rules joined to the caption under it; the caption repeats
+# the speech.
+PLATE = TelopCard(
+    id=15,
+    start=2384.5,
+    end=2388.0,
+    kind=CardKind.CANDIDATE,
+    lines=[
+        CardLine(text="ラランド", box=(0.832, 0.577, 0.928, 0.652)),
+        CardLine(text="サーヤ", box=(0.826, 0.622, 0.943, 0.724)),
+        CardLine(
+            text="最後の大根痺れました",
+            box=(0.003, 0.731, 0.996, 0.999),
+            echoes_speech=True,
+        ),
+    ],
+)
 
 
-def test_the_card_table_gives_seconds_position_and_speech_echoes():
-    assert render_cards(CARDS).splitlines() == [
+def test_the_card_table_numbers_lines_and_lists_the_speech_echoes():
+    assert render_cards([*CARDS, PLATE]).splitlines() == [
         "id\tseconds\tposition\techoes_speech\ttext",
-        "4\t20.5-26.0\tbottom-left\t\t相変わらず何も知らない",
-        "9\t1.0-80.0\ttop-left\tyes\t何度も転生? / 亀姫の前世",
+        "4\t20.5-26.0\tbottom-left\t\t[1] 相変わらず何も知らない",
+        "9\t1.0-80.0\ttop-left\t1,2\t[1] 何度も転生? / [2] 亀姫の前世",
+        (
+            "15\t2384.5-2388.0\tbottom-center\t3\t"
+            "[1] ラランド / [2] サーヤ / [3] 最後の大根痺れました"
+        ),
     ]
 
 
@@ -77,16 +100,16 @@ def test_the_task_carries_the_cards_dialogue_briefing_and_program_text(
 
 
 def test_the_validator_rejects_unknown_repeated_and_empty_entries():
-    validate = make_validator({4, 9})
-    validate(TelopSelection(kept=[KeptTelop(id=4, zh="還是什麼都不知道")]))
+    validate = make_validator({4: 1, 9: 2})
+    validate(TelopSelection(kept=[KeptTelop(id=4, lines=[1], zh="還是什麼都不知道")]))
     validate(TelopSelection(kept=[]))
 
     answer = TelopSelection(
         kept=[
-            KeptTelop(id=5, zh="x"),
-            KeptTelop(id=4, zh="a"),
-            KeptTelop(id=4, zh="b"),
-            KeptTelop(id=9, zh=" "),
+            KeptTelop(id=5, lines=[1], zh="x"),
+            KeptTelop(id=4, lines=[1], zh="a"),
+            KeptTelop(id=4, lines=[1], zh="b"),
+            KeptTelop(id=9, lines=[1, 2], zh=" "),
         ]
     )
     with pytest.raises(ValidationFailure) as failure:
@@ -97,9 +120,25 @@ def test_the_validator_rejects_unknown_repeated_and_empty_entries():
     assert "id 9 has an empty zh" in message
 
 
+def test_the_validator_rejects_missing_repeated_and_unknown_lines():
+    validate = make_validator({9: 2})
+
+    for lines, problem in [
+        ([], "id 9 lists no lines"),
+        ([1, 1], "id 9 lists a line more than once"),
+        ([2, 3], "id 9 has only lines 1-2"),
+    ]:
+        with pytest.raises(ValidationFailure) as failure:
+            validate(TelopSelection(kept=[KeptTelop(id=9, lines=lines, zh="轉生")]))
+        assert problem in str(failure.value)
+
+
 def test_kept_cards_become_subtitles_in_time_order():
     selection = TelopSelection(
-        kept=[KeptTelop(id=4, zh=" 還是什麼都不知道 "), KeptTelop(id=9, zh="轉生")]
+        kept=[
+            KeptTelop(id=4, lines=[1], zh=" 還是什麼都不知道 "),
+            KeptTelop(id=9, lines=[1, 2], zh="轉生"),
+        ]
     )
 
     subtitles = to_subtitles(CARDS, selection)
@@ -110,6 +149,17 @@ def test_kept_cards_become_subtitles_in_time_order():
     ]
     assert subtitles.items[0].ja == "何度も転生? / 亀姫の前世"
     assert subtitles.items[0].box == (0.03, 0.03, 0.3, 0.1)
+
+
+def test_a_translation_of_some_lines_sits_on_those_lines():
+    selection = TelopSelection(
+        kept=[KeptTelop(id=15, lines=[2, 1], zh="LaLaLand 紗彩")]
+    )
+
+    (item,) = to_subtitles([PLATE], selection).items
+
+    assert item.ja == "ラランド / サーヤ"
+    assert item.box == (0.826, 0.577, 0.943, 0.724)
 
 
 def test_a_translation_reading_like_its_card_is_dropped():
@@ -124,7 +174,10 @@ def test_a_translation_reading_like_its_card_is_dropped():
         ],
     )
     selection = TelopSelection(
-        kept=[KeptTelop(id=12, zh="東京都\n六本木"), KeptTelop(id=4, zh="還是不知道")]
+        kept=[
+            KeptTelop(id=12, lines=[1, 2], zh="東京都\n六本木"),
+            KeptTelop(id=4, lines=[1], zh="還是不知道"),
+        ]
     )
 
     subtitles = to_subtitles([*CARDS, place], selection)

@@ -2,14 +2,16 @@
 translates them.
 
 It runs once the dialogue subtitles are final and gets the offered cards
-as a table (speech-like ones marked), the dialogue as Japanese beside the
-final Chinese subtitles (to recognise cards that only repeat the speech,
-and to word the cards like the subtitles), and the effective briefing; it
-may look at any card with `get_frames`. Its answer lists only the kept
-cards; Python checks every id names a card, once, with a translation, then
-writes `TelopSubtitles`: the deliverable packaging burns in, readable and
-editable by hand (delete an entry or change its `zh`, then `grill
-package`).
+as a table (lines numbered, those repeating the speech marked), the
+dialogue as Japanese beside the final Chinese subtitles (to recognise cards
+that only repeat the speech, and to word the cards like the subtitles), and
+the effective briefing; it may look at any card with `get_frames`. Its
+answer lists only the kept cards, each with the lines its translation
+covers (a name plate the rules joined to a caption that repeats the speech
+is translated alone, beside the plate); Python checks every id names a
+card, once, with a translation and valid lines, then writes
+`TelopSubtitles`: the deliverable packaging burns in, readable and editable
+by hand (delete an entry or change its `zh`, then `grill package`).
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ from grillmaster.core.prompts import (
     load_prompt,
     render_program_instruction,
 )
-from grillmaster.telop.scan import Box, CardKind, normalize
+from grillmaster.telop.scan import Box, normalize
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -45,7 +47,11 @@ TASK_NAME = "telop"
 
 
 class KeptTelop(StrictModel):
+    """`lines`: the card's lines (numbered from 1) the translation covers;
+    it is placed beside them."""
+
     id: int
+    lines: list[int]
     zh: str
 
 
@@ -94,10 +100,19 @@ def _position(box: Box) -> str:
 
 
 def render_cards(cards: Sequence[TelopCard]) -> str:
-    """The card table; times in seconds, as `get_frames` takes them."""
+    """The card table; times in seconds, as `get_frames` takes them, lines
+    numbered, `echoes_speech` the numbers of the lines that repeat the speech."""
     rows = [
         f"{card.id}\t{card.start:.1f}-{card.end:.1f}\t{_position(card.box)}\t"
-        f"{'yes' if card.kind is CardKind.SPEECH else ''}\t{card.text}"
+        + ",".join(
+            str(number)
+            for number, line in enumerate(card.lines, 1)
+            if line.echoes_speech
+        )
+        + "\t"
+        + " / ".join(
+            f"[{number}] {line.text}" for number, line in enumerate(card.lines, 1)
+        )
         for card in cards
     ]
     return "id\tseconds\tposition\techoes_speech\ttext\n" + "\n".join(rows)
@@ -142,17 +157,18 @@ def build_select_task(
         workdir=None,
         output=SchemaOutput(TelopSelection),
         tools=tools,
-        validate=make_validator({card.id for card in inputs.cards}),
+        validate=make_validator({card.id: len(card.lines) for card in inputs.cards}),
     )
 
 
-def make_validator(ids: set[int]) -> Callable[[TelopSelection], None]:
-    """`ValidationFailure` for an id that names no card or repeats, and for
-    an empty translation."""
+def make_validator(line_counts: dict[int, int]) -> Callable[[TelopSelection], None]:
+    """`ValidationFailure` for an id that names no card or repeats, for an
+    empty translation, and for `lines` that are empty, repeat a line or name
+    one the card does not have (`line_counts`: lines per card id)."""
 
     def validate(answer: TelopSelection) -> None:
         coverage = id_coverage(
-            ids,
+            set(line_counts),
             ((kept.id, kept.zh.strip()) for kept in answer.kept),
             require_all=False,
         )
@@ -161,6 +177,16 @@ def make_validator(ids: set[int]) -> Callable[[TelopSelection], None]:
             *(f"id {i} is listed more than once" for i in coverage.duplicate),
             *(f"id {i} has an empty zh" for i in coverage.empty),
         ]
+        for kept in answer.kept:
+            count = line_counts.get(kept.id)
+            if count is None:
+                continue
+            if not kept.lines:
+                problems.append(f"id {kept.id} lists no lines")
+            elif len(set(kept.lines)) != len(kept.lines):
+                problems.append(f"id {kept.id} lists a line more than once")
+            elif not all(1 <= number <= count for number in kept.lines):
+                problems.append(f"id {kept.id} has only lines 1-{count}")
         if problems:
             raise ValidationFailure.from_problems(
                 "Fix these kept cards and return the whole list again:", problems
@@ -172,23 +198,29 @@ def make_validator(ids: set[int]) -> Callable[[TelopSelection], None]:
 def to_subtitles(
     cards: Sequence[TelopCard], selection: TelopSelection
 ) -> TelopSubtitles:
-    """The kept cards with their translations, in time order; a translation
-    that reads exactly like its card (a place name in kanji) tells the viewer
-    nothing and is dropped."""
+    """The kept cards with their translations, in time order, each with the
+    text and box of the lines it covers; a translation that reads exactly
+    like those lines (a place name in kanji) tells the viewer nothing and is
+    dropped."""
     by_id = {card.id: card for card in cards}
     items: list[TelopSubtitle] = []
     for kept in selection.kept:
         card = by_id[kept.id]
-        if normalize(kept.zh) == normalize("".join(line.text for line in card.lines)):
+        covered = card.model_copy(
+            update={"lines": [card.lines[number - 1] for number in sorted(kept.lines)]}
+        )
+        if normalize(kept.zh) == normalize(
+            "".join(line.text for line in covered.lines)
+        ):
             continue
         items.append(
             TelopSubtitle(
                 id=card.id,
                 start=card.start,
                 end=card.end,
-                ja=card.text,
+                ja=covered.text,
                 zh=kept.zh.strip(),
-                box=card.box,
+                box=covered.box,
             )
         )
     return TelopSubtitles(items=sorted(items, key=lambda item: (item.start, item.id)))

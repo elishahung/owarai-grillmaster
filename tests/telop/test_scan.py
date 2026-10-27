@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from grillmaster.core.srt import SrtBlock
 from grillmaster.core.timecode import format_timecode_line
 from grillmaster.telop.scan import (
@@ -219,3 +221,123 @@ def test_simultaneous_texts_apart_on_screen_stay_separate_cards():
     cards = build_cards(scan_of(*frames), []).cards
 
     assert sorted(card.text for card in cards) == ["LAUGHING", "相変わらず何も知らない"]
+
+
+# Grouping cases from reviewed episodes, with their real boxes. A grouping
+# rule must keep every one of them; a known gap is a strict xfail, so fixing
+# it fails the run until the marker goes.
+
+
+def test_a_caption_in_two_sizes_stays_one_card():
+    # A small lead-in over a big full-width line: the same shape as a name
+    # plate over a caption, so size and gap alone cannot split the latter.
+    frames = [
+        [
+            read((0.139, 0.691, 0.565, 0.787), "テレビを愛するからこそ出た"),
+            read((0.117, 0.744, 0.885, 0.999), "渾身の本音が炸裂!"),
+        ]
+    ] * 4
+
+    (card,) = build_cards(scan_of(*frames), []).cards
+
+    assert {line.text for line in card.lines} == {
+        "テレビを愛するからこそ出た",
+        "渾身の本音が炸裂!",
+    }
+
+
+def test_a_quote_keeps_its_small_attribution():
+    frames = [
+        [
+            read(
+                (0.131, 0.812, 0.969, 0.942), "コントは面白いが本人の顔の印象が薄い。"
+            ),
+            read((0.027, 0.931, 0.121, 0.977), "49歳·男性"),
+        ]
+    ] * 4
+
+    (card,) = build_cards(scan_of(*frames), []).cards
+
+    assert card.text == "コントは面白いが本人の顔の印象が薄い。 / 49歳·男性"
+
+
+def test_a_caption_stays_one_card_when_the_speech_repeats_one_line():
+    frames = [
+        [
+            read((0.431, 0.816, 0.759, 0.896), "前回出演のスパイ企画で"),
+            read((0.433, 0.888, 0.970, 0.971), "奇天烈な行動を起こし現場を混乱させた"),
+        ]
+    ] * 4
+    transcript = [cue(1, 0.0, 2.0, "前回出演のスパイ企画でね")]
+
+    (card,) = build_cards(scan_of(*frames), transcript).cards
+
+    assert card.text == "前回出演のスパイ企画で / 奇天烈な行動を起こし現場を混乱させた"
+
+
+def test_a_name_plate_stays_one_card_when_its_name_is_spoken():
+    frames = [
+        [
+            read((0.835, 0.449, 0.931, 0.524), "ラランド"),
+            read((0.829, 0.493, 0.945, 0.596), "サーヤ"),
+        ]
+    ] * 4
+    transcript = [cue(1, 0.0, 2.0, "サーヤ、どうですか")]
+
+    (card,) = build_cards(scan_of(*frames), transcript).cards
+
+    assert card.text == "ラランド / サーヤ"
+
+
+def test_a_label_shown_again_on_a_later_memo_still_joins_it():
+    frames: list[list[TextRead]] = []
+    for frame in range(100):
+        reads: list[TextRead] = []
+        if frame in range(2, 6):
+            reads = [read(LABEL, "あいなぷうMEMO"), read(MEMO, "知らない人だ")]
+        elif frame in range(90, 94):
+            reads = [read(LABEL, "あいなぷうMEMO"), read(MEMO, "井口さん嬉しい")]
+        frames.append(reads)
+
+    cards = build_cards(scan_of(*frames), []).offered
+
+    assert [card.text for card in cards] == [
+        "あいなぷうMEMO / 知らない人だ",
+        "あいなぷうMEMO / 井口さん嬉しい",
+    ]
+
+
+# A name plate or photo label beside a big caption is its own card (owner's
+# call, 2026-10-28): the label says who, the caption is what is said.
+_PLATE_AND_CAPTION = {
+    "plate over a full-width caption": [
+        read((0.832, 0.577, 0.928, 0.652), "ラランド"),
+        read((0.826, 0.622, 0.943, 0.724), "サーヤ"),
+        read((0.003, 0.731, 0.996, 0.999), "最後の大根痺れました"),
+    ],
+    "recommender plate over a caption": [
+        read((0.697, 0.503, 0.764, 0.558), "推薦人"),
+        read((0.758, 0.557, 0.901, 0.627), "屋敷裕政"),
+        read((0.770, 0.629, 0.890, 0.669), "ニューヨーク"),
+        read((0.163, 0.686, 0.809, 0.856), "やってる事カリスマ性"),
+    ],
+    "photo label overlapping a caption": [
+        read((0.766, 0.656, 0.960, 0.726), "中学時代津田"),
+        read((0.110, 0.702, 0.895, 0.999), "そんな訳ない!!"),
+    ],
+}
+
+
+@pytest.mark.xfail(
+    strict=True, reason="known gap: a name plate joins the caption under it"
+)
+@pytest.mark.parametrize("case", list(_PLATE_AND_CAPTION))
+def test_a_name_plate_and_the_caption_beside_it_are_two_cards(case: str):
+    reads = _PLATE_AND_CAPTION[case]
+    *plate, caption = reads
+
+    cards = build_cards(scan_of(*[reads] * 4), []).cards
+
+    assert sorted(card.text for card in cards) == sorted(
+        [" / ".join(line.text for line in plate), caption.text]
+    )

@@ -47,13 +47,18 @@ the stage alike).
    was renumbered; `.work/15_telop/` holds `cards.json`, the session and
    `frames/`): waits for the scan, else scans itself; `scan.build_cards`
    (rewritten every run); the utility agent gets the offered cards as a TSV
-   (seconds, coarse position, `echoes_speech`, lines joined ` / `), the
+   (seconds, coarse position, `echoes_speech` = numbers of the lines that
+   repeat the speech, lines numbered `[n]` and joined ` / `), the
    dialogue as `seconds | ja | final zh` (`ja.srt` paired by index with
    `video.cht.srt`; the two must align, `check_aligned`, else the stage
    fails), the effective briefing and `instruction.telop`, plus
-   `get_frames`. Answer = kept cards only (`{id, zh}`); validation: known
-   id, once, non-empty `zh`. A translation that normalizes to its card's
-   text (a kanji place name) is dropped by Python. Deliverable
+   `get_frames`. Answer = kept cards only (`{id, lines, zh}`); validation:
+   known id, once, non-empty `zh`, `lines` non-empty, unique, on the card.
+   The item's `ja` and `box` are those lines', so the translation sits
+   beside them: a name plate grouping joined to a caption that repeats the
+   speech is translated alone, beside the plate (grouping cannot split
+   them, see the strict xfails in `test_scan.py`). A translation that
+   normalizes to its lines' text (a kanji place name) is dropped by Python. Deliverable
    `.subs/telop.cht.json` (`TelopSubtitles`, the stage's declared output), hand-editable;
    `grill reset <id> --only telop` selects again. The stage also writes
    `video.cht.telop.ass` at the root (`render.render_with_dialogue`: the
@@ -94,9 +99,10 @@ location show), not settings.
   straight above/below (a memo's corner label joins its text; the label of
   the right one of two side-by-side memos does not join the left). Lines
   read row by row, left to right.
-- **Kinds**: `speech` (every fresh line ≥ 60 % found in the ASR ±3 s) is
-  offered marked `echoes_speech` — a card can echo the line and still add
-  a label or a point; `candidate`; `recurring`.
+- **Kinds**: `speech` (every fresh line ≥ 60 % found in the ASR ±3 s;
+  each such line is marked `CardLine.echoes_speech`, also on other cards)
+  — a card can echo the line and still add a label or a point;
+  `candidate`; `recurring`.
 - **Offered** (`TelopCards.offered`, per card after grouping): also needs
   kana or kanji; the rest (~25–35 % on six episodes) are timer digits,
   prints, English marks, garbage. `cards.json` keeps them.
@@ -193,8 +199,14 @@ OCR or agent run is needed. Per item:
    rule that fixes the episode but admits logos, sponsor marks, ad copy or
    board entries elsewhere is rejected. OCR boxes include decoration and
    vary for the same text (one corner title 46 px vs 77 px tall), so size
-   thresholds are weak signals.
-4. When no general fix exists, report the cause and the options instead
+   thresholds are weak signals. Diff entries you cannot call improvement
+   or regression go to the owner, by timestamp.
+4. Lock each settled case into `tests/telop/test_scan.py` with its real
+   boxes (`lines` prints them to ~1 px): the reported card, and any card a
+   rejected rule broke elsewhere. A gap with no fix yet is a strict
+   `xfail`. The suite accumulates, like `tests/asr/test_srt_builder.py`;
+   a new rule must pass every case.
+5. When no general fix exists, report the cause and the options instead
    of forcing one. Mind intro cards: name, group, age and profile lines
    group into one card; a rule on single lines (length, digits) splits or
    strips them.

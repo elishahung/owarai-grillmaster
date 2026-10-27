@@ -14,6 +14,7 @@ from grillmaster.agents.task import SchemaOutput
 from grillmaster.core.briefing import Briefing, SegmentSummary, TermMapping
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.model_spec import Role
+from grillmaster.core.prompts import name_span_rules
 from grillmaster.core.srt import SrtBlock, read_srt_file, write_srt_file
 from grillmaster.core.tool_session import ToolSession, WatchClipTool
 from grillmaster.glossary.fixed import (
@@ -193,6 +194,7 @@ def test_the_dossier_goes_inline_and_to_disk(
     assert aligned in task.prompt
     assert history in task.prompt
     assert f"`{inputs.frames_dirs[0]}`" in task.instructions
+    assert name_span_rules() in task.instructions
     assert BRIEFING.model_dump_json(indent=2) in task.prompt
 
 

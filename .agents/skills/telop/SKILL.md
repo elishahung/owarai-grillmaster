@@ -196,6 +196,8 @@ accepted for selecting beside the final subtitles).
 
 ## Policy
 
+- The selector joins the shared `name_span_rules()` (translate-pipeline):
+  a name on a card keeps the span the card writes.
 - The chunk translator never selects or sees telops: the weaker model only
   translates. Selection belongs to `utility`, after finalize, so card
   wording follows the final subtitles and briefing.

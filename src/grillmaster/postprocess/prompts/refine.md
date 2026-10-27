@@ -76,7 +76,7 @@ Review workflow:
   speaker/person/team reference, dropped or substituted honorific suffixes
   versus the Japanese source (ja attaches さん/ちゃん/くん to a name but the
   Chinese lacks the matching 桑/醬/君, or renders it as 先生/小姐), name-span
-  expansion (ja uses surname/nickname only but the Chinese has the full name),
+  expansion ("Name span"),
   recurring term drift, joke-function loss, overly formal phrasing that hurts
   timing, and awkward line wrapping.
 - Among these, unsupported subject insertion is a mandatory per-window check,

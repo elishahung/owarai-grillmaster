@@ -11,6 +11,7 @@ from grillmaster.agents.task import SchemaOutput
 from grillmaster.core.briefing import Briefing, TermMapping
 from grillmaster.core.json_artifact import read_model
 from grillmaster.core.model_spec import Role
+from grillmaster.core.prompts import name_span_rules
 from grillmaster.core.srt import SrtBlock
 from grillmaster.live_chat.schema import ChatLog, ChatMessage
 from grillmaster.live_chat.translate import (
@@ -102,9 +103,10 @@ def test_batches_translate_japanese_only_then_polish_applies(
     compact = '{"summary":"demo","characters":[],"proper_nouns":{"池田":"池田"}'
     assert compact in batch.prompt
     assert compact in polish.prompt
-    # Both passes carry the glossary check's name-form rules.
-    assert "## Name form" in batch.instructions
-    assert "## Name form" in polish.instructions
+    # Both passes carry the shared name-span rule and the name-form rules.
+    for task in (batch, polish):
+        assert name_span_rules() in task.instructions
+        assert "## Name form" in task.instructions
     # The batch saw the finalized subtitle paired with its Japanese line, and
     # only the messages that contain Japanese script.
     assert "[00:01] 池田です → 我是池田" in batch.prompt

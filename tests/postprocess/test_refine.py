@@ -10,6 +10,7 @@ from tests.fakes import frames_tool, make_blocks
 from grillmaster.agents.errors import ValidationFailure
 from grillmaster.agents.task import FilesOutput
 from grillmaster.core.model_spec import Role
+from grillmaster.core.prompts import name_span_rules
 from grillmaster.core.srt import serialize_srt, write_srt_file
 from grillmaster.core.tool_session import SrtCheckTool, ToolSession
 from grillmaster.postprocess.errors import PostprocessError
@@ -97,6 +98,7 @@ def test_prompt_names_inputs_by_absolute_path(inputs: RefineInputs, tools: ToolS
     assert not re.search(r"\{[a-z_]+\}", task.instructions)
     assert "video.cht" not in task.instructions
     assert ".pre_pass" not in task.instructions
+    assert name_span_rules() in task.instructions
     assert "Refine is still a medium polishing pass" in task.prompt
     assert "`get_frames`" in task.prompt
 

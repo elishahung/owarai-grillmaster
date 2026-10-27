@@ -13,20 +13,8 @@ mapping to one Traditional Chinese target.
   full/half-width variation (e.g. ASR "クーマイメテオ" for "空前メテオ",
   "ノンデコルテ" for "ドンデコルテ", "滝野ルイ" for "タキノルイ").
 - When a mapping applies, use its target as the rendering of THAT alias
-  token only. If the matched alias is just a component of a longer source
-  name (a full personal name, or group+member), apply the target's
-  script/romanization choice to that component but KEEP the rest of the
-  source name; do NOT replace the longer name with the shorter glossary
-  label, and do NOT prepend a group label the source did not say. (Source
-  「徳井義実」 → 德井義實 (not the glossary's shorter 德井 nor チュートリアル
-  徳井義実; 徳→德, 実→實 — the kept span is converted, never a verbatim copy
-  of the Japanese kanji) — a 見取り図→Mitorizu rendering applies only to the
-  token 見取り図.) Symmetrically, when the
-  source uses only a SHORTER form than the entry (e.g. surname-only while
-  the entry is a full name), keep that shorter span — apply the entry's
-  script/kanji choice to the spoken token only and do NOT append the missing
-  components (source 「徳井」 → 德井, NOT 德井義実, even though the entry is
-  徳井義実/德井義實; the 徳→德 conversion still applies to the kept span). All aliases on a line refer
+  token only; the span follows "Name span", and the kept span is converted,
+  never a verbatim copy of the Japanese kanji. All aliases on a line refer
   to the same entity.
 - A `・組合：` line is both a normal mapping (when the 組合 name is spoken)
   and the disambiguation context for its indented members. Member tokens are

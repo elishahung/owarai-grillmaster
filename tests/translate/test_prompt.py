@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 from tests.fakes import make_briefing
 
-from grillmaster.core.prompts import load_prompt
+from grillmaster.core.prompts import load_prompt, name_span_rules
 from grillmaster.core.srt import SrtBlock
 from grillmaster.core.talent import Talent
 from grillmaster.translate import prompt
@@ -74,6 +74,7 @@ def test_prepass_instruction_has_only_the_blocks_for_present_inputs(
 ) -> None:
     text = prompt.prepass_instruction(prepass_inputs(), has_audio=True)
     assert "### FIXED GLOSSARY" in text
+    assert name_span_rules() in text
     assert "## On-demand video frames" in text
     # The window is stated with the tool list; the pre-pass says what it is.
     assert "entire video" not in text
@@ -170,6 +171,7 @@ def test_prepass_message_sections(
 def test_chunk_instruction(chunk_inputs: Callable[..., ChunkInputs]) -> None:
     text = prompt.chunk_instruction("チャンクルール", has_audio=True)
     assert "chunk-specific audio slice" in text
+    assert name_span_rules() in text
     assert "the window stated for `get_frames` under 【可用工具】" in text
     assert text.index("### PROGRAM-SPECIFIC INSTRUCTIONS") < text.index(
         "## On-demand video frames"

@@ -195,5 +195,8 @@ not `video|cover|info|refine|glossary_check|proofread`.
   completion marker (`grill reset` to redo).
 - No stage rewrites another stage's output (hence the glossary and proofread
   briefing copies).
+- Refine, glossary check and proofread join the shared `name_span_rules()`
+  (translate-pipeline) to their instructions; their prompts and the fixed
+  glossary guide point at "Name span" instead of restating it.
 - Read agent SRTs via `core.srt.read_srt_file` (`utf-8-sig`; Codex writes a BOM).
 - Extras caches hit on fixed filenames; no hash/digest invalidation.

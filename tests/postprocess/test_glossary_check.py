@@ -13,6 +13,7 @@ from grillmaster.agents.task import FilesOutput
 from grillmaster.core.briefing import Briefing, TermMapping
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.model_spec import Role
+from grillmaster.core.prompts import name_span_rules
 from grillmaster.core.srt import SrtBlock
 from grillmaster.core.tool_session import SrtCheckTool, ToolSession
 from grillmaster.glossary.fixed import (
@@ -176,6 +177,7 @@ def test_prompt_paths_and_sections(inputs: GlossaryInputs, tools: ToolSession):
         assert str(path) in task.instructions
     assert str(FIXED_GLOSSARY_PATH) not in task.instructions
     assert "`briefing.candidate.json`" in task.instructions
+    assert name_span_rules() in task.instructions
     for stale in ("video.", ".pre_pass", "pre_pass.raw", ".glossary_check"):
         assert stale not in task.instructions
     assert "Official CC reference" not in task.instructions

@@ -18,6 +18,7 @@ from grillmaster.core.prompts import (
     frames_guidance,
     join_sections,
     load_prompt,
+    name_span_rules,
     render_program_instruction,
     render_template,
 )
@@ -89,6 +90,7 @@ def build_refine_task(
             output_srt_path=str(inputs.output_srt),
             report=workdir_name(inputs.report, inputs.workdir),
         ),
+        name_span_rules(),
         render_program_instruction(inputs.program_instruction),
     )
     return AgentTask(

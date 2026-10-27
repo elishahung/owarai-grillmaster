@@ -53,14 +53,8 @@ Name-form audit (final defense, required):
     the Chinese must carry the matching 桑/醬/君/大人 on that name — restore
     it if dropped or rendered as 先生/小姐. If the source speaks no honorific,
     do not add one.
-  - Name-span parity: the Chinese name must cover the same span the source
-    speaks. If the source says surname or nickname only but the Chinese has
-    the full name, shrink it to the source span (ja 「盛山」 → 「盛山」, never
-    「盛山晉太郎」). Span parity targets full-name expansion (unspoken
-    surname/given-name components added) — when the source speaks a truncated
-    kana nickname that has no natural standalone Chinese form (e.g. ノブ for
-    信子), the person's canonical short name IS the correct rendering; keep
-    it, and do not re-render it as romaji or force a shorter span.
+  - Name-span parity ("Name span"): a Chinese name that covers more than
+    the source speaks shrinks to the source span.
   - Subject parity: if the Chinese line carries an explicit subject —
     我/你/他/她/我們/大家 or a specific name — that the source line does not
     speak, and the immediate context does not unambiguously support it, remove
@@ -121,10 +115,6 @@ Subtitle rules:
 - Matching glossary entries is by meaning in context, not exact source-string
   equality. Json aliases are Japanese source spellings, while the subtitle text
   may already be Chinese or romanized.
-- If a flagged token maps to `fixed_glossary.json`, render only the span the
-  token actually covers. Do not expand partial names to a full entry. Example:
-  source `徳井` -> `德井`, never `德井義實`; `Zakoshisyoh` alone -> `雜魚師匠`,
-  not `好萊塢雜魚師匠`.
 - Intentional proper nouns, official romanized names, service names, titles, or
   quoted terms may legitimately stay non-Chinese.
 - Never romanize a token already written in kanji in the source unless the

@@ -51,8 +51,9 @@ For registry and ledger rules, see **project-architecture**.
   `ChatPolish{corrections:[{id,text}]}`. `validate` uses `core/id_coverage.py`, which chunk
   translation also uses. A batch must cover every id. Polish may return any subset of the
   translated ids. Unknown, duplicate or empty ids raise `ValidationFailure`.
-- Chat has no refine or glossary pass. Both prompts append `prompts/name_form.md`, the glossary
-  check's span, honorific and subject parity rules; keep it in step with that prompt.
+- Chat has no refine or glossary pass. Both prompts append the shared `name_span_rules()`
+  (translate-pipeline) and `prompts/name_form.md`, the glossary check's honorific and
+  subject parity rules; keep it in step with that prompt.
 - Both tasks run on `Role.UTILITY` (`[agents.roles] utility`), like the telop selector.
   Concurrency uses the runner's global slots.
 - Caches use fixed filenames and never invalidate themselves; a parseable file skips the agent.

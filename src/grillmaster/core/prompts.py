@@ -51,6 +51,11 @@ def render_program_instruction(text: str) -> str:
     return render_template(_PACKAGE, "program_instruction.md", instructions=text)
 
 
+def name_span_rules() -> str:
+    """The shared "Name span" rule, joined by every pass that writes a name."""
+    return load_prompt(_PACKAGE, "name_span.md")
+
+
 def frames_guidance(*fragments: str | None) -> str:
     """The generic `get_frames` paragraph, then a stage's own "when to use"
     fragments.

@@ -106,13 +106,16 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
   template's slots or rendering raises — add/rename slots in all three files.
 - Pre-pass instruction order: audio-rendered `pre_pass.md`, then conditional
   `official_source_metadata.md` (talents), `official_subtitle.md` (CC),
-  `fixed_glossary.md`, `parent_pre_pass.md` (parent), program instruction,
-  `frames_guidance(pre_pass_frames.md)`, `pre_pass_web_search.md`.
-  Chunk instruction: audio-rendered `chunk.md`, program instruction,
-  `frames_guidance()`.
+  `fixed_glossary.md`, `name_span_rules()`, `parent_pre_pass.md` (parent),
+  program instruction, `frames_guidance(pre_pass_frames.md)`,
+  `pre_pass_web_search.md`.
+  Chunk instruction: audio-rendered `chunk.md`, `name_span_rules()`, program
+  instruction, `frames_guidance()`.
 - `core/prompts.py`: `load_prompt`, strict-slot `render_template`,
   `join_sections`, `render_program_instruction`, `frames_guidance` (shared
-  `core/prompts/frames_tool.md` + stage fragment). User-message headings are
+  `core/prompts/frames_tool.md` + stage fragment), `name_span_rules`
+  (`core/prompts/name_span.md`): join it into any pass that writes a name;
+  prompts point at "Name span" instead of restating it. User-message headings are
   `translate/prompt.py` `PromptSection` constants shared by both steps.
 
 ## Config (`grill.toml`, `config/model.py`)

@@ -23,6 +23,7 @@ from grillmaster.core.prompts import (
     frames_guidance,
     join_sections,
     load_prompt,
+    name_span_rules,
     render_program_instruction,
 )
 from grillmaster.core.srt import serialize_srt
@@ -127,6 +128,7 @@ def prepass_instruction(inputs: PrepassInputs, *, has_audio: bool) -> str:
         if source.official_subtitles
         else None,
         load_prompt(__package__, "fixed_glossary.md"),
+        name_span_rules(),
         load_prompt(__package__, "parent_pre_pass.md")
         if source.parent_briefing is not None
         else None,
@@ -197,9 +199,11 @@ def _talent_lines(talents: Sequence[Talent]) -> str:
 
 
 def chunk_instruction(program_instruction: str, *, has_audio: bool) -> str:
-    """Translation rules (audio variant), program rules, frame-tool guidance."""
+    """Translation rules (audio variant), the name-span rule, program rules,
+    frame-tool guidance."""
     return join_sections(
         render_audio_template("chunk", has_audio=has_audio),
+        name_span_rules(),
         render_program_instruction(program_instruction),
         frames_guidance(),
     )

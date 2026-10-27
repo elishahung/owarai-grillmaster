@@ -47,6 +47,7 @@ from grillmaster.core.prompts import (
     frames_guidance,
     join_sections,
     load_prompt,
+    name_span_rules,
     render_program_instruction,
     render_template,
 )
@@ -360,6 +361,7 @@ def build_proofread_task(
             frames_dirs="\n".join(f"  - `{path}`" for path in inputs.frames_dirs)
             or "  - (none)",
         ),
+        name_span_rules(),
         (
             render_template(
                 PROMPTS,

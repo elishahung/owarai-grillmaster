@@ -34,6 +34,7 @@ from grillmaster.core.prompts import (
     frames_guidance,
     join_sections,
     load_prompt,
+    name_span_rules,
     render_program_instruction,
     render_template,
 )
@@ -250,6 +251,7 @@ def build_glossary_task(
             report=workdir_name(inputs.report, inputs.workdir),
             briefing_out=workdir_name(inputs.briefing_candidate, inputs.workdir),
         ),
+        name_span_rules(),
         (
             render_template(
                 PROMPTS,

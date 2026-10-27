@@ -6,6 +6,7 @@ import pytest
 from tests.fakes import make_briefing
 
 from grillmaster.agents.errors import ValidationFailure
+from grillmaster.core.prompts import name_span_rules
 from grillmaster.core.srt import SrtBlock
 from grillmaster.core.timecode import format_timecode_line
 from grillmaster.core.tool_session import ToolSession
@@ -111,6 +112,7 @@ def test_the_task_carries_the_cards_dialogue_briefing_and_program_text(
     assert "相変わらず何も知らない" in task.prompt
     assert "濱家" in task.prompt
     assert "Keep every 説 card." in task.instructions
+    assert name_span_rules() in task.instructions
 
 
 def test_the_validator_rejects_unknown_repeated_and_empty_entries():

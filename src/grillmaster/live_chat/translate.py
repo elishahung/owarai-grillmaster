@@ -31,7 +31,7 @@ from grillmaster.core.id_coverage import id_coverage
 from grillmaster.core.json_artifact import load_model, write_model
 from grillmaster.core.model_spec import Role
 from grillmaster.core.models import StrictModel
-from grillmaster.core.prompts import join_sections, load_prompt
+from grillmaster.core.prompts import join_sections, load_prompt, name_span_rules
 from grillmaster.core.timecode import format_clock
 from grillmaster.live_chat.schema import TranslatedChatLog, TranslatedChatMessage
 
@@ -330,9 +330,11 @@ def _polish(
 
 
 def _instructions(name: str) -> str:
-    # Both passes share the glossary check's name-form rules.
+    # Both passes share the subtitles' name-span rule and name-form rules.
     return join_sections(
-        load_prompt(_PACKAGE, name), load_prompt(_PACKAGE, "name_form.md")
+        load_prompt(_PACKAGE, name),
+        name_span_rules(),
+        load_prompt(_PACKAGE, "name_form.md"),
     )
 
 

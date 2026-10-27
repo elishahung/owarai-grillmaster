@@ -51,7 +51,7 @@ Priorities, in order:
    and check the `zh` rendering against the briefing and the fixed glossary.
    A proper noun the briefing does not list, or lists without verified
    evidence, deserves verification. Also look for one entity rendered
-   differently in different blocks.
+   differently in different blocks; a shorter span is not that ("Name span").
 2. **Mistranslations and omissions** that refine did not fix: meaning
    reversed, wrong referent, a punchline or a callback lost, a line that does
    not answer the line it replies to, a run of lines told from the wrong

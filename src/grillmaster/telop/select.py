@@ -30,6 +30,7 @@ from grillmaster.core.prompts import (
     frames_guidance,
     join_sections,
     load_prompt,
+    name_span_rules,
     render_program_instruction,
 )
 from grillmaster.telop.scan import Box, normalize
@@ -153,6 +154,7 @@ def build_select_task(
         role=Role.UTILITY,
         instructions=join_sections(
             load_prompt(__package__, "select.md"),
+            name_span_rules(),
             render_program_instruction(inputs.program_instruction),
         ),
         prompt=prompt,

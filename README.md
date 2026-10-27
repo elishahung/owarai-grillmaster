@@ -3,7 +3,7 @@
 下載日本綜藝節目，生成繁體中文 SRT / ASS 字幕方便個人使用識讀
 
 ![](docs/images/tui.png)
-![](docs/images/image2.jpg)
+![](docs/images/image1.jpg)
 
 截至目前已翻譯 [1020 個項目](https://space.bilibili.com/277428027/upload/video)，流程算滿穩定。
 
@@ -23,8 +23,6 @@
 - **ASR**：`ElevenLabs Scribe v2`，一堆人大聲喧嘩、裝傻吐槽沒有間隔也能辨識
 - **翻譯**：`Gemini 3` 系列最能抓住日本綜藝的韻味，也很會看圖聽音檔
 - **潤飾**：交給 `GPT` / `Claude`，修正 `Gemini` 輸出結構異常與亂用主語的瑕疵，並且會更願意調用工具去上網查詢、截圖驗證字句
-
-![](docs/images/image4.jpg)
 
 ## 流程
 先對整部片做一份簡報（人物、專有名詞、梗的譯法、語氣），再把字幕切塊平行翻譯。翻譯時會參考音檔，模型也能透過 grill 自帶的 MCP 工具（`get_frames`）自己挑時間點截圖，辨識人物、場景與畫面上的文字

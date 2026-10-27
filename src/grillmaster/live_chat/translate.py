@@ -279,7 +279,7 @@ def _batch_task(
 
     return AgentTask(
         name=f"chat/{cache.stem}",
-        role=Role.CHAT,
+        role=Role.UTILITY,
         instructions=_instructions("translate.md"),
         prompt=_batch_prompt(batch, log, context),
         session_dir=files.session_dir(cache.stem),
@@ -313,7 +313,7 @@ def _polish(
     result = agents.run(
         AgentTask(
             name=f"chat/{POLISH_LABEL}",
-            role=Role.CHAT,
+            role=Role.UTILITY,
             instructions=_instructions("polish.md"),
             prompt=join_sections(
                 context.briefing, "## Translated chat\n\n" + "\n".join(lines)

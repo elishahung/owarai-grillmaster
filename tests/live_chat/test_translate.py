@@ -148,7 +148,7 @@ def test_tasks_are_schema_chat_calls_with_own_sessions_and_no_workdir(
         tmp_path / "session_polish",
     ]
     for task in tasks:
-        assert task.role is Role.CHAT
+        assert task.role is Role.UTILITY
         assert task.workdir is None
         assert isinstance(task.output, SchemaOutput)
     # Later batches see the previous messages as read-only context.

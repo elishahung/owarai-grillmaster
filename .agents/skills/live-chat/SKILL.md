@@ -53,8 +53,8 @@ For registry and ledger rules, see **project-architecture**.
   translated ids. Unknown, duplicate or empty ids raise `ValidationFailure`.
 - Chat has no refine or glossary pass. Both prompts append `prompts/name_form.md`, the glossary
   check's span, honorific and subject parity rules; keep it in step with that prompt.
-- The role is `Role.CHAT`, i.e. `[agents.roles] chat`. If omitted it falls back to `utility`
-  (`AgentRoles.spec`). Concurrency uses the runner's global slots.
+- Both tasks run on `Role.UTILITY` (`[agents.roles] utility`), like the telop selector.
+  Concurrency uses the runner's global slots.
 - Caches use fixed filenames and never invalidate themselves; a parseable file skips the agent.
   Deleting a batch file (and `polish.json`, whose stale corrections would still apply) only
   matters while the stage is unfinished; once it is in the ledger, use

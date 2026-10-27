@@ -71,7 +71,7 @@ def test_params_name_the_role_model_tool_and_extras(loaded: LoadedConfig):
     assert audio.STAGE.params(config) == {"tool": "ffmpeg"}
     assert download.STAGE.params(config) == {"tool": "yt-dlp"}
     assert cover.TASK.params(config) == {"model": "codex/gpt-5.5/high"}
-    # No chat role configured: the utility model translates chat.
+    # Chat translation runs on the utility model.
     assert chat_translate.STAGE.params(config) == {"model": "codex/gpt-5.5/medium"}
     assert date_research.TASK.params(config) == {
         "model": "codex/gpt-5.5/medium",

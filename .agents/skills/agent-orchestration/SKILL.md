@@ -74,8 +74,8 @@ description: >-
 
 ## Roles and capabilities
 
-`grill.toml [agents.roles]` → `AgentRoles.specs()` (`chat` falls back to
-`utility`) → `dict[Role, ModelSpec]`, written `backend/model[/effort][/fast]`
+`grill.toml [agents.roles]` → `AgentRoles.specs()` (`proofread` falls back
+to `postprocess`) → `dict[Role, ModelSpec]`, written `backend/model[/effort][/fast]`
 (default `high`; `/fast` requires FAST_MODE, checked for the role and a
 handoff role). `[agents] max_concurrent` (default 10) sizes the semaphore
 of one grill process (concurrent processes each get their own);

@@ -68,16 +68,9 @@ class PathsConfig(BaseModel):
     )
 
 
-# Where an omitted optional role goes; required roles are never `None`.
-_ROLE_FALLBACKS = {
-    Role.CHAT: Role.UTILITY,
-    Role.PROOFREAD: Role.POSTPROCESS,
-}
-
-
 class AgentRoles(BaseModel):
-    """Model per agent role, as backend/model[/effort][/fast]; all but chat
-    and proofread are required."""
+    """Model per agent role, as backend/model[/effort][/fast]; all but
+    proofread are required."""
 
     model_config = _STRICT
 
@@ -90,23 +83,20 @@ class AgentRoles(BaseModel):
     )
     utility: ModelSpecField = Field(
         description=(
-            "Lightweight agents: titles, broadcast-date research, and the "
-            "no-audio fix of a pre-pass or chunk output that failed validation."
+            "Lightweight agents: titles, broadcast-date research, telop "
+            "selection, live-chat replay translation, and the no-audio fix "
+            "of a pre-pass or chunk output that failed validation."
         )
-    )
-    chat: ModelSpecField | None = Field(
-        default=None,
-        description="Live-chat replay translation; omitted means utility.",
     )
     image: ModelSpecField = Field(
         description="Cover generation; the backend must support image generation."
     )
 
     def spec(self, role: Role) -> ModelSpec:
-        """The spec for `role`; an omitted optional role falls back
-        (`chat` to `utility`, `proofread` to `postprocess`)."""
+        """The spec for `role`; an omitted `proofread` falls back to
+        `postprocess`."""
         spec: ModelSpec | None = getattr(self, role)
-        return spec or self.spec(_ROLE_FALLBACKS[role])
+        return spec or self.postprocess
 
     def specs(self) -> dict[Role, ModelSpec]:
         """Every role resolved by `spec`."""

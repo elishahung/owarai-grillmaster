@@ -34,8 +34,7 @@ class Role(StrEnum):
     CHUNK = "chunk"
     POSTPROCESS = "postprocess"
     PROOFREAD = "proofread"  # optional final proofread after the glossary check
-    UTILITY = "utility"  # titles, date research, pre-pass/chunk handoff repairs
-    CHAT = "chat"  # live-chat translation
+    UTILITY = "utility"  # titles, date research, telops, live chat, handoff repairs
     IMAGE = "image"  # cover generation; needs image-generation capability
 
 

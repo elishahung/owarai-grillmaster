@@ -37,11 +37,6 @@ def test_role_strings_parse_into_model_specs(minimal_data: dict[str, Any]):
     assert roles.postprocess == ModelSpec(Backend.CODEX, "gpt-5.6-sol", Effort.MEDIUM)
 
 
-def test_chat_falls_back_to_utility(roles: dict[str, str]):
-    agent_roles = AgentRoles.model_validate(roles)
-    assert agent_roles.spec(Role.CHAT) == agent_roles.utility
-
-
 def test_proofread_falls_back_to_postprocess(roles: dict[str, str]):
     agent_roles = AgentRoles.model_validate(roles)
     assert agent_roles.spec(Role.PROOFREAD) == agent_roles.postprocess
@@ -49,11 +44,6 @@ def test_proofread_falls_back_to_postprocess(roles: dict[str, str]):
     assert explicit.spec(Role.PROOFREAD) == ModelSpec(
         Backend.CLAUDE, "opus", Effort.HIGH
     )
-
-
-def test_explicit_chat_spec_wins(roles: dict[str, str]):
-    agent_roles = AgentRoles.model_validate({**roles, "chat": "claude/opus/max"})
-    assert agent_roles.spec(Role.CHAT) == ModelSpec(Backend.CLAUDE, "opus", Effort.MAX)
 
 
 def test_specs_cover_every_role(roles: dict[str, str]):
@@ -64,9 +54,7 @@ def test_specs_cover_every_role(roles: dict[str, str]):
 @pytest.mark.parametrize(
     "role", ["prepass", "chunk", "postprocess", "utility", "image"]
 )
-def test_every_role_but_chat_and_proofread_is_required(
-    roles: dict[str, str], role: str
-):
+def test_every_role_but_proofread_is_required(roles: dict[str, str], role: str):
     del roles[role]
     with pytest.raises(ValidationError, match=role):
         AgentRoles.model_validate(roles)
@@ -118,7 +106,7 @@ def test_schema_pattern_accepts_exactly_what_parses(spec: str):
 def test_model_specs_dump_as_strings(minimal_data: dict[str, Any]):
     dumped = validate_config(minimal_data, root=Path()).model_dump(mode="json")
     assert dumped["agents"]["roles"]["chunk"] == "agy/gemini-3.1-pro/high"
-    assert dumped["agents"]["roles"]["chat"] is None
+    assert dumped["agents"]["roles"]["proofread"] is None
 
 
 @pytest.mark.parametrize(

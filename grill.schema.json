@@ -3,7 +3,7 @@
   "$defs": {
     "AgentRoles": {
       "additionalProperties": false,
-      "description": "Model per agent role, as backend/model[/effort][/fast]; all but chat\nand proofread are required.",
+      "description": "Model per agent role, as backend/model[/effort][/fast]; all but\nproofread are required.",
       "properties": {
         "prepass": {
           "description": "Whole-film pre-pass analysis.",
@@ -39,25 +39,10 @@
           "title": "Proofread"
         },
         "utility": {
-          "description": "Lightweight agents: titles, broadcast-date research, and the no-audio fix of a pre-pass or chunk output that failed validation.",
+          "description": "Lightweight agents: titles, broadcast-date research, telop selection, live-chat replay translation, and the no-audio fix of a pre-pass or chunk output that failed validation.",
           "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?(/fast)?$",
           "title": "Utility",
           "type": "string"
-        },
-        "chat": {
-          "anyOf": [
-            {
-              "description": "backend/model[/effort][/fast]; effort defaults to high, fast (codex only) spends more quota for speed.",
-              "pattern": "^(agy|gemini|codex|claude)/[^/\\s]+(/(low|medium|high|extra|max|ultra))?(/fast)?$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Live-chat replay translation; omitted means utility.",
-          "title": "Chat"
         },
         "image": {
           "description": "Cover generation; the backend must support image generation.",

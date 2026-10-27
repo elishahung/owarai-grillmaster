@@ -36,8 +36,7 @@ prepass = "agy/gemini-3.1-pro/high"      # whole-film analysis
 chunk = "agy/gemini-3.1-pro/high"        # concurrent chunk translation
 postprocess = "codex/gpt-6.1-sol/high" # refine + glossary check
 proofread = "claude/claude-opus-5-5/high" # final proofread (--proofread); omit to use postprocess
-utility = "codex/gpt-6.1-sol/medium"         # titles, broadcast-date research, prepass/chunk fixes
-chat = "codex/gpt-6.1-sol/medium"            # live-chat replay; omit to use utility
+utility = "codex/gpt-6.1-sol/medium"         # titles, date research, telops, live chat, prepass/chunk fixes
 image = "codex/gpt-6.1-sol/medium"           # cover; needs image generation (codex)
 
 [asr]

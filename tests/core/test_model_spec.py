@@ -80,6 +80,5 @@ def test_role_values_match_grill_toml_keys():
         "postprocess",
         "proofread",
         "utility",
-        "chat",
         "image",
     ]

@@ -208,7 +208,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   `$GRILL_HOME/grill.toml`; its directory is the root for `projects/`, `.env`
   and relative paths. `AppConfig` (`model.py`) forbids unknown keys
   everywhere. Sections: `paths`, `agents` (+ `roles`: prepass, chunk,
-  postprocess, proofread→postprocess, utility, chat→utility, image), `asr`, `watch_clip`, `translate`, `features`,
+  postprocess, proofread→postprocess, utility, image), `asr`, `watch_clip`, `translate`, `features`,
   `package` (+ `inserts`), `programs.{series,channel}`.
 - Only `cli/`, `pipeline/` and `stages/` see the whole `AppConfig`; stages
   pass domain code only the sections or values it needs. No global settings object.

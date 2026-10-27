@@ -106,7 +106,7 @@ prepass = "gemini/gemini-3.1-pro-preview/high"  # backend：gemini、agy、claud
 chunk = "gemini/gemini-3.1-pro-preview/high"
 postprocess = "codex/gpt-6.1-sol/high"
 proofread = "claude/claude-opus-5-5/high"  # 最終校對；省略則沿用 postprocess
-utility = "codex/gpt-6.1-sol/medium"
+utility = "codex/gpt-6.1-sol/medium"  # 輕量任務：標題、播出日期查證、字卡（--telop）、聊天室（--chat），以及 prepass／chunk 驗證失敗時的無音檔修補
 image = "codex/gpt-6.1-sol/medium"   # 封面，需要能生圖的 codex
 
 [watch_clip]                        # 最終校對的看片工具：發話由 Azure MAI-Transcribe-2 聽寫（按音訊時長計費），字卡與場景由 Meta Muse 讀（按 token 計費）

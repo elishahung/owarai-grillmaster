@@ -66,5 +66,5 @@ STAGE = StageDef(
     run=_run,
     outputs=_outputs,
     enabled=chat_enabled,
-    params=role_params(Role.CHAT),
+    params=role_params(Role.UTILITY),
 )

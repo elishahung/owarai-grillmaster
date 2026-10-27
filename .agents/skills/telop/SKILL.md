@@ -47,7 +47,7 @@ the stage alike).
    was renumbered; `.work/15_telop/` holds `cards.json`, the session and
    `frames/`): waits for the scan, else scans itself; `scan.build_cards`
    (rewritten every run); the utility agent gets the offered cards as a TSV
-   (seconds, coarse position, `echoes_speech` = numbers of the lines that
+   (seconds, coarse position + `vertical`, `echoes_speech` = numbers of the lines that
    repeat the speech, lines numbered `[n]` and joined ` / `), the
    dialogue as `seconds | ja | final zh` (`ja.srt` paired by index with
    `video.cht.srt`; the two must align, `check_aligned`, else the stage
@@ -100,6 +100,13 @@ location show), not settings.
   straight above/below (a memo's corner label joins its text; the label of
   the right one of two side-by-side memos does not join the left). Lines
   read row by row, left to right.
+- **Orientation**: a line ≥ 1.2× taller than wide (pixels) is vertical; a
+  card is vertical when its biggest-character line is, and reads in columns
+  right to left. A vertical and a horizontal line (fresh or a recurring
+  label) join only as label and text: the label ≤ 6 characters and ≤ 0.75
+  of the other's character size (このあと, 私の好きは, 理由 stay; a speech
+  bubble beside a vertical caption, a corner title over one split; owner's
+  calls 2026-10-28, cases in `test_scan.py`).
 - **Kinds**: `speech` (every fresh line ≥ 60 % found in the ASR ±3 s;
   each such line is marked `CardLine.echoes_speech`, also on other cards)
   — a card can echo the line and still add a label or a point;
@@ -133,6 +140,15 @@ the card is up longer than that plus `SHOWN_TOLERANCE_S` (owner's call:
 long cards stayed up long after they were read); its card
 stays an obstacle until the card itself leaves. `telop.cht.json` keeps the
 card's real times.
+A vertical card's translation is set vertically (owner's call, 2026-10-28):
+libass's own vertical mode (`\fn@<font>` + `\frz270`, one event per
+column), right of the card or left when right does not fit, centred on it
+top to bottom. That mode turns Latin runs but keeps horizontal glyphs for
+brackets, ellipses, dashes and waves beside CJK, so `render._VERTICAL_FORMS`
+swaps in the vertical presentation forms (measured; commas and stops stay).
+Lines split into evenly filled columns, and 2-3× shorter column layouts are
+tried at `_MORE_COLUMNS` per extra column, so it fits beside a card with
+another card above or below it.
 The dialogue is another layer on top: this one never avoids it (owner's
 call: a translation away from its card is worse than one under a cue). A
 card that groups wrongly lands wrongly, so fix grouping, not placement.

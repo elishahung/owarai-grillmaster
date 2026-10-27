@@ -105,7 +105,8 @@ def render_cards(cards: Sequence[TelopCard]) -> str:
     """The card table; times in seconds, as `get_frames` takes them, lines
     numbered, `echoes_speech` the numbers of the lines that repeat the speech."""
     rows = [
-        f"{card.id}\t{card.start:.1f}-{card.end:.1f}\t{_position(card.box)}\t"
+        f"{card.id}\t{card.start:.1f}-{card.end:.1f}\t{_position(card.box)}"
+        f"{' vertical' if card.vertical else ''}\t"
         + ",".join(
             str(number)
             for number, line in enumerate(card.lines, 1)

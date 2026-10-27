@@ -2,7 +2,7 @@ Pick the on-screen text cards (telops) of this Japanese variety show that Chines
 
 The dialogue already has Chinese subtitles at the bottom of the screen. Your translations appear right beside each card as it shows (a long card's translation leaves once it has been read), so a viewer who cannot read Japanese still gets what the card says.
 
-The cards below were read by OCR from frames sampled twice a second and pre-filtered by rules: OCR noise, cards without Japanese text and repeats of long-running fixtures are already gone. What is left still mixes real cards with scene text and OCR mistakes. Each card has an `id`, its on-screen time, a rough position, `echoes_speech` (the numbers of the lines whose wording is mostly also said around that time) and its lines (numbered, top to bottom, ` / ` between lines). The dialogue table pairs each Japanese line with its final Chinese subtitle.
+The cards below were read by OCR from frames sampled twice a second and pre-filtered by rules: OCR noise, cards without Japanese text and repeats of long-running fixtures are already gone. What is left still mixes real cards with scene text and OCR mistakes. Each card has an `id`, its on-screen time, a rough position (`vertical` when the card is set in vertical columns), `echoes_speech` (the numbers of the lines whose wording is mostly also said around that time) and its lines (numbered, top to bottom, ` / ` between lines). The dialogue table pairs each Japanese line with its final Chinese subtitle.
 
 Keep a card when it adds something the dialogue subtitles do not carry:
 
@@ -28,7 +28,7 @@ Translation rules:
 - Agree with the dialogue subtitles: use their renderings of names, terms and phrases the card shares with the speech, and the briefing's names (`characters` for talents). The subtitles are the reference for wording, not text to copy into a card.
 - Keep the whole episode consistent: cards of one kind (the same recurring label, caption style or card format) get one rendering of their recurring parts and one layout, and the same Japanese wording gets the same translation wherever it appears. A label that says whose card it is belongs in the translation.
 - Translate only the lines a viewer needs, and list them in `lines`; the translation sits beside those lines. The rules sometimes join two things into one card: a name plate or photo label beside a big caption. When the caption only repeats the dialogue, translate the plate or label alone and leave the caption's lines out; when both add something, keep them in one translation. The kanji rule above also applies line by line: leave out a line a Chinese viewer reads right as written that the rest of the card does not need, but keep one that says whose card or answer it is.
-- One card is one entry. Use `\n` for a line break only where the card itself breaks into separate items (a name and a profile line); at most three lines.
+- One card is one entry. Use `\n` for a line break only where the card itself breaks into separate items (a name and a profile line); at most three lines. A `vertical` card's translation is set vertically beside it, each line a column, so keep it short.
 - OCR may misread a character. Translate the card that is on screen, not the misreading; fetch a frame when it matters.
 - No Japanese left in the translation except a proper noun with no Chinese rendering.
 - English on a card (a replay mark, a slogan, a decorative word) is not translated: leave it out. A name in Latin letters is rendered as the subtitles render it.

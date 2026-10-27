@@ -75,6 +75,20 @@ def test_the_card_table_numbers_lines_and_lists_the_speech_echoes():
     ]
 
 
+def test_the_card_table_marks_a_vertical_card():
+    caption = TelopCard(
+        id=21,
+        start=167.0,
+        end=171.0,
+        kind=CardKind.CANDIDATE,
+        lines=[CardLine(text="恵那峡を散策", box=(0.4687, 0.2152, 0.5352, 0.7694))],
+    )
+
+    (_, row) = render_cards([caption]).splitlines()
+
+    assert row == "21\t167.0-171.0\tmiddle-center vertical\t\t[1] 恵那峡を散策"
+
+
 def test_the_task_carries_the_cards_dialogue_briefing_and_program_text(
     tmp_path: Path,
 ):

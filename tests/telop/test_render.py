@@ -7,7 +7,7 @@ import pytest
 
 from grillmaster.core.srt import SrtBlock
 from grillmaster.core.timecode import format_timecode_line
-from grillmaster.subtitles.ass import DIALOGUE_STYLE_NAME, PictureBox
+from grillmaster.subtitles.ass import DIALOGUE_STYLE_NAME, PictureBox, text_width
 from grillmaster.subtitles.finalize import dialogue_line
 from grillmaster.telop.render import (
     FONT_SIZE,
@@ -233,3 +233,114 @@ def test_a_translation_goes_above_only_when_below_does_not_fit():
     assert low_y >= 0.84 * 1080
     assert edge_alignment == 2
     assert 0.9 * 1080 <= edge_y <= 0.92 * 1080
+
+
+_COLUMN = re.compile(r"\\fn@[^\\]+\\an7\\frz270\\pos\((\d+),(\d+)\)\}(.*)$")
+# Real boxes: the vertical caption of 相席食堂 2:48 and a profile card set in
+# three columns against the left edge (華大さんと千鳥くん 4:15).
+CAPTION: Box = (0.4687, 0.2152, 0.5352, 0.7694)
+PROFILE: list[Box] = [
+    (0.108, 0.322, 0.150, 0.974),
+    (0.062, 0.337, 0.107, 0.923),
+    (0.027, 0.586, 0.068, 0.955),
+]
+
+
+def columns(ass: str) -> list[tuple[int, int, str]]:
+    """(x, y, text) of every vertical column, in order."""
+    return [
+        (int(match[1]), int(match[2]), match[3])
+        for line in events(ass)
+        if (match := _COLUMN.search(line))
+    ]
+
+
+def test_a_vertical_card_s_translation_is_set_vertically_right_of_it():
+    ass = render_telop_ass(
+        TelopSubtitles(items=[subtitle("漫遊惠那峽", boxes=[CAPTION])])
+    )
+
+    ((x, y, text),) = columns(ass)
+    assert text == "漫遊惠那峽"
+    # The column's right edge, just right of the card.
+    assert CAPTION[2] * 1920 + FONT_SIZE < x < CAPTION[2] * 1920 + 2 * FONT_SIZE
+    # Centred on the card top to bottom.
+    middle = y + text_width(text, FONT_SIZE) / 2
+    assert abs(middle - (CAPTION[1] + CAPTION[3]) / 2 * 1080) < FONT_SIZE / 2
+
+
+def test_a_vertical_card_at_the_right_edge_has_its_translation_left_of_it():
+    edge: Box = (0.95, 0.1, 0.99, 0.9)
+
+    ass = render_telop_ass(TelopSubtitles(items=[subtitle("想吃", boxes=[edge])]))
+
+    ((x, _, _),) = columns(ass)
+    assert x < edge[0] * 1920
+
+
+def test_vertical_lines_are_columns_right_to_left_with_vertical_marks():
+    ass = render_telop_ass(
+        TelopSubtitles(
+            items=[subtitle("龜姬說「我不要」……\nPanther（尾形）", boxes=[CAPTION])]
+        )
+    )
+
+    (first_x, _, first), (second_x, _, second) = columns(ass)
+    assert first == "龜姬說﹁我不要﹂︙︙"
+    assert second == "Panther︵尾形︶"
+    assert second_x < first_x
+
+
+def test_a_column_ends_without_the_space_after_a_latin_run():
+    # Two columns between a card above and one below: the break falls after
+    # the space that follows the name.
+    above: Box = (0.40, 0.05, 0.60, 0.30)
+    below: Box = (0.40, 0.62, 0.60, 0.95)
+    caption: Box = (0.45, 0.32, 0.48, 0.60)
+
+    ass = render_telop_ass(
+        TelopSubtitles(
+            items=[
+                subtitle("Panther 尾形貴弘", boxes=[caption], id=1),
+                subtitle("上面", boxes=[above], id=2),
+                subtitle("下面", boxes=[below], id=3),
+            ]
+        )
+    )
+
+    texts = [text for _, _, text in columns(ass)]
+    assert texts == ["Panther", "尾形貴弘"]
+
+
+def test_a_vertical_translation_takes_shorter_columns_to_stay_beside_its_card():
+    # Another card comes up right of the profile, low down: in one long
+    # column the translation would cover it or rise above the profile.
+    beside: Box = (0.164, 0.626, 0.412, 0.684)
+
+    ass = render_telop_ass(
+        TelopSubtitles(
+            items=[
+                subtitle(
+                    "KEY TO LIT 豬狩蒼彌\n12月即將出道，狀態絕佳",
+                    boxes=PROFILE,
+                    start=255.0,
+                    end=281.0,
+                    id=1,
+                ),
+                subtitle(
+                    "2026年8月11日播出", boxes=[beside], start=257.5, end=268.0, id=2
+                ),
+            ]
+        )
+    )
+
+    placed = columns(ass)
+    assert [text for _, _, text in placed] == [
+        "KEY TO LIT",
+        "豬狩蒼彌",
+        "12月即將出道，",
+        "狀態絕佳",
+    ]
+    tops = {y for _, y, _ in placed}
+    assert len(tops) == 1
+    assert min(box[1] for box in PROFILE) * 1080 <= tops.pop()

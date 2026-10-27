@@ -114,6 +114,11 @@ class TelopCard(StrictModel):
         return " / ".join(line.text for line in self.lines)
 
     @property
+    def vertical(self) -> bool:
+        """Whether the card is set vertically (see `set_vertically`)."""
+        return set_vertically([line.box for line in self.lines])
+
+    @property
     def box(self) -> Box:
         """The box around every line."""
         return (
@@ -282,8 +287,44 @@ _ASPECT = 9 / 16
 # is a separate label (map annotations).
 _STACK_GAP = 0.5
 _ROW_GAP = 0.25
-# Share of the shorter line two boxes must share vertically to be on one row.
+# Share of the shorter line two boxes must share vertically to be on one row
+# (horizontally to be in one column of a vertical card).
 _ROW_OVERLAP = 0.5
+# A line `_VERTICAL` times taller than wide, in pixels, is set vertically. A
+# vertical and a horizontal line share a card only when one labels the
+# other: at most `_LABEL_CHARS` characters, each at most `_LABEL_SIZE` of the
+# other line's (このあと or 私の好きは beside a caption); otherwise they are
+# two cards (a speech bubble beside a vertical caption, a corner title over
+# one).
+_VERTICAL = 1.2
+_LABEL_CHARS = 6
+_LABEL_SIZE = 0.75
+
+
+def _is_vertical(box: Box) -> bool:
+    return box[3] - box[1] > _VERTICAL * (box[2] - box[0]) / _ASPECT
+
+
+def _char_size(box: Box) -> float:
+    """A line's character size, in frame heights: a vertical line's width,
+    any other line's height."""
+    return (box[2] - box[0]) / _ASPECT if _is_vertical(box) else box[3] - box[1]
+
+
+def set_vertically(boxes: Sequence[Box]) -> bool:
+    """Whether lines read as a vertical card: their biggest characters are
+    set vertically (a small horizontal label does not count)."""
+    return _is_vertical(max(boxes, key=_char_size))
+
+
+def _may_join(a: _Line, b: _Line) -> bool:
+    """Lines set in one direction, or a label and its text."""
+    if _is_vertical(a.box) == _is_vertical(b.box):
+        return True
+    small, big = sorted((a, b), key=lambda line: _char_size(line.box))
+    return len(small.normalized) <= _LABEL_CHARS and _char_size(
+        small.box
+    ) <= _LABEL_SIZE * _char_size(big.box)
 
 
 class _Touch(Enum):
@@ -292,9 +333,17 @@ class _Touch(Enum):
     DIAGONAL = "diagonal"
 
 
-def _same_row(a: Box, b: Box) -> bool:
-    shorter = min(a[3] - a[1], b[3] - b[1])
-    return min(a[3], b[3]) - max(a[1], b[1]) >= _ROW_OVERLAP * shorter
+# Axes of a box: `_ACROSS_ROWS` spans a row's height, `_ACROSS_COLUMNS` a
+# column's width.
+_ACROSS_ROWS = 1
+_ACROSS_COLUMNS = 0
+
+
+def _in_line(a: Box, b: Box, axis: int) -> bool:
+    """Whether two boxes share a row (or column) along `axis`."""
+    smaller = min(a[axis + 2] - a[axis], b[axis + 2] - b[axis])
+    shared = min(a[axis + 2], b[axis + 2]) - max(a[axis], b[axis])
+    return shared >= _ROW_OVERLAP * smaller
 
 
 def _touch(a: Box, b: Box) -> _Touch | None:
@@ -304,7 +353,7 @@ def _touch(a: Box, b: Box) -> _Touch | None:
     is high."""
     height = min(a[3] - a[1], b[3] - b[1])
     gap_x = max(a[0], b[0]) - min(a[2], b[2])
-    if _same_row(a, b):
+    if _in_line(a, b, _ACROSS_ROWS):
         return _Touch.ROW if gap_x <= _ROW_GAP * height * _ASPECT else None
     if max(a[1], b[1]) - min(a[3], b[3]) > _STACK_GAP * height:
         return None
@@ -323,7 +372,8 @@ def _group(lines: Sequence[_Line]) -> list[list[_Line]]:
     A diagonal neighbour joins unless both lines already have a line
     straight above or below: a memo's corner label belongs to the text
     under it, but the label over the right of two memos side by side does
-    not join the left one's text.
+    not join the left one's text. A vertical and a horizontal line join
+    only as a label and its text.
     """
     touching: list[tuple[int, int, _Touch]] = []
     for i, a in enumerate(lines):
@@ -331,7 +381,11 @@ def _group(lines: Sequence[_Line]) -> list[list[_Line]]:
             b = lines[j]
             if b.start - a.start > CARD_TIMING_S:
                 break
-            if abs(a.end - b.end) <= CARD_TIMING_S and (touch := _touch(a.box, b.box)):
+            if (
+                abs(a.end - b.end) <= CARD_TIMING_S
+                and (touch := _touch(a.box, b.box))
+                and _may_join(a, b)
+            ):
                 touching.append((i, j, touch))
     stacked = {k for i, j, touch in touching if touch is _Touch.STACKED for k in (i, j)}
     parent = list(range(len(lines)))
@@ -355,9 +409,10 @@ def _labels_of(
     group: Sequence[_Line], start: float, end: float, labels: Sequence[_Line]
 ) -> list[_Line]:
     """Recurring `labels` that stay on screen across `group` (on from `start`
-    to `end`), start or end with it and sit above or below it: a label kept
-    up while the cards it names change (whose memo, which corner), copied
-    into each of them."""
+    to `end`), start or end with it, sit above or below it and may join its
+    biggest line (set the same way, or labelling it): a label kept up while
+    the cards it names change (whose memo, which corner), copied into each
+    of them."""
     return [
         label
         for label in labels
@@ -368,20 +423,30 @@ def _labels_of(
             or abs(label.end - end) <= CARD_TIMING_S
         )
         and any(_touch(label.box, line.box) in _ABOVE_OR_BELOW for line in group)
+        and _may_join(label, max(group, key=lambda line: _char_size(line.box)))
     ]
 
 
 def _reading_order(lines: Sequence[_Line]) -> list[_Line]:
     """Rows top to bottom, each left to right; a line shares a row with the
     first of the row when they overlap vertically (a smaller group name
-    before a name stays first)."""
-    rows: list[list[_Line]] = []
-    for line in sorted(lines, key=lambda line: line.box[1]):
-        if rows and _same_row(rows[-1][0].box, line.box):
-            rows[-1].append(line)
+    before a name stays first). A vertical card reads in columns instead,
+    right to left, each top to bottom."""
+    if set_vertically([line.box for line in lines]):
+        axis, first, along = _ACROSS_COLUMNS, (lambda box: -box[2]), 1
+    else:
+        axis, first, along = _ACROSS_ROWS, (lambda box: box[1]), 0
+    bands: list[list[_Line]] = []
+    for line in sorted(lines, key=lambda line: first(line.box)):
+        if bands and _in_line(bands[-1][0].box, line.box, axis):
+            bands[-1].append(line)
         else:
-            rows.append([line])
-    return [line for row in rows for line in sorted(row, key=lambda line: line.box[0])]
+            bands.append([line])
+    return [
+        line
+        for band in bands
+        for line in sorted(band, key=lambda line: line.box[along])
+    ]
 
 
 def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:

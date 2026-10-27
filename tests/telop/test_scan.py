@@ -341,3 +341,126 @@ def test_a_name_plate_and_the_caption_beside_it_are_two_cards(case: str):
     assert sorted(card.text for card in cards) == sorted(
         [" / ".join(line.text for line in plate), caption.text]
     )
+
+
+# Vertical and horizontal lines (owner's calls, 2026-10-28): they share a card
+# only as a short, smaller label and its text, whichever way each is set.
+_LABEL_AND_TEXT = {
+    "vertical label before a caption": [
+        read((0.020, 0.801, 0.056, 0.974), "このあと"),
+        read((0.057, 0.799, 0.199, 0.881), "2025年"),
+        read((0.046, 0.855, 0.473, 0.990), "一番面白かった芸人を発表"),
+    ],
+    "vertical label inside a caption panel": [
+        read((0.158, 0.740, 0.181, 0.952), "私の好きは"),
+        read((0.141, 0.596, 0.900, 0.999), "ロバート"),
+    ],
+    "vertical tag beside a reason": [
+        read((0.029, 0.692, 0.315, 0.756), "ケツナダル(ワースト2)"),
+        read((0.033, 0.777, 0.086, 0.956), "理由"),
+        read((0.078, 0.770, 0.958, 0.970), "誕生日を理由に仕事を断る。"),
+    ],
+    "vertical name beside an answer": [
+        read((0.353, 0.664, 0.395, 0.796), "大吉"),
+        read((0.395, 0.669, 0.649, 0.793), "うさぎとかめ"),
+    ],
+}
+
+
+@pytest.mark.parametrize("case", list(_LABEL_AND_TEXT))
+def test_a_label_set_the_other_way_stays_with_its_text(case: str):
+    reads = _LABEL_AND_TEXT[case]
+
+    (card,) = build_cards(scan_of(*[reads] * 4), []).cards
+
+    assert {line.text for line in card.lines} == {read.text for read in reads}
+
+
+_SET_APART = {
+    "speech bubble beside a vertical caption": (
+        [
+            read((0.839, 0.000, 0.999, 0.829), "食べたくて"),
+            read((0.721, 0.019, 0.903, 0.999), "座る前に注文"),
+        ],
+        [read((0.268, 0.450, 0.752, 0.755), "親子丼!!")],
+    ),
+    "vertical poster name beside a caption": (
+        [read((0.655, 0.000, 0.760, 0.853), "三遊亭鳳月")],
+        [read((0.040, 0.852, 0.497, 0.964), "落語家さんは歯が命!!")],
+    ),
+    "long small caption under a vertical place sign": (
+        [read((0.424, 0.167, 0.450, 0.280), "公園")],
+        [read((0.455, 0.276, 0.517, 0.298), "空気が普通です")],
+    ),
+}
+
+
+@pytest.mark.parametrize("case", list(_SET_APART))
+def test_vertical_and_horizontal_text_are_two_cards(case: str):
+    vertical, horizontal = _SET_APART[case]
+
+    cards = build_cards(scan_of(*[[*vertical, *horizontal]] * 4), []).cards
+
+    assert sorted(card.text for card in cards) == sorted(
+        [" / ".join(line.text for line in vertical), horizontal[0].text]
+    )
+    assert [card.vertical for card in cards if card.text == horizontal[0].text] == [
+        False
+    ]
+
+
+def test_a_vertical_card_reads_its_columns_right_to_left():
+    frames = [
+        [
+            read((0.721, 0.019, 0.903, 0.999), "座る前に注文"),
+            read((0.839, 0.000, 0.999, 0.829), "食べたくて"),
+        ]
+    ] * 4
+
+    (card,) = build_cards(scan_of(*frames), []).cards
+
+    assert card.vertical
+    assert card.text == "食べたくて / 座る前に注文"
+
+
+def test_a_long_running_title_does_not_label_a_vertical_caption():
+    # The segment title stays up for minutes; it sits flush on a vertical
+    # caption, which it would otherwise label (unrounded boxes: they sit just
+    # within a touch of each other).
+    title = read(
+        (0.53542, 0.02315, 0.97552, 0.0713),
+        "数多の賞レースを制した極み人COWCOW多田健二",
+    )
+    caption = read((0.45573, 0.09537, 0.54896, 0.81389), "へぼを見せてらう")
+    frames = [[title] for _ in range(130)] + [[title, caption]] * 4
+
+    cards = build_cards(scan_of(*frames), []).offered
+
+    assert [card.text for card in cards] == ["へぼを見せてらう"]
+
+
+def test_a_long_running_title_does_not_label_a_vertical_caption_through_a_tag():
+    # A short horizontal tag beside the caption joins it as a label; the
+    # title, set the tag's way, still does not label the caption.
+    title = read(
+        (0.53542, 0.02315, 0.97552, 0.0713),
+        "数多の賞レースを制した極み人COWCOW多田健二",
+    )
+    caption = read((0.45573, 0.09537, 0.54896, 0.81389), "へぼを見せてらう")
+    tag = read((0.550, 0.400, 0.600, 0.440), "えっ")
+    frames = [[title] for _ in range(130)] + [[title, caption, tag]] * 4
+
+    (card,) = build_cards(scan_of(*frames), []).offered
+
+    assert {line.text for line in card.lines} == {"へぼを見せてらう", "えっ"}
+
+
+def test_a_long_running_vertical_tag_still_labels_the_text_beside_it():
+    tag = read((0.033, 0.777, 0.086, 0.956), "理由")
+    who = read((0.029, 0.692, 0.315, 0.756), "ケツナダル(ワースト2)")
+    reason = read((0.078, 0.770, 0.958, 0.970), "誕生日を理由に仕事を断る。")
+    frames = [[tag] for _ in range(130)] + [[tag, who, reason]] * 4
+
+    (card,) = build_cards(scan_of(*frames), []).offered
+
+    assert card.text == "ケツナダル(ワースト2) / 理由 / 誕生日を理由に仕事を断る。"

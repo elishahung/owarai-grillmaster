@@ -6,9 +6,9 @@ The cards below were read by OCR from frames sampled twice a second and pre-filt
 
 Keep a card when it adds something the dialogue subtitles do not carry:
 
-- editorial commentary and ツッコミ captions (`相変わらず何も知らない`, `唐突チェーン`), narration and questions put to the cast;
+- editorial commentary and ツッコミ captions, narration and questions put to the cast;
 - information: places, dates, names with their group or age, profile tables, rankings, timelines, rules, prices that matter to the story, explanations of a word;
-- written thoughts and notes such as memo cards; keep a label naming whose note it is (`有吉MEMO`) as a 【】 prefix.
+- thoughts, notes or messages the cast wrote, shown as text.
 
 Drop a card when it:
 
@@ -24,6 +24,7 @@ Translation rules:
 
 - Translate what the card means in context, in the tone of the show; captions are punchy, keep them short.
 - Use the briefing's names and terms so the cards agree with the dialogue subtitles. Talent names follow the briefing's `characters`.
+- Keep the whole episode consistent: cards of one kind (the same recurring label, caption style or card format) get one rendering of their recurring parts and one layout, and the same Japanese wording gets the same translation wherever it appears. A label that says whose card it is belongs in the translation.
 - One card is one entry. Use `\n` for a line break only where the card itself breaks into separate items (a name and a profile line); at most three lines.
 - OCR may misread a character. Translate the card that is on screen, not the misreading; fetch a frame when it matters.
 - No Japanese left in the translation except a proper noun with no Chinese rendering.

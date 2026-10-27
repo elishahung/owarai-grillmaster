@@ -48,7 +48,7 @@ package` burns it.
    timing (±1 s) **and** touching on screen into cards → kind: `recurring`
    (all lines recurring), `speech` (all fresh lines speech-like), else
    `candidate`. Recurrence is judged per line but applied per card, so a
-   recurring "○○MEMO" label stays attached to its fresh memo.
+   recurring label stays attached to the fresh text it names.
 3. **Select** (role `utility`, `SchemaOutput(TelopSelection)`, `get_frames`
    into `.work/side/telop/frames/`): candidates only as a TSV (seconds,
    coarse position, lines joined ` / `), the plain ASR transcript, the
@@ -99,6 +99,11 @@ scan (sampling, then OCR; streaming the sampling into the OCR would hide
   translates. Selection belongs to `utility`.
 - Recurring cards (corner/segment titles) are not offered: shown at the
   top they stayed up far too long (owner's call, 2026-10-27).
+- `prompts/select.md` stays show-agnostic: no one show's card conventions
+  (how to render a memo label) and no examples quoted from the episodes it
+  was tested on, which would inflate those tests and hide consistency gaps.
+  It asks for episode-wide consistency in general; a show's convention goes
+  in its `instruction.telop`.
 - Rules only shrink the selector's input; they never decide what a viewer
   sees. Scene text (shirt prints, labels, signage) survives the rules on
   location shows; the selector drops it, with frames when the text is

@@ -5,8 +5,8 @@ A scan samples the video at `SAMPLE_FPS` and keeps every text box OCR read
 into a line with a start, an end and its most trusted reading; a new
 reading in the same place (the next memo in the same frame) starts a new
 line. `build_cards` then drops OCR noise, joins lines that share their
-timing and touch on screen into cards (a "○○MEMO" label stays with its
-memo), and labels each card:
+timing and touch on screen into cards (a recurring label stays with the
+text it names), and labels each card:
 
 - `recurring`: every line's text is on screen for over `RECURRING_S`
   across the episode (corner logos and titles, shirt prints, bottle

@@ -92,7 +92,10 @@ location show), not settings.
   plates chained them); they form their own `recurring` cards, never
   offered, and a recurring line set flush on a card (≤ half the smaller
   line height above/below) that stays up across it and starts or ends with
-  it is copied in as its label (`熊元MEMO` over successive memos).
+  it is copied in as its label (`熊元MEMO` over successive memos). Two
+  fresh groups on screen together on either side of one such label are
+  one card (a plate whose middle column is also the corner title); boards
+  bridged this way are left to the selector.
 - **Grouping**: same timing (±1 s) and touching: stacked ≤ 0.5 of the
   smaller line height apart, on one row ≤ 0.25 of it apart (a space; two
   memos or name plates side by side sit further apart), or diagonal within

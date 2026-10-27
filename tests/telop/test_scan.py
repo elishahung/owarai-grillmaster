@@ -508,6 +508,32 @@ def test_vertical_captions_a_column_apart_are_two_cards():
     assert sorted(card.text for card in cards) == ["へぼを見せてらう", "まだまだ"]
 
 
+def test_a_plate_split_by_a_long_running_column_is_one_card():
+    # Its middle column's text is also the corner title, so it is recurring
+    # and the plate's other columns sit a column apart (real boxes).
+    name = read((0.931, 0.326, 0.972, 0.971), "パンサーオガタタカヒロ")
+    event = read((0.887, 0.331, 0.928, 0.910), "足つぼルームランナー")
+    title = read((0.849, 0.548, 0.892, 0.977), "世界記録保持者")
+    frames = [[event] for _ in range(130)] + [[event, name, title]] * 4
+
+    (card,) = build_cards(scan_of(*frames), []).offered
+
+    assert card.text == "パンサーオガタタカヒロ / 足つぼルームランナー / 世界記録保持者"
+
+
+def test_a_long_running_score_between_two_plates_does_not_join_them():
+    # Only Japanese text bridges: a score readout between two contestants'
+    # plates (real boxes) leaves them two cards.
+    score = read((0.066, 0.081, 0.183, 0.243), "1 pt")
+    upper = read((0.089, 0.029, 0.155, 0.102), "津田")
+    lower = read((0.089, 0.270, 0.156, 0.344), "石井")
+    frames = [[score] for _ in range(130)] + [[score, upper, lower]] * 4
+
+    cards = build_cards(scan_of(*frames), []).offered
+
+    assert sorted(card.text for card in cards) == ["1 pt / 石井", "津田 / 1 pt"]
+
+
 def test_a_long_running_vertical_tag_still_labels_the_text_beside_it():
     tag = read((0.033, 0.777, 0.086, 0.956), "理由")
     who = read((0.029, 0.692, 0.315, 0.756), "ケツナダル(ワースト2)")

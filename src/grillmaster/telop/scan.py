@@ -33,6 +33,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from enum import Enum, StrEnum
+from itertools import combinations
 from typing import TYPE_CHECKING
 
 from grillmaster.core.models import StrictModel
@@ -437,6 +438,50 @@ def _labels_of(
     ]
 
 
+def _span(group: Sequence[_Line]) -> tuple[float, float]:
+    return min(line.start for line in group), max(line.end for line in group)
+
+
+def _side_of(label: _Line, group: Sequence[_Line]) -> int:
+    """-1 when every line of `group` sits above `label` (right of a vertical
+    one), 1 when every line sits below (left of it), else 0."""
+    turn = _transposed if _is_vertical(label.box) else (lambda box: box)
+
+    def middle(box: Box) -> float:
+        box = turn(box)
+        return (box[1] + box[3]) / 2
+
+    above = [middle(line.box) < middle(label.box) for line in group]
+    return -1 if all(above) else 1 if not any(above) else 0
+
+
+def _bridged(groups: list[list[_Line]], labels: Sequence[_Line]) -> list[list[_Line]]:
+    """Fresh groups shown together on either side of one recurring label,
+    as one group: the label is a line of the card it splits (a profile
+    plate's middle column whose text is also the corner title)."""
+    sharing: dict[int, tuple[_Line, list[int]]] = {}
+    for i, group in enumerate(groups):
+        for label in _labels_of(group, *_span(group), labels):
+            if _JAPANESE.search(label.text):
+                sharing.setdefault(id(label), (label, []))[1].append(i)
+    owner = list(range(len(groups)))
+    for label, indices in sharing.values():
+        for i, j in combinations(indices, 2):
+            (start_i, end_i), (start_j, end_j) = _span(groups[i]), _span(groups[j])
+            if (
+                owner[i] != owner[j]
+                and abs(start_i - start_j) <= CARD_TIMING_S
+                and abs(end_i - end_j) <= CARD_TIMING_S
+                and _side_of(label, groups[i]) * _side_of(label, groups[j]) == -1
+            ):
+                gone = owner[j]
+                owner = [owner[i] if o == gone else o for o in owner]
+    merged: dict[int, list[_Line]] = {}
+    for i, group in enumerate(groups):
+        merged.setdefault(owner[i], []).extend(group)
+    return [sorted(group, key=lambda line: line.start) for group in merged.values()]
+
+
 def _reading_order(lines: Sequence[_Line]) -> list[_Line]:
     """Rows top to bottom, each left to right; a line shares a row with the
     first of the row when they overlap vertically (a smaller group name
@@ -484,15 +529,14 @@ def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:
     fresh = [line for line in lines if not recurring[id(line)]]
     groups = sorted(
         [
-            *((group, False) for group in _group(fresh)),
+            *((group, False) for group in _bridged(_group(fresh), labels)),
             *((group, True) for group in _group(labels)),
         ],
         key=lambda tagged: tagged[0][0].start,
     )
     cards: list[TelopCard] = []
     for group, is_fixture in groups:
-        start = min(line.start for line in group)
-        end = max(line.end for line in group)
+        start, end = _span(group)
         echoes = set[int]()
         if is_fixture:
             kind = CardKind.RECURRING

@@ -328,10 +328,20 @@ _PLATE_AND_CAPTION = {
 }
 
 
-@pytest.mark.xfail(
-    strict=True, reason="known gap: a name plate joins the caption under it"
+@pytest.mark.parametrize(
+    "case",
+    [
+        pytest.param(
+            "plate over a full-width caption",
+            marks=pytest.mark.xfail(
+                strict=True,
+                reason="known gap: a plate as big as a lead-in joins the caption",
+            ),
+        ),
+        "recommender plate over a caption",
+        "photo label overlapping a caption",
+    ],
 )
-@pytest.mark.parametrize("case", list(_PLATE_AND_CAPTION))
 def test_a_name_plate_and_the_caption_beside_it_are_two_cards(case: str):
     reads = _PLATE_AND_CAPTION[case]
     *plate, caption = reads
@@ -341,6 +351,24 @@ def test_a_name_plate_and_the_caption_beside_it_are_two_cards(case: str):
     assert sorted(card.text for card in cards) == sorted(
         [" / ".join(line.text for line in plate), caption.text]
     )
+
+
+def test_a_footnote_under_a_big_title_is_its_own_card():
+    frames = [
+        [
+            read(
+                (0.127, 0.020, 0.975, 0.148), "芸人1000人が選ぶ今年面白かった芸人TOP10"
+            ),
+            read((0.719, 0.153, 0.974, 0.183), "2025年12月20日に放送されたものです"),
+        ]
+    ] * 4
+
+    cards = build_cards(scan_of(*frames), []).cards
+
+    assert sorted(card.text for card in cards) == [
+        "2025年12月20日に放送されたものです",
+        "芸人1000人が選ぶ今年面白かった芸人TOP10",
+    ]
 
 
 # Vertical and horizontal lines (owner's calls, 2026-10-28): they share a card

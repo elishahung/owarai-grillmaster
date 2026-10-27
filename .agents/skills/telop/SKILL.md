@@ -99,7 +99,11 @@ location show), not settings.
   the bigger line's height sideways unless both lines already have a line
   straight above/below (a memo's corner label joins its text; the label of
   the right one of two side-by-side memos does not join the left). Lines
-  read row by row, left to right.
+  above each other whose character sizes differ > 3.5× stay apart (name
+  plate over a caption, footnote under a title, logo by a caption; owner's
+  call, 2026-10-28); a smaller lead-in over a big caption stays under the
+  ratio and joins it. Recurring labels pass the same check.
+  Lines read row by row, left to right.
 - **Orientation**: a line ≥ 1.2× taller than wide (pixels) is vertical; a
   card is vertical when its biggest-character line is, and reads in columns
   right to left. A vertical and a horizontal line (fresh or a recurring

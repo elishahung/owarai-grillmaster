@@ -284,9 +284,12 @@ _ASPECT = 9 / 16
 # each other (straight or diagonally, at most a line height sideways), or on
 # one row at most `_ROW_GAP` of it apart (a space inside a line; name
 # plates or memos side by side sit further apart), and a wider gap above
-# is a separate label (map annotations).
+# is a separate label (map annotations). Lines above each other whose
+# characters differ more than `_SIZE_RATIO` times are two cards (a name
+# plate over a caption, a footnote under a title, a logo by a caption).
 _STACK_GAP = 0.5
 _ROW_GAP = 0.25
+_SIZE_RATIO = 3.5
 # Share of the shorter line two boxes must share vertically to be on one row
 # (horizontally to be in one column of a vertical card).
 _ROW_OVERLAP = 0.5
@@ -356,6 +359,9 @@ def _touch(a: Box, b: Box) -> _Touch | None:
     if _in_line(a, b, _ACROSS_ROWS):
         return _Touch.ROW if gap_x <= _ROW_GAP * height * _ASPECT else None
     if max(a[1], b[1]) - min(a[3], b[3]) > _STACK_GAP * height:
+        return None
+    small, big = sorted((_char_size(a), _char_size(b)))
+    if big > _SIZE_RATIO * small:
         return None
     if gap_x < 0:
         return _Touch.STACKED

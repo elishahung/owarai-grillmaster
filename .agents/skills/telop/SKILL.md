@@ -230,7 +230,11 @@ OCR or agent run is needed. Per item:
    board entries elsewhere is rejected. OCR boxes include decoration and
    vary for the same text (one corner title 46 px vs 77 px tall), so size
    thresholds are weak signals. Diff entries you cannot call improvement
-   or regression go to the owner, by timestamp.
+   or regression go to the owner as images from `review <HEAD's scan.py>`
+   (boxed before/after stills), sent straight into the conversation, each
+   with a Chinese line on what the card is and your verdict. The owner
+   does not read Japanese: never report cards by their text alone, and
+   never as a page to open.
 4. Lock each settled case into `tests/telop/test_scan.py` with its real
    boxes (`lines` prints them to ~1 px): the reported card, and any card a
    rejected rule broke elsewhere. A gap with no fix yet is a strict

@@ -17,6 +17,10 @@ once, without OCR or an agent run.
   `scan.py` (e.g. `git show HEAD:src/grillmaster/telop/scan.py > old.py`)
   and the working tree build differently, on every scanned project by
   default (local and archived): measure a rule change before keeping it.
+- `review <baseline scan.py> [<project>...] [--out <dir>]`: the same
+  changes as images to show the owner, one per moment: the still before
+  (left) and after (right), each changed card boxed in a colour; it prints
+  each image's path and the cards by colour.
 
 Output is UTF-8; in PowerShell set `[Console]::OutputEncoding =
 [Text.Encoding]::UTF8` first.
@@ -35,7 +39,7 @@ from typing import TYPE_CHECKING
 
 from grillmaster.cli.common import load_or_exit, locate_project_or_exit
 from grillmaster.core.srt import read_srt_file
-from grillmaster.media.ffmpeg import SubprocessFfmpegRunner
+from grillmaster.media.ffmpeg import SubprocessFfmpegRunner, ffmpeg
 from grillmaster.media.frames import extract_frames
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.naming import archived_dirs
@@ -159,6 +163,97 @@ def diff_command(baseline: Path, projects: list[str]) -> None:
                 print(f"  {sign} {start:7.1f} {text}")
 
 
+_SAME_MOMENT_S = 1.5
+# Box colours, in card order, with the names `review` prints for them.
+_COLOURS = (
+    ("red", "0xE53935"),
+    ("green", "0x2E9D3A"),
+    ("blue", "0x2F5BE8"),
+    ("orange", "0xF0A000"),
+    ("purple", "0xB03AC8"),
+    ("cyan", "0x00A5B5"),
+)
+
+
+def _video_id(layout: ProjectLayout) -> str:
+    """The video ID in a project directory's name (`YYMMDD_<id>_<title>`)."""
+    date, _, rest = layout.root.name.partition("_")
+    if re.fullmatch(r"\d{6}", date) and "_" in rest:
+        return rest.partition("_")[0]
+    return layout.root.name
+
+
+def _moments(
+    before: list[scan.TelopCard], after: list[scan.TelopCard]
+) -> list[tuple[list[scan.TelopCard], list[scan.TelopCard]]]:
+    """Changed cards, before and after, grouped by when they appear."""
+    tagged = sorted(
+        [(card, False) for card in before] + [(card, True) for card in after],
+        key=lambda pair: pair[0].start,
+    )
+    moments: list[tuple[list[scan.TelopCard], list[scan.TelopCard]]] = []
+    last = -_SAME_MOMENT_S - 1
+    for card, is_after in tagged:
+        if card.start - last > _SAME_MOMENT_S:
+            moments.append(([], []))
+        moments[-1][is_after].append(card)
+        last = card.start
+    return moments
+
+
+def _boxes(cards: list[scan.TelopCard]) -> str:
+    """An ffmpeg filter drawing each card's box in its colour."""
+    return (
+        ",".join(
+            f"drawbox=x=iw*{x0:.4f}:y=ih*{y0:.4f}:w=iw*{x1 - x0:.4f}:h=ih*{y1 - y0:.4f}"
+            f":color={_COLOURS[n % len(_COLOURS)][1]}:t=4"
+            for n, card in enumerate(cards)
+            for x0, y0, x1, y1 in [card.box]
+        )
+        or "null"
+    )
+
+
+def review_command(baseline: Path, projects: list[str], out_dir: Path) -> None:
+    old = _load_module(baseline)
+    layouts = [_layout(project) for project in projects] or list(_scanned())
+    out_dir.mkdir(parents=True, exist_ok=True)
+    runner = SubprocessFfmpegRunner()
+    for layout in layouts:
+        before_cards = _cards(layout, old).offered
+        after_cards = _cards(layout).offered
+        before_keys = {(c.start, c.text) for c in before_cards}
+        after_keys = {(c.start, c.text) for c in after_cards}
+        gone = [c for c in before_cards if (c.start, c.text) not in after_keys]
+        new = [c for c in after_cards if (c.start, c.text) not in before_keys]
+        video_id = _video_id(layout)
+        stills = Path(tempfile.gettempdir()) / "grill-telop-probe" / video_id
+        for was, now in _moments(gone, new):
+            shown = [*was, *now]
+            latest = max(card.start for card in shown)
+            # When every changed card is up, if they ever all are.
+            time = max(latest, min(latest + 0.5, min(c.end for c in shown) - 0.1))
+            (still,) = extract_frames(runner, layout.video, [time], stills, _FRAME_SIDE)
+            minutes, seconds = divmod(int(min(card.start for card in shown)), 60)
+            image = out_dir / f"{video_id}_{minutes}m{seconds:02d}s.jpg"
+            runner.run(
+                ffmpeg(
+                    "-i",
+                    str(still),
+                    "-filter_complex",
+                    f"[0]split[a][b];[a]{_boxes(was)},pad=iw+16:ih:0:0:white[l];"
+                    f"[b]{_boxes(now)}[r];[l][r]hstack",
+                    "-q:v",
+                    "3",
+                    str(image),
+                )
+            )
+            print(f"{image}  (left: before, right: after)")
+            for side, cards in (("before", was), ("after", now)):
+                for n, card in enumerate(cards):
+                    print(f"  {side:6} {_COLOURS[n % len(_COLOURS)][0]:6} {card.text}")
+
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")  # pyright: ignore[reportAttributeAccessIssue]
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -176,6 +271,14 @@ def main() -> None:
     diff = commands.add_parser("diff")
     diff.add_argument("baseline", type=Path)
     diff.add_argument("projects", nargs="*")
+    review = commands.add_parser("review")
+    review.add_argument("baseline", type=Path)
+    review.add_argument("projects", nargs="*")
+    review.add_argument(
+        "--out",
+        type=Path,
+        default=Path(tempfile.gettempdir()) / "grill-telop-probe" / "review",
+    )
     args = parser.parse_args()
     match args.command:
         case "cards":
@@ -184,6 +287,8 @@ def main() -> None:
             lines_command(args.project, args.pattern)
         case "frames":
             frames_command(args.project, args.times)
+        case "review":
+            review_command(args.baseline, args.projects, args.out)
         case _:
             diff_command(args.baseline, args.projects)
 

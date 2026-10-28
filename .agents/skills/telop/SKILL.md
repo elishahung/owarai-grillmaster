@@ -108,7 +108,10 @@ location show), not settings.
   above each other whose character sizes differ > 3.5× stay apart (name
   plate over a caption, footnote under a title, logo by a caption; owner's
   call, 2026-10-28); a smaller lead-in over a big caption stays under the
-  ratio and joins it. Recurring labels pass the same check.
+  ratio and joins it. So do lines set the same way that read as one row (a
+  big caption's box reaching up into a small tagline's row; signs, posters,
+  ages beside a caption); a lead-in label over 3.5× smaller now splits off
+  too (accepted, 2026-10-28). Recurring labels pass the same check.
   Lines read row by row, left to right.
 - **Orientation**: a line ≥ 1.2× taller than wide (pixels) is vertical; a
   card is vertical when its biggest-character line is, and reads in columns
@@ -143,8 +146,11 @@ its columns (a tab or corner label off to one side made the union box
 push it away, 2026-10-28). Card lines count by the text's own extent
 (`ocr.text_box`): the detector's box reaches past big text by up to 80 px,
 which left a visible gap. Each spot is costed: share
-of the smaller of the two covered by another translation (×10) or any
-line of an up translated card, kept or `beside` (×1; a short label half
+of the smaller of the two covered by another translation (×10), a
+translated line of any up card, its own or another's (×10: one hidden
+leaves its translation nothing to be read against; at ×1 a translation
+squeezed onto its own plate's group name, 2026-10-28), or a `beside` line
+(×1; a short label half
 hidden counts as half), distance from the preferred
 spot (×3 per picture height, sideways too), being nearer another card than
 its own (+1); spots tried are centred or against any obstacle's side
@@ -168,6 +174,14 @@ another card above or below it.
 The dialogue is another layer on top: this one never avoids it (owner's
 call: a translation away from its card is worse than one under a cue). A
 card that groups wrongly lands wrongly, so fix grouping, not placement.
+Known gap: an untranslated card is no obstacle (render sees only
+`telop.cht.json`), so a translation can land on a big caption the
+selector left out. Counting them (2026-10-28, 560 moments) moved 26-69
+depending on weight and which kinds count, as many worse (lists broken,
+pushed into the dialogue) as better; not adopted. Also a gap: a card's
+lines count for its whole span, though one may appear up to
+`CARD_TIMING_S` later (`telop.cht.json` keeps card times only), so a
+translation can make room for a line not yet up.
 
 ## OCR engine
 
@@ -248,6 +262,12 @@ OCR or agent run is needed. Per item:
    rejected rule broke elsewhere. A gap with no fix yet is a strict
    `xfail`. The suite accumulates, like `tests/asr/test_srt_builder.py`;
    a new rule must pass every case.
+   A placement change is measured the same way with `placement <HEAD's
+   render.py>`: the kept translations of every selection placed by both,
+   burned in with the dialogue, before/after per moment. Show those, not
+   boxes, whenever the question is where a translation lands. Both
+   commands read every project; one they cannot read is migrated to the
+   current format, never skipped.
 5. When no general fix exists, report the cause and the options instead
    of forcing one. Mind intro cards: name, group, age and profile lines
    group into one card; a rule on single lines (length, digits) splits or
@@ -260,6 +280,9 @@ Where a fix belongs:
   every show: confidence, duration, one character, no kana/kanji,
   long-running fixtures; speech echo is marked, not dropped. The bar: the
   cross-episode diff loses no real card.
+- **Placement** (`render.py`, deterministic, after selection): where a
+  correctly grouped and selected card's translation lands: the costs and
+  spots above. Lock cases in `tests/telop/test_render.py` with real boxes.
 - **Selector agent** (`select.md`, show-agnostic): anything needing
   meaning or context: edited caption vs scene text, logos/titles/ads,
   running readouts, echoes of speech, what a viewer needs, wording and

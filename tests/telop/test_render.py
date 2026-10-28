@@ -258,6 +258,31 @@ def test_a_translation_avoids_the_lines_of_its_card_it_leaves_out():
     assert y <= min(rank[1] for rank in ranks) * 1080
 
 
+def test_a_translation_does_not_cover_the_lines_it_translates():
+    # 背徳フライデー 0:29: right under the plate is a translated caption's
+    # line; squeezing up onto the plate's own group name hid it, so the
+    # translation goes above the plate instead.
+    plate = [
+        (0.086, 0.482, 0.304, 0.570),  # 体重約130kg
+        (0.091, 0.549, 0.303, 0.666),  # ぐんぴい
+        (0.111, 0.649, 0.285, 0.713),  # 春とヒコーキ
+    ]
+    caption: Box = (0.084, 0.746, 0.889, 0.999)
+
+    ass = render_telop_ass(
+        TelopSubtitles(
+            items=[
+                subtitle("體重約130公斤\nGunpii\n春與飛機", boxes=plate, id=1),
+                subtitle("背德秘密結社HSS", boxes=[caption], id=2),
+            ]
+        )
+    )
+
+    (alignment, _, y), _ = anchors(ass)
+    assert alignment == 2
+    assert y <= round(text_box(plate[0])[1] * 1080) - 8
+
+
 def test_a_translation_goes_above_only_when_below_does_not_fit():
     # Low in the picture but with room below: still below, like the rest of
     # a list. On the bottom edge: above, anchored on its bottom edge.

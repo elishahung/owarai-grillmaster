@@ -87,10 +87,12 @@ WITH_DIALOGUE_HEADER = script_header(CANVAS_INFO, [DIALOGUE_STYLE, *STYLES])
 _GAP = 8
 # What covering a share of a placed translation or a card line costs (of
 # the smaller of the two), against `_AWAY` for moving it a picture height
-# from its card: another translation is unreadable, an original card only
-# partly hidden, and a translation far from its card loses what it belongs
-# to.
+# from its card: another translation is unreadable, a translated line
+# (its own card's or another's) hidden leaves its translation nothing to be
+# read against, a line no one translates is only partly hidden, and a
+# translation far from its card loses what it belongs to.
 _COVER_TRANSLATION = 10.0
+_COVER_TRANSLATED = 10.0
 _COVER_CARD = 1.0
 _AWAY = 3.0
 # A spot nearer another card than its own reads as that card's translation.
@@ -318,8 +320,10 @@ def _place(
     of any of its layouts (see `_spot`), a layout costing `_MORE_COLUMNS`
     per column."""
     their_lines = [rect for other in others for rect in (*other.own, *other.beside)]
+    cards = (card, *others)
     obstacles = [
-        *((rect, _COVER_CARD) for rect in (*card.own, *card.beside, *their_lines)),
+        *((rect, _COVER_TRANSLATED) for each in cards for rect in each.own),
+        *((rect, _COVER_CARD) for each in cards for rect in each.beside),
         *((rect, _COVER_TRANSLATION) for rect in translations),
     ]
     choices = [

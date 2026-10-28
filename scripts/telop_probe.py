@@ -21,6 +21,11 @@ once, without OCR or an agent run.
   changes as images to show the owner, one per moment: the still before
   (left) and after (right), each changed card boxed in a colour; it prints
   each image's path and the cards by colour.
+- `placement <baseline render.py> [<project>...] [--out <dir>]`: the kept
+  translations a baseline `render.py` places differently, on every project
+  with a selection by default: one image per moment, the still with the
+  telops and the dialogue burned in as each places them, before (left) and
+  after (right). A selection the current schema cannot read fails the run.
 
 Output is UTF-8; in PowerShell set `[Console]::OutputEncoding =
 [Text.Encoding]::UTF8` first.
@@ -41,9 +46,11 @@ from grillmaster.cli.common import load_or_exit, locate_project_or_exit
 from grillmaster.core.srt import read_srt_file
 from grillmaster.media.ffmpeg import SubprocessFfmpegRunner, ffmpeg
 from grillmaster.media.frames import extract_frames
+from grillmaster.package.render import SubtitleLayer
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.naming import archived_dirs
-from grillmaster.telop import scan
+from grillmaster.telop import render, scan
+from grillmaster.telop.select import TelopSubtitles
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -59,8 +66,11 @@ _FRAME_SIDE = 960
 
 
 def _seconds(text: str) -> float:
-    minutes, _, seconds = text.rpartition(":")
-    return float(minutes or 0) * 60 + float(seconds)
+    """Seconds from `s`, `m:ss` or an ASS `h:mm:ss.cc`."""
+    value = 0.0
+    for part in text.split(":"):
+        value = value * 60 + float(part)
+    return value
 
 
 def _layout(project: str) -> ProjectLayout:
@@ -143,19 +153,23 @@ def frames_command(project: str, times: list[str]) -> None:
         print(path)
 
 
-def _scanned() -> Iterator[ProjectLayout]:
+def _projects() -> Iterator[ProjectLayout]:
+    """Every project, local and archived."""
     loaded = load_or_exit()
     roots = [*loaded.projects_root.iterdir()] if loaded.projects_root.is_dir() else []
     if loaded.config.paths.archive is not None:
         roots += archived_dirs(loaded.config.paths.archive)
-    for root in roots:
-        layout = ProjectLayout(root)
+    return (ProjectLayout(root) for root in roots)
+
+
+def _scanned() -> Iterator[ProjectLayout]:
+    for layout in _projects():
         if layout.telop_scan.exists() and layout.ja_srt.exists():
             yield layout
 
 
 def _load_module(path: Path) -> ModuleType:
-    spec = importlib.util.spec_from_file_location("baseline_scan", path)
+    spec = importlib.util.spec_from_file_location(f"baseline_{path.stem}", path)
     if spec is None or spec.loader is None:
         raise SystemExit(f"Cannot load {path}")
     module = importlib.util.module_from_spec(spec)
@@ -267,6 +281,81 @@ def review_command(baseline: Path, projects: list[str], out_dir: Path) -> None:
                     print(f"  {side:6} {_COLOURS[n % len(_COLOURS)][0]:6} {card.text}")
 
 
+_EVENT_TIMES = re.compile(r"^Dialogue: 0,([^,]+),([^,]+),")
+
+
+def _telop_moments(ass: str) -> dict[float, list[str]]:
+    """A telop layer's events by start time."""
+    moments: dict[float, list[str]] = {}
+    for line in ass.splitlines():
+        if match := _EVENT_TIMES.match(line):
+            moments.setdefault(_seconds(match[1]), []).append(line)
+    return moments
+
+
+def placement_command(baseline: Path, projects: list[str], out_dir: Path) -> None:
+    old = _load_module(baseline)
+    layouts = [_layout(project) for project in projects] or [
+        layout for layout in _projects() if layout.telop_cht_json.exists()
+    ]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    runner = SubprocessFfmpegRunner()
+    for layout in layouts:
+        subtitles = TelopSubtitles.model_validate_json(
+            layout.telop_cht_json.read_text("utf-8")
+        )
+        before = _telop_moments(old.render_telop_ass(subtitles))
+        after = _telop_moments(render.render_telop_ass(subtitles))
+        moved = sorted(
+            start
+            for start in before.keys() | after.keys()
+            if before.get(start) != after.get(start)
+        )
+        print(f"=== {layout.root.name}: {len(moved)} of {len(before)} moments moved")
+        if not moved:
+            continue
+        video_id = _video_id(layout)
+        work = (
+            Path(tempfile.gettempdir()) / "grill-telop-probe" / f"{video_id}-placement"
+        )
+        work.mkdir(parents=True, exist_ok=True)
+        dialogue = read_srt_file(layout.cht_srt)
+        layers = (SubtitleLayer(work / "before.ass"), SubtitleLayer(work / "after.ass"))
+        old.write_with_dialogue(dialogue, subtitles, layers[0].path)
+        render.write_with_dialogue(dialogue, subtitles, layers[1].path)
+        for start in moved:
+            ends = [
+                _seconds(match[2])
+                for line in [*before.get(start, []), *after.get(start, [])]
+                if (match := _EVENT_TIMES.match(line))
+            ]
+            time = start + min(1.5, (min(ends) - start) / 2)
+            # To the centisecond: two moments may start in one second.
+            minutes, seconds = divmod(start, 60)
+            image = out_dir / f"{video_id}_{minutes:.0f}m{seconds:05.2f}s_placement.jpg"
+            scale = f"scale={_FRAME_SIDE}:-2"
+            runner.run(
+                ffmpeg(
+                    "-ss",
+                    f"{time:.2f}",
+                    "-copyts",
+                    "-i",
+                    str(layout.video),
+                    "-filter_complex",
+                    f"[0]split[a][b];[a]{layers[0].filter(work)},{scale},"
+                    f"pad=iw+16:ih:0:0:white[l];[b]{layers[1].filter(work)},{scale}[r];"
+                    "[l][r]hstack",
+                    "-frames:v",
+                    "1",
+                    "-q:v",
+                    "3",
+                    str(image),
+                ),
+                cwd=work,
+            )
+            print(f"{image}  (left: before, right: after)")
+
+
 def main() -> None:
     sys.stdout.reconfigure(encoding="utf-8")  # pyright: ignore[reportAttributeAccessIssue]
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -292,6 +381,14 @@ def main() -> None:
         type=Path,
         default=Path(tempfile.gettempdir()) / "grill-telop-probe" / "review",
     )
+    placement = commands.add_parser("placement")
+    placement.add_argument("baseline", type=Path)
+    placement.add_argument("projects", nargs="*")
+    placement.add_argument(
+        "--out",
+        type=Path,
+        default=Path(tempfile.gettempdir()) / "grill-telop-probe" / "placement",
+    )
     args = parser.parse_args()
     match args.command:
         case "cards":
@@ -302,6 +399,8 @@ def main() -> None:
             frames_command(args.project, args.times)
         case "review":
             review_command(args.baseline, args.projects, args.out)
+        case "placement":
+            placement_command(args.baseline, args.projects, args.out)
         case _:
             diff_command(args.baseline, args.projects)
 

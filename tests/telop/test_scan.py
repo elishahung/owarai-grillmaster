@@ -355,6 +355,27 @@ def test_a_name_plate_and_the_caption_beside_it_are_two_cards(case: str):
     )
 
 
+def test_a_big_caption_does_not_join_a_small_line_it_shares_a_row_with():
+    # 背徳フライデー 0:29: the caption's box reaches up into the row of the
+    # small English tagline under a name plate, so the two read as one row;
+    # their characters differ 3.8-4.7 times, so the caption is its own card.
+    plate = [
+        read((0.709, 0.482, 0.929, 0.569), "体重約190kg"),
+        read((0.704, 0.554, 0.935, 0.664), "大鶴肥満"),
+        read((0.747, 0.648, 0.893, 0.713), "ママタルト"),
+        read((0.595, 0.722, 0.696, 0.776), "Haitoku"),
+        read((0.698, 0.720, 0.785, 0.777), "Secret"),
+        read((0.783, 0.719, 0.881, 0.786), "Society"),
+    ]
+    caption = read((0.084, 0.746, 0.889, 0.999), "背徳秘密結社HSS")
+
+    cards = build_cards(scan_of(*[[*plate, caption]] * 4), []).cards
+
+    assert sorted(card.text for card in cards) == sorted(
+        [" / ".join(line.text for line in plate), caption.text]
+    )
+
+
 def test_a_footnote_under_a_big_title_is_its_own_card():
     frames = [
         [

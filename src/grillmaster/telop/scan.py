@@ -286,9 +286,11 @@ _ASPECT = 9 / 16
 # each other (straight or diagonally, at most a line height sideways), or on
 # one row at most `_ROW_GAP` of it apart (a space inside a line; name
 # plates or memos side by side sit further apart), and a wider gap above
-# is a separate label (map annotations). Lines above each other whose
-# characters differ more than `_SIZE_RATIO` times are two cards (a name
-# plate over a caption, a footnote under a title, a logo by a caption).
+# is a separate label (map annotations). Lines above each other, or set
+# the same way on one row, whose characters differ more than `_SIZE_RATIO`
+# times are two cards (a name plate over a caption, a footnote under a
+# title, a logo by a caption, a big caption's box reaching into a tagline's
+# row).
 _STACK_GAP = 0.5
 _ROW_GAP = 0.25
 _SIZE_RATIO = 3.5
@@ -357,17 +359,21 @@ def _touch(a: Box, b: Box) -> _Touch | None:
     height, so a big line does not reach far (map labels, a logo near a
     card); only a corner label may sit as far sideways as the bigger line
     is high. Two vertical lines are measured as columns, in their character
-    width."""
-    if _is_vertical(a) and _is_vertical(b):
+    width. A vertical and a horizontal line on one row are left to
+    `_may_join`: a vertical label inside a caption's box reads as that row
+    whatever its size."""
+    same_way = _is_vertical(a) == _is_vertical(b)
+    if same_way and _is_vertical(a):
         a, b = _transposed(a), _transposed(b)
+    small, big = sorted((char_size(a), char_size(b)))
+    apart = big > _SIZE_RATIO * small
     height = min(a[3] - a[1], b[3] - b[1])
     gap_x = max(a[0], b[0]) - min(a[2], b[2])
     if _in_line(a, b):
+        if apart and same_way:
+            return None
         return _Touch.ROW if gap_x <= _ROW_GAP * height * _ASPECT else None
-    if max(a[1], b[1]) - min(a[3], b[3]) > _STACK_GAP * height:
-        return None
-    small, big = sorted((char_size(a), char_size(b)))
-    if big > _SIZE_RATIO * small:
+    if max(a[1], b[1]) - min(a[3], b[3]) > _STACK_GAP * height or apart:
         return None
     if gap_x < 0:
         return _Touch.STACKED

@@ -20,15 +20,42 @@ import importlib.util
 from typing import TYPE_CHECKING, Any
 
 from grillmaster.telop.errors import TelopError
-from grillmaster.telop.scan import SAMPLE_FPS, TelopScan, TextRead
+from grillmaster.telop.scan import SAMPLE_FPS, TelopScan, TextRead, char_size
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
+    from grillmaster.telop.scan import Box
+
 # Frames are sampled at exactly this size, so boxes divide by it.
 SAMPLE_SIZE = (1920, 1080)
 _CUDA = "CUDAExecutionProvider"
+# The detector's box reaches past the text it reads, outline and shadow
+# included, the more the bigger the text: by about this share of the
+# character size less these pixels on every side (fitted on 83 cards of 13
+# episodes, 2026-10-28; 10 px or more into the text on 4 % of the edges).
+_MARGIN_SHARE = 0.22
+_MARGIN_LESS_PX = 20.0
+
+
+def text_box(box: Box) -> Box:
+    """`box` without the detector's margin: the text's own extent, so what
+    is set against it sits against the card. An edge the frame cut keeps
+    its place: the margin past it was never in the box."""
+    width, height = SAMPLE_SIZE
+    margin = max(0.0, _MARGIN_SHARE * char_size(box) * height - _MARGIN_LESS_PX)
+
+    def inward(low: float, high: float, pixels: int) -> tuple[float, float]:
+        cut_low, cut_high = low * pixels < 1, high * pixels > pixels - 1
+        return (
+            low if cut_low else low + margin / pixels,
+            high if cut_high else high - margin / pixels,
+        )
+
+    x0, x1 = inward(box[0], box[2], width)
+    y0, y1 = inward(box[1], box[3], height)
+    return (x0, y0, x1, y1)
 
 
 # Every text box OCR finds in one `SAMPLE_SIZE` frame.

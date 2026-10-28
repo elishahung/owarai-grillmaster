@@ -9,9 +9,11 @@ from grillmaster.core.srt import SrtBlock
 from grillmaster.core.timecode import format_timecode_line
 from grillmaster.subtitles.ass import DIALOGUE_STYLE_NAME, PictureBox, text_width
 from grillmaster.subtitles.finalize import dialogue_line
+from grillmaster.telop.ocr import text_box
 from grillmaster.telop.render import (
     FONT_SIZE,
     STYLE_NAME,
+    VERTICAL_STYLE_NAME,
     WITH_DIALOGUE_HEADER,
     render_telop_ass,
     render_with_dialogue,
@@ -160,7 +162,7 @@ def test_translations_of_stacked_cards_do_not_overlap():
 
 
 @pytest.mark.parametrize(
-    ("zh", "boxes", "facing_top"),
+    ("zh", "boxes", "facing"),
     [
         pytest.param(
             "前三名預測\n理由：忠於搞笑教科書",
@@ -169,7 +171,7 @@ def test_translations_of_stacked_cards_do_not_overlap():
                 (0.080, 0.766, 0.943, 0.976),  # お笑いの教科書に忠実
                 (0.033, 0.776, 0.085, 0.957),  # 理由
             ],
-            0.766,
+            1,
             id="tab over a full-width caption",
         ),
         pytest.param(
@@ -178,20 +180,60 @@ def test_translations_of_stacked_cards_do_not_overlap():
                 (0.025, 0.768, 0.197, 0.834),  # 熊元MEMO, a corner label
                 (0.107, 0.844, 0.893, 0.956),  # まず喫煙者がいるか気になるかな？
             ],
-            0.844,
+            1,
             id="memo under its corner label",
         ),
     ],
 )
 def test_a_translation_sits_on_the_lines_it_shares_columns_with(
-    zh: str, boxes: list[Box], facing_top: float
+    zh: str, boxes: list[Box], facing: int
 ):
     # On the bottom edge, so above: right on the caption, not on the box
     # the tab or label sticking up beside it would make.
     ass = render_telop_ass(TelopSubtitles(items=[subtitle(zh, boxes=boxes)]))
 
     ((alignment, _, y),) = anchors(ass)
-    assert (alignment, y) == (2, round(facing_top * 1080) - 8)
+    assert (alignment, y) == (2, round(text_box(boxes[facing])[1] * 1080) - 8)
+
+
+def test_a_translation_sits_on_a_big_caption_s_text_not_its_ocr_box():
+    # 深夜のダイアン 1:06: the caption's box starts at y 720, its letters at
+    # about 800 (measured); a speech bubble stands right of it.
+    caption: Box = (0.0, 0.6667, 0.9995, 0.9991)
+    bubble: Box = (0.6667, 0.3176, 0.7792, 0.7324)
+
+    ass = render_telop_ass(
+        TelopSubtitles(
+            items=[subtitle("不是妝太厚，是太燙？", boxes=[caption], beside=[bubble])]
+        )
+    )
+
+    ((alignment, _, y),) = anchors(ass)
+    assert alignment == 2
+    assert 760 <= y <= 800 - 8
+
+
+def test_the_ocr_margin_grows_with_the_text():
+    small: Box = (0.4, 0.5, 0.6, 0.56)  # 65 px letters: a tight box
+    big: Box = (0.1, 0.6, 0.9, 0.9)  # 324 px letters: about 50 px around
+
+    assert text_box(small) == small
+    x0, y0, x1, y1 = text_box(big)
+    top = (y0 - big[1]) * 1080
+    assert 45 < top < 55
+    # The same on every side.
+    assert (big[3] - y1) * 1080 == pytest.approx(top)
+    assert (x0 - big[0]) * 1920 == pytest.approx(top)
+    assert (big[2] - x1) * 1920 == pytest.approx(top)
+
+
+def test_an_edge_the_frame_cut_keeps_its_place():
+    caption: Box = (0.0, 0.6667, 0.9995, 0.9991)
+
+    x0, y0, x1, y1 = text_box(caption)
+
+    assert (x0, x1, y1) == (caption[0], caption[2], caption[3])
+    assert y0 > caption[1]
 
 
 def test_a_translation_avoids_the_lines_of_its_card_it_leaves_out():
@@ -235,7 +277,7 @@ def test_a_translation_goes_above_only_when_below_does_not_fit():
     assert 0.9 * 1080 <= edge_y <= 0.92 * 1080
 
 
-_COLUMN = re.compile(r"\\fn@[^\\]+\\an7\\frz270\\pos\((\d+),(\d+)\)\}(.*)$")
+_COLUMN = re.compile(rf",{VERTICAL_STYLE_NAME},.*\{{\\pos\((\d+),(\d+)\)\}}(.*)$")
 # Real boxes: the vertical caption of 相席食堂 2:48 and a profile card set in
 # three columns against the left edge (華大さんと千鳥くん 4:15).
 CAPTION: Box = (0.4687, 0.2152, 0.5352, 0.7694)
@@ -262,6 +304,15 @@ def test_a_vertical_card_s_translation_is_set_vertically_right_of_it():
 
     ((x, y, text),) = columns(ass)
     assert text == "漫遊惠那峽"
+    # The style sets it vertically: the font's vertical form, turned a
+    # quarter, anchored on its top left.
+    (style,) = (
+        line.split(",")
+        for line in ass.splitlines()
+        if line.startswith(f"Style: {VERTICAL_STYLE_NAME},")
+    )
+    assert style[1].startswith("@")
+    assert (style[14], style[18]) == ("270", "7")
     # The column's right edge, just right of the card.
     assert CAPTION[2] * 1920 + FONT_SIZE < x < CAPTION[2] * 1920 + 2 * FONT_SIZE
     # Centred on the card top to bottom.
@@ -308,8 +359,8 @@ def test_vertical_lines_are_columns_right_to_left_with_vertical_marks():
 def test_a_column_ends_without_the_space_after_a_latin_run():
     # Two columns between a card above and one below: the break falls after
     # the space that follows the name.
-    above: Box = (0.40, 0.05, 0.60, 0.30)
-    below: Box = (0.40, 0.62, 0.60, 0.95)
+    above: Box = (0.40, 0.25, 0.60, 0.30)
+    below: Box = (0.40, 0.62, 0.60, 0.67)
     caption: Box = (0.45, 0.32, 0.48, 0.60)
 
     ass = render_telop_ass(

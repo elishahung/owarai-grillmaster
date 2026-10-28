@@ -72,7 +72,9 @@ def test_a_memo_label_and_its_text_form_one_candidate_card():
 
     assert card.kind is CardKind.CANDIDATE
     assert card.text == "有吉MEMO / ゴミ焼いてるみたいだ"
-    assert (card.start, card.end) == (0.0, 2.0)
+    # From its first frame's moment to its last one's: frame `i` is up at
+    # `(i + 0.5) / fps`.
+    assert (card.start, card.end) == (0.25, 1.75)
 
 
 def test_noise_is_dropped_before_any_card():
@@ -186,8 +188,8 @@ def test_a_label_kept_up_across_two_memos_labels_each():
     cards = build_cards(scan_of(*frames), []).offered
 
     assert [(card.text, card.start, card.end) for card in cards] == [
-        ("熊元MEMO / 山添さん嬉しい", 67.0, 70.0),
-        ("熊元MEMO / お腹空きすぎた", 70.0, 73.0),
+        ("熊元MEMO / 山添さん嬉しい", 67.25, 69.75),
+        ("熊元MEMO / お腹空きすぎた", 70.25, 72.75),
     ]
 
 

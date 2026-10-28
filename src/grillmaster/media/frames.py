@@ -112,7 +112,8 @@ def sample_frames(
     size: tuple[int, int],
 ) -> list[Path]:
     """Every `1/fps` seconds of `video` as a JPEG of exactly `size` in the
-    existing, empty `out_dir`, in time order (`00001.jpg` is at 0 s)."""
+    existing, empty `out_dir`, in time order: `00001.jpg` is the last video
+    frame before `0.5 / fps` (the fps filter rounds to the nearest slot)."""
     width, height = size
     runner.run(
         ffmpeg(

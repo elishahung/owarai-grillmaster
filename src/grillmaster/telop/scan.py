@@ -81,8 +81,9 @@ class TextRead(StrictModel):
 
 
 class TelopScan(StrictModel):
-    """Every sampled frame's OCR reads (the scan cache); frame `i` is at
-    `i / fps` seconds."""
+    """Every sampled frame's OCR reads (the scan cache). Frame `i` stands
+    for `i / fps` to `(i + 1) / fps` seconds: ffmpeg's fps filter keeps the
+    last video frame before its middle, `(i + 0.5) / fps`."""
 
     fps: float
     frames: list[list[TextRead]]
@@ -309,7 +310,7 @@ def _is_vertical(box: Box) -> bool:
     return box[3] - box[1] > _VERTICAL * (box[2] - box[0]) / _ASPECT
 
 
-def _char_size(box: Box) -> float:
+def char_size(box: Box) -> float:
     """A line's character size, in frame heights: a vertical line's width,
     any other line's height."""
     return (box[2] - box[0]) / _ASPECT if _is_vertical(box) else box[3] - box[1]
@@ -318,17 +319,17 @@ def _char_size(box: Box) -> float:
 def set_vertically(boxes: Sequence[Box]) -> bool:
     """Whether lines read as a vertical card: their biggest characters are
     set vertically (a small horizontal label does not count)."""
-    return _is_vertical(max(boxes, key=_char_size))
+    return _is_vertical(max(boxes, key=char_size))
 
 
 def _may_join(a: _Line, b: _Line) -> bool:
     """Lines set in one direction, or a label and its text."""
     if _is_vertical(a.box) == _is_vertical(b.box):
         return True
-    small, big = sorted((a, b), key=lambda line: _char_size(line.box))
-    return len(small.normalized) <= _LABEL_CHARS and _char_size(
+    small, big = sorted((a, b), key=lambda line: char_size(line.box))
+    return len(small.normalized) <= _LABEL_CHARS and char_size(
         small.box
-    ) <= _LABEL_SIZE * _char_size(big.box)
+    ) <= _LABEL_SIZE * char_size(big.box)
 
 
 class _Touch(Enum):
@@ -365,7 +366,7 @@ def _touch(a: Box, b: Box) -> _Touch | None:
         return _Touch.ROW if gap_x <= _ROW_GAP * height * _ASPECT else None
     if max(a[1], b[1]) - min(a[3], b[3]) > _STACK_GAP * height:
         return None
-    small, big = sorted((_char_size(a), _char_size(b)))
+    small, big = sorted((char_size(a), char_size(b)))
     if big > _SIZE_RATIO * small:
         return None
     if gap_x < 0:
@@ -434,7 +435,7 @@ def _labels_of(
             or abs(label.end - end) <= CARD_TIMING_S
         )
         and any(_touch(label.box, line.box) in _ABOVE_OR_BELOW for line in group)
-        and _may_join(label, max(group, key=lambda line: _char_size(line.box)))
+        and _may_join(label, max(group, key=lambda line: char_size(line.box)))
     ]
 
 
@@ -534,6 +535,9 @@ def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:
         ],
         key=lambda tagged: tagged[0][0].start,
     )
+    # A card runs from its first frame's moment to its last one's (see
+    # `TelopScan`; owner's call: a translation never shows outside its card).
+    half_frame = 0.5 / scan.fps
     cards: list[TelopCard] = []
     for group, is_fixture in groups:
         start, end = _span(group)
@@ -548,8 +552,8 @@ def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:
         cards.append(
             TelopCard(
                 id=len(cards) + 1,
-                start=round(start, 2),
-                end=round(end, 2),
+                start=round(start + half_frame, 2),
+                end=round(end - half_frame, 2),
                 kind=kind,
                 lines=[
                     CardLine(

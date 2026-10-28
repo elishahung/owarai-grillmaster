@@ -10,7 +10,9 @@ where the card is: right below it (one side for every item of a list),
 right above only when below does not fit in the picture, and away from the
 other translations and cards up with it. Above and below are measured on
 the card lines it shares columns with, so a tab or corner label off to one
-side does not push it away from the rest. It leaves with its card, or after
+side does not push it away from the rest. Every card line counts by the
+text's own extent, not the OCR box around it (`ocr.text_box`), which
+reaches well past big text. It leaves with its card, or after
 `MAX_SHOWN_S` when the card stays well past that. Positions follow `frame`, the
 picture's box on the canvas (a side layout shrinks it).
 
@@ -41,6 +43,7 @@ from grillmaster.subtitles.ass import (
     text_width,
 )
 from grillmaster.subtitles.finalize import dialogue_line
+from grillmaster.telop.ocr import text_box
 from grillmaster.telop.scan import set_vertically
 
 if TYPE_CHECKING:
@@ -52,26 +55,41 @@ if TYPE_CHECKING:
     from grillmaster.telop.select import TelopSubtitle, TelopSubtitles
 
 STYLE_NAME = "Telop"
+# A vertical card's translation, set the way libass sets vertical text: the
+# font's vertical form (`@` before its name) turned a quarter, so CJK stands
+# upright and a Latin run lies along the column.
+VERTICAL_STYLE_NAME = "TelopVertical"
 # Smaller than the dialogue: it sits in the picture, often between cards.
 FONT_SIZE = 42
 TEXT_COLOR = "FFEC8B"
 # Keeps a translation (and its wrapping) inside the picture. Every event
-# carries its own `\an`/`\pos`; the style's alignment 8 is a placeholder.
+# carries its own `\pos` (and a horizontal one its `\an`); the alignment of
+# `STYLE_NAME` is a placeholder.
 MARGIN_H = 60
 MARGIN_V = 28
-STYLE = (
-    f"Style: {STYLE_NAME},{FONT_NAME},{FONT_SIZE},&H00{bgr(TEXT_COLOR)},&H000000FF,"
-    "&H00000000,&H7D000000,0,0,0,0,100,100,0,0,1,5,2,8,"
-    f"{MARGIN_H},{MARGIN_H},{MARGIN_V},1"
-)
-HEADER = script_header(CANVAS_INFO, [STYLE])
-WITH_DIALOGUE_HEADER = script_header(CANVAS_INFO, [DIALOGUE_STYLE, STYLE])
+
+
+def _style(name: str, font: str, angle: int, alignment: int) -> str:
+    return (
+        f"Style: {name},{font},{FONT_SIZE},&H00{bgr(TEXT_COLOR)},&H000000FF,"
+        f"&H00000000,&H7D000000,0,0,0,0,100,100,0,{angle},1,5,2,{alignment},"
+        f"{MARGIN_H},{MARGIN_H},{MARGIN_V},1"
+    )
+
+
+STYLES = [
+    _style(STYLE_NAME, FONT_NAME, 0, 8),
+    _style(VERTICAL_STYLE_NAME, f"@{FONT_NAME}", 270, 7),
+]
+HEADER = script_header(CANVAS_INFO, STYLES)
+WITH_DIALOGUE_HEADER = script_header(CANVAS_INFO, [DIALOGUE_STYLE, *STYLES])
 # Room between a translation and its card.
 _GAP = 8
-# What covering a share of a placed translation costs, against `_AWAY` for
-# moving it a picture height from its card: another translation is
-# unreadable, an original card only partly hidden, and a translation far
-# from its card loses what it belongs to.
+# What covering a share of a placed translation or a card line costs (of
+# the smaller of the two), against `_AWAY` for moving it a picture height
+# from its card: another translation is unreadable, an original card only
+# partly hidden, and a translation far from its card loses what it belongs
+# to.
 _COVER_TRANSLATION = 10.0
 _COVER_CARD = 1.0
 _AWAY = 3.0
@@ -84,15 +102,11 @@ _LINE = FONT_SIZE * 1.2
 # (owner's call; most cards are up 4-8 s). A shorter card keeps it to the end.
 MAX_SHOWN_S = 10.0
 SHOWN_TOLERANCE_S = 5.0
-# A vertical card's translation is set vertically too, the way libass sets
-# vertical text: the font's vertical form (`@` before its name) turned a
-# quarter, so CJK stands upright and a Latin run lies along the column.
 # libass keeps the font's horizontal glyphs for the brackets and marks below
-# beside CJK, so they take their vertical forms (measured 2026-10-28);
-# commas, stops, colons and semicolons keep theirs. Each line is a column,
-# right to left; a column too long for the room goes on in the next one,
-# never inside a Latin run or before closing punctuation.
-_VERTICAL_TAGS = f"\\fn@{FONT_NAME}\\an7\\frz270"
+# beside CJK in `VERTICAL_STYLE_NAME`, so they take their vertical forms
+# (measured 2026-10-28); commas, stops, colons and semicolons keep theirs.
+# Each line is a column, right to left; a column too long for the room goes
+# on in the next one, never inside a Latin run or before closing punctuation.
 _VERTICAL_FORMS = str.maketrans(
     {
         "「": "\N{PRESENTATION FORM FOR VERTICAL LEFT CORNER BRACKET}",
@@ -271,7 +285,8 @@ def _card(item: TelopSubtitle, frame: PictureBox) -> _Card | None:
         return None
 
     def rect(box: Box) -> _Rect:
-        x0, y0, x1, y1 = box
+        """The text's own extent on the canvas, without the OCR margin."""
+        x0, y0, x1, y1 = text_box(box)
         return _Rect(
             frame.x + x0 * frame.width,
             frame.y + y0 * frame.height,
@@ -351,9 +366,11 @@ def _spot(
     their_lines: Sequence[_Rect],
 ) -> tuple[float, _Rect]:
     """The cheapest spot for `card` set in `layout`, and its cost: the share
-    of it each obstacle (every line of the cards up, translated or not, and
-    the translations) covers, weighted (another translation most), its
-    distance from the preferred spot, and being nearer another card's line
+    of the smaller of it and each obstacle (every line of the cards up,
+    translated or not, and the translations) the two overlap, weighted
+    (another translation most), so half a short card line hidden counts as
+    half however wide the translation; its distance from the preferred
+    spot; and being nearer another card's line
     than its own. Spots tried: the preferred ones or against a side edge of
     any obstacle, times the preferred ones or against a top or bottom edge
     of any obstacle, kept inside the picture."""
@@ -374,12 +391,18 @@ def _spot(
     lefts = {min(max(x0, left), right) for x0 in lefts}
     tops = {min(max(top, lowest), highest) for top in tops}
 
+    # Every spot has the same area, so each obstacle's weight per pixel
+    # covered is fixed (a hand-edited box may have none: count it a pixel).
+    per_pixel = [
+        (o, weight / max(1.0, min(width * height, o.area))) for o, weight in obstacles
+    ]
+
     def cost(rect: _Rect) -> float:
-        covered = sum(weight * rect.overlap(o) for o, weight in obstacles)
+        covered = sum(weight * rect.overlap(o) for o, weight in per_pixel)
         away = (abs(rect.y0 - preferred_y) + abs(rect.x0 - preferred_x)) / frame.height
         nearest = card.distance(rect)
         ambiguous = any(rect.distance(line) < nearest for line in their_lines)
-        return covered / rect.area + _AWAY * away + _AMBIGUOUS * ambiguous
+        return covered + _AWAY * away + _AMBIGUOUS * ambiguous
 
     best = min(
         (
@@ -430,7 +453,8 @@ def _events(subtitles: TelopSubtitles, frame: PictureBox) -> list[str]:
         placed.append((card, rect))
         start = format_ass_centiseconds(ass_centiseconds(card.item.start))
         end = format_ass_centiseconds(ass_centiseconds(card.shown_until))
-        prefix = f"Dialogue: 0,{start},{end},{STYLE_NAME},,{margins},,"
+        style = VERTICAL_STYLE_NAME if layout.columns else STYLE_NAME
+        prefix = f"Dialogue: 0,{start},{end},{style},,{margins},,"
         if not layout.columns:
             events.append(
                 prefix
@@ -443,8 +467,7 @@ def _events(subtitles: TelopSubtitles, frame: PictureBox) -> list[str]:
         for n, column in enumerate(layout.columns):
             x = rect.x1 - n * _LINE - (_LINE - FONT_SIZE) / 2
             events.append(
-                f"{prefix}{{{_VERTICAL_TAGS}\\pos({x:.0f},{rect.y0:.0f})}}"
-                + escape_text(column)
+                f"{prefix}{{\\pos({x:.0f},{rect.y0:.0f})}}" + escape_text(column)
             )
     return events
 

@@ -53,6 +53,8 @@ if TYPE_CHECKING:
 
 _FRAME_W, _FRAME_H = 1920, 1080
 _WINDOW_S = 15.0
+# A kept translation belongs to a card starting within this of its time.
+_SAME_START_S = 0.5
 _FRAME_SIDE = 960
 
 
@@ -71,12 +73,22 @@ def _cards(layout: ProjectLayout, module: ModuleType = scan) -> TelopCards:
     return module.build_cards(found, read_srt_file(layout.ja_srt))
 
 
-def _kept(layout: ProjectLayout) -> dict[tuple[float, str], str]:
-    """The last selection's translations, by (start, card text)."""
+def _kept(layout: ProjectLayout) -> list[tuple[float, str, str]]:
+    """The last selection's translations: (start, card text, translation)."""
     if not layout.telop_cht_json.exists():
-        return {}
+        return []
     items = json.loads(layout.telop_cht_json.read_text("utf-8"))["items"]
-    return {(item["start"], item["ja"]): item["zh"] for item in items}
+    return [(item["start"], item["ja"], item["zh"]) for item in items]
+
+
+def _translation(
+    kept: list[tuple[float, str, str]], start: float, text: str
+) -> str | None:
+    """The kept translation of the card with `text` starting at `start`."""
+    return next(
+        (zh for at, ja, zh in kept if ja == text and abs(at - start) <= _SAME_START_S),
+        None,
+    )
 
 
 def _box(box: tuple[float, float, float, float]) -> str:
@@ -94,7 +106,7 @@ def cards_command(project: str, start: str, end: str | None) -> None:
         if card.end < lo or card.start > hi:
             continue
         mark = "OFFER" if card.id in offered else "     "
-        zh = kept.get((card.start, card.text))
+        zh = _translation(kept, card.start, card.text)
         print(
             f"{card.id:5} {mark} {card.start:7.1f}-{card.end:7.1f} "
             f"{card.kind.value:9} {_box(card.box)} {card.text}"
@@ -110,7 +122,8 @@ def lines_command(project: str, pattern: str) -> None:
         if wanted.search(line.text):
             x0, y0, x1, y1 = line.box
             print(
-                f"{line.first / found.fps:7.1f}-{(line.last + 1) / found.fps:7.1f} "
+                f"{(line.first + 0.5) / found.fps:7.1f}-"
+                f"{(line.last + 0.5) / found.fps:7.1f} "
                 f"w={(x1 - x0) * _FRAME_W:5.0f} h={(y1 - y0) * _FRAME_H:5.0f} "
                 f"conf={line.confidence:.2f} {_box(line.box)} {line.text}"
             )

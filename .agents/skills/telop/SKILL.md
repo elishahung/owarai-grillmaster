@@ -33,7 +33,10 @@ the stage alike).
    re-OCR): ffmpeg samples the video at `SAMPLE_FPS` (2) at exactly
    1920x1080 into a local temp dir (`media.frames.sample_frames`; a
    gigabyte of stills, and the project may be on the NAS), then
-   `ocr.read_frames`. Boxes are fractions of the frame. It runs beside
+   `ocr.read_frames`. Boxes are fractions of the frame. Frame `i` shows
+   the video just before `(i + 0.5) / fps` (the fps filter; measured), so a
+   card's times are its first and last frames' moments, never outside
+   it. It runs beside
    audio → refine, off the critical path.
 2. **Reference** — glossary and proofread call `_telop.reference`: wait for
    the scan (`StageContext.side_tasks.wait`), build the cards, pass the
@@ -137,9 +140,12 @@ item of a list), right above only when below does not fit in the picture;
 anchored on the edge facing the card, so the estimated height never opens
 a gap. Above/below is measured per line, on the translated lines sharing
 its columns (a tab or corner label off to one side made the union box
-push it away, 2026-10-28). Each spot is costed: share covered by another
-translation (×10) or any line of an up translated card, kept or `beside`
-(×1), distance from the preferred
+push it away, 2026-10-28). Card lines count by the text's own extent
+(`ocr.text_box`): the detector's box reaches past big text by up to 80 px,
+which left a visible gap. Each spot is costed: share
+of the smaller of the two covered by another translation (×10) or any
+line of an up translated card, kept or `beside` (×1; a short label half
+hidden counts as half), distance from the preferred
 spot (×3 per picture height, sideways too), being nearer another card than
 its own (+1); spots tried are centred or against any obstacle's side
 edges, times above/below or against any obstacle's top/bottom edges, kept
@@ -151,8 +157,8 @@ stays an obstacle until the card itself leaves. `telop.cht.json` keeps the
 card's real times.
 A vertical card's translation is set vertically (owner's call, 2026-10-28;
 the card's way from `boxes` + `beside`, as the selector's table marks it):
-libass's own vertical mode (`\fn@<font>` + `\frz270`, one event per
-column), right of the card or left when right does not fit, centred on it
+libass's own vertical mode (style `TelopVertical`: font `@<font>`, angle
+270; one event per column), right of the card or left when right does not fit, centred on it
 top to bottom. That mode turns Latin runs but keeps horizontal glyphs for
 brackets, ellipses, dashes and waves beside CJK, so `render._VERTICAL_FORMS`
 swaps in the vertical presentation forms (measured; commas and stops stay).

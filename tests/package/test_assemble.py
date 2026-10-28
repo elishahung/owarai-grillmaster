@@ -292,8 +292,8 @@ def test_telops_stay_over_a_shrunk_picture_under_chat_and_dialogue(project: Path
     assert plan.layers[-1].path == project / "video.cht.ass"
     ass = (project / "work" / "package" / "telop.ass").read_text(encoding="utf-8")
     # Inside the picture box (x 0..1536, y 108..972): under the card at
-    # x 0.0-0.5, y 0.8-0.9 of it.
-    assert ",Telop,,60,444,136,,{\\an8\\pos(384,894)}突然的鏈條" in ass
+    # x 0.0-0.5, y 0.8-0.9 of it, less the OCR margin (`ocr.text_box`).
+    assert ",Telop,,60,444,136,,{\\an8\\pos(382,891)}突然的鏈條" in ass
 
 
 def test_unreadable_telops_are_left_out(project: Path):

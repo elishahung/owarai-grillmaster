@@ -12,6 +12,7 @@ from grillmaster.core.paths import (
     MAX_COMPONENT_UNITS,
     MAX_PATH_UNITS,
     attempt_path,
+    component_units,
     measure,
 )
 from grillmaster.core.stage_key import SideTaskKey, StageKey
@@ -127,10 +128,14 @@ def test_long_names_are_trimmed_to_the_budget(state: ProjectState, tmp_path: Pat
     destination = archive_destination(state, tmp_path / "archive")
 
     assert destination.name.startswith("260503_epabc123_全力")
-    assert measure(destination.name) <= MAX_COMPONENT_UNITS
-    # The project is copied in under the staging name before the swap.
-    staging = os.path.abspath(staging_dir(destination))  # noqa: PTH100
-    assert measure(staging) + PROJECT_INNER_PATH_RESERVE <= MAX_PATH_UNITS
+    # The project is copied in under the staging name before the swap, so
+    # that longer name must fit the component limit too.
+    staging = staging_dir(destination)
+    assert component_units(staging.name) <= MAX_COMPONENT_UNITS
+    assert (
+        measure(os.path.abspath(staging)) + PROJECT_INNER_PATH_RESERVE  # noqa: PTH100
+        <= MAX_PATH_UNITS
+    )
 
 
 def test_long_package_names_leave_the_reserve_below_the_staging_name(

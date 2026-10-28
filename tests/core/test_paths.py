@@ -8,6 +8,7 @@ import pytest
 from grillmaster.core.paths import (
     MAX_COMPONENT_UNITS,
     attempt_path,
+    component_units,
     fit_dir_name,
     measure,
 )
@@ -75,11 +76,41 @@ def test_only_the_identity_prefix_is_kept(parent: str, tail: str, max_path_units
 
 
 def test_cjk_title_is_trimmed_within_the_component_limit():
-    # Japanese titles measure 1 unit/char on Windows (UTF-16) but 3 on POSIX
-    # (UTF-8); either way the component cap must hold.
+    # A Japanese title measures 1 UTF-16 unit/char but 3 UTF-8 bytes; an SMB
+    # share backed by ext4 counts bytes even from Windows, so the cap is held
+    # in bytes on every platform.
     fitted = _fit(parent="C:/a", tail="お笑い芸人" * 40, max_path_units=4096)
-    assert measure(fitted) <= MAX_COMPONENT_UNITS
+    assert component_units(fitted) <= MAX_COMPONENT_UNITS
+    assert component_units(fitted) > MAX_COMPONENT_UNITS - 3
     assert fitted.startswith(f"{KEEP}_お笑い")
+
+
+def test_suffix_counts_against_the_component_limit():
+    fitted = fit_dir_name(
+        parent=Path("C:/a"),
+        keep=KEEP,
+        tail="お笑い芸人" * 40,
+        reserve=0,
+        suffix=".partial",
+        max_path_units=4096,
+    )
+    assert component_units(f"{fitted}.partial") <= MAX_COMPONENT_UNITS
+    assert component_units(f"{fitted}.partial") > MAX_COMPONENT_UNITS - 3
+
+
+def test_suffix_counts_against_the_path_limit():
+    parent = "C:/archive/26/05"
+    fitted = fit_dir_name(
+        parent=Path(parent),
+        keep=KEEP,
+        tail="t" * 200,
+        reserve=20,
+        suffix=".partial",
+        max_path_units=_abs_units(parent) + 80,
+    )
+    assert _abs_units(parent) + 1 + measure(f"{fitted}.partial") + 20 == (
+        _abs_units(parent) + 80
+    )
 
 
 def test_measure_counts_platform_units():

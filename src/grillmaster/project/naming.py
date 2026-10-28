@@ -123,13 +123,14 @@ def archive_group(state: ProjectState) -> Path:
 
 
 def _fit_deliverable_dir(state: ProjectState, parent: Path, reserve: int) -> Path:
-    """`parent/<deliverable name>`, trimmed so `reserve` units still fit below
-    its staging name (`<name>.partial`)."""
+    """`parent/<deliverable name>`, trimmed so its staging name
+    (`<name>.partial`) fits too, with `reserve` units still free below it."""
     return parent / fit_dir_name(
         parent=parent,
         keep=deliverable_stem(state),
         tail=state.name or "",
-        reserve=len(STAGING_SUFFIX) + reserve,
+        reserve=reserve,
+        suffix=STAGING_SUFFIX,
     )
 
 

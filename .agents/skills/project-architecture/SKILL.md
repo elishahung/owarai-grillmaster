@@ -199,7 +199,9 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   not delete it. `naming.py`: deliverable name
   `YYMMDD_<id>_<name>`, archived under `<archive>/YY/MM/` (`etc/` when
   undated), packaged flat; both destinations trimmed by
-  `core.paths.fit_dir_name`; `PROJECT_INNER_PATH_RESERVE` is derived from the
+  `core.paths.fit_dir_name` (the `.partial` staging name counts too; a
+  component is measured in UTF-8 bytes even on Windows, since the archive may
+  be an SMB share on ext4); `PROJECT_INNER_PATH_RESERVE` is derived from the
   layout's deepest paths, so a deeper path raises it automatically.
 
 ## Config (`config/`)

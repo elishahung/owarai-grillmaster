@@ -24,7 +24,10 @@ MAX_PATH_UNITS = 259 if os.name == "nt" else 4096
 
 # NTFS and the common POSIX filesystems both cap a single component at 255
 # units; a ~85-character Japanese title already reaches it on ext4, where the
-# unit is a UTF-8 byte.
+# unit is a UTF-8 byte. The component limit belongs to the destination
+# filesystem, not the client: an SMB share backed by ext4 or btrfs counts
+# UTF-8 bytes even from Windows, so components are measured by
+# `component_units`.
 MAX_COMPONENT_UNITS = 255
 
 # Trailing characters that make a name look truncated, or that Windows
@@ -39,6 +42,16 @@ def measure(text: str) -> int:
     """
     if os.name == "nt":
         return len(text.encode("utf-16-le")) // 2
+    return len(text.encode("utf-8"))
+
+
+def component_units(text: str) -> int:
+    """Length of a single path component against `MAX_COMPONENT_UNITS`.
+
+    UTF-8 bytes, which are never fewer than UTF-16 code units, so a name
+    that fits here fits NTFS and the POSIX filesystems behind a network share
+    alike.
+    """
     return len(text.encode("utf-8"))
 
 
@@ -63,23 +76,30 @@ def fit_dir_name(
     keep: str,
     tail: str,
     reserve: int,
+    suffix: str = "",
     max_path_units: int = MAX_PATH_UNITS,
 ) -> str:
     """Build a directory name under `parent` that leaves room for its contents.
 
     `keep` is the identity part and is never shortened; `tail` is the
     descriptive part, trimmed from the right (dropped entirely when there is
-    no room) so that `parent/<name>` plus `reserve` units of nested content
-    still fits `max_path_units`. `parent` is made absolute before measuring,
-    since a relative path would understate the real length. `reserve` counts
-    the leading separator of the longest relative path written inside.
+    no room) so that `parent/<name><suffix>` stays within the component limit
+    and, plus `reserve` units of nested content, still fits `max_path_units`.
+    `suffix` is the longest sibling name the caller derives from the result
+    (a staging name). `parent` is made absolute before measuring, since a
+    relative path would understate the real length. `reserve` counts the
+    leading separator of the longest relative path written inside.
 
-    Returns a bare component, not a path.
+    Returns a bare component, without `suffix`, not a path.
     """
     parent_units = measure(os.path.abspath(parent))  # noqa: PTH100 - no symlink resolution
-    budget = min(MAX_COMPONENT_UNITS, max_path_units - parent_units - 1 - reserve)
+    path_room = max_path_units - parent_units - 1 - measure(suffix) - reserve
+    component_room = MAX_COMPONENT_UNITS - component_units(suffix)
 
-    if measure(keep) > budget:
+    def fits(name: str) -> bool:
+        return measure(name) <= path_room and component_units(name) <= component_room
+
+    if not fits(keep):
         # The root itself is too deep: nothing can be trimmed without losing
         # the identity, so keep it and let the filesystem have the last word.
         logger.warning(
@@ -90,21 +110,14 @@ def fit_dir_name(
         return keep
 
     candidate = f"{keep}_{tail}" if tail else keep
-    if measure(candidate) <= budget:
+    if fits(candidate):
         return candidate
 
-    room = budget - measure(keep) - 1  # the `_` separator
-    trimmed = (
-        _truncate_to_units(tail, room).rstrip(_TRAILING_NAME_CHARS) if room > 0 else ""
-    )
+    # Drop characters from the right until the whole name fits.
+    trimmed = tail
+    while trimmed and not fits(f"{keep}_{trimmed}"):
+        trimmed = trimmed[:-1]
+    trimmed = trimmed.rstrip(_TRAILING_NAME_CHARS)
     fitted = f"{keep}_{trimmed}" if trimmed else keep
     logger.info(f"Shortened directory name for {parent}: {candidate!r} -> {fitted!r}")
     return fitted
-
-
-def _truncate_to_units(text: str, limit: int) -> str:
-    """Drop characters from the right until `text` measures within `limit`."""
-    truncated = text
-    while truncated and measure(truncated) > limit:
-        truncated = truncated[:-1]
-    return truncated

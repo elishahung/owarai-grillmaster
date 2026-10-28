@@ -57,6 +57,11 @@ SPEECH_OVERLAP = 0.6
 SPEECH_WINDOW_S = 3.0
 # Lines of one card appear and vanish within this of each other.
 CARD_TIMING_S = 1.0
+# A card shows from its first frame's moment to its last one's (see
+# `TelopScan`), widened by this much on each side: it came up somewhere in
+# the half sample before and left in the half after, and the bare moments
+# cut it short on screen (owner's call, 2026-10-28).
+CARD_EDGE_S = 0.1
 # A box continues a track at (box overlap, reading match) of at least one
 # of these pairs. The match counts a fading-in fragment as a full match,
 # and a box in the same place with a different text starts a new line.
@@ -541,9 +546,7 @@ def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:
         ],
         key=lambda tagged: tagged[0][0].start,
     )
-    # A card runs from its first frame's moment to its last one's (see
-    # `TelopScan`; owner's call: a translation never shows outside its card).
-    half_frame = 0.5 / scan.fps
+    inset = 0.5 / scan.fps - CARD_EDGE_S
     cards: list[TelopCard] = []
     for group, is_fixture in groups:
         start, end = _span(group)
@@ -558,8 +561,8 @@ def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:
         cards.append(
             TelopCard(
                 id=len(cards) + 1,
-                start=round(start + half_frame, 2),
-                end=round(end - half_frame, 2),
+                start=round(start + inset, 2),
+                end=round(end - inset, 2),
                 kind=kind,
                 lines=[
                     CardLine(

@@ -121,7 +121,7 @@ def test_selects_beside_the_final_subtitles_after_the_scan(
     assert waiter.waited == [SideTaskKey.TELOP_SCAN]
     subtitles = read_model(project.telop_cht_json, TelopSubtitles)
     assert [(item.start, item.end, item.ja, item.zh) for item in subtitles.items] == [
-        (0.25, 1.75, CAPTION_TEXT, "還是什麼都不知道")
+        (0.15, 1.85, CAPTION_TEXT, "還是什麼都不知道")
     ]
     cards = read_model(project.telop_cards, TelopCards)
     assert [card.text for card in cards.cards] == [CAPTION_TEXT]
@@ -220,7 +220,7 @@ def test_the_reference_waits_for_the_scan_and_lists_the_offered_cards(
     reference = _telop.reference(ctx)
 
     assert waiter.waited == [SideTaskKey.TELOP_SCAN]
-    assert reference == f"seconds\ttext\n0.2-1.8\t{CAPTION_TEXT}"
+    assert reference == f"seconds\ttext\n0.1-1.9\t{CAPTION_TEXT}"
 
 
 def test_a_missing_scan_leaves_no_reference(

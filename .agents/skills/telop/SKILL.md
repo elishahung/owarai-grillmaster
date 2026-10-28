@@ -35,8 +35,9 @@ the stage alike).
    gigabyte of stills, and the project may be on the NAS), then
    `ocr.read_frames`. Boxes are fractions of the frame. Frame `i` shows
    the video just before `(i + 0.5) / fps` (the fps filter; measured), so a
-   card's times are its first and last frames' moments, never outside
-   it. It runs beside
+   card's times are its first and last frames' moments widened by
+   `CARD_EDGE_S` (0.1 s) each side (the bare moments cut it short on
+   screen; owner's call). It runs beside
    audio → refine, off the critical path.
 2. **Reference** — glossary and proofread call `_telop.reference`: wait for
    the scan (`StageContext.side_tasks.wait`), build the cards, pass the

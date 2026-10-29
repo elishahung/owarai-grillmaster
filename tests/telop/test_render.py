@@ -118,6 +118,50 @@ def test_line_breaks_and_braces_are_safe_in_an_event():
     assert ass.rstrip().endswith(r"【有吉MEMO】\N｛好｝＼")  # noqa: RUF001 - full-width stand-ins
 
 
+def test_a_translation_wider_than_the_picture_is_broken_after_a_comma():
+    # A memo card filling the bottom of the picture, its translation about
+    # 2200 px in one line: libass would not wrap it (no space), so it ran
+    # off both edges. Even rows would break inside 捧場; the comma two
+    # characters on is near enough.
+    memo: list[Box] = [
+        (0.0266, 0.7148, 0.1979, 0.7769),
+        (0.0484, 0.7898, 0.9438, 0.8787),
+        (0.0536, 0.8759, 0.9510, 0.9602),
+    ]
+    zh = (
+        "【熊元筆記】蓮見君雖然比我小，卻會主動帶著我，也會捧場笑，"
+        "連唯一一張拍貼都理所當然地讓給我，說不定是極品。"
+    )
+
+    ass = render_telop_ass(TelopSubtitles(items=[subtitle(zh, boxes=memo)]))
+
+    ((event,),) = [events(ass)]
+    rows = event.split("}", 1)[1].split(r"\N")
+    assert rows == [
+        "【熊元筆記】蓮見君雖然比我小，卻會主動帶著我，也會捧場笑，",
+        "連唯一一張拍貼都理所當然地讓給我，說不定是極品。",
+    ]
+    widths = [text_width(row, FONT_SIZE) for row in rows]
+    # Right above the memo's text, beside its label, inside the picture.
+    ((alignment, x, y),) = anchors(ass)
+    assert (alignment, y) == (2, round(text_box(memo[1])[1] * 1080 - 8))
+    assert x - max(widths) / 2 >= 60
+    assert x + max(widths) / 2 <= 1920 - 60
+
+
+def test_a_latin_run_wider_than_the_picture_is_broken_at_a_space():
+    # About 2750 px: libass would wrap it at a space too, so the layout
+    # must count the two rows it draws.
+    run = " ".join(["champions"] * 12)
+
+    ass = render_telop_ass(TelopSubtitles(items=[subtitle(run)]))
+
+    ((event,),) = [events(ass)]
+    rows = event.split("}", 1)[1].split(r"\N")
+    assert " ".join(rows) == run
+    assert [row.count("champions") for row in rows] == [6, 6]
+
+
 def test_no_cards_render_a_valid_empty_layer():
     ass = render_telop_ass(TelopSubtitles())
 

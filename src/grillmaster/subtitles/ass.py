@@ -107,7 +107,9 @@ def text_width(text: str, font_size: int) -> float:
 
 def wrapped_rows(widths: Sequence[float], room: float) -> tuple[float, ...]:
     """The width of each row lines of these `widths` take in `room`: a line
-    too wide wraps into evenly filled rows (libass's smart wrapping)."""
+    too wide wraps into evenly filled rows (libass's smart wrapping). libass
+    breaks only at a space, so a CJK line without one in fact runs past
+    `room` (2026-10-29: 75 of 771k dialogue lines)."""
     rows: list[float] = []
     for width in widths:
         count = max(1, math.ceil(width / room))

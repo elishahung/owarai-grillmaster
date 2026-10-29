@@ -164,6 +164,11 @@ spot (×3 per picture height, sideways too), being nearer another card than
 its own (+1); spots tried are centred or against any obstacle's side
 edges, times above/below or against any obstacle's top/bottom edges, kept
 inside the picture. Widths are estimated (wide char = 1 em, other 0.55).
+libass breaks a line only at a space, so CJK wider than the picture ran
+off both edges; `render._broken` breaks such a line itself into evenly
+filled rows (`\N`; vertical columns the same way), after the punctuation,
+slash or space nearest an even share within `_UNEVEN` (20 %; not a colon),
+never before closing punctuation or inside a Latin run (owner's call).
 A translation leaves with its card, or `MAX_SHOWN_S` after it appears when
 the card is up longer than that plus `SHOWN_TOLERANCE_S` (owner's call:
 long cards stayed up long after they were read); its card

@@ -49,7 +49,6 @@ from grillmaster.subtitles.ass import (
     escape_text,
     script_header,
     text_width,
-    wrapped_rows,
 )
 from grillmaster.subtitles.finalize import dialogue_line
 from grillmaster.telop.ocr import text_box
@@ -158,6 +157,16 @@ _VERTICAL_FORMS = str.maketrans(
 )
 _TOKEN = re.compile(r"[A-Za-z0-9.,'&%+/-]+(?: [A-Za-z0-9.,'&%+/-]+)*|.")
 _CLOSING = frozenset("，。、：；！？」』）》〉】〕…‥".translate(_VERTICAL_FORMS))
+# A broken line's part may be this share longer or shorter than an even one
+# to end after punctuation, a slash or a space rather than inside a phrase
+# (owner's call, 2026-10-29); not after a colon, which leads into what
+# follows.
+_UNEVEN = 0.2
+_PAUSES = (_CLOSING - {"："}) | {
+    "\N{FULLWIDTH SOLIDUS}",
+    " ",
+    "\N{IDEOGRAPHIC SPACE}",
+}
 # Setting a vertical translation in more, shorter columns to fit beside its
 # card costs this much per extra column (against `_AWAY` per picture height
 # it moves).
@@ -221,25 +230,24 @@ def _cues(dialogue: Sequence[SrtBlock], margins: DialogueMargins) -> list[_Cue]:
 @dataclass(frozen=True, slots=True)
 class _Layout:
     """One way to set a translation: its estimated size (libass's measured
-    glyph advances), the length of each of its lines (rows top to bottom,
-    each centred; columns right to left, from the top) and, for a vertical
-    card, its columns."""
+    glyph advances), its lines as drawn (rows top to bottom, each centred;
+    for a vertical card, columns right to left, from the top) and the
+    length of each."""
 
     width: float
     height: float
-    lines: tuple[float, ...]
-    columns: tuple[str, ...] = ()
+    lines: tuple[str, ...]
+    lengths: tuple[float, ...]
+    vertical: bool
 
 
 @dataclass(frozen=True, slots=True)
 class _Card:
-    """One translation to draw: its lines, the boxes on the canvas of the
-    card lines it translates (`own`) and of the card's other lines
-    (`beside`), and the ways to set it, fewest columns first (one for a
-    horizontal card: a line wider than the picture wraps)."""
+    """One translation to draw: the boxes on the canvas of the card lines it
+    translates (`own`) and of the card's other lines (`beside`), and the
+    ways to set it, fewest columns first (one for a horizontal card)."""
 
     item: TelopSubtitle
-    lines: list[str]
     own: list[_Rect]
     beside: list[_Rect]
     layouts: list[_Layout]
@@ -278,28 +286,72 @@ class _Card:
         return shown.overlap(cue.span) / shown.duration if shown.duration else 0.0
 
 
-def _columns(lines: Sequence[str], room: float) -> tuple[str, ...]:
-    """Each line a column, or as few evenly filled columns as keep it within
-    `room` pixels."""
-    columns: list[str] = []
+def _broken(lines: Sequence[str], room: float, *, picture: float) -> tuple[str, ...]:
+    """Each line as it is, or broken into as few evenly filled parts (rows,
+    or columns) as keep it within `room` pixels. libass breaks a line only
+    at a space, so CJK wider than the picture runs off both edges
+    (2026-10-29). A Latin run stays whole unless it alone is longer than
+    the `picture` allows."""
+    broken: list[str] = []
     for line in lines:
-        length = text_width(line, FONT_SIZE)
-        parts = max(1, math.ceil(length / room))
-        # Whole characters per column, so the last one is not left short.
-        even = math.ceil(length / parts / FONT_SIZE) * FONT_SIZE
-        column = ""
-        for token in _TOKEN.findall(line):
-            if (
-                column
-                and token not in _CLOSING
-                and text_width(column + token, FONT_SIZE) > even
-            ):
-                columns.append(column.rstrip())
-                column = token.lstrip()
-            else:
-                column += token
-        columns.append(column.rstrip())
-    return tuple(columns)
+        tokens = [
+            word
+            for token in _TOKEN.findall(line)
+            for word in (
+                re.split(r"( )", token)
+                if text_width(token, FONT_SIZE) > picture
+                else [token]
+            )
+        ]
+        while tokens:
+            end = _part_end(tokens, room)
+            broken.append("".join(tokens[:end]).strip())
+            tokens = tokens[end:]
+    return tuple(broken)
+
+
+def _part_end(tokens: Sequence[str], room: float) -> int:
+    """How many of `tokens` the first of as few parts as fit them in `room`
+    takes: all when one does; else up to the punctuation or space nearest
+    an even share, within `_UNEVEN` of it and leaving the rest room in the
+    other parts, or as many as fill an even share. Never a part before
+    closing punctuation."""
+    length = text_width("".join(tokens), FONT_SIZE)
+    parts = math.ceil(length / room)
+    if parts <= 1:
+        return len(tokens)
+    # Whole characters per part, so the last one is not left short.
+    even = math.ceil(length / parts / FONT_SIZE) * FONT_SIZE
+    slack = _UNEVEN * even
+    width = 0.0
+    filled: int | None = None
+    pauses: list[tuple[float, int]] = []
+    for end, token in enumerate(tokens[:-1], 1):
+        width += text_width(token, FONT_SIZE)
+        if width > min(even + slack, room) and filled is not None:
+            break
+        following = tokens[end]
+        if following in _CLOSING:
+            continue
+        if filled is None and width + text_width(following, FONT_SIZE) > even:
+            filled = end
+        if (
+            token in _PAUSES
+            and abs(width - even) <= slack
+            and width <= room
+            and length - width <= (parts - 1) * room
+        ):
+            pauses.append((abs(width - even), end))
+    if pauses:
+        return min(pauses)[1]
+    return filled if filled is not None else len(tokens)
+
+
+def _layout(lines: tuple[str, ...], *, vertical: bool) -> _Layout:
+    lengths = tuple(text_width(line, FONT_SIZE) for line in lines)
+    size, longest = len(lines) * _LINE, max(lengths)
+    width, height = (size, longest) if vertical else (longest, size)
+    return _Layout(width, height, lines, lengths, vertical)
 
 
 def _vertical_layouts(lines: Sequence[str], frame: PictureBox) -> list[_Layout]:
@@ -313,17 +365,9 @@ def _vertical_layouts(lines: Sequence[str], frame: PictureBox) -> list[_Layout]:
         room = min(longest / parts, full)
         if parts > 1 and room < 2 * FONT_SIZE:
             break
-        columns = _columns(lines, room)
-        lengths = tuple(text_width(column, FONT_SIZE) for column in columns)
-        layouts.setdefault(
-            columns,
-            _Layout(
-                len(columns) * _LINE,
-                max(lengths),
-                lengths,
-                columns,
-            ),
-        )
+        columns = _broken(lines, room, picture=full)
+        if columns not in layouts:
+            layouts[columns] = _layout(columns, vertical=True)
     return list(layouts.values())
 
 
@@ -346,12 +390,10 @@ def _card(item: TelopSubtitle, frame: PictureBox) -> _Card | None:
     beside = [rect(box) for box in item.beside]
     # The card's way, as the selector was told it, from all its lines.
     if set_vertically([*item.boxes, *item.beside]):
-        return _Card(item, lines, own, beside, _vertical_layouts(lines, frame))
-    widths = [text_width(line, FONT_SIZE) for line in lines]
+        return _Card(item, own, beside, _vertical_layouts(lines, frame))
     room = frame.width - 2 * MARGIN_H
-    rows = wrapped_rows(widths, room)
-    layout = _Layout(min(max(widths), room), len(rows) * _LINE, rows)
-    return _Card(item, lines, own, beside, [layout])
+    rows = _broken(lines, room, picture=room)
+    return _Card(item, own, beside, [_layout(rows, vertical=False)])
 
 
 def _place(
@@ -365,7 +407,8 @@ def _place(
     """Where and how to draw `card`, among the `others` translated cards,
     the `translations` already placed and the dialogue `cues` that are up
     with it: the cheapest spot of any of its layouts (see `_spot`), a layout
-    costing `_MORE_COLUMNS` per column."""
+    costing `_MORE_COLUMNS` per line (only a vertical card has more than
+    one layout)."""
     their_lines = [rect for other in others for rect in (*other.own, *other.beside)]
     cards = (card, *others)
     obstacles = [
@@ -386,7 +429,7 @@ def _place(
             dialogue=dialogue,
             their_lines=their_lines,
         )
-        choices.append((cost + _MORE_COLUMNS * len(layout.columns), rect, layout))
+        choices.append((cost + _MORE_COLUMNS * len(layout.lines), rect, layout))
     _, rect, layout = min(choices, key=lambda choice: choice[0])
     return rect, layout
 
@@ -405,7 +448,7 @@ def _preferred(
     them when below does not fit; for a vertical card, right of it and
     centred on it top to bottom, or left of it when right does not fit."""
     span = _span(card.own)
-    if layout.columns:
+    if layout.vertical:
         beside_right = span.x1 + _GAP
         beside_left = span.x0 - _GAP - layout.width
         top = min(max((span.y0 + span.y1 - layout.height) / 2, lowest), highest)
@@ -423,7 +466,7 @@ def _hidden(rect: _Rect, layout: _Layout, cue: Sequence[_Rect]) -> float:
     a `cue` hide: each of its lines counts for the part of its length they
     cover at least half across (a row's height, a column's width), so a line
     they only touch is still read."""
-    if layout.columns:
+    if layout.vertical:
         # A column is a row turned a quarter, the first one rightmost.
         rect, cue = rect.transposed, [row.transposed for row in cue]
         lines = [
@@ -433,7 +476,7 @@ def _hidden(rect: _Rect, layout: _Layout, cue: Sequence[_Rect]) -> float:
                 rect.x0 + length,
                 rect.y1 - n * _LINE,
             )
-            for n, length in enumerate(layout.lines)
+            for n, length in enumerate(layout.lengths)
         ]
     else:
         centre = (rect.x0 + rect.x1) / 2
@@ -444,7 +487,7 @@ def _hidden(rect: _Rect, layout: _Layout, cue: Sequence[_Rect]) -> float:
                 centre + length / 2,
                 rect.y0 + (n + 1) * _LINE,
             )
-            for n, length in enumerate(layout.lines)
+            for n, length in enumerate(layout.lengths)
         ]
     hidden = 0.0
     for line in lines:
@@ -580,18 +623,18 @@ def _events(
         placed.append((card, rect))
         start = format_ass_centiseconds(ass_centiseconds(card.item.start))
         end = format_ass_centiseconds(ass_centiseconds(card.shown_until))
-        style = VERTICAL_STYLE_NAME if layout.columns else STYLE_NAME
+        style = VERTICAL_STYLE_NAME if layout.vertical else STYLE_NAME
         prefix = f"Dialogue: 0,{start},{end},{style},,{margins},,"
-        if not layout.columns:
+        if not layout.vertical:
             events.append(
                 prefix
                 + _anchor(rect, card)
-                + "\\N".join(escape_text(line) for line in card.lines)
+                + "\\N".join(escape_text(row) for row in layout.lines)
             )
             continue
         # One event per column, right to left, anchored on its top right
         # corner (the turned line's top left) and centred in its width.
-        for n, column in enumerate(layout.columns):
+        for n, column in enumerate(layout.lines):
             x = rect.x1 - n * _LINE - (_LINE - FONT_SIZE) / 2
             events.append(
                 f"{prefix}{{\\pos({x:.0f},{rect.y0:.0f})}}" + escape_text(column)

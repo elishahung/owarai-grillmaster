@@ -201,8 +201,13 @@ lines and time hidden counts squared (`_COVER_DIALOGUE`). A translation
 the rows only touch or come within `_GAP` of counts `_CROWDED` (half) of
 that and may only take its card's other side, no further off the card's
 middle (`_slid`): slid along an edge for it, translations left their
-cards (owner's call, 2026-10-29). One they cover is placed as before,
-crowding not counted (counting it there slid several 40-180 px). A card
+cards (owner's call, 2026-10-29). One they cover, crowding not counted
+(counting it there slid several 40-180 px), takes its card's other side
+when that is better if it sits under its card, else slides along an edge;
+above or beside its card both are weighed at once (below is nearer the
+dialogue and the edge). Forbidding the slide for covered ones was measured
+and rejected: four translations it had kept readable beside a cue were
+hidden again. A card
 that groups wrongly lands wrongly, so fix grouping, not placement.
 Known gap: an untranslated card is no obstacle (render sees only
 `telop.cht.json`), so a translation can land on a big caption the

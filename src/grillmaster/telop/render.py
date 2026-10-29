@@ -605,7 +605,10 @@ def _spot(
     # it (owner's call: a translation away from its card is worse than one
     # under a cue). One it only crowds only weighs the card's other side,
     # no further off the card's middle (slid along an edge, it left its
-    # card; owner's call, 2026-10-29); one it covers is placed as before.
+    # card). One it covers under its card takes the other side when that is
+    # better, else slides along an edge; one above its card or beside it
+    # weighs both at once (below it is nearer the dialogue and the edge).
+    # Owner's calls, 2026-10-29.
     edges = [rect for rect, _ in obstacles]
     own = min(spots(edges), key=placed)
     touched = 0.0 if hidden(own, 0.0) else _CROWDED
@@ -615,11 +618,19 @@ def _spot(
     by_card = [
         rect
         for rect in spots([*edges, *cue_edges])
-        if card.distance(rect) <= _GAP + 1
-        and hidden(rect, touched) < lost
-        and not (touched and _slid(rect, own, card, vertical=layout.vertical))
+        if card.distance(rect) <= _GAP + 1 and hidden(rect, touched) < lost
     ]
-    best = min([own, *by_card], key=lambda rect: cost(rect, touched))
+    sides = [
+        rect for rect in by_card if not _slid(rect, own, card, vertical=layout.vertical)
+    ]
+    under = not layout.vertical and not _above(own, card)
+
+    def key(rect: _Rect) -> float:
+        return cost(rect, touched)
+
+    best = min([own, *(sides if touched or under else by_card)], key=key)
+    if best is own and under and not touched:
+        best = min([own, *by_card], key=key)
     return cost(best, touched), best
 
 
@@ -638,13 +649,18 @@ def _slid(rect: _Rect, own: _Rect, card: _Card, *, vertical: bool) -> bool:
     return off(rect) > off(own) + 1
 
 
+def _above(rect: _Rect, card: _Card) -> bool:
+    """Whether a translation in `rect` is above the card lines it faces."""
+    facing = card.facing(rect.x0, rect.x1)
+    return rect.y0 + rect.y1 < facing.y0 + facing.y1
+
+
 def _anchor(rect: _Rect, card: _Card) -> str:
     """Override tags drawing a translation in `rect`, anchored on the edge
     facing its card's lines, so the estimated height never opens a gap
     there."""
     x = (rect.x0 + rect.x1) / 2
-    own = card.facing(rect.x0, rect.x1)
-    if (rect.y0 + rect.y1) < (own.y0 + own.y1):
+    if _above(rect, card):
         return f"{{\\an2\\pos({x:.0f},{rect.y1:.0f})}}"
     return f"{{\\an8\\pos({x:.0f},{rect.y0:.0f})}}"
 

@@ -255,6 +255,25 @@ def test_a_big_caption_s_translation_crosses_it_as_readily_as_a_plate_s():
     assert (alignment, y) == (2, round(text_box(caption.boxes[0])[1] * 1080 - 8))
 
 
+def test_a_covered_translation_under_its_card_takes_the_other_side_first():
+    # A big caption low in the picture, its translation under it covered by
+    # a cue most of its time (渋谷ハロウィン 2026-10-28 0:28): sliding along
+    # the caption's bottom edge beside the cue cost less, but above the
+    # caption is free and better than staying, so it goes there.
+    caption = subtitle(
+        "好可愛", boxes=[(0.3068, 0.6333, 0.7911, 0.9583)], start=28.25, end=29.25
+    )
+    dialogue = [
+        SrtBlock(1, format_timecode_line(28.06, 28.54), "那個"),
+        SrtBlock(2, format_timecode_line(28.62, 29.47), "嚇我一跳"),
+    ]
+
+    ass = render_telop_ass(TelopSubtitles(items=[caption]), dialogue=dialogue)
+
+    ((alignment, _, y),) = anchors(ass)
+    assert (alignment, y) == (2, round(text_box(caption.boxes[0])[1] * 1080 - 8))
+
+
 def test_a_translation_the_dialogue_only_touches_takes_its_card_s_other_side():
     # A place-name caption low on a map, its translation below it touching
     # the top of a two-row cue's outline (有吉 2026-01-18 0:17): above the

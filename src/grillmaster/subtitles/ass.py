@@ -2,14 +2,15 @@
 
 The dialogue subtitles (finalize), the live-chat panel and the telops are
 burned in as ASS layers on the same 1920x1080 canvas in the same font, so they
-take these values (and the picture box, the measured glyph widths) from
-here. Values are the tuned originals; changing one changes
+take these values (and the picture box, the measured glyph widths, the
+line breaking) from here. Values are the tuned originals; changing one changes
 every packaged video.
 """
 
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -52,6 +53,11 @@ class DialogueMargins:
     left: int = MARGIN_H
     right: int = MARGIN_H
     bottom: int = MARGIN_V
+
+    @property
+    def room(self) -> int:
+        """The width a row has between the margins."""
+        return PLAY_RES_X - self.left - self.right
 
     @property
     def force_style(self) -> str | None:
@@ -105,33 +111,122 @@ def text_width(text: str, font_size: int) -> float:
     return sum(char_width(char, font_size) for char in text)
 
 
-def wrapped_rows(widths: Sequence[float], room: float) -> tuple[float, ...]:
-    """The width of each row lines of these `widths` take in `room`: a line
-    too wide wraps into evenly filled rows (libass's smart wrapping). libass
-    breaks only at a space, so a CJK line without one in fact runs past
-    `room` (2026-10-29: 75 of 771k dialogue lines)."""
-    rows: list[float] = []
-    for width in widths:
-        count = max(1, math.ceil(width / room))
-        rows.extend([width / count] * count)
-    return tuple(rows)
+# A Latin run (words, numbers, their spaces) is one token, anything else
+# one character.
+_TOKEN = re.compile(r"[A-Za-z0-9.,'&%+/-]+(?: [A-Za-z0-9.,'&%+/-]+)*|.")
+# Marks a part never starts with or ends on, with the vertical presentation
+# forms a vertical telop column sets them in.
+CLOSING = frozenset("，。、：；！？」』）》〉】〕…‥)︙︰︶︺︼︾﹀﹂﹄")  # noqa: RUF001 - vertical forms on purpose
+OPENING = frozenset("「『（《〈【〔(︵︹︻︽︿﹁﹃")
+_SLASHES = frozenset({"/", "\N{FULLWIDTH SOLIDUS}"})
+# What a part may end after: not a colon, which leads into what follows.
+_PAUSES = (CLOSING - {"："}) | _SLASHES | {" ", "\N{IDEOGRAPHIC SPACE}"}
+
+
+@dataclass(frozen=True, slots=True)
+class LineBreaks:
+    """How a line too wide for its room is broken into rows (or vertical
+    columns). libass breaks a line only at a space, so CJK wider than its
+    room runs off both edges (2026-10-29: 75 of 771k dialogue lines); these
+    break it themselves, into as few evenly filled parts as fit, each part
+    ending after the punctuation, slash or space nearest an even share
+    within `uneven` of it, never before closing punctuation or a slash (a
+    separator ends its row), after opening punctuation or inside a Latin run
+    (owner's calls, 2026-10-29)."""
+
+    font_size: int
+    uneven: float
+
+    def broken(
+        self, lines: Sequence[str], room: float, *, picture: float | None = None
+    ) -> tuple[str, ...]:
+        """Each line as it is, or broken into as few evenly filled parts as
+        keep it within `room` pixels, no part past the `picture` (`room` by
+        default; a vertical telop's room is only the length it aims at). A
+        Latin run stays whole unless it alone is longer than the picture
+        allows."""
+        picture = room if picture is None else picture
+        broken: list[str] = []
+        for line in lines:
+            tokens = [
+                word
+                for token in _TOKEN.findall(line)
+                for word in (
+                    re.split(r"( )", token)
+                    if text_width(token, self.font_size) > picture
+                    else [token]
+                )
+            ]
+            if not tokens:
+                broken.append("")
+            while tokens:
+                end = self._part_end(tokens, room, picture)
+                broken.append("".join(tokens[:end]).strip())
+                tokens = tokens[end:]
+        return tuple(broken)
+
+    def _part_end(self, tokens: Sequence[str], room: float, picture: float) -> int:
+        """How many of `tokens` the first of as few parts as fit them in
+        `room` takes: all when one does; else up to the pause nearest an
+        even share, within `uneven` of it and leaving the rest room in the
+        other parts, or as many as fill an even share."""
+        size = self.font_size
+        length = text_width("".join(tokens), size)
+        parts = math.ceil(length / room)
+        if parts <= 1:
+            return len(tokens)
+        # Whole characters per part, so the last one is not left short, but
+        # never past the picture.
+        even = min(math.ceil(length / parts / size) * size, picture)
+        slack = self.uneven * even
+        width = 0.0
+        filled: int | None = None
+        candidates: list[tuple[float, int]] = []
+        for end, token in enumerate(tokens[:-1], 1):
+            width += text_width(token, size)
+            if width > min(even + slack, room) and filled is not None:
+                break
+            following = tokens[end]
+            if following in CLOSING or following in _SLASHES or token in OPENING:
+                continue
+            if filled is None and width + text_width(following, size) > even:
+                filled = end
+            if (
+                token in _PAUSES
+                and abs(width - even) <= slack
+                and width <= room
+                and length - width <= (parts - 1) * room
+            ):
+                candidates.append((abs(width - even), end))
+        if candidates:
+            return min(candidates)[1]
+        return filled if filled is not None else len(tokens)
 
 
 type CanvasBox = tuple[float, float, float, float]
 
 
+def _drawn_rows(line: str, room: float) -> list[float]:
+    """The width of each row libass draws a dialogue line in within `room`:
+    one, or with a space to break at, evenly filled rows (its smart
+    wrapping); a line without one runs past `room` instead."""
+    width = text_width(line, DIALOGUE_FONT_SIZE)
+    count = max(1, math.ceil(width / room)) if " " in line.strip() else 1
+    return [width / count] * count
+
+
 def dialogue_rows(text: str, margins: DialogueMargins) -> tuple[CanvasBox, ...]:
     """The box (x0, y0, x1, y1) of each row a dialogue line is drawn in on
     the canvas, top to bottom, outline included: bottom-centred between the
-    `margins`, each line of its text one row or wrapped into more."""
-    left, right = margins.left, PLAY_RES_X - margins.right
-    widths = [
-        text_width(line, DIALOGUE_FONT_SIZE)
+    `margins`, each line of its text one row (finalize breaks one too wide
+    for the full canvas) or wrapped at its spaces into more."""
+    rows = [
+        row
         for line in text.splitlines()
         if line.strip()
+        for row in _drawn_rows(line, margins.room)
     ]
-    rows = wrapped_rows(widths, right - left)
-    centre = (left + right) / 2
+    centre = margins.left + margins.room / 2
     top = PLAY_RES_Y - margins.bottom - len(rows) * DIALOGUE_ROW
     boxes: list[CanvasBox] = []
     for n, width in enumerate(rows):

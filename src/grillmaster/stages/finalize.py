@@ -1,7 +1,8 @@
 """Finalize stage: the effective subtitles (`.work/12_proofread/proofread.srt`
 after the optional proofread, else `.work/11_glossary/checked.srt`) into the
 deliverables `video.cht.ass` and `video.cht.srt` beside `video.mp4`, where
-players pick them up (name spacing + Netflix-TC punctuation).
+players pick them up (name spacing + Netflix-TC punctuation + over-wide
+lines broken into rows).
 
 Name units come from the effective briefing and the fixed glossary. No
 intermediates, so `.work/13_finalize/` is never created. The step result

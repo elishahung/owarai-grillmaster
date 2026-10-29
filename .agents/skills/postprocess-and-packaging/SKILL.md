@@ -92,8 +92,17 @@ would never be delivered) with a warning naming `grill reset --from proofread`.
 `video.mp4`'s stem so players auto-load them (declared `outputs`; no
 `.work/12_finalize/`). Deterministic, the last pass over the dialogue: name spacing (effective briefing
 names + curated Han/kana-Latin `zh` from the fixed glossary, longest first),
-then Netflix-TC punctuation. `subtitles/ass.py` holds canvas, font, margins and
-dialogue style, shared with the chat panel; a change hits every package.
+then Netflix-TC punctuation, then `fit_text`: a line wider than the full
+canvas (1900 px) is broken into rows (libass breaks only at a space, so CJK
+ran off both edges), its row-final `，、；。` dropped. The break lives in the
+text (SRT + ASS, the archived deliverables; owner's call over breaking only
+at burn time), so telop placement reads every row from `video.cht.srt`; the
+chat `side` layout's narrower room is not re-broken.
+`subtitles/ass.py` holds canvas, font, margins, dialogue style and the
+shared `LineBreaks` (telop uses it too: after the pause nearest an even
+share within `uneven`, dialogue 35 % in `finalize.DIALOGUE_BREAKS`, telop
+20 %; not after a colon; never before closing punctuation or a slash, after
+opening punctuation, or inside a Latin run); a change hits every package.
 
 ## Extras (`extras/`)
 

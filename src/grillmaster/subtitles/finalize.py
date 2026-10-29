@@ -1,6 +1,6 @@
 """Finalize: the deliverable subtitles, a styled ASS and a player SRT.
 
-Two deterministic passes run here, after every agent pass, so nothing
+Three deterministic passes run here, after every agent pass, so nothing
 upstream can undo them:
 
 - Mixed-script name spacing. Latin-containing renderings agreed in the
@@ -15,6 +15,9 @@ upstream can undo them:
   - strip `，、；。` right before a closing `」`/`』` (`？！…` stay);
   - drop spaces hugging mid-line full-width `，、；。：！？`;
   - turn any remaining mid-line `。` into `，`.
+- Over-wide lines: a line wider than the full canvas is broken into rows
+  (`fit_text`), so the text itself carries every row drawn and the telop
+  placement reads them from the SRT.
 
 The ASS and the SRT carry the same text; the ASS uses `subtitles.ass`'s
 dialogue header and style.
@@ -29,7 +32,13 @@ from typing import TYPE_CHECKING
 from grillmaster.core.fs import atomic_write_text
 from grillmaster.core.srt import write_srt_file
 from grillmaster.core.timecode import ass_time_from_ms, parse_timecode_ms
-from grillmaster.subtitles.ass import DIALOGUE_HEADER, DIALOGUE_STYLE_NAME
+from grillmaster.subtitles.ass import (
+    DIALOGUE_FONT_SIZE,
+    DIALOGUE_HEADER,
+    DIALOGUE_MARGINS,
+    DIALOGUE_STYLE_NAME,
+    LineBreaks,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
@@ -171,13 +180,36 @@ def clean_text(text: str) -> str:
     return "\n".join(clean_line(line) for line in text.split("\n"))
 
 
+# --- over-wide lines --------------------------------------------------------
+
+# The dialogue has room for ~33 characters a row, so a part may stray
+# further from an even share than a telop's to end after a pause: at 20 %
+# 37 of the 75 over-wide lines broke inside a phrase, at 35 % 19
+# (2026-10-29; the owner may tune it).
+DIALOGUE_BREAKS = LineBreaks(DIALOGUE_FONT_SIZE, uneven=0.35)
+
+
+def fit_text(text: str) -> str:
+    """Each line too wide for the full canvas broken into rows
+    (`DIALOGUE_BREAKS`): libass breaks only at a space, so a CJK one ran off
+    both edges. A row the break leaves ending in `，、；。` loses it, as any
+    line does (only that rule: a row is not a new line to clean)."""
+    return "\n".join(
+        _LINE_EDGE_PUNCT.sub("", row)
+        for row in DIALOGUE_BREAKS.broken(text.split("\n"), DIALOGUE_MARGINS.room)
+    )
+
+
 # --- output -----------------------------------------------------------------
 
 
 def finalize_blocks(blocks: Iterable[SrtBlock], units: Iterable[str]) -> list[SrtBlock]:
-    """Name spacing, then punctuation cleanup, on every block's text."""
+    """Name spacing, punctuation cleanup, then over-wide lines broken, on
+    every block's text."""
     space = build_name_spacer(units)
-    return [replace(block, text=clean_text(space(block.text))) for block in blocks]
+    return [
+        replace(block, text=fit_text(clean_text(space(block.text)))) for block in blocks
+    ]
 
 
 def dialogue_line(block: SrtBlock) -> str:

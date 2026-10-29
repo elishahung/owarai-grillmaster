@@ -12,13 +12,19 @@ from grillmaster.glossary.fixed import (
     TalentUnit,
     load_fixed_glossary,
 )
-from grillmaster.subtitles.ass import DIALOGUE_HEADER
+from grillmaster.subtitles.ass import (
+    DIALOGUE_HEADER,
+    DIALOGUE_MARGINS,
+    DIALOGUE_OUTLINE,
+    dialogue_rows,
+)
 from grillmaster.subtitles.finalize import (
     briefing_name_units,
     build_name_spacer,
     clean_text,
     curated_name_units,
     dialogue_line,
+    fit_text,
     name_units,
     render_ass,
     write_finalized,
@@ -104,6 +110,35 @@ if TYPE_CHECKING:
 )
 def test_clean_text(text: str, expected: str):
     assert clean_text(text) == expected
+
+
+# --- over-wide lines --------------------------------------------------------
+
+
+def test_a_line_wider_than_the_canvas_is_broken_without_its_row_final_comma():
+    text = (
+        "在半準決賽被淘汰的話，只要影片觀看次數第一，就能拿外卡進準決賽，這賽制現在也有"
+    )
+    assert fit_text(text) == (
+        "在半準決賽被淘汰的話，只要影片觀看次數第一\n就能拿外卡進準決賽，這賽制現在也有"
+    )
+
+
+def test_a_line_that_fits_is_left_alone():
+    assert fit_text("你好，世界\n第二行") == "你好，世界\n第二行"
+    assert fit_text("第一行\n\n第二行") == "第一行\n\n第二行"
+
+
+def test_every_finalized_row_is_one_drawn_row_inside_the_canvas():
+    # A share of 65 characters rounds up past the room.
+    for text in ["一" * 65, "-手肘其實已經好了吧？\n-" + "所以我說啊，" * 7]:
+        fitted = fit_text(text)
+        rows = dialogue_rows(fitted, DIALOGUE_MARGINS)
+        assert len(rows) == len(fitted.splitlines())
+        assert all(
+            x1 - x0 - 2 * DIALOGUE_OUTLINE <= DIALOGUE_MARGINS.room
+            for x0, _, x1, _ in rows
+        )
 
 
 # --- ASS events -------------------------------------------------------------

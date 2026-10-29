@@ -170,10 +170,9 @@ its own (+1); spots tried are centred or against any obstacle's side
 edges, times above/below or against any obstacle's top/bottom edges, kept
 inside the picture. Widths are estimated (wide char = 1 em, other 0.55).
 libass breaks a line only at a space, so CJK wider than the picture ran
-off both edges; `render._broken` breaks such a line itself into evenly
-filled rows (`\N`; vertical columns the same way), after the punctuation,
-slash or space nearest an even share within `_UNEVEN` (20 %; not a colon),
-never before closing punctuation or inside a Latin run (owner's call).
+off both edges; `render._BREAKS` (`subtitles.ass.LineBreaks`, rules there
+and in postprocess-and-packaging; uneven 20 %, owner's call) breaks such a
+line itself into evenly filled rows (`\N`; vertical columns the same way).
 A translation leaves with its card, or `MAX_SHOWN_S` after it appears when
 the card is up longer than that plus `SHOWN_TOLERANCE_S` (owner's call:
 long cards stayed up long after they were read); its card
@@ -195,7 +194,9 @@ side, along an edge), never one away from it: weighed against distance it
 pulled translations 70-500 px off their cards and over other cards' ones
 (owner: unacceptable; tests lock both). Among those, each cue's rows are
 estimated as libass draws them (`subtitles.ass.dialogue_rows`: rows
-60 px apart, outline 8, measured), a translation line counts hidden for the part of its length a
+60 px apart, outline 8, measured; one row per SRT line, which finalize
+keeps inside the canvas; a line too wide for a narrower layout wraps only
+at its spaces, else runs past), a translation line counts hidden for the part of its length a
 row covers at least half across, and the share of
 lines and time hidden counts squared (`_COVER_DIALOGUE`). A translation
 the rows only touch or come within `_GAP` of counts `_CROWDED` (half) of

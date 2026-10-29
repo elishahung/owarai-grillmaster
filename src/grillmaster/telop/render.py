@@ -25,7 +25,6 @@ subtitles.
 from __future__ import annotations
 
 import math
-import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -43,6 +42,7 @@ from grillmaster.subtitles.ass import (
     FULL_PICTURE,
     PLAY_RES_X,
     DialogueMargins,
+    LineBreaks,
     PictureBox,
     bgr,
     dialogue_rows,
@@ -136,7 +136,7 @@ SHOWN_TOLERANCE_S = 5.0
 # beside CJK in `VERTICAL_STYLE_NAME`, so they take their vertical forms
 # (measured 2026-10-28); commas, stops, colons and semicolons keep theirs.
 # Each line is a column, right to left; a column too long for the room goes
-# on in the next one, never inside a Latin run or before closing punctuation.
+# on in the next one (`_BREAKS`).
 _VERTICAL_FORMS = str.maketrans(
     {
         "「": "\N{PRESENTATION FORM FOR VERTICAL LEFT CORNER BRACKET}",
@@ -168,18 +168,9 @@ _VERTICAL_FORMS = str.maketrans(
         "?": "？",
     }
 )
-_TOKEN = re.compile(r"[A-Za-z0-9.,'&%+/-]+(?: [A-Za-z0-9.,'&%+/-]+)*|.")
-_CLOSING = frozenset("，。、：；！？」』）》〉】〕…‥".translate(_VERTICAL_FORMS))
-# A broken line's part may be this share longer or shorter than an even one
-# to end after punctuation, a slash or a space rather than inside a phrase
-# (owner's call, 2026-10-29); not after a colon, which leads into what
-# follows.
-_UNEVEN = 0.2
-_PAUSES = (_CLOSING - {"："}) | {
-    "\N{FULLWIDTH SOLIDUS}",
-    " ",
-    "\N{IDEOGRAPHIC SPACE}",
-}
+# A broken line's part may be 20 % longer or shorter than an even one to end
+# after a pause rather than inside a phrase (owner's call, 2026-10-29).
+_BREAKS = LineBreaks(FONT_SIZE, uneven=0.2)
 # Setting a vertical translation in more, shorter columns to fit beside its
 # card costs this much per extra column (against `_AWAY` per picture height
 # it moves).
@@ -299,67 +290,6 @@ class _Card:
         return shown.overlap(cue.span) / shown.duration if shown.duration else 0.0
 
 
-def _broken(lines: Sequence[str], room: float, *, picture: float) -> tuple[str, ...]:
-    """Each line as it is, or broken into as few evenly filled parts (rows,
-    or columns) as keep it within `room` pixels. libass breaks a line only
-    at a space, so CJK wider than the picture runs off both edges
-    (2026-10-29). A Latin run stays whole unless it alone is longer than
-    the `picture` allows."""
-    broken: list[str] = []
-    for line in lines:
-        tokens = [
-            word
-            for token in _TOKEN.findall(line)
-            for word in (
-                re.split(r"( )", token)
-                if text_width(token, FONT_SIZE) > picture
-                else [token]
-            )
-        ]
-        while tokens:
-            end = _part_end(tokens, room)
-            broken.append("".join(tokens[:end]).strip())
-            tokens = tokens[end:]
-    return tuple(broken)
-
-
-def _part_end(tokens: Sequence[str], room: float) -> int:
-    """How many of `tokens` the first of as few parts as fit them in `room`
-    takes: all when one does; else up to the punctuation or space nearest
-    an even share, within `_UNEVEN` of it and leaving the rest room in the
-    other parts, or as many as fill an even share. Never a part before
-    closing punctuation."""
-    length = text_width("".join(tokens), FONT_SIZE)
-    parts = math.ceil(length / room)
-    if parts <= 1:
-        return len(tokens)
-    # Whole characters per part, so the last one is not left short.
-    even = math.ceil(length / parts / FONT_SIZE) * FONT_SIZE
-    slack = _UNEVEN * even
-    width = 0.0
-    filled: int | None = None
-    pauses: list[tuple[float, int]] = []
-    for end, token in enumerate(tokens[:-1], 1):
-        width += text_width(token, FONT_SIZE)
-        if width > min(even + slack, room) and filled is not None:
-            break
-        following = tokens[end]
-        if following in _CLOSING:
-            continue
-        if filled is None and width + text_width(following, FONT_SIZE) > even:
-            filled = end
-        if (
-            token in _PAUSES
-            and abs(width - even) <= slack
-            and width <= room
-            and length - width <= (parts - 1) * room
-        ):
-            pauses.append((abs(width - even), end))
-    if pauses:
-        return min(pauses)[1]
-    return filled if filled is not None else len(tokens)
-
-
 def _layout(lines: tuple[str, ...], *, vertical: bool) -> _Layout:
     lengths = tuple(text_width(line, FONT_SIZE) for line in lines)
     size, longest = len(lines) * _LINE, max(lengths)
@@ -378,7 +308,7 @@ def _vertical_layouts(lines: Sequence[str], frame: PictureBox) -> list[_Layout]:
         room = min(longest / parts, full)
         if parts > 1 and room < 2 * FONT_SIZE:
             break
-        columns = _broken(lines, room, picture=full)
+        columns = _BREAKS.broken(lines, room, picture=full)
         if columns not in layouts:
             layouts[columns] = _layout(columns, vertical=True)
     return list(layouts.values())
@@ -405,7 +335,7 @@ def _card(item: TelopSubtitle, frame: PictureBox) -> _Card | None:
     if set_vertically([*item.boxes, *item.beside]):
         return _Card(item, own, beside, _vertical_layouts(lines, frame))
     room = frame.width - 2 * MARGIN_H
-    rows = _broken(lines, room, picture=room)
+    rows = _BREAKS.broken(lines, room)
     return _Card(item, own, beside, [_layout(rows, vertical=False)])
 
 

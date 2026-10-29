@@ -217,8 +217,10 @@ def test_a_translation_stays_below_while_the_dialogue_is_mostly_not_up():
     assert plate_anchor(PLATE_DIALOGUE[2:]) == plate_anchor([])
 
 
-def test_a_translation_the_dialogue_only_touches_stays_by_its_card():
-    # Above a low caption, two rows of dialogue reach a few pixels into it.
+def test_a_translation_the_dialogue_only_touches_never_slides_off_its_card():
+    # Above a low caption, two rows of dialogue reach a few pixels into it:
+    # below does not fit, and slid along the caption's top edge it would no
+    # longer line up with the caption, so it stays.
     caption = subtitle("請務必加油", boxes=[(0.2, 0.86, 0.8, 0.95)], start=1.0, end=4.0)
     dialogue = [SrtBlock(1, format_timecode_line(1.0, 4.0), "-第一位\n-第二位講話")]
 
@@ -227,6 +229,56 @@ def test_a_translation_the_dialogue_only_touches_stays_by_its_card():
     assert anchors(with_dialogue) == anchors(
         render_telop_ass(TelopSubtitles(items=[caption]))
     )
+
+
+def test_a_big_caption_s_translation_crosses_it_as_readily_as_a_plate_s():
+    # A caption 133 px tall, its translation under it covered by a cue for
+    # 30 % of its time (大喜利 2026-10-26 24:29): above it is as near to
+    # the caption as below; measured from the preferred spot, crossing the
+    # caption cost its height and the translation stayed covered.
+    caption = subtitle(
+        "元斌、啤酒瓶",
+        boxes=[(0.3047, 0.7676, 0.8396, 0.9213)],
+        start=1469.75,
+        end=1473.75,
+    )
+    dialogue = [
+        SrtBlock(
+            1, format_timecode_line(1470.306, 1471.466), "這是「啤酒瓶」那時候的節奏吧"
+        ),
+        SrtBlock(2, format_timecode_line(1471.466, 1475.186), "-木村\n-是"),
+    ]
+
+    ass = render_telop_ass(TelopSubtitles(items=[caption]), dialogue=dialogue)
+
+    ((alignment, _, y),) = anchors(ass)
+    assert (alignment, y) == (2, round(text_box(caption.boxes[0])[1] * 1080 - 8))
+
+
+def test_a_translation_the_dialogue_only_touches_takes_its_card_s_other_side():
+    # A place-name caption low on a map, its translation below it touching
+    # the top of a two-row cue's outline (有吉 2026-01-18 0:17): above the
+    # caption is free.
+    caption = subtitle(
+        "朝日電視台", boxes=[(0.4609, 0.7241, 0.6026, 0.8)], start=17.15, end=22.85
+    )
+    dialogue = [
+        SrtBlock(
+            1,
+            format_timecode_line(18.1, 22.44),
+            "一邊將在意的事記在筆記上\n一邊開車前往烤肉場地的兜風之旅",
+        )
+    ]
+
+    ass = render_telop_ass(TelopSubtitles(items=[caption]), dialogue=dialogue)
+
+    ((alone_alignment, alone_x, _),) = anchors(
+        render_telop_ass(TelopSubtitles(items=[caption]))
+    )
+    assert alone_alignment == 8
+    ((alignment, x, y),) = anchors(ass)
+    assert (alignment, x) == (2, alone_x)
+    assert y == round(text_box(caption.boxes[0])[1] * 1080 - 8)
 
 
 def cues(*spans: tuple[float, float, str]) -> list[SrtBlock]:

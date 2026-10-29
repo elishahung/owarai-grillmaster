@@ -103,6 +103,14 @@ _COVER_TRANSLATION = 10.0
 _COVER_TRANSLATED = 10.0
 _COVER_CARD = 1.0
 _AWAY = 3.0
+# Away is measured from the preferred spot or from the same spot on the
+# card's other side, which costs this instead: measured from the preferred
+# spot alone, crossing the card cost its height, so a big caption's
+# translation stayed under the dialogue rather than go above it (owner:
+# plainly wrong, 2026-10-29). About what crossing a name plate cost before.
+# (Measured from the nearest card line instead, a board's translation
+# jumped to its far lines.)
+_OTHER_SIDE = 0.3
 # The dialogue draws over a translation, so a line of it the dialogue covers
 # is lost while that cue is up. Hidden for a moment, it is read the rest of
 # the time and stays by its card (owner's call: a translation away from its
@@ -110,6 +118,11 @@ _AWAY = 3.0
 # hidden counts squared; at 10 a cue up a tenth of the time still pulled
 # translations off their captions (2026-10-29, every selection).
 _COVER_DIALOGUE = 5.0
+# A line the dialogue only touches is read, but jammed against it (owner's
+# call, 2026-10-29: a caption's translation touching the cue's outline); it
+# counts this share of a hidden one, so a free spot right by its card on
+# another side wins.
+_CROWDED = 0.5
 # A spot nearer another card than its own reads as that card's translation.
 _AMBIGUOUS = 1.0
 # A rendered line's height, outline included (a vertical column's width).
@@ -442,30 +455,35 @@ def _preferred(
     right: float,
     lowest: float,
     highest: float,
-) -> tuple[float, float, set[float], set[float]]:
-    """The preferred spot's left and top, and the lefts and tops to try:
-    right below the lines it faces and centred on the card, or right above
-    them when below does not fit; for a vertical card, right of it and
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """The preferred spot's left and top, and the same on the card's other
+    side: right below the lines it faces and centred on the card, or right
+    above them when below does not fit; for a vertical card, right of it and
     centred on it top to bottom, or left of it when right does not fit."""
     span = _span(card.own)
     if layout.vertical:
         beside_right = span.x1 + _GAP
         beside_left = span.x0 - _GAP - layout.width
         top = min(max((span.y0 + span.y1 - layout.height) / 2, lowest), highest)
-        x0 = beside_right if beside_right <= right else beside_left
-        return x0, top, {beside_right, beside_left}, {top}
+        if beside_right <= right:
+            return (beside_right, top), (beside_left, top)
+        return (beside_left, top), (beside_right, top)
     centred = min(max((span.x0 + span.x1 - layout.width) / 2, left), right)
     facing = card.facing(centred, centred + layout.width)
     above = facing.y0 - _GAP - layout.height
     below = facing.y1 + _GAP
-    return centred, below if below <= highest else above, {centred}, {above, below}
+    if below <= highest:
+        return (centred, below), (centred, above)
+    return (centred, above), (centred, below)
 
 
-def _hidden(rect: _Rect, layout: _Layout, cue: Sequence[_Rect]) -> float:
+def _hidden(
+    rect: _Rect, layout: _Layout, cue: Sequence[_Rect], *, touched: float
+) -> float:
     """The share of a translation set in `layout` at `rect` that the rows of
     a `cue` hide: each of its lines counts for the part of its length they
-    cover at least half across (a row's height, a column's width), so a line
-    they only touch is still read."""
+    cover at least half across (a row's height, a column's width), and
+    `touched` of that where they only touch it or come within `_GAP`."""
     if layout.vertical:
         # A column is a row turned a quarter, the first one rightmost.
         rect, cue = rect.transposed, [row.transposed for row in cue]
@@ -491,11 +509,18 @@ def _hidden(rect: _Rect, layout: _Layout, cue: Sequence[_Rect]) -> float:
         ]
     hidden = 0.0
     for line in lines:
+
+        def along(rows: Sequence[_Rect], line: _Rect = line) -> float:
+            """The share of `line`'s length the `rows` reach along it."""
+            reach = max(min(line.x1, row.x1) - max(line.x0, row.x0) for row in rows)
+            return max(0.0, reach) / max(1.0, line.x1 - line.x0)
+
         over = [row for row in cue if line.overlap(row) > 0]
         across = sum(min(line.y1, row.y1) - max(line.y0, row.y0) for row in over)
         if across >= _LINE / 2:
-            along = max(min(line.x1, row.x1) - max(line.x0, row.x0) for row in over)
-            hidden += along / max(1.0, line.x1 - line.x0)
+            hidden += along(over)
+        elif near := [row for row in cue if line.distance(row) <= _GAP]:
+            hidden += touched * along(near)
     return hidden / len(lines)
 
 
@@ -526,12 +551,12 @@ def _spot(
     lowest = frame.y + MARGIN_V
     # A translation taller than the picture starts at its top.
     highest = max(lowest, frame.y + frame.height - MARGIN_V - height)
-    preferred_x, preferred_y, lefts, tops = _preferred(
+    preferred, other_side = _preferred(
         card, layout, left=left, right=right, lowest=lowest, highest=highest
     )
 
     def spots(edges: Sequence[_Rect]) -> list[_Rect]:
-        xs, ys = set(lefts), set(tops)
+        xs, ys = (set(both) for both in zip(preferred, other_side, strict=True))
         for rect in edges:
             xs |= {rect.x0 - _GAP - width, rect.x1 + _GAP}
             ys |= {rect.y0 - _GAP - height, rect.y1 + _GAP}
@@ -551,35 +576,66 @@ def _spot(
         (o, weight / max(1.0, min(width * height, o.area))) for o, weight in obstacles
     ]
 
+    def away(rect: _Rect) -> float:
+        """Moving from the preferred spot, or from the same spot on the
+        card's other side plus `_OTHER_SIDE`, whichever is less."""
+
+        def moved(x0: float, top: float) -> float:
+            return _AWAY * (abs(rect.x0 - x0) + abs(rect.y0 - top)) / frame.height
+
+        return min(moved(*preferred), moved(*other_side) + _OTHER_SIDE)
+
     def placed(rect: _Rect) -> float:
         covered = sum(weight * rect.overlap(o) for o, weight in per_pixel)
-        away = (abs(rect.y0 - preferred_y) + abs(rect.x0 - preferred_x)) / frame.height
         nearest = card.distance(rect)
         ambiguous = any(rect.distance(line) < nearest for line in their_lines)
-        return covered + _AWAY * away + _AMBIGUOUS * ambiguous
+        return covered + away(rect) + _AMBIGUOUS * ambiguous
 
-    def hidden(rect: _Rect) -> float:
-        return sum(share * _hidden(rect, layout, cue) for cue, share in dialogue)
+    def hidden(rect: _Rect, touched: float) -> float:
+        return sum(
+            share * _hidden(rect, layout, cue, touched=touched)
+            for cue, share in dialogue
+        )
 
-    def cost(rect: _Rect) -> float:
-        return placed(rect) + _COVER_DIALOGUE * hidden(rect) ** 2
+    def cost(rect: _Rect, touched: float) -> float:
+        return placed(rect) + _COVER_DIALOGUE * hidden(rect, touched) ** 2
 
     # The dialogue only moves a translation it hides, and only to another
     # spot right by the card (another side, along an edge), never away from
     # it (owner's call: a translation away from its card is worse than one
-    # under a cue).
+    # under a cue). One it only crowds only weighs the card's other side,
+    # no further off the card's middle (slid along an edge, it left its
+    # card; owner's call, 2026-10-29); one it covers is placed as before.
     edges = [rect for rect, _ in obstacles]
     own = min(spots(edges), key=placed)
-    if not (lost := hidden(own)):
+    touched = 0.0 if hidden(own, 0.0) else _CROWDED
+    if not (lost := hidden(own, touched)):
         return placed(own), own
     cue_edges = [row for rows, _ in dialogue for row in rows]
     by_card = [
         rect
         for rect in spots([*edges, *cue_edges])
-        if card.distance(rect) <= _GAP + 1 and hidden(rect) < lost
+        if card.distance(rect) <= _GAP + 1
+        and hidden(rect, touched) < lost
+        and not (touched and _slid(rect, own, card, vertical=layout.vertical))
     ]
-    best = min([own, *by_card], key=cost)
-    return cost(best), best
+    best = min([own, *by_card], key=lambda rect: cost(rect, touched))
+    return cost(best, touched), best
+
+
+def _slid(rect: _Rect, own: _Rect, card: _Card, *, vertical: bool) -> bool:
+    """Whether `rect` is further off the middle of its card than `own`
+    along the card (sideways for a row above or below it, up or down for a
+    column beside it)."""
+    span = _span(card.own)
+    if vertical:
+        rect, own, span = rect.transposed, own.transposed, span.transposed
+    middle = span.x0 + span.x1
+
+    def off(each: _Rect) -> float:
+        return abs(each.x0 + each.x1 - middle)
+
+    return off(rect) > off(own) + 1
 
 
 def _anchor(rect: _Rect, card: _Card) -> str:

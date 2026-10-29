@@ -160,7 +160,12 @@ leaves its translation nothing to be read against; at ×1 a translation
 squeezed onto its own plate's group name, 2026-10-28), or a `beside` line
 (×1; a short label half
 hidden counts as half), distance from the preferred
-spot (×3 per picture height, sideways too), being nearer another card than
+spot (×3 per picture height, sideways too) or from the same spot on the
+card's other side plus `_OTHER_SIDE` (0.3), whichever is less
+(from the preferred spot alone, crossing the card cost its height: a big
+caption's translation stayed under the dialogue, owner: plainly wrong,
+2026-10-29; from the nearest card line, a board's translation jumped to
+its far lines), being nearer another card than
 its own (+1); spots tried are centred or against any obstacle's side
 edges, times above/below or against any obstacle's top/bottom edges, kept
 inside the picture. Widths are estimated (wide char = 1 em, other 0.55).
@@ -191,9 +196,14 @@ pulled translations 70-500 px off their cards and over other cards' ones
 (owner: unacceptable; tests lock both). Among those, each cue's rows are
 estimated as libass draws them (`subtitles.ass.dialogue_rows`: rows
 60 px apart, outline 8, measured), a translation line counts hidden for the part of its length a
-row covers at least half across (a touch costs nothing), and the share of
-lines and time hidden counts squared (`_COVER_DIALOGUE`). A card that
-groups wrongly lands wrongly, so fix grouping, not placement.
+row covers at least half across, and the share of
+lines and time hidden counts squared (`_COVER_DIALOGUE`). A translation
+the rows only touch or come within `_GAP` of counts `_CROWDED` (half) of
+that and may only take its card's other side, no further off the card's
+middle (`_slid`): slid along an edge for it, translations left their
+cards (owner's call, 2026-10-29). One they cover is placed as before,
+crowding not counted (counting it there slid several 40-180 px). A card
+that groups wrongly lands wrongly, so fix grouping, not placement.
 Known gap: an untranslated card is no obstacle (render sees only
 `telop.cht.json`), so a translation can land on a big caption the
 selector left out. Counting them (2026-10-28, 560 moments) moved 26-69

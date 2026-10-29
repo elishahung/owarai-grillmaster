@@ -281,14 +281,15 @@ def review_command(baseline: Path, projects: list[str], out_dir: Path) -> None:
                     print(f"  {side:6} {_COLOURS[n % len(_COLOURS)][0]:6} {card.text}")
 
 
-_EVENT_TIMES = re.compile(r"^Dialogue: 0,([^,]+),([^,]+),")
+_EVENT_TIMES = re.compile(r"^Dialogue: 0,([^,]+),([^,]+),([^,]+),")
+_TELOP_STYLES = frozenset({render.STYLE_NAME, render.VERTICAL_STYLE_NAME})
 
 
 def _telop_moments(ass: str) -> dict[float, list[str]]:
-    """A telop layer's events by start time."""
+    """The telop events of a script with the dialogue, by start time."""
     moments: dict[float, list[str]] = {}
     for line in ass.splitlines():
-        if match := _EVENT_TIMES.match(line):
+        if (match := _EVENT_TIMES.match(line)) and match[3] in _TELOP_STYLES:
             moments.setdefault(_seconds(match[1]), []).append(line)
     return moments
 
@@ -304,8 +305,13 @@ def placement_command(baseline: Path, projects: list[str], out_dir: Path) -> Non
         subtitles = TelopSubtitles.model_validate_json(
             layout.telop_cht_json.read_text("utf-8")
         )
-        before = _telop_moments(old.render_telop_ass(subtitles))
-        after = _telop_moments(render.render_telop_ass(subtitles))
+        # Both with the dialogue, which the placement may avoid.
+        dialogue = read_srt_file(layout.cht_srt)
+        scripts = (
+            old.render_with_dialogue(dialogue, subtitles),
+            render.render_with_dialogue(dialogue, subtitles),
+        )
+        before, after = (_telop_moments(script) for script in scripts)
         moved = sorted(
             start
             for start in before.keys() | after.keys()
@@ -319,10 +325,9 @@ def placement_command(baseline: Path, projects: list[str], out_dir: Path) -> Non
             Path(tempfile.gettempdir()) / "grill-telop-probe" / f"{video_id}-placement"
         )
         work.mkdir(parents=True, exist_ok=True)
-        dialogue = read_srt_file(layout.cht_srt)
         layers = (SubtitleLayer(work / "before.ass"), SubtitleLayer(work / "after.ass"))
-        old.write_with_dialogue(dialogue, subtitles, layers[0].path)
-        render.write_with_dialogue(dialogue, subtitles, layers[1].path)
+        for layer, script in zip(layers, scripts, strict=True):
+            layer.path.write_text(script, encoding="utf-8")
         for start in moved:
             ends = [
                 _seconds(match[2])

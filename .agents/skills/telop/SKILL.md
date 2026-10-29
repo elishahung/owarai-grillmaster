@@ -76,8 +76,9 @@ the stage alike).
    reset — and records it in the ledger; it scans first when no scan is kept.
 5. **Package** — `package.assemble.with_telops` renders
    `.work/package/telop.ass` inside the picture (a `side` layout's shrunk
-   box is passed as `subtitles.ass.PictureBox`) and burns it **under the dialogue** (`BurnPlan.top`),
-   which is always the top layer. `grill package --no-telop`
+   box is passed as `subtitles.ass.PictureBox`), placed against
+   `video.cht.srt` where the layout sets it (`BurnPlan.dialogue_margins`), and
+   burns it **under the dialogue** (`BurnPlan.top`), which is always the top layer. `grill package --no-telop`
    (`RunOptions.burn_telops`) leaves it out.
 
 ## Cards (`scan.py`)
@@ -172,9 +173,16 @@ swaps in the vertical presentation forms (measured; commas and stops stay).
 Lines split into evenly filled columns, and 2-3× shorter column layouts are
 tried at `_MORE_COLUMNS` per extra column, so it fits beside a card with
 another card above or below it.
-The dialogue is another layer on top: this one never avoids it (owner's
-call: a translation away from its card is worse than one under a cue). A
-card that groups wrongly lands wrongly, so fix grouping, not placement.
+The dialogue draws on top (2026-10-29). It only chooses between the spot
+the costs above pick and spots right by the card (within `_GAP`: the other
+side, along an edge), never one away from it: weighed against distance it
+pulled translations 70-500 px off their cards and over other cards' ones
+(owner: unacceptable; tests lock both). Among those, each cue's rows are
+estimated as libass draws them (`subtitles.ass.dialogue_rows`: rows
+60 px apart, outline 8, measured), a translation line counts hidden for the part of its length a
+row covers at least half across (a touch costs nothing), and the share of
+lines and time hidden counts squared (`_COVER_DIALOGUE`). A card that
+groups wrongly lands wrongly, so fix grouping, not placement.
 Known gap: an untranslated card is no obstacle (render sees only
 `telop.cht.json`), so a translation can land on a big caption the
 selector left out. Counting them (2026-10-28, 560 moments) moved 26-69

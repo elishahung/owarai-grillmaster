@@ -26,6 +26,10 @@ class TimeRange:
     def overlaps(self, other: TimeRange) -> bool:
         return self.end > other.start and self.start < other.end
 
+    def overlap(self, other: TimeRange) -> float:
+        """The seconds the two spans share."""
+        return max(0.0, min(self.end, other.end) - max(self.start, other.start))
+
     def padded(self, seconds: float) -> TimeRange:
         return TimeRange(self.start - seconds, self.end + seconds)
 

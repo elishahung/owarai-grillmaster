@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from tests.package.conftest import PackageFfmpeg
@@ -11,6 +12,8 @@ from grillmaster.config.model import RESERVED_INSERT_STEMS
 from grillmaster.core.briefing import Briefing, TermMapping
 from grillmaster.core.json_artifact import write_model
 from grillmaster.core.paths import measure
+from grillmaster.core.srt import SrtBlock, write_srt_file
+from grillmaster.core.timecode import format_timecode_line
 from grillmaster.live_chat.layout import ChatLayout
 from grillmaster.live_chat.schema import TranslatedChatLog, TranslatedChatMessage
 from grillmaster.package.assemble import (
@@ -31,6 +34,9 @@ from grillmaster.package.inserts import (
 from grillmaster.package.render import BurnPlan
 from grillmaster.subtitles.ass import PictureBox
 from grillmaster.telop.select import TelopSubtitle, TelopSubtitles
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 BRIEFING = Briefing(
     summary="demo",
@@ -190,11 +196,15 @@ def plan_for(project: Path, layout: ChatLayout) -> BurnPlan:
     )
 
 
-def telop_plan_for(project: Path, layout: ChatLayout) -> BurnPlan:
+def telop_plan_for(
+    project: Path, layout: ChatLayout, dialogue: Sequence[SrtBlock] = ()
+) -> BurnPlan:
+    write_srt_file(project / "video.cht.srt", dialogue)
     return with_telops(
         plan_for(project, layout),
         project / "subs" / "telop.cht.json",
         project / "work" / "package" / "telop.ass",
+        project / "video.cht.srt",
     )
 
 
@@ -214,9 +224,9 @@ def test_side_layout_letterboxes_the_picture_beside_the_chat(project: Path):
     assert plan.picture == PictureBox(x=0, y=108, width=1536, height=864)
     # Chat under the dialogue; the dialogue sits in the bottom bar, centred
     # over the picture.
-    assert [layer.filter(project) for layer in plan.layers] == [
+    assert plan.filters(project) == [
         "subtitles=work/package/chat.ass",
-        "subtitles=video.cht.ass:force_style='MarginR=394,MarginV=24'",
+        "subtitles=video.cht.ass:force_style='MarginL=10,MarginR=394,MarginV=24'",
     ]
     ass = (project / "work" / "package" / "chat.ass").read_text(encoding="utf-8-sig")
     # Messages sit straight on the black column: no panel background.
@@ -230,7 +240,7 @@ def test_overlay_layout_keeps_the_full_frame(project: Path):
     plan = plan_for(project, ChatLayout.OVERLAY)
 
     assert plan.canvas_filter is None
-    assert [layer.filter(project) for layer in plan.layers] == [
+    assert plan.filters(project) == [
         "subtitles=work/package/chat.ass",
         "subtitles=video.cht.ass",
     ]
@@ -270,7 +280,7 @@ def test_telops_burn_under_the_dialogue_on_the_full_frame(project: Path):
     plan = telop_plan_for(project, ChatLayout.SIDE)
 
     # The dialogue stays the top layer.
-    assert [layer.filter(project) for layer in plan.layers] == [
+    assert plan.filters(project) == [
         "subtitles=work/package/telop.ass",
         "subtitles=video.cht.ass",
     ]
@@ -285,7 +295,7 @@ def test_telops_stay_over_a_shrunk_picture_under_chat_and_dialogue(project: Path
 
     plan = telop_plan_for(project, ChatLayout.SIDE)
 
-    assert [layer.filter(project) for layer in plan.layers][:2] == [
+    assert plan.filters(project)[:2] == [
         "subtitles=work/package/chat.ass",
         "subtitles=work/package/telop.ass",
     ]
@@ -294,6 +304,22 @@ def test_telops_stay_over_a_shrunk_picture_under_chat_and_dialogue(project: Path
     # Inside the picture box (x 0..1536, y 108..972): under the card at
     # x 0.0-0.5, y 0.8-0.9 of it, less the OCR margin (`ocr.text_box`).
     assert ",Telop,,60,444,136,,{\\an8\\pos(382,891)}突然的鏈條" in ass
+
+
+def test_telops_keep_off_the_dialogue_where_the_layout_sets_it(project: Path):
+    write_chat(project / "subs" / "chat.cht.json")
+    write_telops(project / "subs" / "telop.cht.json")
+    # Three rows in the bottom bar reach up into the picture; centred over
+    # it (not the whole canvas), the long top one covers the spot under the
+    # card (x 287-477, y 891-941).
+    long = "一二三四五六七八九十一二三四五六七"
+    dialogue = [SrtBlock(1, format_timecode_line(2.0, 3.5), f"{long}\n第二行\n第三行")]
+
+    telop_plan_for(project, ChatLayout.SIDE, dialogue)
+
+    ass = (project / "work" / "package" / "telop.ass").read_text(encoding="utf-8")
+    assert "{\\an8\\pos(382,891)}" not in ass
+    assert "突然的鏈條" in ass
 
 
 def test_unreadable_telops_are_left_out(project: Path):

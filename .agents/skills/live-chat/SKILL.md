@@ -70,7 +70,8 @@ For registry and ledger rules, see **project-architecture**.
 - `--chat-layout` (default `side`) is read only at package time, on `run`, `serial` and
   `package`. `render._LAYOUTS` maps `side`/`overlay` (`none` never renders) to a
   `_LayoutSpec` of a `_Panel` and a `ChatPlacement` (`picture: PictureBox | None`,
-  `dialogue_style`, the dialogue layer's `force_style`):
+  `dialogue: subtitles.ass.DialogueMargins`, carried as `BurnPlan.dialogue_margins`: the
+  dialogue layer's `force_style`, and where the telop placement expects it):
   - `side`: the 16:9 picture is shrunk into the left `SIDE_VIDEO_WIDTH` box. Chat fills the
     black right column with no background and scrolls out at the top edge. The dialogue moves to
     the bottom bar via `force_style` margins built from `subtitles.ass.MARGIN_H`.

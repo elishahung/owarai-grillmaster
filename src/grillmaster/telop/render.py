@@ -2,13 +2,14 @@
 
 Packaging burns it as one more `subtitles` layer, on the source timeline like
 the dialogue, so the package trim and tempo apply to it for free, and under
-the dialogue, which always stays on top: this layer knows nothing of it. A
-pale yellow keeps the cards apart from the white dialogue.
+the dialogue, which always stays on top. A pale yellow keeps the cards apart
+from the white dialogue.
 
 Every translation sits next to the card it translates, so the eye finds it
 where the card is: right below it (one side for every item of a list),
 right above only when below does not fit in the picture, and away from the
-other translations and cards up with it. Above and below are measured on
+other translations and cards up with it, and from the dialogue (which draws
+over it) where staying by its card allows. Above and below are measured on
 the card lines it shares columns with, so a tab or corner label off to one
 side does not push it away from the rest. Every card line counts by the
 text's own extent, not the OCR box around it (`ocr.text_box`), which
@@ -29,18 +30,26 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from grillmaster.core.fs import atomic_write_text
-from grillmaster.core.timecode import ass_centiseconds, format_ass_centiseconds
+from grillmaster.core.timecode import (
+    TimeRange,
+    ass_centiseconds,
+    format_ass_centiseconds,
+)
 from grillmaster.subtitles.ass import (
     CANVAS_INFO,
+    DIALOGUE_MARGINS,
     DIALOGUE_STYLE,
     FONT_NAME,
     FULL_PICTURE,
     PLAY_RES_X,
+    DialogueMargins,
     PictureBox,
     bgr,
+    dialogue_rows,
     escape_text,
     script_header,
     text_width,
+    wrapped_rows,
 )
 from grillmaster.subtitles.finalize import dialogue_line
 from grillmaster.telop.ocr import text_box
@@ -95,6 +104,13 @@ _COVER_TRANSLATION = 10.0
 _COVER_TRANSLATED = 10.0
 _COVER_CARD = 1.0
 _AWAY = 3.0
+# The dialogue draws over a translation, so a line of it the dialogue covers
+# is lost while that cue is up. Hidden for a moment, it is read the rest of
+# the time and stays by its card (owner's call: a translation away from its
+# card is worse than one under a cue), so the share of its lines and time
+# hidden counts squared; at 10 a cue up a tenth of the time still pulled
+# translations off their captions (2026-10-29, every selection).
+_COVER_DIALOGUE = 5.0
 # A spot nearer another card than its own reads as that card's translation.
 _AMBIGUOUS = 1.0
 # A rendered line's height, outline included (a vertical column's width).
@@ -161,6 +177,10 @@ class _Rect:
     def area(self) -> float:
         return (self.x1 - self.x0) * (self.y1 - self.y0)
 
+    @property
+    def transposed(self) -> _Rect:
+        return _Rect(self.y0, self.x0, self.y1, self.x1)
+
     def overlap(self, other: _Rect) -> float:
         width = min(self.x1, other.x1) - max(self.x0, other.x0)
         height = min(self.y1, other.y1) - max(self.y0, other.y0)
@@ -183,12 +203,31 @@ def _span(rects: Sequence[_Rect]) -> _Rect:
 
 
 @dataclass(frozen=True, slots=True)
+class _Cue:
+    """A dialogue line's time and the box of each row it is drawn in."""
+
+    span: TimeRange
+    rows: tuple[_Rect, ...]
+
+
+def _cues(dialogue: Sequence[SrtBlock], margins: DialogueMargins) -> list[_Cue]:
+    return [
+        _Cue(block.time_range, tuple(_Rect(*row) for row in rows))
+        for block in dialogue
+        if (rows := dialogue_rows(block.text, margins))
+    ]
+
+
+@dataclass(frozen=True, slots=True)
 class _Layout:
     """One way to set a translation: its estimated size (libass's measured
-    glyph advances) and, for a vertical card, its columns, right to left."""
+    glyph advances), the length of each of its lines (rows top to bottom,
+    each centred; columns right to left, from the top) and, for a vertical
+    card, its columns."""
 
     width: float
     height: float
+    lines: tuple[float, ...]
     columns: tuple[str, ...] = ()
 
 
@@ -233,6 +272,11 @@ class _Card:
             self.item.start < other.shown_until and other.item.start < self.shown_until
         )
 
+    def share_with(self, cue: _Cue) -> float:
+        """The share of the time this translation is up that `cue` is too."""
+        shown = TimeRange(self.item.start, self.shown_until)
+        return shown.overlap(cue.span) / shown.duration if shown.duration else 0.0
+
 
 def _columns(lines: Sequence[str], room: float) -> tuple[str, ...]:
     """Each line a column, or as few evenly filled columns as keep it within
@@ -270,11 +314,13 @@ def _vertical_layouts(lines: Sequence[str], frame: PictureBox) -> list[_Layout]:
         if parts > 1 and room < 2 * FONT_SIZE:
             break
         columns = _columns(lines, room)
+        lengths = tuple(text_width(column, FONT_SIZE) for column in columns)
         layouts.setdefault(
             columns,
             _Layout(
                 len(columns) * _LINE,
-                max(text_width(column, FONT_SIZE) for column in columns),
+                max(lengths),
+                lengths,
                 columns,
             ),
         )
@@ -303,8 +349,8 @@ def _card(item: TelopSubtitle, frame: PictureBox) -> _Card | None:
         return _Card(item, lines, own, beside, _vertical_layouts(lines, frame))
     widths = [text_width(line, FONT_SIZE) for line in lines]
     room = frame.width - 2 * MARGIN_H
-    rows = sum(max(1, math.ceil(width / room)) for width in widths)
-    layout = _Layout(min(max(widths), room), rows * _LINE)
+    rows = wrapped_rows(widths, room)
+    layout = _Layout(min(max(widths), room), len(rows) * _LINE, rows)
     return _Card(item, lines, own, beside, [layout])
 
 
@@ -314,11 +360,12 @@ def _place(
     *,
     others: Sequence[_Card],
     translations: Sequence[_Rect],
+    cues: Sequence[_Cue],
 ) -> tuple[_Rect, _Layout]:
-    """Where and how to draw `card`, among the `others` translated cards and
-    the `translations` already placed that are up with it: the cheapest spot
-    of any of its layouts (see `_spot`), a layout costing `_MORE_COLUMNS`
-    per column."""
+    """Where and how to draw `card`, among the `others` translated cards,
+    the `translations` already placed and the dialogue `cues` that are up
+    with it: the cheapest spot of any of its layouts (see `_spot`), a layout
+    costing `_MORE_COLUMNS` per column."""
     their_lines = [rect for other in others for rect in (*other.own, *other.beside)]
     cards = (card, *others)
     obstacles = [
@@ -326,11 +373,20 @@ def _place(
         *((rect, _COVER_CARD) for each in cards for rect in each.beside),
         *((rect, _COVER_TRANSLATION) for rect in translations),
     ]
-    choices = [
-        (cost + _MORE_COLUMNS * len(layout.columns), rect, layout)
-        for layout in card.layouts
-        for cost, rect in [_spot(card, layout, frame, obstacles, their_lines)]
+    dialogue = [
+        (cue.rows, share) for cue in cues if (share := card.share_with(cue)) > 0
     ]
+    choices: list[tuple[float, _Rect, _Layout]] = []
+    for layout in card.layouts:
+        cost, rect = _spot(
+            card,
+            layout,
+            frame,
+            obstacles=obstacles,
+            dialogue=dialogue,
+            their_lines=their_lines,
+        )
+        choices.append((cost + _MORE_COLUMNS * len(layout.columns), rect, layout))
     _, rect, layout = min(choices, key=lambda choice: choice[0])
     return rect, layout
 
@@ -362,11 +418,51 @@ def _preferred(
     return centred, below if below <= highest else above, {centred}, {above, below}
 
 
+def _hidden(rect: _Rect, layout: _Layout, cue: Sequence[_Rect]) -> float:
+    """The share of a translation set in `layout` at `rect` that the rows of
+    a `cue` hide: each of its lines counts for the part of its length they
+    cover at least half across (a row's height, a column's width), so a line
+    they only touch is still read."""
+    if layout.columns:
+        # A column is a row turned a quarter, the first one rightmost.
+        rect, cue = rect.transposed, [row.transposed for row in cue]
+        lines = [
+            _Rect(
+                rect.x0,
+                rect.y1 - (n + 1) * _LINE,
+                rect.x0 + length,
+                rect.y1 - n * _LINE,
+            )
+            for n, length in enumerate(layout.lines)
+        ]
+    else:
+        centre = (rect.x0 + rect.x1) / 2
+        lines = [
+            _Rect(
+                centre - length / 2,
+                rect.y0 + n * _LINE,
+                centre + length / 2,
+                rect.y0 + (n + 1) * _LINE,
+            )
+            for n, length in enumerate(layout.lines)
+        ]
+    hidden = 0.0
+    for line in lines:
+        over = [row for row in cue if line.overlap(row) > 0]
+        across = sum(min(line.y1, row.y1) - max(line.y0, row.y0) for row in over)
+        if across >= _LINE / 2:
+            along = max(min(line.x1, row.x1) - max(line.x0, row.x0) for row in over)
+            hidden += along / max(1.0, line.x1 - line.x0)
+    return hidden / len(lines)
+
+
 def _spot(
     card: _Card,
     layout: _Layout,
     frame: PictureBox,
+    *,
     obstacles: Sequence[tuple[_Rect, float]],
+    dialogue: Sequence[tuple[Sequence[_Rect], float]],
     their_lines: Sequence[_Rect],
 ) -> tuple[float, _Rect]:
     """The cheapest spot for `card` set in `layout`, and its cost: the share
@@ -374,10 +470,13 @@ def _spot(
     translated or not, and the translations) the two overlap, weighted
     (another translation most), so half a short card line hidden counts as
     half however wide the translation; its distance from the preferred
-    spot; and being nearer another card's line
-    than its own. Spots tried: the preferred ones or against a side edge of
-    any obstacle, times the preferred ones or against a top or bottom edge
-    of any obstacle, kept inside the picture."""
+    spot; and being nearer another card's line than its own. Spots tried:
+    the preferred ones or against a side edge of any obstacle, times the
+    preferred ones or against a top or bottom edge of any obstacle, kept
+    inside the picture. The `dialogue` (each cue's rows and share of the
+    time) then adds the share of its lines and time it hides, squared, to
+    that spot and to those right by the card (against a cue's edges too),
+    and the cheapest of them wins."""
     width, height = layout.width, layout.height
     left = frame.x + MARGIN_H
     right = frame.x + frame.width - MARGIN_H - width
@@ -387,13 +486,21 @@ def _spot(
     preferred_x, preferred_y, lefts, tops = _preferred(
         card, layout, left=left, right=right, lowest=lowest, highest=highest
     )
-    for rect, _ in obstacles:
-        lefts |= {rect.x0 - _GAP - width, rect.x1 + _GAP}
-        tops |= {rect.y0 - _GAP - height, rect.y1 + _GAP}
-    # Kept inside the picture before pairing, so the edges past it collapse
-    # into one spot instead of repeating it.
-    lefts = {min(max(x0, left), right) for x0 in lefts}
-    tops = {min(max(top, lowest), highest) for top in tops}
+
+    def spots(edges: Sequence[_Rect]) -> list[_Rect]:
+        xs, ys = set(lefts), set(tops)
+        for rect in edges:
+            xs |= {rect.x0 - _GAP - width, rect.x1 + _GAP}
+            ys |= {rect.y0 - _GAP - height, rect.y1 + _GAP}
+        # Kept inside the picture before pairing, so the edges past it
+        # collapse into one spot instead of repeating it.
+        xs = {min(max(x0, left), right) for x0 in xs}
+        ys = {min(max(top, lowest), highest) for top in ys}
+        return [
+            _Rect(x0, top, x0 + width, top + height)
+            for x0 in sorted(xs)
+            for top in sorted(ys)
+        ]
 
     # Every spot has the same area, so each obstacle's weight per pixel
     # covered is fixed (a hand-edited box may have none: count it a pixel).
@@ -401,21 +508,34 @@ def _spot(
         (o, weight / max(1.0, min(width * height, o.area))) for o, weight in obstacles
     ]
 
-    def cost(rect: _Rect) -> float:
+    def placed(rect: _Rect) -> float:
         covered = sum(weight * rect.overlap(o) for o, weight in per_pixel)
         away = (abs(rect.y0 - preferred_y) + abs(rect.x0 - preferred_x)) / frame.height
         nearest = card.distance(rect)
         ambiguous = any(rect.distance(line) < nearest for line in their_lines)
         return covered + _AWAY * away + _AMBIGUOUS * ambiguous
 
-    best = min(
-        (
-            _Rect(x0, top, x0 + width, top + height)
-            for x0 in sorted(lefts)
-            for top in sorted(tops)
-        ),
-        key=cost,
-    )
+    def hidden(rect: _Rect) -> float:
+        return sum(share * _hidden(rect, layout, cue) for cue, share in dialogue)
+
+    def cost(rect: _Rect) -> float:
+        return placed(rect) + _COVER_DIALOGUE * hidden(rect) ** 2
+
+    # The dialogue only moves a translation it hides, and only to another
+    # spot right by the card (another side, along an edge), never away from
+    # it (owner's call: a translation away from its card is worse than one
+    # under a cue).
+    edges = [rect for rect, _ in obstacles]
+    own = min(spots(edges), key=placed)
+    if not (lost := hidden(own)):
+        return placed(own), own
+    cue_edges = [row for rows, _ in dialogue for row in rows]
+    by_card = [
+        rect
+        for rect in spots([*edges, *cue_edges])
+        if card.distance(rect) <= _GAP + 1 and hidden(rect) < lost
+    ]
+    best = min([own, *by_card], key=cost)
     return cost(best), best
 
 
@@ -430,7 +550,9 @@ def _anchor(rect: _Rect, card: _Card) -> str:
     return f"{{\\an8\\pos({x:.0f},{rect.y0:.0f})}}"
 
 
-def _events(subtitles: TelopSubtitles, frame: PictureBox) -> list[str]:
+def _events(
+    subtitles: TelopSubtitles, frame: PictureBox, cues: Sequence[_Cue]
+) -> list[str]:
     # Event margins keep the wrapping width inside the picture.
     margins = (
         f"{frame.x + MARGIN_H},{PLAY_RES_X - frame.x - frame.width + MARGIN_H},"
@@ -453,6 +575,7 @@ def _events(subtitles: TelopSubtitles, frame: PictureBox) -> list[str]:
                 if other is not card and card.card_up_with(other)
             ],
             translations=[rect for other, rect in placed if other.shown_with(card)],
+            cues=cues,
         )
         placed.append((card, rect))
         start = format_ass_centiseconds(ass_centiseconds(card.item.start))
@@ -477,9 +600,16 @@ def _events(subtitles: TelopSubtitles, frame: PictureBox) -> list[str]:
 
 
 def render_telop_ass(
-    subtitles: TelopSubtitles, frame: PictureBox = FULL_PICTURE
+    subtitles: TelopSubtitles,
+    frame: PictureBox = FULL_PICTURE,
+    *,
+    dialogue: Sequence[SrtBlock] = (),
+    margins: DialogueMargins = DIALOGUE_MARGINS,
 ) -> str:
-    return HEADER + "".join(f"{event}\n" for event in _events(subtitles, frame))
+    """The telop layer inside `frame`, kept off the `dialogue` set within
+    `margins` where it can be."""
+    events = _events(subtitles, frame, _cues(dialogue, margins))
+    return HEADER + "".join(f"{event}\n" for event in events)
 
 
 def render_with_dialogue(
@@ -489,17 +619,24 @@ def render_with_dialogue(
     show one subtitle track: the telops come first, so the dialogue draws on
     top of them as it does when burned in."""
     events = [
-        *_events(subtitles, FULL_PICTURE),
+        *_events(subtitles, FULL_PICTURE, _cues(dialogue, DIALOGUE_MARGINS)),
         *(dialogue_line(block) for block in dialogue),
     ]
     return WITH_DIALOGUE_HEADER + "".join(f"{event}\n" for event in events)
 
 
 def write_telop_ass(
-    subtitles: TelopSubtitles, path: Path, frame: PictureBox = FULL_PICTURE
+    subtitles: TelopSubtitles,
+    path: Path,
+    frame: PictureBox,
+    *,
+    dialogue: Sequence[SrtBlock],
+    margins: DialogueMargins,
 ) -> None:
     # Atomic and BOM-less UTF-8, like the dialogue ASS.
-    atomic_write_text(path, render_telop_ass(subtitles, frame))
+    atomic_write_text(
+        path, render_telop_ass(subtitles, frame, dialogue=dialogue, margins=margins)
+    )
 
 
 def write_with_dialogue(

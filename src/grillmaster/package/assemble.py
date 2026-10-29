@@ -21,6 +21,7 @@ from pydantic import ValidationError
 
 from grillmaster.core.fs import staged_dir
 from grillmaster.core.json_artifact import read_model
+from grillmaster.core.srt import read_srt_file
 from grillmaster.live_chat.layout import ChatLayout
 from grillmaster.live_chat.render import chat_placement, write_chat_ass
 from grillmaster.live_chat.schema import TranslatedChatLog
@@ -154,24 +155,33 @@ def build_burn_plan(
         return BurnPlan.dialogue(dialogue)
     logger.info(f"Rendered {layout} chat panel: {chat_ass}")
     return BurnPlan(
-        SubtitleLayer(dialogue, placement.dialogue_style),
+        SubtitleLayer(dialogue),
         under=(SubtitleLayer(chat_ass),),
         picture=placement.picture,
+        dialogue_margins=placement.dialogue,
     )
 
 
-def with_telops(plan: BurnPlan, telop: Path, telop_ass: Path) -> BurnPlan:
+def with_telops(
+    plan: BurnPlan, telop: Path, telop_ass: Path, dialogue_srt: Path
+) -> BurnPlan:
     """`plan` with the translated telops, when `telop` exists: rendered to
-    `telop_ass` inside the (possibly shrunk) picture and burned under the
-    dialogue, which stays the top layer. Ones that cannot be rendered are
-    left out with a warning."""
+    `telop_ass` inside the (possibly shrunk) picture, kept off the dialogue
+    (`dialogue_srt`) where it is set, and burned under it, which stays the
+    top layer. Ones that cannot be rendered are left out with a warning."""
     if not telop.exists():
         return plan
     try:
         write_telop_ass(
-            read_model(telop, TelopSubtitles), telop_ass, plan.picture or FULL_PICTURE
+            read_model(telop, TelopSubtitles),
+            telop_ass,
+            plan.picture or FULL_PICTURE,
+            dialogue=read_srt_file(dialogue_srt),
+            margins=plan.dialogue_margins,
         )
-    except (OSError, UnicodeDecodeError, ValidationError) as error:
+    # A malformed SRT raises ValueError, as does an invalid selection
+    # (pydantic's ValidationError is one).
+    except (OSError, UnicodeDecodeError, ValueError) as error:
         logger.warning(f"Telops skipped ({telop}): {error}")
         return plan
     logger.info(f"Rendered telops: {telop_ass}")

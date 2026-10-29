@@ -34,7 +34,7 @@ from grillmaster.package.render import (
     run_in_pool,
     split_range,
 )
-from grillmaster.subtitles.ass import PictureBox
+from grillmaster.subtitles.ass import DialogueMargins, PictureBox
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -53,15 +53,16 @@ OUTPUT = "setpts=PTS-STARTPTS,setpts=PTS/1.03,format=yuv420p,fps=29.94"
 TRIM = "trim=start=3.000:duration=10.000"
 SIDE_PLAN_LAYERS = (
     "subtitles=work/package/chat.ass,"
-    "subtitles=video.cht.ass:force_style='MarginR=394,MarginV=24'"
+    "subtitles=video.cht.ass:force_style='MarginL=10,MarginR=394,MarginV=24'"
 )
 
 
 def side_plan(root: Path) -> BurnPlan:
     return BurnPlan(
-        SubtitleLayer(root / "video.cht.ass", "MarginR=394,MarginV=24"),
+        SubtitleLayer(root / "video.cht.ass"),
         under=(SubtitleLayer(root / "work" / "package" / "chat.ass"),),
         picture=PictureBox(0, 108, 1536, 864),
+        dialogue_margins=DialogueMargins(right=394, bottom=24),
     )
 
 

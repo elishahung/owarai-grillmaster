@@ -10,7 +10,7 @@ from tests.live_chat.conftest import golden_log
 from grillmaster.live_chat import render
 from grillmaster.live_chat.layout import ChatLayout
 from grillmaster.live_chat.schema import TranslatedChatLog, TranslatedChatMessage
-from grillmaster.subtitles.ass import PictureBox
+from grillmaster.subtitles.ass import DIALOGUE_MARGINS, DialogueMargins, PictureBox
 
 _FIXTURES = Path(__file__).parent.parent / "fixtures" / "live_chat"
 
@@ -103,12 +103,13 @@ def test_side_layout_letterboxes_the_picture_beside_the_chat() -> None:
 
     assert placement.picture == PictureBox(x=0, y=108, width=1536, height=864)
     # Dialogue sits in the bottom bar, centred over the picture.
-    assert placement.dialogue_style == "MarginR=394,MarginV=24"
+    assert placement.dialogue == DialogueMargins(right=394, bottom=24)
+    assert placement.dialogue.force_style == "MarginL=10,MarginR=394,MarginV=24"
 
 
 def test_overlay_layout_keeps_the_full_frame() -> None:
     assert render.chat_placement(ChatLayout.OVERLAY) == render.ChatPlacement(
-        picture=None, dialogue_style=None
+        picture=None, dialogue=DIALOGUE_MARGINS
     )
 
 

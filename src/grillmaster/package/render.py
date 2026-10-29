@@ -34,6 +34,7 @@ from grillmaster.media import probe
 from grillmaster.media.ffmpeg import ffmpeg
 from grillmaster.media.video import concat_copy
 from grillmaster.package.errors import PackageError, RenderAbortedError
+from grillmaster.subtitles.ass import DIALOGUE_MARGINS
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
@@ -41,7 +42,7 @@ if TYPE_CHECKING:
     from grillmaster.events.bus import EventSink
     from grillmaster.events.progress import Advance
     from grillmaster.media.ffmpeg import FfmpegRunner
-    from grillmaster.subtitles.ass import PictureBox
+    from grillmaster.subtitles.ass import DialogueMargins, PictureBox
 
 BURN_IN_DURATION_TOLERANCE_SECONDS = 2.0
 PACKAGE_TEMPO = 1.03
@@ -167,16 +168,13 @@ def package_output_duration(source_duration: float) -> float:
 
 @dataclass(frozen=True, slots=True)
 class SubtitleLayer:
-    """One ASS file to burn, optionally with libass style overrides.
-
-    `force_style` is the `subtitles` filter's, e.g. `MarginR=394,MarginV=24`.
-    """
+    """One ASS file to burn."""
 
     path: Path
-    force_style: str | None = None
 
-    def filter(self, cwd: Path) -> str:
-        """The `subtitles` filter naming the file relative to `cwd`.
+    def filter(self, cwd: Path, force_style: str | None = None) -> str:
+        """The `subtitles` filter naming the file relative to `cwd`, with
+        libass style overrides (`force_style`, e.g. `MarginV=24`) if any.
 
         Renders run with `cwd` at the video's directory: ffmpeg's filter
         syntax cannot take an absolute Windows path (the drive colon collides
@@ -184,9 +182,9 @@ class SubtitleLayer:
         escaping entirely.
         """
         name = self.path.relative_to(cwd).as_posix()
-        if self.force_style is None:
+        if force_style is None:
             return f"subtitles={name}"
-        return f"subtitles={name}:force_style='{self.force_style}'"
+        return f"subtitles={name}:force_style='{force_style}'"
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,12 +195,13 @@ class BurnPlan:
     is shrunk into that box on a black canvas of the package frame size, so
     the output still concats with full-frame segments. The `under` layers
     then burn in order (later ones draw on top), and `top`, the dialogue,
-    last: nothing may cover it.
+    last: nothing may cover it, set where `dialogue_margins` puts it.
     """
 
     top: SubtitleLayer
     under: tuple[SubtitleLayer, ...] = ()
     picture: PictureBox | None = None
+    dialogue_margins: DialogueMargins = DIALOGUE_MARGINS
 
     def __post_init__(self) -> None:
         box = self.picture
@@ -229,6 +228,13 @@ class BurnPlan:
         """Every layer in burn order, the dialogue last."""
         return (*self.under, self.top)
 
+    def filters(self, cwd: Path) -> list[str]:
+        """The `subtitles` filter of every layer, in burn order."""
+        return [
+            *(layer.filter(cwd) for layer in self.under),
+            self.top.filter(cwd, self.dialogue_margins.force_style),
+        ]
+
     @property
     def canvas_filter(self) -> str | None:
         """Filters between the look and the subtitles, if any."""
@@ -254,7 +260,7 @@ def package_video_chain(burn: BurnPlan, trim_filter: str, cwd: Path) -> str:
     return (
         f"{_PACKAGE_VIDEO_FILTER},"
         + (f"{canvas}," if canvas else "")
-        + "".join(f"{layer.filter(cwd)}," for layer in burn.layers)
+        + "".join(f"{layer}," for layer in burn.filters(cwd))
         + f"{trim_filter},"
         f"setpts=PTS-STARTPTS,"
         f"{_PACKAGE_VIDEO_OUTPUT}"

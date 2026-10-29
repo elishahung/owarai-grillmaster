@@ -28,10 +28,12 @@ from grillmaster.core.fs import atomic_write_text
 from grillmaster.core.timecode import ass_centiseconds, format_ass_centiseconds
 from grillmaster.live_chat.layout import ChatLayout
 from grillmaster.subtitles.ass import (
+    DIALOGUE_MARGINS,
     FONT_NAME,
     MARGIN_H,
     PLAY_RES_X,
     PLAY_RES_Y,
+    DialogueMargins,
     PictureBox,
     bgr,
     char_width,
@@ -103,12 +105,12 @@ class ChatPlacement:
     """What a layout decides besides the panel itself.
 
     `picture` is the box the picture is letterboxed into (`None` keeps the
-    full frame); `dialogue_style` is the `force_style` for the dialogue ASS
-    layer (`None` burns it unchanged; `video.cht.ass` is never rewritten).
+    full frame); `dialogue` is where the dialogue ASS layer is set (its style
+    margins overridden at burn time; `video.cht.ass` is never rewritten).
     """
 
     picture: PictureBox | None
-    dialogue_style: str | None
+    dialogue: DialogueMargins = DIALOGUE_MARGINS
 
 
 @dataclass(frozen=True)
@@ -175,9 +177,8 @@ _LAYOUTS = {
             ),
             # Same size in the bottom bar, centred over the picture rather
             # than the whole canvas.
-            dialogue_style=(
-                f"MarginR={SIDE_COLUMN_WIDTH + MARGIN_H},"
-                f"MarginV={SIDE_DIALOGUE_MARGIN_V}"
+            dialogue=DialogueMargins(
+                right=SIDE_COLUMN_WIDTH + MARGIN_H, bottom=SIDE_DIALOGUE_MARGIN_V
             ),
         ),
     ),
@@ -186,7 +187,7 @@ _LAYOUTS = {
         panel=_Panel(
             left=1530, top=60, bottom=870, width=360, color="101010", alpha="60"
         ),
-        placement=ChatPlacement(picture=None, dialogue_style=None),
+        placement=ChatPlacement(picture=None),
     ),
 }
 

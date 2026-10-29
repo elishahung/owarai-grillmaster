@@ -7,7 +7,13 @@ import pytest
 
 from grillmaster.core.srt import SrtBlock
 from grillmaster.core.timecode import format_timecode_line
-from grillmaster.subtitles.ass import DIALOGUE_STYLE_NAME, PictureBox, text_width
+from grillmaster.subtitles.ass import (
+    DIALOGUE_MARGINS,
+    DIALOGUE_STYLE_NAME,
+    DialogueMargins,
+    PictureBox,
+    text_width,
+)
 from grillmaster.subtitles.finalize import dialogue_line
 from grillmaster.telop.ocr import text_box
 from grillmaster.telop.render import (
@@ -130,6 +136,137 @@ def test_the_dialogue_draws_over_the_telops_in_one_script():
     telop, line = events(ass)
     assert f",{STYLE_NAME},,60,60,28,," in telop
     assert line == dialogue_line(dialogue[0])
+
+
+# A group name over a name plate, low in the picture, and the dialogue up
+# while it is (real boxes and times).
+PLATE: list[Box] = [(0.401, 0.7213, 0.5995, 0.7639), (0.4198, 0.7583, 0.5823, 0.8583)]
+PLATE_ZH = "Korokoro Chikichiki Peppers\nNadal"
+PLATE_DIALOGUE = [
+    SrtBlock(1, format_timecode_line(221.46, 222.44), "你給我回去啦"),
+    SrtBlock(2, format_timecode_line(222.52, 223.37), "幹嘛要我回去"),
+    SrtBlock(3, format_timecode_line(223.70, 224.20), "我剛剛都有在配合吧"),
+]
+
+
+def plate_anchor(
+    dialogue: Sequence[SrtBlock], margins: DialogueMargins = DIALOGUE_MARGINS
+) -> tuple[int, int, int]:
+    plate = subtitle(PLATE_ZH, boxes=PLATE, start=221.65, end=223.85)
+    ass = render_telop_ass(
+        TelopSubtitles(items=[plate]), dialogue=dialogue, margins=margins
+    )
+    ((alignment, x, y),) = anchors(ass)
+    return alignment, x, y
+
+
+def test_a_translation_the_dialogue_would_cover_goes_above_its_card():
+    # Below the plate its second line sat under the dialogue drawn on top.
+    assert plate_anchor(PLATE_DIALOGUE) == (2, 960, round(0.7213 * 1080) - 8)
+
+
+def test_a_translation_stays_below_while_the_dialogue_is_mostly_not_up():
+    # Only the last cue, up for the last tenth of the card.
+    alignment, _, _ = plate_anchor(PLATE_DIALOGUE[2:])
+
+    assert alignment == 8
+    assert plate_anchor(PLATE_DIALOGUE[2:]) == plate_anchor([])
+
+
+def test_a_translation_the_dialogue_only_touches_stays_by_its_card():
+    # Above a low caption, two rows of dialogue reach a few pixels into it.
+    caption = subtitle("請務必加油", boxes=[(0.2, 0.86, 0.8, 0.95)], start=1.0, end=4.0)
+    dialogue = [SrtBlock(1, format_timecode_line(1.0, 4.0), "-第一位\n-第二位講話")]
+
+    with_dialogue = render_telop_ass(TelopSubtitles(items=[caption]), dialogue=dialogue)
+
+    assert anchors(with_dialogue) == anchors(
+        render_telop_ass(TelopSubtitles(items=[caption]))
+    )
+
+
+def cues(*spans: tuple[float, float, str]) -> list[SrtBlock]:
+    return [
+        SrtBlock(n, format_timecode_line(start, end), text)
+        for n, (start, end, text) in enumerate(spans, 1)
+    ]
+
+
+def test_the_dialogue_never_pulls_a_translation_off_its_caption():
+    # A low caption up 15 s; the last cue has two rows reaching its
+    # translation's spot above it (real boxes and times).
+    caption = subtitle(
+        "太田＆Nadal：節奏滿分，內容零分",  # noqa: RUF001 - the selection's text
+        boxes=[(0.28125, 0.912, 0.728125, 0.975)],
+        start=783.15,
+        end=797.85,
+    )
+    dialogue = cues(
+        (783.908, 785.208, "冷場的狀態不是嗎！"),
+        (785.348, 787.208, "不要在我吐槽的時候特寫我啦！"),
+        (787.928, 790.168, "拜託別在我吐槽的時候特寫我啦！"),
+        (790.668, 792.328, "節奏倒是一百分呢"),
+        (794.008, 798.508, "因為以前跟土田一起合作過一個叫\n《檢索醬》的節目啦"),
+    )
+    subtitles = TelopSubtitles(items=[caption])
+
+    with_dialogue = render_telop_ass(subtitles, dialogue=dialogue)
+
+    assert anchors(with_dialogue) == anchors(render_telop_ass(subtitles))
+
+
+def test_a_translation_under_the_dialogue_stays_by_its_card():
+    # A small plate under the dialogue, a big caption above it; away from
+    # the plate, the translation read as the caption's (real boxes).
+    caption = subtitle(
+        "憑依型角色製造機\nSchool Zone",
+        boxes=[(0.2266, 0.5519, 0.775, 0.6806), (0.1625, 0.662, 0.7495, 0.9398)],
+        start=440.25,
+        end=443.25,
+        id=279,
+    )
+    plate = subtitle(
+        "參賽編號1",
+        boxes=[(0.3995, 0.9037, 0.6, 0.9713)],
+        start=440.25,
+        end=443.25,
+        id=280,
+    )
+    dialogue = cues((440.708, 443.208, "第二輪首先是 School Zone"))
+    subtitles = TelopSubtitles(items=[caption, plate])
+
+    with_dialogue = render_telop_ass(subtitles, dialogue=dialogue)
+
+    assert anchors(with_dialogue) == anchors(render_telop_ass(subtitles))
+
+
+def test_the_dialogue_beside_a_translation_does_not_move_it():
+    # A plate low on the left; a short cue up the whole time, centred, clear
+    # of the translation's spot but offering its edges as spots.
+    plate = subtitle(
+        "渡邊（48歲）", boxes=[(0.05, 0.84, 0.25, 0.9)], start=1.0, end=4.0
+    )
+    dialogue = cues((1.0, 4.0, "好"))
+    subtitles = TelopSubtitles(items=[plate])
+
+    with_dialogue = render_telop_ass(subtitles, dialogue=dialogue)
+
+    assert anchors(with_dialogue) == anchors(render_telop_ass(subtitles))
+
+
+def test_the_dialogue_is_avoided_where_its_layout_sets_it():
+    # Set off to the left, the dialogue is clear of the spot below the plate.
+    alignment, _, _ = plate_anchor(PLATE_DIALOGUE, DialogueMargins(right=1100))
+
+    assert alignment == 8
+
+
+def test_the_translation_in_one_script_with_the_dialogue_avoids_it():
+    plate = subtitle(PLATE_ZH, boxes=PLATE, start=221.65, end=223.85)
+
+    ass = render_with_dialogue(PLATE_DIALOGUE, TelopSubtitles(items=[plate]))
+
+    assert anchors(ass) == [plate_anchor(PLATE_DIALOGUE)]
 
 
 def test_translations_of_cards_side_by_side_stay_in_their_columns():

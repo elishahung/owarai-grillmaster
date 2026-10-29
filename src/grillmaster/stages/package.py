@@ -109,7 +109,12 @@ def _run(ctx: StageContext) -> str:
         layout=ctx.options.chat_layout,
     )
     if ctx.options.burn_telops:
-        burn = with_telops(burn, layout.telop_cht_json, layout.telop_ass)
+        burn = with_telops(
+            burn,
+            layout.telop_cht_json,
+            layout.telop_ass,
+            layout.cht_srt,
+        )
     with deliverable_dir(destination) as target:
         copy_cover(cover=layout.cover, poster=layout.poster, target_dir=target)
         write_info(

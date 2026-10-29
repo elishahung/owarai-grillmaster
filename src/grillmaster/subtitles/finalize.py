@@ -8,6 +8,10 @@ upstream can undo them:
   glossary's mixed Chinese-Latin names are rewritten to their canonical form,
   with exactly one half-width space against adjacent Han/kana.
 - Netflix Traditional Chinese punctuation:
+  - a spaced or punctuation-led slash, half- or full-width, marks a speaker
+    change: in a one-line block with one such slash it becomes two `-` lines
+    (`誰啊？/山內` → `-誰啊？` / `-山內`), otherwise one unspaced full-width
+    slash, never a comma; an unspaced one between words (`1/2`) stays;
   - strip `，、；。` and surrounding whitespace at line edges (no terminal
     commas or periods);
   - normalize a leading speaker dash to a half-width `-` with no space;
@@ -54,12 +58,22 @@ _QUOTE_TAIL_PUNCT = re.compile(r"[\s，、；。]+(?=[」』])")
 # Full-width punctuation carries no adjacent spaces. Refine writes two
 # clauses on one line as "好帥。 很有型", and the "。"→"，" pass would otherwise
 # leave "好帥， 很有型".
-_FW_PUNCT_SPACE = re.compile(r"[ \t　]*([，、；。：！？])[ \t　]*")
+_FW_PUNCT = "，、；。：！？"
+_FW_PUNCT_SPACE = re.compile(rf"[ \t　]*([{_FW_PUNCT}])[ \t　]*")
 # Two-speaker dialogue uses an English hyphen with no space after it. Any
 # leading hyphen/dash variant (incl. full-width "－", en/em dash, minus) plus
 # surrounding spaces becomes "-". A leading "--" (interruption) keeps its
 # second dash: only the first char is matched.
 _SPEAKER_DASH = re.compile(r"^[ \t　]*[-‐-―−－][ \t　]*")  # noqa: RUF001 - dash variants on purpose
+# Models split two speakers with a half- or full-width slash instead of a
+# dash line ("解散了。/那當然", "誰啊？/ 山內"). A slash after sentence
+# punctuation or a closing bracket, or a spaced one, is such a turn change.
+_SEPARATOR_SLASH = re.compile(r"[ \t　]*[/／][ \t　]*")  # noqa: RUF001 - full-width slash on purpose
+_SENTENCE_PUNCT = frozenset(f"{_FW_PUNCT}…?!.")
+_CLOSING_BRACKETS = frozenset("」』）)》")
+# Stands in for a turn-change slash until the block's shape is known.
+_TURN = "\x1f"
+_TURN_EDGE = re.compile(rf"[\s，、；。]*{_TURN}[\s，、；。]*")
 
 # Han + kana letters that a Latin-containing name unit is separated from by
 # one half-width space. CJK punctuation, the middle dot (U+30FB), the
@@ -167,6 +181,42 @@ def build_name_spacer(units: Iterable[str]) -> Callable[[str], str]:
 # --- punctuation ------------------------------------------------------------
 
 
+def _split_turns(text: str) -> list[str]:
+    """The lines of `text` with turn-change slashes resolved: two turns of
+    one line each (`A／B`, or `A` and `／B` on two lines) become two `-`
+    lines; more turns keep each inner slash as a full-width one, as a comma
+    would merge the voices, and drop those at a line edge."""  # noqa: RUF002
+    lines = [_mark_turns(line) for line in text.split("\n")]
+    turns = re.split(rf"\s*{_TURN}\s*", "\n".join(lines).strip(f"{_TURN} \t　"))
+    if len(turns) == 2 and not any("\n" in turn for turn in turns):  # noqa: PLR2004
+        return [f"-{_SPEAKER_DASH.sub('', turn)}" for turn in turns]
+    return [_TURN_EDGE.sub("／", line.strip(_TURN)) for line in lines]  # noqa: RUF001
+
+
+def _mark_turns(line: str) -> str:
+    """`line` with each turn-change slash as `_TURN`; one between words
+    (`1/2`, `和平／剪刀手`, `AC / DC`) stays."""  # noqa: RUF002
+
+    def repl(match: re.Match[str]) -> str:
+        before = line[match.start() - 1] if match.start() > 0 else ""
+        after = line[match.end()] if match.end() < len(line) else ""
+        spaced = len(match.group(0)) > 1 or before in _CLOSING_BRACKETS
+        if (
+            not before
+            or not after
+            or before in _SENTENCE_PUNCT
+            or (spaced and not (_is_ascii_word(before) and _is_ascii_word(after)))
+        ):
+            return _TURN
+        return match.group(0)
+
+    return _SEPARATOR_SLASH.sub(repl, line)
+
+
+def _is_ascii_word(char: str) -> bool:
+    return char.isascii() and char.isalnum()
+
+
 def clean_line(line: str) -> str:
     line = _LINE_EDGE_PUNCT.sub("", line)
     line = _SPEAKER_DASH.sub("-", line)
@@ -177,7 +227,7 @@ def clean_line(line: str) -> str:
 
 
 def clean_text(text: str) -> str:
-    return "\n".join(clean_line(line) for line in text.split("\n"))
+    return "\n".join(clean_line(line) for line in _split_turns(text))
 
 
 # --- over-wide lines --------------------------------------------------------

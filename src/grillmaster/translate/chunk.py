@@ -8,7 +8,8 @@ blank lines and lines holding only a speaker dash (`-`) are debris (a blank
 line would break the SRT, a lone dash is what models leave after a
 two-speaker line): rebuilding drops them, and the
 validator judges a block's text as it will be emitted, so a block that is
-nothing but debris counts as empty and goes back for repair.
+nothing but debris counts as empty and goes back for repair. A chunk the
+model wrapped nearly block by block in「」is unwrapped on rebuilding.
 
 `translate_chunks` runs a whole batch: each chunk's `translation.json` is
 its fixed-name cache, written the moment its session is accepted.
@@ -52,6 +53,8 @@ _DEBRIS_LINES = frozenset({"", "-"})
 # Source blocks before a chunk shown read-only: enough to carry who was just
 # called on or what was asked across a chunk seam.
 PRECEDING_CONTEXT_BLOCKS = 10
+WRAPPED_CHUNK_SHARE = 0.7
+_INNER_QUOTES = str.maketrans("『』", "「」")
 
 
 class ChunkLine(StrictModel):
@@ -288,8 +291,40 @@ def rebuild_blocks(chunk: Chunk, translation: ChunkTranslation) -> list[SrtBlock
     `translation` must already have passed `translation_problems` (as the
     task validator or the cache check); it is not checked again here.
     """
-    texts = {line.index: clean_text(line.text) for line in translation.blocks}
+    texts = unwrap_quoted_chunk(
+        {line.index: clean_text(line.text) for line in translation.blocks}
+    )
     return [replace(block, text=texts[block.index]) for block in chunk.blocks]
+
+
+def unwrap_quoted_chunk(texts: dict[int, str]) -> dict[int, str]:
+    """`texts` with the outer「」taken off every wholly quoted block (and its
+    『』 back to「」) when most of the chunk is wrapped that way, else as is.
+
+    Wrapping a whole chunk is a model quirk, not quoted speech: across 5,970
+    archived chunks the share of wholly quoted blocks was under 50 % in all
+    but 26, and those 26 were 70 % or more (2026-10-29).
+    """
+    wrapped = {index for index, text in texts.items() if _quoted_whole(text)}
+    if len(wrapped) < WRAPPED_CHUNK_SHARE * len(texts):
+        return texts
+    return {
+        index: text[1:-1].translate(_INNER_QUOTES) if index in wrapped else text
+        for index, text in texts.items()
+    }
+
+
+def _quoted_whole(text: str) -> bool:
+    """Whether one「」pair opens and closes `text` (not「A」和「B」) around
+    something (a bare「」stays: unwrapped it would be an empty block)."""
+    if not (text.startswith("「") and text.endswith("」") and text[1:-1].strip()):
+        return False
+    depth = 0
+    for at, char in enumerate(text):
+        depth += (char == "「") - (char == "」")
+        if depth == 0:
+            return at == len(text) - 1
+    return False
 
 
 def merge_chunks(chunks: Iterable[Sequence[SrtBlock]]) -> list[SrtBlock]:

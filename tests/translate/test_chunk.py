@@ -11,6 +11,7 @@ from grillmaster.agents.schema import strict_json_schema
 from grillmaster.agents.task import SchemaOutput
 from grillmaster.core.model_spec import Role
 from grillmaster.core.srt import SrtBlock
+from grillmaster.subtitles.finalize import clean_text as finalize_text
 from grillmaster.translate.chunk import (
     ChunkLine,
     ChunkTranslation,
@@ -20,6 +21,7 @@ from grillmaster.translate.chunk import (
     merge_chunks,
     rebuild_blocks,
     task_name,
+    unwrap_quoted_chunk,
 )
 
 if TYPE_CHECKING:
@@ -103,6 +105,53 @@ def test_rebuild_cleans_dangling_speaker_dashes(chunk: Chunk) -> None:
         chunk, _translation((1, "- 給我適可而止。\n-"), (2, "二"), (3, "三"))
     )
     assert blocks[0].text == "- 給我適可而止。"
+
+
+def test_a_mostly_wrapped_chunk_is_unwrapped() -> None:
+    texts = {
+        1: "「解散了。」",
+        2: "「『拜託了』這樣」",
+        3: "「畢竟，\n還以為」",
+        4: "四",
+    }
+    assert unwrap_quoted_chunk(texts) == {
+        1: "解散了。",
+        2: "「拜託了」這樣",
+        3: "畢竟，\n還以為",
+        4: "四",
+    }
+
+
+@pytest.mark.parametrize(
+    "texts",
+    [
+        pytest.param(
+            {1: "「解散了。」", 2: "「對」", 3: "三", 4: "四"}, id="half-wrapped"
+        ),
+        pytest.param(
+            {1: "「A」和「B」", 2: "「A」和「B」", 3: "「C」"},
+            id="separate-quotes-are-not-a-wrap",
+        ),
+        pytest.param({1: "「」", 2: "「」", 3: "「」"}, id="bare-quotes"),
+    ],
+)
+def test_a_chunk_quoting_some_lines_is_kept(texts: dict[int, str]) -> None:
+    assert unwrap_quoted_chunk(texts) == texts
+
+
+def test_rebuild_unwraps_a_wrapped_chunk(chunk: Chunk) -> None:
+    blocks = rebuild_blocks(
+        chunk, _translation((1, "「一」"), (2, "「二」"), (3, "「三」"))
+    )
+    assert [block.text for block in blocks] == ["一", "二", "三"]
+
+
+def test_a_wrapped_exchange_ends_as_dialogue_lines(chunk: Chunk) -> None:
+    blocks = rebuild_blocks(
+        chunk,
+        _translation((1, "「解散了。／那當然。」"), (2, "「二」"), (3, "「三」")),  # noqa: RUF001
+    )
+    assert finalize_text(blocks[0].text) == "-解散了\n-那當然"
 
 
 def test_merge_renumbers_from_one() -> None:

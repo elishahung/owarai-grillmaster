@@ -92,7 +92,9 @@ would never be delivered) with a warning naming `grill reset --from proofread`.
 `video.mp4`'s stem so players auto-load them (declared `outputs`; no
 `.work/12_finalize/`). Deterministic, the last pass over the dialogue: name spacing (effective briefing
 names + curated Han/kana-Latin `zh` from the fixed glossary, longest first),
-then Netflix-TC punctuation, then `fit_text`: a line wider than the full
+then Netflix-TC punctuation (incl. a model's spaced or punctuation-led
+`/`/`／` speaker separator: two `-` lines when that fits a one-line block,
+else one `／`, never a comma; unspaced `1/2`, `A／B` stay), then `fit_text`: a line wider than the full
 canvas (1900 px) is broken into rows (libass breaks only at a space, so CJK
 ran off both edges), its row-final `，、；。` dropped. The break lives in the
 text (SRT + ASS, the archived deliverables; owner's call over breaking only

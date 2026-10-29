@@ -42,7 +42,7 @@ Rules:
 - Keep spoken Mandarin/Taiwan Traditional Chinese subtitle rhythm. Prefer natural conversational particles and compact phrasing when the Japanese line is a quick retort, interruption, or defense; avoid over-formal explanations that flatten the variety-show timing.
 - When correcting an awkward but context-dependent line, optimize for the intended joke/interaction over word-for-word equivalence. If the line is about a prior on-screen match, quiz team, or segment action, make that relationship explicit enough for viewers to follow.
 - Apply only light Traditional Chinese subtitle style cleanup at this refinement stage: do not rewrite a line that is already accurate, natural, and readable.
-- Prefer subtitle typography only when it requires language judgment: use `「」` for quoted speech or quoted terms, `『』` for nested quotes, and `《》` for titles of works when a title mark is clearly needed. Do not spend attention on punctuation cleanup that can be handled mechanically later.
+- Prefer subtitle typography only when it requires language judgment: use `「」` for quoted speech or quoted terms, `『』` for nested quotes, and `《》` for titles of works when a title mark is clearly needed. A `「」` around a block's whole text that is only the speaker talking is not a quote: remove it. Two voices in one block take one `-` line each; only when that would exceed two lines are the voices separated by `／`, never by Chinese punctuation. Do not spend attention on punctuation cleanup that can be handled mechanically later.
 - Keep line wrapping readable, not mechanical: use at most two subtitle text lines, keep one line when it fits naturally, and when editing an existing two-line subtitle, break at Chinese phrase boundaries. Prefer a bottom-heavy shape only when there are multiple natural break points; avoid leaving one or two characters, a lone particle, or stray punctuation on a line. For example:
 
 ```text
@@ -93,7 +93,7 @@ Review workflow:
   `自分` is reflexive, so it is 我 only when the speaker talks about
   themself; when a speaker presents, retells (`〜らしい`, `〜って`) or
   voices another person's thoughts, that person's `俺 / 僕 / 私` belongs
-  inside「」or becomes 他.
+  inside a「」around just the voiced words, or becomes 他.
 - When a candidate edit is visually grounded and the timestamp is known, use the
   `get_frames` tool before committing the edit if the pre-sampled frames do
   not already settle it.

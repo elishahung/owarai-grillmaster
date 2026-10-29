@@ -112,6 +112,46 @@ def test_clean_text(text: str, expected: str):
     assert clean_text(text) == expected
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("解散了。／那當然", "-解散了\n-那當然"),  # noqa: RUF001
+        ("太悲慘了，／好沉重啊", "-太悲慘了\n-好沉重啊"),  # noqa: RUF001
+        ("誰啊？/ 山內很厲害", "-誰啊？\n-山內很厲害"),
+        ("就算結果不好 / 也會", "-就算結果不好\n-也會"),
+        ("-剛才不是這樣，/ - 他在生氣", "-剛才不是這樣\n-他在生氣"),
+        ("-- 等一下 / 好", "-- 等一下\n-好"),
+        ("誰啊? / 山內", "-誰啊?\n-山內"),
+        ("因為... / 抱歉", "-因為…\n-抱歉"),
+        ("「好」／對啊", "-「好」\n-對啊"),  # noqa: RUF001
+        ("能看到海\n／咦，在並行嗎？", "-能看到海\n-咦，在並行嗎？"),  # noqa: RUF001
+        ("那當然／", "那當然"),  # noqa: RUF001
+    ],
+)
+def test_a_turn_change_slash_becomes_dialogue_lines(text: str, expected: str):
+    assert clean_text(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("知道嗎？/ 是！/ 很好", "知道嗎？／是！／很好"),  # noqa: RUF001
+        ("平常會看嗎，/ 姑且會看啦\n會看", "平常會看嗎／姑且會看啦\n會看"),  # noqa: RUF001
+        ("-其實是這樣\n-是這樣嗎？ / 沒錯", "-其實是這樣\n-是這樣嗎？／沒錯"),  # noqa: RUF001
+    ],
+)
+def test_turn_changes_past_two_lines_keep_one_slash(text: str, expected: str):
+    assert clean_text(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Peace（和平／剪刀手）", "機率 1/2", "AC / DC"],  # noqa: RUF001
+)
+def test_slashes_between_words_stay(text: str):
+    assert clean_text(text) == text
+
+
 # --- over-wide lines --------------------------------------------------------
 
 

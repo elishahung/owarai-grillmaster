@@ -59,7 +59,10 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
 - **Python owns timecodes.** The agent returns `{blocks: [{index, text}]}`
   only; `rebuild_blocks` puts cleaned text under each source block's index and
   timecode. `clean_text` drops blank and dash-only (`-`) lines; validation
-  judges the cleaned text, so a debris-only block is "empty". JSON replaced
+  judges the cleaned text, so a debris-only block is "empty". A chunk with
+  ≥70 % of blocks wholly wrapped in「」(a Gemini quirk; measured bimodal
+  across archived chunks) loses those outer quotes on rebuild
+  (`unwrap_quoted_chunk`; `translation.json` keeps the raw text). JSON replaced
   agent-written SRT, whose broken skeletons needed a separate structural-fix
   agent; do not go back.
 - `ja.srt` stays the sole block/timecode scaffold; official CC is a wording

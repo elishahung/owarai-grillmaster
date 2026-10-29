@@ -7,7 +7,8 @@ reading in the same place (the next memo in the same frame) starts a new
 line. `build_cards` then drops OCR noise, joins lines that share their
 timing and touch on screen into cards (stacked, or close on one row: a card
 beside another stays apart), copies a recurring label that stays up across
-several cards into each card it sits on, and labels each card:
+several cards into each card it sits on (an edited-in one, not scene text
+such as a shirt print: see `_Recurs`), and labels each card:
 
 - `recurring`: every line's text is on screen for over `RECURRING_S`
   across the episode (corner logos and titles, shirt prints, bottle
@@ -34,12 +35,13 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from enum import Enum, StrEnum
 from itertools import combinations
+from statistics import fmean, pstdev
 from typing import TYPE_CHECKING
 
 from grillmaster.core.models import StrictModel
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
     from grillmaster.core.srt import SrtBlock
 
@@ -248,17 +250,70 @@ class _Line:
     box: Box
 
 
-def _recurring(lines: Sequence[_Line]) -> list[bool]:
+class _Recurs(Enum):
+    NO = "no"
+    # Filmed text: moves and rescales with the shot (a shirt print, a
+    # bottle, a menu on the wall).
+    SCENE = "scene"
+    # Edited in: kept to a few places (a corner title, the rows a memo's
+    # label sits in) or to one size (a name plate's label wherever the plate
+    # is).
+    OVERLAY = "overlay"
+
+
+# A text is an overlay when its `_PLACES` steadiest places (boxes overlapping
+# by `_SAME_PLACE`) hold `_PLACED_SHARE` of its time, or its character size
+# varies by at most `_SIZE_SPREAD` (standard deviation over mean). Measured
+# 2026-10-29 on every scanned project: shirt prints, bottles and menus hold
+# at most 0.47 in three places and vary 0.28-0.63 in size; memo labels,
+# corner titles and name plates' labels hold 0.49-1.0 or vary 0.03-0.07.
+_PLACES = 3
+_SAME_PLACE = 0.5
+_PLACED_SHARE = 0.5
+_SIZE_SPREAD = 0.2
+
+
+def _seconds(lines: Iterable[_Line]) -> float:
+    return sum(line.end - line.start for line in lines)
+
+
+def _overlay(lines: Sequence[_Line]) -> bool:
+    """Whether a text shown as `lines` is edited in (see `_Recurs`)."""
+    sizes = [char_size(line.box) for line in lines]
+    if pstdev(sizes) <= _SIZE_SPREAD * fmean(sizes):
+        return True
+    # Each line's place: the lines in the same place as it, measured once.
+    places = [
+        [other for other in lines if _iou(line.box, other.box) >= _SAME_PLACE]
+        for line in lines
+    ]
+    goal = _PLACED_SHARE * _seconds(lines)
+    taken: set[int] = set()
+    placed = 0.0
+    for _ in range(_PLACES):
+        left = [
+            [line for line in place if id(line) not in taken]
+            for at, place in zip(lines, places, strict=True)
+            if id(at) not in taken
+        ]
+        here = max(left, key=_seconds, default=[])
+        placed += _seconds(here)
+        if placed >= goal:
+            return True
+        taken.update(map(id, here))
+    return False
+
+
+def _recurring(lines: Sequence[_Line]) -> list[_Recurs]:
     """Whether each line's text is on screen for over `RECURRING_S` in all,
-    counting every distinct text that holds most of it."""
-    seconds: dict[str, float] = {}
+    counting every distinct text that holds most of it, and if so whether
+    filmed or edited in."""
+    by_text: dict[str, list[_Line]] = {}
     for line in lines:
-        seconds[line.normalized] = (
-            seconds.get(line.normalized, 0.0) + line.end - line.start
-        )
-    texts = list(seconds)
+        by_text.setdefault(line.normalized, []).append(line)
+    texts = list(by_text)
     chars = [Counter(text) for text in texts]
-    total = dict(seconds)
+    shown = {text: list(by_text[text]) for text in texts}
     for i, a in enumerate(texts):
         for j in range(i + 1, len(texts)):
             b = texts[j]
@@ -267,10 +322,18 @@ def _recurring(lines: Sequence[_Line]) -> list[bool]:
                 continue
             matched = _matched(a, b)
             if matched >= _SAME_TEXT * len(a):
-                total[a] += seconds[b]
+                shown[a] += by_text[b]
             if matched >= _SAME_TEXT * len(b):
-                total[b] += seconds[a]
-    return [total[line.normalized] > RECURRING_S for line in lines]
+                shown[b] += by_text[a]
+
+    def recurs(text: str) -> _Recurs:
+        where = shown[text]
+        if _seconds(where) <= RECURRING_S:
+            return _Recurs.NO
+        return _Recurs.OVERLAY if _overlay(where) else _Recurs.SCENE
+
+    recurrence = {text: recurs(text) for text in texts}
+    return [recurrence[line.normalized] for line in lines]
 
 
 def _repeats_speech(line: _Line, cues: Sequence[tuple[float, float, str]]) -> bool:
@@ -536,13 +599,15 @@ def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:
         for block in transcript
     ]
     # Fixtures never join fresh lines into one card (a logo under a row of
-    # name plates would chain them together); one only labels a card.
-    labels = [line for line in lines if recurring[id(line)]]
-    fresh = [line for line in lines if not recurring[id(line)]]
+    # name plates would chain them together); an overlay one only labels a
+    # card, scene text (a shirt print by a name plate) not even that.
+    fixtures = [line for line in lines if recurring[id(line)] is not _Recurs.NO]
+    labels = [line for line in fixtures if recurring[id(line)] is _Recurs.OVERLAY]
+    fresh = [line for line in lines if recurring[id(line)] is _Recurs.NO]
     groups = sorted(
         [
             *((group, False) for group in _bridged(_group(fresh), labels)),
-            *((group, True) for group in _group(labels)),
+            *((group, True) for group in _group(fixtures)),
         ],
         key=lambda tagged: tagged[0][0].start,
     )

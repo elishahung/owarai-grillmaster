@@ -100,7 +100,13 @@ location show), not settings.
   it is copied in as its label (`熊元MEMO` over successive memos). Two
   fresh groups on screen together on either side of one such label are
   one card (a plate whose middle column is also the corner title); boards
-  bridged this way are left to the selector.
+  bridged this way are left to the selector. Only an edited-in text labels
+  or bridges: one whose 3 steadiest places hold ≥ half its time or whose
+  character size varies ≤ 0.2 (`_Recurs.OVERLAY`). Scene text moves and
+  rescales with the shot (a shirt print by a name plate, bottles, menus,
+  product copy, measured 2026-10-29); a memo label in two rows or a
+  recommender's label on plates anywhere stays a label (cases in
+  `test_scan.py`).
 - **Grouping**: same timing (±1 s) and touching: stacked ≤ 0.5 of the
   smaller line height apart, on one row ≤ 0.25 of it apart (a space; two
   memos or name plates side by side sit further apart), or diagonal within
@@ -304,10 +310,23 @@ Where a fix belongs:
   readout), boards. Expect these to need a richer model of the scan
   (positions, layouts, sequences), not another threshold.
 
-Known gap (2026-10-27): recurrence is judged by text alone, wherever and
-however it appears. A corner label's text reused elsewhere is absorbed: a
+Known gap (2026-10-27): whether a text recurs is judged by text alone,
+wherever and however it appears (only labelling looks at places and sizes,
+above). A corner label's text reused elsewhere is absorbed: a
 full-screen title card or break bumper repeating the corner title, an
 intro name plate whose name is also a long-running label. Size/orientation
 "set apart" exceptions were measured and rejected (on other episodes they
-mostly admitted logos, sponsor marks and boards). Position-aware
-recurrence is the open lead.
+mostly admitted logos, sponsor marks and boards). Recurrence counted only
+at a line's own place was measured and rejected for labelling (2026-10-29):
+memo labels alternate between rows, and a plate's group name recurs only
+as the corner title. Position-aware recurrence is still the open lead for
+the absorbed cards (unmeasured): `_Recurs` already finds each text's
+steadiest places.
+
+Scene text seen once (a poster, a whiteboard) still reaches the selector,
+which drops it (the reference tables keep it on purpose: it tells glossary
+and proofread what is on screen). Filtering it by box motion was measured and
+rejected (2026-10-29, 22 selections): a card whose box keeps moving between
+same-reading frames is ~5 % of those offered and kept 1 % of the time (19 %
+when still), but zooming, bouncing or shaking overlays move too, some
+translated; tripod shots and short cards are not caught.

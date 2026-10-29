@@ -566,3 +566,91 @@ def test_a_long_running_vertical_tag_still_labels_the_text_beside_it():
     (card,) = build_cards(scan_of(*frames), []).offered
 
     assert card.text == "ケツナダル(ワースト2) / 理由 / 誕生日を理由に仕事を断る。"
+
+
+# Recurring text filmed in the scene (a shirt print) or edited in (a label),
+# with real boxes and times as `telop_probe.py lines` prints them.
+
+type Shown = tuple[float, float, tuple[float, float, float, float], str]
+
+
+def shown(*lines: Shown) -> TelopScan:
+    """Each text read at its box from its first to its last frame's moment."""
+    frames: list[list[TextRead]] = [
+        [] for _ in range(round(max(end for _, end, _, _ in lines) * 2 + 0.5))
+    ]
+    for start, end, box, text in lines:
+        for frame in range(round(start * 2 - 0.5), round(end * 2 - 0.5) + 1):
+            frames[frame].append(read(box, text))
+    return scan_of(*frames)
+
+
+# A shirt print, filmed all through the location: over a minute in all, but
+# moving and rescaling with the shot.
+_SHIRT: list[Shown] = [
+    (start, end, box, "ENTRY.")
+    for start, end, box in [
+        (6.25, 8.25, (0.526, 0.439, 0.573, 0.468)),
+        (8.75, 13.75, (0.594, 0.643, 0.680, 0.699)),
+        (18.25, 23.25, (0.593, 0.610, 0.691, 0.669)),
+        (37.75, 38.75, (0.455, 0.251, 0.489, 0.277)),
+        (39.25, 41.25, (0.433, 0.274, 0.470, 0.306)),
+        (41.75, 44.75, (0.554, 0.590, 0.652, 0.657)),
+        (57.75, 58.75, (0.588, 0.629, 0.677, 0.688)),
+        (59.25, 73.25, (0.593, 0.562, 0.673, 0.640)),
+        (78.25, 78.75, (0.602, 0.426, 0.642, 0.465)),
+        (80.25, 80.75, (0.546, 0.440, 0.585, 0.479)),
+        (86.75, 87.75, (0.759, 0.587, 0.849, 0.640)),
+        (102.25, 102.75, (0.590, 0.525, 0.668, 0.581)),
+        (139.75, 141.25, (0.591, 0.668, 0.690, 0.731)),
+        (147.25, 147.75, (0.618, 0.493, 0.676, 0.528)),
+        (148.25, 149.75, (0.611, 0.446, 0.668, 0.487)),
+        (150.25, 151.25, (0.664, 0.461, 0.724, 0.500)),
+        (151.75, 154.25, (0.646, 0.500, 0.715, 0.542)),
+        (174.25, 178.25, (0.584, 0.461, 0.642, 0.500)),
+        (179.25, 180.75, (0.579, 0.509, 0.638, 0.554)),
+        (181.75, 183.75, (0.614, 0.488, 0.679, 0.537)),
+        (188.25, 189.25, (0.559, 0.524, 0.624, 0.572)),
+    ]
+]
+
+
+def test_a_shirt_print_does_not_label_the_name_plate_under_it():
+    # The plate's group name is also the corner title, so it labels the
+    # plate; the print over the plate, shown as long, does not.
+    plate: list[Shown] = [
+        (1.25, 5.75, (0.608, 0.707, 0.714, 0.800), "ENTRY."),
+        (1.75, 5.75, (0.654, 0.782, 0.740, 0.830), "のリーダー"),
+        (1.75, 5.75, (0.577, 0.826, 0.673, 0.867), "かまいたち"),
+        (1.75, 5.75, (0.599, 0.861, 0.778, 0.946), "濱家隆一"),
+    ]
+    title: Shown = (7.75, 89.75, (0.017, 0.013, 0.168, 0.078), "かまいたちの掟")
+
+    cards = build_cards(shown(*plate, *_SHIRT, title), []).offered
+
+    assert cards[0].text == "のリーダー / かまいたち / 濱家隆一"
+
+
+def test_a_label_set_at_one_size_labels_its_plate_wherever_the_plate_is():
+    # Each recommender's plate sits elsewhere; its label keeps its size.
+    labels: list[Shown] = [
+        (start, end, box, "推薦人")
+        for start, end, box in [
+            (80.75, 92.75, (0.106, 0.576, 0.176, 0.633)),
+            (106.25, 114.25, (0.682, 0.457, 0.757, 0.519)),
+            (132.25, 142.25, (0.134, 0.536, 0.209, 0.597)),
+            (193.75, 201.75, (0.706, 0.606, 0.786, 0.670)),
+            (251.25, 269.75, (0.682, 0.414, 0.758, 0.474)),
+            (281.25, 289.25, (0.026, 0.577, 0.094, 0.632)),
+            (356.75, 365.75, (0.107, 0.592, 0.176, 0.647)),
+            (457.25, 471.75, (0.114, 0.533, 0.181, 0.586)),
+        ]
+    ]
+    plate: list[Shown] = [
+        (80.75, 92.75, (0.151, 0.631, 0.330, 0.703), "浦井のりひろ"),
+        (80.75, 92.75, (0.182, 0.701, 0.298, 0.742), "男性ブランコ"),
+    ]
+
+    cards = build_cards(shown(*labels, *plate), []).offered
+
+    assert cards[0].text == "推薦人 / 浦井のりひろ / 男性ブランコ"

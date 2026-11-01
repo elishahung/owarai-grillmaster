@@ -177,7 +177,7 @@ def test_writes_the_notes_from_the_final_subtitles_and_the_cards(
 
     assert waiter.waited == [SideTaskKey.TELOP_SCAN, SideTaskKey.DATE_RESEARCH]
     (note,) = read_model(project.notes_cht_json, Notes).items
-    assert (note.block, note.start, note.text) == (2, 4.0, "事件：說明")
+    assert (note.block, note.start, note.text) == (2, 4.0, "事件：說明。")
     assert notes.STAGE.outputs(project) == (project.notes_cht_json,)
     task = agents.task(TASK_NAME)
     assert task.role is Role.EDITOR

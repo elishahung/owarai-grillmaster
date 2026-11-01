@@ -33,7 +33,8 @@ omitted = postprocess), `WEB_SEARCH` required.
    Validation (repair round): the block exists, once; `term` is written in
    that block's ja or zh (whitespace ignored); `text` one line that the
    layer sets in ≤ `MAX_ROWS` (2) rows (`render.rows`; owner's call: never
-   three); evidence non-empty.
+   three), measured after `note_text` closes it on a full stop the agent
+   left off (in code, not the prompt); evidence non-empty.
 3. **`to_notes`**: start = the block's start, shown `FIND_S` + chars /
    `READ_CHARS_PER_S` within 3–10 s; a note due while the previous is up
    cuts it short once that has been up `MIN_SHOWN_S`, else starts when it

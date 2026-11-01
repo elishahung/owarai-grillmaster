@@ -57,6 +57,12 @@ READ_CHARS_PER_S = 6.0
 FIND_S = 1.0
 MIN_SHOWN_S = 3.0
 MAX_SHOWN_S = 10.0
+# A note reads as a sentence: it ends on one of these (a quote or a bracket
+# may close after it), else on a full stop added in place of a trailing
+# comma or colon.
+_SENTENCE_ENDS = ("。", "！", "？", "…", "!", "?", ".")
+_CLOSERS = "」』）)”"
+_SOFT_ENDS = "，、；：,;:"
 
 
 class NoteDraft(StrictModel):
@@ -279,7 +285,7 @@ def make_validator(texts: Mapping[int, str]) -> Callable[[NotesAnswer], None]:
     def validate(answer: NotesAnswer) -> None:
         coverage = id_coverage(
             texts,
-            ((note.block, note.text.strip()) for note in answer.notes),
+            ((note.block, note_text(note.text)) for note in answer.notes),
             require_all=False,
         )
         problems = [
@@ -289,13 +295,14 @@ def make_validator(texts: Mapping[int, str]) -> Callable[[NotesAnswer], None]:
         ]
         for note in answer.notes:
             problems += _anchor_problems(note.block, note.term, texts)
-            text = note.text.strip()
+            text = note_text(note.text)
             if "\n" in text:
                 problems.append(f"block {note.block}: the text has a line break")
             elif text and len(rows(text)) > MAX_ROWS:
                 problems.append(
                     f"block {note.block}: the text takes {len(rows(text))} rows on "
-                    f"screen, over {MAX_ROWS}; shorten it ({len(text)} characters)"
+                    f"screen, over {MAX_ROWS}; shorten it ({len(text)} characters, "
+                    "with the closing full stop added when missing)"
                 )
             if not note.evidence.strip():
                 problems.append(f"block {note.block}: no evidence")
@@ -328,6 +335,15 @@ def make_probe_validator(texts: Mapping[int, str]) -> Callable[[NotesProbe], Non
     return validate
 
 
+def note_text(text: str) -> str:
+    """`text` as the note is delivered: stripped and ending a sentence, a
+    full stop added when the agent left it off."""
+    text = text.strip().rstrip(_SOFT_ENDS).rstrip()
+    if not text or text.rstrip(_CLOSERS).endswith(_SENTENCE_ENDS):
+        return text
+    return text + "。"
+
+
 def shown_for(text: str) -> float:
     """How long a note with `text` stays on screen."""
     return min(max(FIND_S + len(text) / READ_CHARS_PER_S, MIN_SHOWN_S), MAX_SHOWN_S)
@@ -340,15 +356,16 @@ def to_notes(answer: NotesAnswer, subtitles: Sequence[SrtBlock]) -> Notes:
     no note drifts far from its block."""
     starts = {block.index: block.time_range.start for block in subtitles}
     drafts = sorted(answer.notes, key=lambda note: starts[note.block])
+    texts = [note_text(draft.text) for draft in drafts]
     spans: list[list[float]] = []
-    for draft in drafts:
+    for draft, text in zip(drafts, texts, strict=True):
         start = starts[draft.block]
         if spans and spans[-1][1] > start:
             if start - spans[-1][0] >= MIN_SHOWN_S:
                 spans[-1][1] = start
             else:
                 start = spans[-1][1]
-        spans.append([start, start + shown_for(draft.text.strip())])
+        spans.append([start, start + shown_for(text)])
     return Notes(
         items=[
             Note(
@@ -356,10 +373,10 @@ def to_notes(answer: NotesAnswer, subtitles: Sequence[SrtBlock]) -> Notes:
                 start=start,
                 end=end,
                 term=draft.term.strip(),
-                text=draft.text.strip(),
+                text=text,
                 evidence=draft.evidence.strip(),
             )
-            for draft, (start, end) in zip(drafts, spans, strict=True)
+            for draft, text, (start, end) in zip(drafts, texts, spans, strict=True)
         ]
     )
 

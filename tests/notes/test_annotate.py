@@ -25,6 +25,7 @@ from grillmaster.notes.annotate import (
     build_probe_task,
     make_probe_validator,
     make_validator,
+    note_text,
     render_probe,
     shown_for,
     to_notes,
@@ -121,6 +122,28 @@ def test_sixty_characters_fit_the_two_rows():
     make_validator(TEXTS)(NotesAnswer(notes=[draft(text="三浦和義：" + "說" * 55)]))
 
 
+def test_the_rows_count_the_full_stop_a_note_gets():
+    # Two rows as written; the added 。 wraps it onto a third.
+    assert "takes 3 rows" in problems(draft(text="三浦和義：" + "說" * 56))
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (" 三浦：說明 ", "三浦：說明。"),
+        ("三浦：說明，", "三浦：說明。"),
+        ("三浦：說明。", "三浦：說明。"),
+        ("三浦：真的嗎？", "三浦：真的嗎？"),
+        ("原句是「敵在本能寺」", "原句是「敵在本能寺」。"),
+        ("原句是「敵在本能寺。」", "原句是「敵在本能寺。」"),
+        ("原句是“敵在本能寺。”", "原句是“敵在本能寺。”"),
+        ("又稱 Cowboy Shingo!", "又稱 Cowboy Shingo!"),
+    ],
+)
+def test_a_note_ends_a_sentence(text: str, expected: str):
+    assert note_text(text) == expected
+
+
 def test_notes_follow_one_another():
     answer = NotesAnswer(
         notes=[
@@ -134,7 +157,7 @@ def test_notes_follow_one_another():
 
     first, second, third = notes.items
     assert [note.block for note in notes.items] == [1, 2, 3]
-    assert (first.start, first.text) == (10.0, "淺間山莊事件：說明")
+    assert (first.start, first.text) == (10.0, "淺間山莊事件：說明。")
     assert second.start == 20.0
     # Due while the one before is still up: it waits for that one to leave.
     assert third.start == second.end > 22.5

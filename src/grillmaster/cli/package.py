@@ -58,8 +58,18 @@ def package_command(
         typer.Option(
             "--no-telop",
             help=(
-                "Leave the translated telops out of the burn-in; "
-                ".subs/telop.cht.json is kept."
+                "Leave the translated telops out of the burn-in and "
+                "video.cht.ass; .subs/telop.cht.json is kept."
+            ),
+        ),
+    ] = False,
+    no_notes: Annotated[
+        bool,
+        typer.Option(
+            "--no-notes",
+            help=(
+                "Leave the translator's notes out of the burn-in and "
+                "video.cht.ass; .subs/notes.cht.json is kept."
             ),
         ),
     ] = False,
@@ -76,6 +86,7 @@ def package_command(
         source=state.source_id,
         chat_layout=chat_layout,
         telop=False if no_telop else None,
+        notes=False if no_notes else None,
         remix=resolve_remix(remix, loaded.config.package.remix_pool),
     )
     pipeline = pipeline_from(ctx)

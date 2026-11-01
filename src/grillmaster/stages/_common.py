@@ -78,6 +78,39 @@ def flag_or_feature(
     return enabled
 
 
+def switch_enabled(
+    name: Literal["telop", "notes"],
+) -> Callable[[RunOptions, AppConfig], bool]:
+    """`enabled` of a step a program can switch: the run flag `name` when
+    given (`--x` / `--no-x`), else `[features] <name>` or any program that
+    switches it on (`enabled` sees no project; `switch_applies` decides)."""
+
+    def enabled(options: RunOptions, config: AppConfig) -> bool:
+        flag: bool | None = getattr(options, name)
+        if flag is not None:
+            return flag
+        return bool(getattr(config.features, name)) or any(
+            getattr(rule, name) is True for _, _, rule in config.programs.rules()
+        )
+
+    return enabled
+
+
+def switch_applies(name: Literal["telop", "notes"]) -> Callable[[StageContext], bool]:
+    """`applies` of a step a program can switch, for this project: the most
+    specific explicit choice, the run flag, then its program's `name`
+    (series over channel), then `[features] <name>`."""
+
+    def applies(ctx: StageContext) -> bool:
+        flag: bool | None = getattr(ctx.options, name)
+        if flag is not None:
+            return flag
+        rule: bool | None = getattr(program_rules(ctx.config, ctx.state.source), name)
+        return bool(getattr(ctx.config.features, name)) if rule is None else rule
+
+    return applies
+
+
 def chat_enabled(options: RunOptions, _config: AppConfig) -> bool:
     """`StageDef.enabled` of the `--chat` stages."""
     return options.chat

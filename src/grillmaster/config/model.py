@@ -70,16 +70,16 @@ class PathsConfig(BaseModel):
 
 class AgentRoles(BaseModel):
     """Model per agent role, as backend/model[/effort][/fast]; all but
-    proofread are required."""
+    editor are required."""
 
     model_config = _STRICT
 
     prepass: ModelSpecField = Field(description="Whole-film pre-pass analysis.")
     chunk: ModelSpecField = Field(description="Concurrent chunk translation.")
     postprocess: ModelSpecField = Field(description="Refine and glossary check.")
-    proofread: ModelSpecField | None = Field(
+    editor: ModelSpecField | None = Field(
         default=None,
-        description="Final proofread after the glossary check; omitted means postprocess.",
+        description="Final proofread after the glossary check and the translator's notes; omitted means postprocess.",
     )
     utility: ModelSpecField = Field(
         description=(
@@ -93,7 +93,7 @@ class AgentRoles(BaseModel):
     )
 
     def spec(self, role: Role) -> ModelSpec:
-        """The spec for `role`; an omitted `proofread` falls back to
+        """The spec for `role`; an omitted `editor` falls back to
         `postprocess`."""
         spec: ModelSpec | None = getattr(self, role)
         return spec or self.postprocess
@@ -211,6 +211,10 @@ class FeaturesConfig(BaseModel):
         default=False,
         description="OCR the on-screen text cards (telops) on the GPU and burn the worthwhile ones in, translated (also --telop; a program's telop and --no-telop override it). Needs `uv sync --extra telop`.",
     )
+    notes: bool = Field(
+        default=False,
+        description="Add translator's notes at the top of the picture, explaining references, current events and culture a Taiwanese viewer would miss (also --notes; a program's notes and --no-notes override it).",
+    )
     infuse_metadata: bool = Field(
         default=False,
         description="Write an Infuse metadata sidecar (video.xml: title, description, broadcast date) beside each archived video.mp4.",
@@ -286,6 +290,7 @@ INSTRUCTION_STAGES = (
     StageKey.GLOSSARY,
     StageKey.PROOFREAD,
     StageKey.TELOP,
+    StageKey.NOTES,
 )
 
 
@@ -321,6 +326,10 @@ class ProgramInstruction(BaseModel):
         default=None,
         description="Telop selection and translation: which on-screen cards to keep and how to render them.",
     )
+    notes: str | None = Field(
+        default=None,
+        description="Translator's notes: what this program's viewers need explained, and what not.",
+    )
 
     def stage_text(self, stage: StageKey) -> str | None:
         """This program's own text for `stage` (without `common`)."""
@@ -349,6 +358,10 @@ class ProgramRule(BaseModel):
     telop: bool | None = Field(
         default=None,
         description="Translate this program's telops (true) or never (false), whatever [features] telop says; a series overrides its channel, --telop / --no-telop override both.",
+    )
+    notes: bool | None = Field(
+        default=None,
+        description="Add translator's notes to this program (true) or never (false), whatever [features] notes says; a series overrides its channel, --notes / --no-notes override both.",
     )
     instruction: ProgramInstruction = Field(
         default_factory=ProgramInstruction,

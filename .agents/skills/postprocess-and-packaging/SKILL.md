@@ -3,8 +3,9 @@ name: postprocess-and-packaging
 description: >-
   Agent post-processing and deliverable assembly under `src/grillmaster/`: `postprocess/`
   (refine, glossary check, optional proofread), `extras/` (cover, date research, titles), `subtitles/`
-  (skeleton check, finalize to video.cht.srt/.ass), `package/` (folder, NVENC render, remix,
-  pools, inserts) and their glue in `stages/{refine,glossary,proofread,finalize,cover,date_research,package}.py`,
+  (skeleton check, finalize to video.cht.srt), `package/` (folder, NVENC render, remix,
+  pools, inserts, the composed video.cht.ass) and their glue in
+  `stages/{refine,glossary,proofread,finalize,cover,date_research,compose,package}.py`,
   `pipeline/side_tasks.py`, `pipeline/delivery.py`. Read this before changing refine, glossary
   check, proofread, cover, date research, titles, finalize punctuation, ASS styling, or packaging.
 ---
@@ -57,8 +58,8 @@ own semantic rules and get `ProgramRules.instruction_text(<stage>)` appended.
 
 ## Proofread (`postprocess/proofread.py`, optional)
 
-`--proofread` / `[features] proofread`, role `proofread` (omitted = postprocess), meant
-for a second model family. It edits, but never writes files: Python builds the dossier
+`--proofread` / `[features] proofread`, role `editor` (shared with the notes;
+omitted = postprocess), meant for a second model family. It edits, but never writes files: Python builds the dossier
 (`aligned.tsv` ja/zh per block; `history.md` earlier versions of changed
 blocks, seams from `split_source`, Latin/kana suspects by number; the
 briefing JSON) and sends it inline in the prompt (as a file it cost
@@ -88,9 +89,11 @@ would never be delivered) with a warning naming `grill reset --from proofread`.
 
 ## Finalize (`subtitles/finalize.py`, `subtitles/ass.py`)
 
-`effective_subtitles()` → `video.cht.ass` + `video.cht.srt` at the project root, sharing
-`video.mp4`'s stem so players auto-load them (declared `outputs`; no
-`.work/12_finalize/`). Deterministic, the last pass over the dialogue: name spacing (effective briefing
+`effective_subtitles()` → `video.cht.srt` at the project root, sharing
+`video.mp4`'s stem so players auto-load it (declared `outputs`; no
+`.work/13_finalize/`). The
+dialogue's ASS (`render_ass`/`write_ass`/`dialogue_line`) is rendered from
+the SRT where it is drawn: `.work/package/dialogue.ass` and `video.cht.ass`. Deterministic, the last pass over the dialogue: name spacing (effective briefing
 names + curated Han/kana-Latin `zh` from the fixed glossary, longest first),
 then Netflix-TC punctuation (incl. a model's spaced or punctuation-led
 `/`/`／` speaker separator: two `-` lines when that fits a one-line block,
@@ -127,6 +130,16 @@ exit even when a stage failed, skipped entirely by `--break-after`; done =
   titles from the effective briefing, cached at `.work/package/titles.json`;
   `[features] title_suggestion` gates only generating a missing one; failure warns.
 
+## Compose (`package/compose.py`, `stages/compose.py`)
+
+Delivery step before package, every complete run (also after `grill telop`
+/ `grill notes`, and in `grill package`): root `video.cht.ass` = the
+`video.cht.srt` dialogue (drawn last) + `.subs/telop.cht.json` + the notes,
+each style once in the header; `--no-telop` / `--no-notes` leave a layer out and an unreadable
+JSON is left out with a warning, as the burn-in does. The one ASS players
+load; a hand-edited JSON reaches it here. Its `outputs` make any `grill
+reset` remove it until the next complete run.
+
 ## Packaging (`package/`, `stages/package.py`)
 
 Delivery step, not a stage: no ledger entry, runs every complete run when
@@ -139,7 +152,7 @@ copy; a failure there raises `ArchivedDeliveryError` naming
 `preflight` (in `Pipeline.check`, before any stage): `[paths] package` must
 be a directory and the remix/insert pools must exist (program rules only once
 the state knows the series/channel).
-`_run` order: require `video.mp4`, `video.cht.ass`, `video.cht.srt` → remix pool (`--remix`
+`_run` order: require `video.mp4`, `video.cht.srt` → remix pool (`--remix`
 wins, else a `remix = true` program uses `package.remix_pool`; a missing pool
 fails) and inserts → `require_pools`, `check_replaceable(destination)` (a
 locked old deliverable fails now, not after the render) + `plan_remix`
@@ -151,11 +164,12 @@ if present, inserts), then the render. Destination
 `naming.package_destination` (computed in `stages/package.py`): flat
 `YYMMDD_<id>_<name>` (`<id>_<name>` undated), only the name tail MAX_PATH-trimmed.
 
-**Burn plan**: dialogue alone, or with translated chat and layout ≠ `none` the
+**Burn plan**: dialogue (`.work/package/dialogue.ass`, from the SRT) alone, or with translated chat and layout ≠ `none` the
 panel at `.work/package/chat.ass`; `side` also shrinks the picture into a box
 (scale+pad after the look), `overlay` keeps the full frame. The dialogue is
 always the last layer (`BurnPlan.top`; other layers go in `under`): nothing may cover it. Translated telops
-(`.subs/telop.cht.json`, telop skill) slide in under it, from `.work/package/telop.ass`.
+(`.subs/telop.cht.json`, telop skill) slide in under it, from `.work/package/telop.ass`,
+then the notes (notes skill, fixed at the top) from `.work/package/notes.ass`.
 Layers must sit under the video's dir (ffmpeg runs there with relative names).
 
 **Render recipe** (`package/render.py`; every value measured, do not "clean
@@ -196,7 +210,7 @@ not `video|cover|info|refine|glossary_check|proofread`.
 
 ## Settings and invariants
 
-- `grill.toml`: `[agents.roles] postprocess|proofread|utility|image`; `[watch_clip]
+- `grill.toml`: `[agents.roles] postprocess|editor|utility|image`; `[watch_clip]
   model|effort`; `[features]
   cover|date_research|title_suggestion|proofread|proofread_watch_clip`; `[paths] package|archive`; `[package]
   remix_pool` (default `"default"`), `[[package.inserts]]`;

@@ -114,14 +114,16 @@ def test_remix_is_on_when_any_entry_sets_it(config: AppConfig):
         (True, False, True),
     ],
 )
-def test_telop_is_the_most_specific_explicit_choice(
+@pytest.mark.parametrize("switch", ["telop", "notes"])
+def test_switches_are_the_most_specific_explicit_choice(
     minimal_data: dict[str, Any],
+    switch: str,
     series: bool | None,
     channel: bool | None,
     expected: bool | None,
 ):
-    def entry(telop: bool | None) -> dict[str, Any]:
-        return {} if telop is None else {"telop": telop}
+    def entry(value: bool | None) -> dict[str, Any]:
+        return {} if value is None else {switch: value}
 
     config = validate_config(
         {
@@ -133,7 +135,8 @@ def test_telop_is_the_most_specific_explicit_choice(
         },
         root=Path(),
     )
-    assert _resolve(config, series="s", channel="c").telop is expected
+    rules = _resolve(config, series="s", channel="c")
+    assert getattr(rules, switch) is expected
 
 
 def test_unknown_or_missing_names_match_no_entry(config: AppConfig):

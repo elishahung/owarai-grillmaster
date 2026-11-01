@@ -27,6 +27,8 @@ from grillmaster.live_chat.render import chat_placement, write_chat_ass
 from grillmaster.live_chat.schema import TranslatedChatLog
 from grillmaster.media import probe
 from grillmaster.media.errors import MediaError
+from grillmaster.notes.annotate import Notes
+from grillmaster.notes.render import write_notes_ass
 from grillmaster.package.errors import PackageError
 from grillmaster.package.inserts import (
     INSERT_OUTPUT_MAX_LENGTH,
@@ -186,3 +188,20 @@ def with_telops(
         return plan
     logger.info(f"Rendered telops: {telop_ass}")
     return replace(plan, under=(*plan.under, SubtitleLayer(telop_ass)))
+
+
+def with_notes(plan: BurnPlan, notes: Path, notes_ass: Path) -> BurnPlan:
+    """`plan` with the notes, when `notes` exists: rendered to `notes_ass`
+    at the top of the (possibly shrunk) picture and burned under the
+    dialogue. Notes that cannot be rendered are left out with a warning."""
+    if not notes.exists():
+        return plan
+    try:
+        write_notes_ass(
+            read_model(notes, Notes), notes_ass, plan.picture or FULL_PICTURE
+        )
+    except (OSError, UnicodeDecodeError, ValueError) as error:
+        logger.warning(f"Notes skipped ({notes}): {error}")
+        return plan
+    logger.info(f"Rendered notes: {notes_ass}")
+    return replace(plan, under=(*plan.under, SubtitleLayer(notes_ass)))

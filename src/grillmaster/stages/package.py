@@ -5,9 +5,12 @@ Runs after the last stage of every complete run, and alone via `grill
 package`; in a run it reads the project where it lives after the archive
 move (the archived copy when `[paths] archive` is set). Title
 suggestions are generated here (cached in `.work/package/titles.json`), the
-chat panel is rendered to `.work/package/chat.ass` and the translated
-telops (`.subs/telop.cht.json`, when present and not `--no-telop`) to
-`.work/package/telop.ass`. A remix comes from
+dialogue (`video.cht.srt`) is rendered to `.work/package/dialogue.ass`, the
+chat panel to `.work/package/chat.ass`, the translated telops
+(`.subs/telop.cht.json`, when present and not `--no-telop`) to
+`.work/package/telop.ass` and the notes (`.subs/notes.cht.json`, when
+present and not `--no-notes`) to
+`.work/package/notes.ass`. A remix comes from
 `--remix [pool]` or a program rule (`remix = true`, using `package.remix_pool`);
 inserts follow `[[package.inserts]]` and the program's `inserts`. Pools are
 checked and the remix segments picked before any pool cursor moves; the
@@ -41,6 +44,7 @@ from grillmaster.package.assemble import (
     copy_reports,
     deliverable_dir,
     require_inputs,
+    with_notes,
     with_telops,
     write_info,
 )
@@ -53,6 +57,7 @@ from grillmaster.project.naming import package_destination
 from grillmaster.project.state import SourceInfo
 from grillmaster.stages._common import program_rules
 from grillmaster.stages.base import DeliveryStepDef
+from grillmaster.subtitles.finalize import write_ass
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -72,7 +77,7 @@ VIDEO_NAME = "video.mp4"
 def _run(ctx: StageContext) -> str:
     package_root = _package_root(ctx.config)
     layout = ctx.layout
-    require_inputs(layout.video, layout.cht_ass, layout.cht_srt)
+    require_inputs(layout.video, layout.cht_srt)
     pool, inserts = _pools(ctx.options, ctx.config, ctx.state.source)
     # Whatever can refuse the package runs before a pool cursor moves.
     require_pools(package_root, _pool_names(pool, inserts))
@@ -100,10 +105,11 @@ def _run(ctx: StageContext) -> str:
         session_dir=ctx.session_dir(),
         enabled=ctx.config.features.title_suggestion,
     )
+    write_ass(read_srt_file(layout.cht_srt), layout.dialogue_ass)
     burn = build_burn_plan(
         ctx.ffmpeg,
         video=layout.video,
-        dialogue=layout.cht_ass,
+        dialogue=layout.dialogue_ass,
         chat=layout.chat_cht_json,
         chat_ass=layout.chat_panel_ass,
         layout=ctx.options.chat_layout,
@@ -115,6 +121,8 @@ def _run(ctx: StageContext) -> str:
             layout.telop_ass,
             layout.cht_srt,
         )
+    if ctx.options.notes is not False:
+        burn = with_notes(burn, layout.notes_cht_json, layout.notes_ass)
     with deliverable_dir(destination) as target:
         copy_cover(cover=layout.cover, poster=layout.poster, target_dir=target)
         write_info(

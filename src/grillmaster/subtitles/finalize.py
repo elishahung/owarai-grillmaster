@@ -1,4 +1,5 @@
-"""Finalize: the deliverable subtitles, a styled ASS and a player SRT.
+"""Finalize: the deliverable subtitles, a player SRT (styled as ASS where
+it is drawn).
 
 Three deterministic passes run here, after every agent pass, so nothing
 upstream can undo them:
@@ -23,8 +24,9 @@ upstream can undo them:
   (`fit_text`), so the text itself carries every row drawn and the telop
   placement reads them from the SRT.
 
-The ASS and the SRT carry the same text; the ASS uses `subtitles.ass`'s
-dialogue header and style.
+The ASS of the dialogue (`render_ass`, `dialogue_line`) carries the SRT's
+text in `subtitles.ass`'s dialogue style; packaging and the composed
+`video.cht.ass` render it from the SRT.
 """
 
 from __future__ import annotations
@@ -277,14 +279,16 @@ def render_ass(blocks: Sequence[SrtBlock]) -> str:
 
 
 def write_finalized(
-    blocks: Iterable[SrtBlock],
-    *,
-    units: Iterable[str],
-    ass_path: Path,
-    srt_path: Path,
+    blocks: Iterable[SrtBlock], *, units: Iterable[str], srt_path: Path
 ) -> list[SrtBlock]:
-    """Finalize `blocks` and write both deliverables; returns the final blocks."""
+    """Finalize `blocks` and write the SRT deliverable; returns the final
+    blocks. The ASS of the dialogue is rendered from it where it is used
+    (`render_ass`)."""
     final = finalize_blocks(blocks, units)
-    atomic_write_text(ass_path, render_ass(final))
     write_srt_file(srt_path, final)
     return final
+
+
+def write_ass(blocks: Sequence[SrtBlock], path: Path) -> None:
+    """`render_ass` of finalized `blocks`, atomic and BOM-less UTF-8."""
+    atomic_write_text(path, render_ass(blocks))

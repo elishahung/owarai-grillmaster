@@ -78,16 +78,18 @@ def project(layout: ProjectLayout) -> ProjectLayout:
     return layout
 
 
-def test_the_stage_runs_last_and_the_scan_after_combine() -> None:
-    assert STAGES[-1] is STAGE
+def test_the_stage_runs_before_the_notes_and_the_scan_after_combine() -> None:
+    assert STAGES[-2] is STAGE
+    assert STAGES[-1].key is StageKey.NOTES
     assert STAGE.key is StageKey.TELOP
     assert STAGE.outputs is not None
     assert STAGE.applies is _telop.applies
     assert telop_scan.TASK.applies is _telop.applies
     assert telop_scan.TASK.key is SideTaskKey.TELOP_SCAN
     assert telop_scan.TASK.start_after is StageKey.COMBINE
-    (step,) = TELOP_ONLY.delivery
+    step, compose = TELOP_ONLY.delivery
     assert (step.key, step.label) == (StageKey.TELOP.value, STAGE.label)
+    assert compose.key == "compose"
 
 
 def _sections(
@@ -170,10 +172,7 @@ def test_selects_beside_the_final_subtitles_after_the_scan(
     ]
     cards = read_model(project.telop_cards, TelopCards)
     assert [card.text for card in cards.cards] == [CAPTION_TEXT]
-    combined = project.cht_telop_ass.read_text(encoding="utf-8")
-    assert "還是什麼都不知道" in combined
-    assert combined.rstrip().endswith(",Default,,0,0,0,,第2句")
-    assert project.cht_telop_ass in STAGE.outputs(project)
+    assert STAGE.outputs(project) == (project.telop_cht_json,)
     task = agents.task(TASK_NAME)
     assert "line 1\t第1句" in task.prompt
     assert task.session_dir == project.work_dir(StageKey.TELOP) / "session"
@@ -235,7 +234,7 @@ def test_grill_telop_selects_again_and_records_the_stage(
     state.mark_done(StageKey.TELOP, elapsed_s=1.0, params={}, agent_usage=None)
     write_model(project.telop_cht_json, TelopSubtitles())
 
-    (step,) = TELOP_ONLY.delivery
+    step, _ = TELOP_ONLY.delivery
     assert step.run(make_context(StageKey.TELOP)) == "1 telops"
 
     assert [task.name for task in agents.tasks] == [TASK_NAME]

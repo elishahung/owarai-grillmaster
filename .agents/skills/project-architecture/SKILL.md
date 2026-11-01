@@ -12,7 +12,7 @@ description: >-
   delivery step, changing resumability, the project layout or the ledger,
   adding a setting or command, adding a source platform, or any change that
   spans packages. Deep dives: agent-orchestration, translate-pipeline,
-  postprocess-and-packaging, live-chat.
+  postprocess-and-packaging, live-chat, telop, notes.
 ---
 
 # Owarai GrillMaster — Architecture
@@ -31,6 +31,7 @@ cli
 tui | pipeline
 stages
 translate | postprocess | extras | package
+notes
 live_chat | agent_tools | telop
 sources | asr | subtitles
 agents
@@ -66,14 +67,18 @@ members is a layout change. `pipeline/registry.py` holds the only lists:
 | 7 | `transcript` | `.subs/ja.srt` + `ja.voiced.srt` (same blocks, diarized `[V<n>] ` tags for the agents) |
 | 8–11 | `prepass`, `chunks`, `refine`, `glossary` | work dirs only (translate-pipeline, postprocess-and-packaging) |
 | 12 | `proofread` | `--proofread` / `[features] proofread` only: work dir only; adds `watch_clip_cost_usd` (postprocess-and-packaging) |
-| 13 | `finalize` | `video.cht.srt`, `video.cht.ass` (root, `video.mp4`'s stem: players auto-load them; under `.subs/` they did not) |
+| 13 | `finalize` | `video.cht.srt` (root, `video.mp4`'s stem: players auto-load it; under `.subs/` they did not) |
 | 14 | `chat_translate` | `--chat` only: `.subs/chat.cht.json` |
-| 15 | `telop` | telops on only (`applies` per program): `.subs/telop.cht.json`, `video.cht.telop.ass` (root; see telop) |
+| 15 | `telop` | telops on only (`applies` per program): `.subs/telop.cht.json` (see telop) |
+| 16 | `notes` | notes on only (`applies` per program): `.subs/notes.cht.json` (see notes) |
 
-Side tasks: `cover` (after `download`), `date_research` (after `metadata`),
-`telop_scan` (after `combine`; glossary, proofread and `telop` wait for it).
-Delivery: `package`. Archive is not a step definition; the runner does it
-between the stages and delivery.
+Side tasks: `cover` (after `download`), `date_research` (after `metadata`;
+notes waits for it), `telop_scan` (after `combine`; glossary, proofread,
+`telop` and notes wait for it). Delivery: `compose` (root `video.cht.ass`: the
+SRT's dialogue + telops + notes, rebuilt every complete run; its
+`DeliveryStepDef.outputs`, which any `grill reset` removes), then
+`package`. Archive is not a step definition; the runner does it between the
+stages and delivery.
 
 **Stage API (`stages/base.py`, below `pipeline`):**
 - `StageDef(key, label, weight, run, outputs, enabled, applies, on_skip, params,
@@ -90,8 +95,9 @@ between the stages and delivery.
   is_done, on_skip, …)`: `run` returns a payload; the manager writes the record
   (default `TaskRecord`) under the state lock. `applies(ctx)` skips it as
   disabled per project (program rules are known only at the start point).
-- `DeliveryStepDef(key, run, workdir, enabled, preflight, …)`: no ledger,
-  re-runs on every complete run; `preflight(options, config, state|None)`
+- `DeliveryStepDef(key, run, workdir, outputs, enabled, preflight, …)`: no ledger,
+  re-runs on every complete run; `outputs` = root deliverables derived from
+  the stages' (`video.cht.ass`), removed by any reset; `preflight(options, config, state|None)`
   runs in `Pipeline.check` (package: root dir and pools).
 - `StageContext`: `layout`, `state`, `save()`, `update(fn)` (locked atomic
   save; use it for any state change a side task may race), `config`,
@@ -104,7 +110,8 @@ between the stages and delivery.
   `tests/fakes.py`).
 - `pipeline.delivery.as_delivery_step(stage)` runs a stage as the only
   delivery step on an existing (even archived) project whatever its ledger
-  says, then records it (`grill telop`).
+  says, then records it (`grill telop`, `grill notes`; both then run
+  `compose`).
 - Read upstream artifacts through `require(path, produced_by)`; a missing file
   raises `MissingArtifactError` naming the `grill reset --from` to run.
 - Stages are plain modules exporting `STAGE` / `TASK` / `STEP`. Shared glue
@@ -164,7 +171,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 - `layout.py` `ProjectLayout` is the **only** place that spells a project
   path (pure calculator, never creates dirs). Root: `project.json`,
   `video.mp4` + `video.cht.{srt,ass}`, `poster.jpg`, `cover.png`, `.subs/`
-  (`ja.srt`, `ja.voiced.srt`, `ja.official.srt`, `chat.cht.json`, `telop.cht.json`), `.logs/{run,events}-<ts>`.
+  (`ja.srt`, `ja.voiced.srt`, `ja.official.srt`, `chat.cht.json`, `telop.cht.json`, `notes.cht.json`), `.logs/{run,events}-<ts>`.
   Work: `.work/NN_<key>/`, unnumbered `.work/side/<task>/` and `.work/package/`.
   Non-deliverables live in dot dirs so Plex/Infuse skip their videos;
   `archive_discards()` (`watch_clip` clips and audio) are deleted by `archive_project`.
@@ -210,7 +217,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   `$GRILL_HOME/grill.toml`; its directory is the root for `projects/`, `.env`
   and relative paths. `AppConfig` (`model.py`) forbids unknown keys
   everywhere. Sections: `paths`, `agents` (+ `roles`: prepass, chunk,
-  postprocess, proofread→postprocess, utility, image), `asr`, `watch_clip`, `translate`, `features`,
+  postprocess, editor→postprocess (proofread + notes), utility, image), `asr`, `watch_clip`, `translate`, `features`,
   `package` (+ `inserts`), `programs.{series,channel}`.
 - Only `cli/`, `pipeline/` and `stages/` see the whole `AppConfig`; stages
   pass domain code only the sections or values it needs. No global settings object.
@@ -224,8 +231,10 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   from the `.env` path in its manifest.
 - `programs.py` `ProgramRules`: channel then series entries merged (`common`
   text before stage text; stage keys `prepass`, `chunks`, `refine`,
-  `glossary`, `proofread`, `telop`; `remix` OR-merges, `telop` is
-  tri-state, series' explicit value over channel's, `None` = follow `[features]`). `register_program` (download stage) is the only writer of
+  `glossary`, `proofread`, `telop`, `notes`; `remix` OR-merges, `telop` and
+  `notes` are tri-state, series' explicit value over channel's, `None` =
+  follow `[features]`; `stages._common.switch_enabled/switch_applies` add the
+  run flag on top). `register_program` (download stage) is the only writer of
   `grill.toml`, appending empty entries with `tomlkit` under
   `grill.toml.lock`, re-reading the file inside it (concurrent processes).
 
@@ -277,8 +286,8 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 ## CLI (`cli/`)
 
 `grill <src> [HINT]` = `grill run`; options `--break-after <key>`, `--parent [dir]`,
-`--cover`, `--date-research`, `--proofread`, `--telop/--no-telop`, `--chat`, `--chat-layout`, `--remix [pool]`,
-`--start`, `--to`. Also `serial`, `package <dir|id>`, `telop <dir|id>`, `archive <id>`,
+`--cover`, `--date-research`, `--proofread`, `--telop/--no-telop`, `--notes/--no-notes`, `--chat`, `--chat-layout`, `--remix [pool]`,
+`--start`, `--to`. Also `serial`, `package <dir|id>`, `telop <dir|id>`, `notes <dir|id> [--probe]`, `archive <id>`,
 `reset <id> --from|--only <key>`, `status [<id>]`, `doctor`. `package`,
 `archive` and `status` resolve an ID locally only (pass an archived
 project's directory). Commands import

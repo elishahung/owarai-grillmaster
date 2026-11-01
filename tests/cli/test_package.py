@@ -122,6 +122,23 @@ def test_no_telop_leaves_the_telops_out(
     assert seen.options[0].telop is telop
 
 
+@pytest.mark.parametrize(("flags", "notes"), [([], None), (["--no-notes"], False)])
+def test_no_notes_leaves_the_notes_out(
+    cli: CliRunner,
+    *,
+    packaging_home: Path,
+    layout: ProjectLayout,
+    pipeline: Pipeline,
+    seen: Seen,
+    flags: list[str],
+    notes: bool | None,
+):
+    result = cli.invoke(app, ["package", layout.root.name, *flags], obj=pipeline)
+
+    assert result.exit_code == 0, result.output
+    assert seen.options[0].notes is notes
+
+
 def test_refuses_without_a_package_root(
     cli: CliRunner, home: Path, layout: ProjectLayout, pipeline: Pipeline, seen: Seen
 ):

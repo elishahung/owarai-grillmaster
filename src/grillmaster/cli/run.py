@@ -35,7 +35,7 @@ ProofreadOption = Annotated[
         "--proofread",
         help=(
             "Run the final proofread stage after the glossary check (role "
-            "proofread, else postprocess)."
+            "editor, else postprocess)."
         ),
     ),
 ]
@@ -49,6 +49,20 @@ TelopOption = Annotated[
             "telop`); --no-telop skips them and leaves existing ones out of "
             "the burn-in. Either overrides [features] telop and the program's "
             "telop."
+        ),
+        show_default=False,
+    ),
+]
+NotesOption = Annotated[
+    bool | None,
+    typer.Option(
+        "--notes/--no-notes",
+        help=(
+            "Add translator's notes at the top of the picture, explaining the "
+            "references a Taiwanese viewer would miss (role editor, else "
+            "postprocess); --no-notes skips them and leaves existing ones out "
+            "of the burn-in. Either overrides [features] notes and the "
+            "program's notes."
         ),
         show_default=False,
     ),
@@ -130,6 +144,7 @@ def run_command(
     date_research: DateResearchOption = False,
     proofread: ProofreadOption = False,
     telop: TelopOption = None,
+    notes: NotesOption = None,
     chat: ChatOption = False,
     chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
     remix: RemixOption = None,
@@ -179,6 +194,7 @@ def run_command(
         date_research=date_research,
         proofread=proofread,
         telop=telop,
+        notes=notes,
         chat=chat,
         chat_layout=chat_layout,
         remix=resolve_remix(remix, loaded.config.package.remix_pool),

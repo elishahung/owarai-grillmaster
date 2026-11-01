@@ -28,8 +28,8 @@ _NAMED_PATHS: list[tuple[Callable[[ProjectLayout], Path], str]] = [
     (lambda p: p.ja_official_srt, ".subs/ja.official.srt"),
     (lambda p: p.cht_srt, "video.cht.srt"),
     (lambda p: p.cht_ass, "video.cht.ass"),
-    (lambda p: p.cht_telop_ass, "video.cht.telop.ass"),
     (lambda p: p.chat_cht_json, ".subs/chat.cht.json"),
+    (lambda p: p.notes_cht_json, ".subs/notes.cht.json"),
     (lambda p: p.logs_dir, ".logs"),
     (lambda p: p.metadata_info, ".work/01_metadata/info.json"),
     (lambda p: p.download_parts_dir, ".work/02_download/parts"),
@@ -61,6 +61,11 @@ _NAMED_PATHS: list[tuple[Callable[[ProjectLayout], Path], str]] = [
     (lambda p: p.package_work_dir, ".work/package"),
     (lambda p: p.titles, ".work/package/titles.json"),
     (lambda p: p.chat_panel_ass, ".work/package/chat.ass"),
+    (lambda p: p.dialogue_ass, ".work/package/dialogue.ass"),
+    (lambda p: p.notes_ass, ".work/package/notes.ass"),
+    (lambda p: p.notes_frames_dir, ".work/16_notes/frames"),
+    (lambda p: p.notes_probe, ".work/16_notes/probe.json"),
+    (lambda p: p.notes_probe_report, ".work/16_notes/probe.md"),
     (lambda p: p.side_dir(SideTaskKey.COVER), ".work/side/cover"),
     (lambda p: p.side_dir(SideTaskKey.DATE_RESEARCH), ".work/side/date_research"),
     (lambda p: p.chunk_dir(1, 119), ".work/09_chunks/0001-0119"),
@@ -102,6 +107,7 @@ def test_every_stage_has_a_numbered_work_dir():
         ".work/13_finalize",
         ".work/14_chat_translate",
         ".work/15_telop",
+        ".work/16_notes",
     ]
 
 
@@ -136,6 +142,7 @@ def test_session_and_frames_enumerations():
         ".work/12_proofread",
         ".work/14_chat_translate",
         ".work/15_telop",
+        ".work/16_notes",
         ".work/side/cover",
         ".work/side/date_research",
         ".work/package",
@@ -147,6 +154,7 @@ def test_session_and_frames_enumerations():
         ".work/11_glossary/frames",
         ".work/12_proofread/frames",
         ".work/15_telop/frames",
+        ".work/16_notes/frames",
     ]
 
 

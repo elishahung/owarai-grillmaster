@@ -13,6 +13,7 @@ touching (paths under `src/grillmaster/`):
 | `postprocess/`, `extras/`, `subtitles/`, `package/`, their stages, side tasks, delivery | **postprocess-and-packaging** |
 | `live_chat/`, `stages/chat_fetch.py`, `stages/chat_translate.py` (`--chat`) | **live-chat** |
 | `telop/`, `stages/telop.py`, `stages/telop_scan.py`, `stages/_telop.py` (`--telop`, `grill telop`) | **telop** |
+| `notes/`, `stages/notes.py` (`--notes`, `grill notes [--probe]`) | **notes** |
 
 For a change that spans packages (new stage, new setting, new platform), start
 with **project-architecture** — it holds the pipeline contract and the
@@ -31,13 +32,13 @@ Pipeline at a glance (stage keys, in order; `.work/NN_<key>/` per stage with
 intermediates):
 `metadata → download → combine → (chat_fetch) → audio → asr → transcript →
 prepass → chunks → refine → glossary → (proofread) → finalize → (chat_translate) →
-(telop)`, then `(archive)` and delivery `(package)`, which reads the archived
-copy. Side tasks `(cover)`, `(date_research)` and `(telop_scan)` run beside
+(telop) → (notes)`, then `(archive)` and delivery: `compose` (`video.cht.ass`)
+and `(package)`, which read the archived copy. Side tasks `(cover)`, `(date_research)` and `(telop_scan)` run beside
 the stages. Parentheses mark optional steps.
 
 Commands (`bin/grill.bat` is the PATH launcher; `scripts/` holds dev tools):
 `grill <SOURCE> [HINT]` (= `grill run`), `grill serial`,
-`grill package`, `grill telop`, `grill archive`, `grill reset <id> --from|--only <stage>`,
+`grill package`, `grill telop`, `grill notes`, `grill archive`, `grill reset <id> --from|--only <stage>`,
 `grill status`, `grill doctor`. Entry point `grillmaster.cli:main`.
 
 Layering: packages may import only downward in the `.importlinter` layer

@@ -65,6 +65,24 @@ def test_run_telop_flags_force_either_way(
     assert [options.telop for options in seen.options] == [telop]
 
 
+@pytest.mark.parametrize(
+    ("flags", "notes"), [([], None), (["--notes"], True), (["--no-notes"], False)]
+)
+def test_run_notes_flags_force_either_way(
+    cli: CliRunner,
+    *,
+    projects_root: Path,
+    pipeline: Pipeline,
+    seen: Seen,
+    flags: list[str],
+    notes: bool | None,
+):
+    result = cli.invoke(app, ["epnew1", *flags], obj=pipeline)
+
+    assert result.exit_code == 0, result.output
+    assert [options.notes for options in seen.options] == [notes]
+
+
 def test_run_passes_the_hint(cli: CliRunner, projects_root: Path):
     result = cli.invoke(app, ["epnew1", "漫才の大会"])
     assert result.exit_code == 0, result.output
@@ -186,8 +204,8 @@ def test_reset_from(cli: CliRunner, layout: ProjectLayout, finished: ProjectStat
     result = cli.invoke(app, ["reset", "epabc123", "--from", "refine", "--yes"])
     assert result.exit_code == 0, result.output
     assert (
-        "Reset refine, glossary, proofread, finalize, chat_translate, telop of epabc123"
-        in (result.output)
+        "Reset refine, glossary, proofread, finalize, chat_translate, telop, notes "
+        "of epabc123" in (result.output)
     )
     assert f"removed {layout.work_dir(StageKey.REFINE)}" in result.output
     saved = load_state(layout)

@@ -9,6 +9,7 @@ layers =
     (grillmaster.tui) | (grillmaster.pipeline)
     (grillmaster.stages)
     (grillmaster.translate) | (grillmaster.postprocess) | (grillmaster.extras) | (grillmaster.package)
+    (grillmaster.notes)
     (grillmaster.live_chat) | (grillmaster.agent_tools) | (grillmaster.telop)
     (grillmaster.sources) | (grillmaster.asr) | (grillmaster.subtitles)
     (grillmaster.agents)
@@ -30,6 +31,7 @@ source_modules =
     grillmaster.glossary
     grillmaster.live_chat
     grillmaster.telop
+    grillmaster.notes
     grillmaster.asr
     grillmaster.sources
     grillmaster.translate
@@ -70,6 +72,7 @@ forbidden_modules =
     grillmaster.package
     grillmaster.live_chat
     grillmaster.telop
+    grillmaster.notes
     grillmaster.agent_tools
     grillmaster.sources
     grillmaster.asr

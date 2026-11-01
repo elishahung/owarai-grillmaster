@@ -1,5 +1,5 @@
 """Delivery: the archive move after the last stage, then the delivery steps
-(package).
+(compose `video.cht.ass`, package).
 
 Delivery steps are not stages: they have no ledger entry and run again on
 every complete run. A `--break-after` run skips them and the archive. Archive
@@ -70,8 +70,8 @@ def run_delivery(
 
 
 def as_delivery_step(stage: StageDef) -> DeliveryStepDef:
-    """`stage` as the one step of a run on an existing project, local or
-    archived (`grill telop`): the same work, label and params in the stage's
+    """`stage` as a step of a run on an existing project, local or
+    archived (`grill telop`, `grill notes`): the same work, label and params in the stage's
     work directory, run whatever the ledger says (archived projects cannot
     be reset) and then recorded in it (elapsed time only)."""
 

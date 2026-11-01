@@ -33,7 +33,7 @@ class Role(StrEnum):
     PREPASS = "prepass"
     CHUNK = "chunk"
     POSTPROCESS = "postprocess"
-    PROOFREAD = "proofread"  # optional final proofread after the glossary check
+    EDITOR = "editor"  # the optional proofread and translator's notes
     UTILITY = "utility"  # titles, date research, telops, live chat, handoff repairs
     IMAGE = "image"  # cover generation; needs image-generation capability
 

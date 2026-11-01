@@ -387,7 +387,7 @@ def build_proofread_task(
     )
     return AgentTask(
         name=TASK_NAME,
-        role=Role.PROOFREAD,
+        role=Role.EDITOR,
         instructions=instructions,
         prompt=prompt,
         session_dir=session_dir,

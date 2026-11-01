@@ -122,7 +122,8 @@ def render_cards(cards: Sequence[TelopCard]) -> str:
     return "id\tseconds\tposition\techoes_speech\ttext\n" + "\n".join(rows)
 
 
-def _flat(text: str) -> str:
+def flat(text: str) -> str:
+    """A block's lines on one row, ` / ` between them."""
     return " / ".join(line.strip() for line in text.splitlines() if line.strip())
 
 
@@ -132,8 +133,8 @@ def render_dialogue(
     """Each block's start, Japanese and final Chinese, paired by index."""
     zh = {block.index: block.text for block in subtitles}
     rows = [
-        f"{block.time_range.start:.1f}\t{_flat(block.text)}\t"
-        f"{_flat(zh.get(block.index, ''))}"
+        f"{block.time_range.start:.1f}\t{flat(block.text)}\t"
+        f"{flat(zh.get(block.index, ''))}"
         for block in transcript
     ]
     return "seconds\tja\tzh\n" + "\n".join(rows)

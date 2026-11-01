@@ -42,8 +42,9 @@ class RunOptions:
 
     `cover` / `date_research` / `proofread` are the per-run flags; their
     steps combine them with `[features]`. `telop` is `--telop` / `--no-telop`
-    (`None` without either), which overrides the feature and the program
-    rules; `False` also leaves translated telops out of the burn-in. `remix` is a resolved pool name (a bare `--remix`
+    and `notes` `--notes` / `--no-notes` (`None` without either), which
+    override the feature and the program rules; `False` also leaves existing
+    telops or notes out of the burn-in and `video.cht.ass`. `remix` is a resolved pool name (a bare `--remix`
     already became `package.remix_pool`). `section` is where `--start` /
     `--to` cut the source; it only applies while the combine stage has not
     run.
@@ -57,6 +58,7 @@ class RunOptions:
     date_research: bool = False
     proofread: bool = False
     telop: bool | None = None
+    notes: bool | None = None
     chat: bool = False
     chat_layout: ChatLayout = DEFAULT_CHAT_LAYOUT
     remix: str | None = None
@@ -247,7 +249,9 @@ class DeliveryStepDef:
     """One delivery step.
 
     `run` returns the `StepCompleted` result text; `workdir` is the step's
-    own directory (its `StageContext.workdir`). `preflight` raises when the
+    own directory (its `StageContext.workdir`). `outputs` lists the root
+    deliverables it derives from the stages' outputs (rebuilt every complete
+    run), which `grill reset` of any stage removes. `preflight` raises when the
     step would fail on its configuration (a missing pool); `Pipeline.check`
     runs it before any stage when the step will run, with the project's
     state when it exists (`None` before the first run).
@@ -258,6 +262,7 @@ class DeliveryStepDef:
     weight: int
     run: Callable[[StageContext], str | None]
     workdir: Callable[[ProjectLayout], Path]
+    outputs: Callable[[ProjectLayout], Sequence[Path]] = no_outputs
     enabled: Callable[[RunOptions, AppConfig], bool] = always
     params: Callable[[AppConfig], dict[str, str]] = no_params
     preflight: Callable[[RunOptions, AppConfig, ProjectState | None], None] = (

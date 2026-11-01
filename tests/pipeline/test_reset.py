@@ -11,6 +11,7 @@ from grillmaster.pipeline.registry import Pipeline
 from grillmaster.pipeline.reset import reset, stages_from
 from grillmaster.project.state import Section
 from grillmaster.project.store import load_state
+from grillmaster.stages.base import DeliveryStepDef
 
 if TYPE_CHECKING:
     from grillmaster.project.layout import ProjectLayout
@@ -32,11 +33,19 @@ def pipeline() -> Pipeline:
             ),
             fake_stage(StageKey.CHUNKS, journal),
             fake_stage(
-                StageKey.FINALIZE,
-                journal,
-                outputs=lambda layout: (layout.cht_srt, layout.cht_ass),
+                StageKey.FINALIZE, journal, outputs=lambda layout: (layout.cht_srt,)
             ),
-        )
+        ),
+        delivery=(
+            DeliveryStepDef(
+                key="compose",
+                label="Compose",
+                weight=1,
+                run=lambda _ctx: None,
+                workdir=lambda layout: layout.package_work_dir,
+                outputs=lambda layout: (layout.cht_ass,),
+            ),
+        ),
     )
 
 
@@ -63,6 +72,7 @@ def test_reset_from_clears_the_stage_and_everything_after(
         StageKey.FINALIZE,
         StageKey.CHAT_TRANSLATE,
         StageKey.TELOP,
+        StageKey.NOTES,
     )
     assert result.stages == cleared
     assert result.removed == (
@@ -70,9 +80,11 @@ def test_reset_from_clears_the_stage_and_everything_after(
         layout.work_dir(StageKey.PROOFREAD),
         layout.work_dir(StageKey.FINALIZE),
         layout.cht_srt,
-        layout.cht_ass,
         layout.work_dir(StageKey.CHAT_TRANSLATE),
         layout.work_dir(StageKey.TELOP),
+        layout.work_dir(StageKey.NOTES),
+        # Derived by a delivery step: dropped on any reset.
+        layout.cht_ass,
     )
     saved = load_state(layout)
     assert [key for key in StageKey if saved.is_done(key)] == [
@@ -87,7 +99,11 @@ def test_reset_only_leaves_downstream_alone(
 ):
     result = reset(layout, finished, (StageKey.TRANSCRIPT,), pipeline=pipeline)
     assert result.stages == (StageKey.TRANSCRIPT,)
-    assert result.removed == (layout.work_dir(StageKey.TRANSCRIPT), layout.ja_srt)
+    assert result.removed == (
+        layout.work_dir(StageKey.TRANSCRIPT),
+        layout.ja_srt,
+        layout.cht_ass,
+    )
     saved = load_state(layout)
     assert not saved.is_done(StageKey.TRANSCRIPT)
     assert saved.is_done(StageKey.PREPASS)
@@ -113,6 +129,7 @@ def test_stages_from():
         StageKey.FINALIZE,
         StageKey.CHAT_TRANSLATE,
         StageKey.TELOP,
+        StageKey.NOTES,
     )
 
 

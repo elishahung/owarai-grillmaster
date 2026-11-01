@@ -78,7 +78,7 @@ def test_role_values_match_grill_toml_keys():
         "prepass",
         "chunk",
         "postprocess",
-        "proofread",
+        "editor",
         "utility",
         "image",
     ]

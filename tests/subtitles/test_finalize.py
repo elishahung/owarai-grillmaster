@@ -27,6 +27,7 @@ from grillmaster.subtitles.finalize import (
     fit_text,
     name_units,
     render_ass,
+    write_ass,
     write_finalized,
 )
 
@@ -329,12 +330,12 @@ def test_write_finalized_spaces_then_cleans(tmp_path: Path):
     ass_path = tmp_path / "subs" / "cht.ass"
     srt_path = tmp_path / "subs" / "cht.srt"
 
-    write_finalized(
+    final = write_finalized(
         blocks,
         units=name_units(EMPTY_BRIEFING, load_fixed_glossary()),
-        ass_path=ass_path,
         srt_path=srt_path,
     )
+    write_ass(final, ass_path)
 
     assert srt_path.read_text(encoding="utf-8") == (
         "1\n00:00:01,000 --> 00:00:02,000\n以及 空前Meteor 的茶屋\n\n"

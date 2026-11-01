@@ -27,6 +27,7 @@ class StageKey(StrEnum):
     FINALIZE = "finalize"
     CHAT_TRANSLATE = "chat_translate"
     TELOP = "telop"
+    NOTES = "notes"
 
     @property
     def number(self) -> int:

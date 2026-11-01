@@ -49,6 +49,7 @@ from grillmaster.media.frames import extract_frames
 from grillmaster.package.render import SubtitleLayer
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.naming import archived_dirs
+from grillmaster.subtitles.finalize import write_ass
 from grillmaster.telop import render, scan
 from grillmaster.telop.select import TelopSubtitles
 
@@ -305,11 +306,12 @@ def placement_command(baseline: Path, projects: list[str], out_dir: Path) -> Non
         subtitles = TelopSubtitles.model_validate_json(
             layout.telop_cht_json.read_text("utf-8")
         )
-        # Both with the dialogue, which the placement may avoid.
+        # Both placed beside the dialogue, which they may avoid; it is
+        # burned over both.
         dialogue = read_srt_file(layout.cht_srt)
         scripts = (
-            old.render_with_dialogue(dialogue, subtitles),
-            render.render_with_dialogue(dialogue, subtitles),
+            old.render_telop_ass(subtitles, dialogue=dialogue),
+            render.render_telop_ass(subtitles, dialogue=dialogue),
         )
         before, after = (_telop_moments(script) for script in scripts)
         moved = sorted(
@@ -328,6 +330,8 @@ def placement_command(baseline: Path, projects: list[str], out_dir: Path) -> Non
         layers = (SubtitleLayer(work / "before.ass"), SubtitleLayer(work / "after.ass"))
         for layer, script in zip(layers, scripts, strict=True):
             layer.path.write_text(script, encoding="utf-8")
+        lines = SubtitleLayer(work / "dialogue.ass")
+        write_ass(dialogue, lines.path)
         for start in moved:
             ends = [
                 _seconds(match[2])
@@ -347,8 +351,9 @@ def placement_command(baseline: Path, projects: list[str], out_dir: Path) -> Non
                     "-i",
                     str(layout.video),
                     "-filter_complex",
-                    f"[0]split[a][b];[a]{layers[0].filter(work)},{scale},"
-                    f"pad=iw+16:ih:0:0:white[l];[b]{layers[1].filter(work)},{scale}[r];"
+                    f"[0]split[a][b];[a]{layers[0].filter(work)},"
+                    f"{lines.filter(work)},{scale},pad=iw+16:ih:0:0:white[l];"
+                    f"[b]{layers[1].filter(work)},{lines.filter(work)},{scale}[r];"
                     "[l][r]hstack",
                     "-frames:v",
                     "1",

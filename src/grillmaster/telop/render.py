@@ -17,9 +17,8 @@ reaches well past big text. It leaves with its card, or after
 `MAX_SHOWN_S` when the card stays well past that. Positions follow `frame`, the
 picture's box on the canvas (a side layout shrinks it).
 
-The telop stage also writes the full-picture layer together with the
-dialogue as one script beside the video, for playing it with external
-subtitles.
+The compose delivery step puts the full-picture layer (`telop_events`) into
+`video.cht.ass` with the dialogue and the notes.
 """
 
 from __future__ import annotations
@@ -37,7 +36,6 @@ from grillmaster.core.timecode import (
 from grillmaster.subtitles.ass import (
     CANVAS_INFO,
     DIALOGUE_MARGINS,
-    DIALOGUE_STYLE,
     FONT_NAME,
     FULL_PICTURE,
     PLAY_RES_X,
@@ -47,10 +45,10 @@ from grillmaster.subtitles.ass import (
     bgr,
     dialogue_rows,
     escape_text,
+    script,
     script_header,
     text_width,
 )
-from grillmaster.subtitles.finalize import dialogue_line
 from grillmaster.telop.ocr import text_box
 from grillmaster.telop.scan import set_vertically
 
@@ -90,7 +88,6 @@ STYLES = [
     _style(VERTICAL_STYLE_NAME, f"@{FONT_NAME}", 270, 7),
 ]
 HEADER = script_header(CANVAS_INFO, STYLES)
-WITH_DIALOGUE_HEADER = script_header(CANVAS_INFO, [DIALOGUE_STYLE, *STYLES])
 # Room between a translation and its card.
 _GAP = 8
 # What covering a share of a placed translation or a card line costs (of
@@ -644,6 +641,18 @@ def _events(
     return events
 
 
+def telop_events(
+    subtitles: TelopSubtitles,
+    frame: PictureBox = FULL_PICTURE,
+    *,
+    dialogue: Sequence[SrtBlock] = (),
+    margins: DialogueMargins = DIALOGUE_MARGINS,
+) -> list[str]:
+    """The telop layer's `Dialogue` events inside `frame`, kept off the
+    `dialogue` set within `margins` where it can be; they take `STYLES`."""
+    return _events(subtitles, frame, _cues(dialogue, margins))
+
+
 def render_telop_ass(
     subtitles: TelopSubtitles,
     frame: PictureBox = FULL_PICTURE,
@@ -651,23 +660,10 @@ def render_telop_ass(
     dialogue: Sequence[SrtBlock] = (),
     margins: DialogueMargins = DIALOGUE_MARGINS,
 ) -> str:
-    """The telop layer inside `frame`, kept off the `dialogue` set within
-    `margins` where it can be."""
-    events = _events(subtitles, frame, _cues(dialogue, margins))
-    return HEADER + "".join(f"{event}\n" for event in events)
-
-
-def render_with_dialogue(
-    dialogue: Sequence[SrtBlock], subtitles: TelopSubtitles
-) -> str:
-    """The finalized dialogue and the telops in one script, for players that
-    show one subtitle track: the telops come first, so the dialogue draws on
-    top of them as it does when burned in."""
-    events = [
-        *_events(subtitles, FULL_PICTURE, _cues(dialogue, DIALOGUE_MARGINS)),
-        *(dialogue_line(block) for block in dialogue),
-    ]
-    return WITH_DIALOGUE_HEADER + "".join(f"{event}\n" for event in events)
+    """`telop_events` as a script of its own."""
+    return script(
+        HEADER, telop_events(subtitles, frame, dialogue=dialogue, margins=margins)
+    )
 
 
 def write_telop_ass(
@@ -682,9 +678,3 @@ def write_telop_ass(
     atomic_write_text(
         path, render_telop_ass(subtitles, frame, dialogue=dialogue, margins=margins)
     )
-
-
-def write_with_dialogue(
-    dialogue: Sequence[SrtBlock], subtitles: TelopSubtitles, path: Path
-) -> None:
-    atomic_write_text(path, render_with_dialogue(dialogue, subtitles))

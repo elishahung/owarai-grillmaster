@@ -7,7 +7,7 @@ description: >-
   translates them (`select.py`, `prompts/select.md`), the reference table
   glossary/proofread read (`reference.py`) and the ASS layer packaging burns
   in beside each card (`render.py`); glue `stages/telop_scan.py`
-  (side task), `stages/telop.py` (last stage, `grill telop`) and
+  (side task), `stages/telop.py` (stage before notes, `grill telop`) and
   `stages/_telop.py`. Read this before changing the OCR engine, the
   grouping thresholds, the selector, the placement or how telops reach the
   other stages and the package.
@@ -66,13 +66,12 @@ and, without a flag, stays on while the feature or any program may ask;
    them, see the strict xfails in `test_scan.py`). A translation that
    normalizes to its lines' text (a kanji place name) is dropped by Python. Deliverable
    `.subs/telop.cht.json` (`TelopSubtitles`, the stage's declared output), hand-editable;
-   `grill reset <id> --only telop` selects again. The stage also writes
-   `video.cht.telop.ass` at the root (`render.render_with_dialogue`: the
-   `video.cht.srt` dialogue plus the full-picture telop layer, telops first
-   so the dialogue draws on top) for external playback; a hand edit of the
-   JSON does not refresh it.
+   `grill reset <id> --only telop` selects again. The compose delivery step
+   puts the full-picture layer into the root `video.cht.ass` with the
+   dialogue (drawn on top) and the notes, every complete run, so a hand
+   edit reaches it there.
 4. **`grill telop <dir|id>`** runs the stage on a finished or archived
-   project (`pipeline.delivery.as_delivery_step`, alone in
+   project (`pipeline.delivery.as_delivery_step`, then compose, in
    `registry.TELOP_ONLY`) whatever the ledger says — archives cannot be
    reset — and records it in the ledger; it scans first when no scan is kept.
 5. **Package** — `package.assemble.with_telops` renders

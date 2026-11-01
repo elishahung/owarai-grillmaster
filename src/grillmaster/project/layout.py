@@ -1,7 +1,7 @@
 """Every path inside a project directory, and nothing else.
 
 Deliverables live at the root (`video.mp4` with its `video.cht.srt` /
-`video.cht.ass` and the optional `video.cht.telop.ass` / `video.xml` beside it, `poster.jpg`, `cover.png`, `.subs/`); each stage keeps its intermediates in its own `.work/NN_<stage>/`
+`video.cht.ass` and the optional `video.xml` beside it, `poster.jpg`, `cover.png`, `.subs/`); each stage keeps its intermediates in its own `.work/NN_<stage>/`
 (`NN` = `StageKey.number`); side tasks and packaging get unnumbered
 `.work/side/<task>/` and `.work/package/`. No other module spells a project
 path: stages and the pipeline ask this class and hand the paths on (to
@@ -113,14 +113,10 @@ class ProjectLayout:
 
     @property
     def cht_ass(self) -> Path:
-        """Styled Traditional Chinese ASS, beside `video` like `cht_srt`."""
+        """Styled Traditional Chinese ASS, beside `video` like `cht_srt`: the
+        dialogue with the translated telops and the notes (the compose
+        delivery step), one track for players."""
         return self._beside_video("cht.ass")
-
-    @property
-    def cht_telop_ass(self) -> Path:
-        """`cht_ass` with the translated telops added (telop stage), beside
-        `video` for players that show one subtitle track."""
-        return self._beside_video("cht.telop.ass")
 
     @property
     def infuse_metadata(self) -> Path:
@@ -136,6 +132,11 @@ class ProjectLayout:
     def chat_cht_json(self) -> Path:
         """Translated live chat (`--chat` only)."""
         return self.subs_dir / "chat.cht.json"
+
+    @property
+    def notes_cht_json(self) -> Path:
+        """Translator's notes (notes stage); burned in at package time."""
+        return self.subs_dir / "notes.cht.json"
 
     @property
     def logs_dir(self) -> Path:
@@ -193,6 +194,7 @@ class ProjectLayout:
             self.work_dir(StageKey.PROOFREAD),
             self.work_dir(StageKey.CHAT_TRANSLATE),
             self.work_dir(StageKey.TELOP),
+            self.work_dir(StageKey.NOTES),
             self.side_dir(SideTaskKey.COVER),
             self.side_dir(SideTaskKey.DATE_RESEARCH),
             self.package_work_dir,
@@ -210,6 +212,7 @@ class ProjectLayout:
             self.glossary_frames_dir,
             self.proofread_frames_dir,
             self.telop_frames_dir,
+            self.notes_frames_dir,
         )
 
     # --- per-stage artifacts ------------------------------------------------
@@ -404,6 +407,32 @@ class ProjectLayout:
     def telop_ass(self) -> Path:
         """Telop ASS layer rendered at package time."""
         return self.package_work_dir / "telop.ass"
+
+    @property
+    def notes_frames_dir(self) -> Path:
+        """Stills the notes agent fetched with `get_frames`."""
+        return self.work_dir(StageKey.NOTES) / "frames"
+
+    @property
+    def notes_probe(self) -> Path:
+        """`grill notes --probe`'s answer: the candidates the agent weighed
+        and whether it would note each (rewritten every probe)."""
+        return self.work_dir(StageKey.NOTES) / "probe.json"
+
+    @property
+    def notes_probe_report(self) -> Path:
+        """`notes_probe` as a table to read."""
+        return self.work_dir(StageKey.NOTES) / "probe.md"
+
+    @property
+    def notes_ass(self) -> Path:
+        """Notes ASS layer rendered at package time."""
+        return self.package_work_dir / "notes.ass"
+
+    @property
+    def dialogue_ass(self) -> Path:
+        """Dialogue ASS layer rendered at package time from `cht_srt`."""
+        return self.package_work_dir / "dialogue.ass"
 
     @property
     def titles(self) -> Path:

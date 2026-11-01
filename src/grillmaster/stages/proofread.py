@@ -211,5 +211,5 @@ STAGE = StageDef(
     run=_run,
     enabled=flag_or_feature("proofread"),
     preflight=_preflight,
-    params=role_params(Role.PROOFREAD, watch_clip=_watch_clip_param),
+    params=role_params(Role.EDITOR, watch_clip=_watch_clip_param),
 )

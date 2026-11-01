@@ -1,12 +1,12 @@
 """Finalize stage: the effective subtitles (`.work/12_proofread/proofread.srt`
 after the optional proofread, else `.work/11_glossary/checked.srt`) into the
-deliverables `video.cht.ass` and `video.cht.srt` beside `video.mp4`, where
-players pick them up (name spacing + Netflix-TC punctuation + over-wide
-lines broken into rows).
+deliverable `video.cht.srt` beside `video.mp4`, where players pick it up
+(name spacing + Netflix-TC punctuation + over-wide lines broken into rows).
+The compose delivery step styles it into `video.cht.ass`.
 
 Name units come from the effective briefing and the fixed glossary. No
 intermediates, so `.work/13_finalize/` is never created. The step result
-lists the written files, project-relative.
+lists the written file, project-relative.
 """
 
 from __future__ import annotations
@@ -39,20 +39,14 @@ def _run(ctx: StageContext) -> str:
     blocks = write_finalized(
         read_srt_file(require(layout.effective_subtitles(), StageKey.GLOSSARY)),
         units=name_units(briefing, load_fixed_glossary()),
-        ass_path=layout.cht_ass,
         srt_path=layout.cht_srt,
     )
-    logger.success(
-        f"Finalized {len(blocks)} blocks: {layout.cht_ass}, {layout.cht_srt}"
-    )
-    return ", ".join(
-        path.relative_to(layout.root).as_posix()
-        for path in (layout.cht_ass, layout.cht_srt)
-    )
+    logger.success(f"Finalized {len(blocks)} blocks: {layout.cht_srt}")
+    return layout.cht_srt.relative_to(layout.root).as_posix()
 
 
 def _outputs(layout: ProjectLayout) -> Sequence[Path]:
-    return (layout.cht_srt, layout.cht_ass)
+    return (layout.cht_srt,)
 
 
 STAGE = StageDef(

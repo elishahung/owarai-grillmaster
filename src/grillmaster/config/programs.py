@@ -2,8 +2,8 @@
 
 A program matches up to two entries, its channel and its series. They merge
 broadest first (channel, then series): `remix` is on when either entry sets
-it, `telop` is the most specific entry's explicit choice (`None` when neither
-sets it), and each stage's instruction text is every entry's `common` text followed
+it, `telop` and `notes` are the most specific entry's explicit choice (`None`
+when neither sets it), and each stage's instruction text is every entry's `common` text followed
 by its stage text, in that order. Inserts are the ones no program lists plus
 the ones a matching entry lists, in declaration order.
 
@@ -24,6 +24,7 @@ from grillmaster.core.fs import atomic_write_text, exclusive_lock
 from grillmaster.core.prompts import join_sections
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from pathlib import Path
 
     from grillmaster.config.model import (
@@ -46,6 +47,7 @@ class ProgramRules:
 
     remix: bool = False
     telop: bool | None = None
+    notes: bool | None = None
     inserts: tuple[InsertRule, ...] = ()
     instructions: tuple[ProgramInstruction, ...] = ()
 
@@ -88,16 +90,22 @@ def resolve_program_rules(
     listed = {name for rule in entries for name in rule.inserts}
     return ProgramRules(
         remix=any(rule.remix for rule in entries),
-        telop=next(
-            (rule.telop for rule in reversed(entries) if rule.telop is not None),
-            None,
-        ),
+        telop=_most_specific(rule.telop for rule in entries),
+        notes=_most_specific(rule.notes for rule in entries),
         inserts=tuple(
             insert
             for insert in package.inserts
             if insert.output not in scoped or insert.output in listed
         ),
         instructions=tuple(rule.instruction for rule in entries),
+    )
+
+
+def _most_specific(choices: Iterable[bool | None]) -> bool | None:
+    """The last explicit choice of entries in merge order (series over
+    channel), `None` when none makes one."""
+    return next(
+        (choice for choice in reversed(list(choices)) if choice is not None), None
     )
 
 

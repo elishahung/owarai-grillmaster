@@ -19,12 +19,14 @@ from grillmaster.stages import (
     chat_translate,
     chunks,
     combine,
+    compose,
     cover,
     date_research,
     download,
     finalize,
     glossary,
     metadata,
+    notes,
     package,
     prepass,
     proofread,
@@ -183,15 +185,20 @@ STAGES: tuple[StageDef, ...] = (
     finalize.STAGE,
     chat_translate.STAGE,
     telop.STAGE,
+    notes.STAGE,
 )
 SIDE_TASKS: tuple[SideTaskDef[Any], ...] = (
     cover.TASK,
     date_research.TASK,
     telop_scan.TASK,
 )
-DELIVERY: tuple[DeliveryStepDef, ...] = (package.STEP,)
+DELIVERY: tuple[DeliveryStepDef, ...] = (compose.STEP, package.STEP)
 
 PIPELINE = Pipeline(STAGES, SIDE_TASKS, DELIVERY)
 # `grill telop`: the telop stage on an existing project (it scans first when
-# no scan is kept), as its only delivery step.
-TELOP_ONLY = Pipeline((), delivery=(as_delivery_step(telop.STAGE),))
+# no scan is kept) as a delivery step, then `video.cht.ass` composed again.
+TELOP_ONLY = Pipeline((), delivery=(as_delivery_step(telop.STAGE), compose.STEP))
+# `grill notes`: the notes stage the same way.
+NOTES_ONLY = Pipeline((), delivery=(as_delivery_step(notes.STAGE), compose.STEP))
+# `grill notes --probe`: what the agent would note, nothing delivered.
+NOTES_PROBE = Pipeline((), delivery=(notes.PROBE,))

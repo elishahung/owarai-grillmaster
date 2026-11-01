@@ -1,11 +1,11 @@
 """Telop glue shared by the scan side task, the telop stage and the stages
-that read the cards as a reference (glossary check, proofread).
+that read the cards (glossary check, proofread, notes).
 
 Whether a project gets telops is the most specific explicit choice:
 `--telop` / `--no-telop`, then its program's `telop` (series over channel),
 then `[features] telop`. `enabled` sees no project, so without a run flag it
 stays on while the feature or any program may ask, and `applies` decides once
-the program is known.
+the program is known (`_common.switch_enabled` / `switch_applies`).
 """
 
 from __future__ import annotations
@@ -21,36 +21,20 @@ from grillmaster.core.srt import read_srt_file
 from grillmaster.core.stage_key import SideTaskKey, StageKey
 from grillmaster.events.progress import track
 from grillmaster.media.frames import sample_frames
-from grillmaster.stages._common import program_rules
+from grillmaster.stages._common import switch_applies, switch_enabled
 from grillmaster.stages.base import require
 from grillmaster.telop.ocr import SAMPLE_SIZE, gpu_engine, read_frames
 from grillmaster.telop.reference import render_reference
-from grillmaster.telop.scan import SAMPLE_FPS, TelopScan, build_cards
+from grillmaster.telop.scan import SAMPLE_FPS, TelopCards, TelopScan, build_cards
 
 if TYPE_CHECKING:
-    from grillmaster.config.model import AppConfig
-    from grillmaster.stages.base import RunOptions, StageContext
+    from grillmaster.stages.base import StageContext
 
 PROGRESS_SCOPE = "telop"
 
 
-def enabled(options: RunOptions, config: AppConfig) -> bool:
-    """The run flag when given, else `[features] telop` or any program that
-    switches it on."""
-    if options.telop is not None:
-        return options.telop
-    return config.features.telop or any(
-        rule.telop is True for _, _, rule in config.programs.rules()
-    )
-
-
-def applies(ctx: StageContext) -> bool:
-    """For this project: the run flag, else its program's rule, else the
-    feature."""
-    if ctx.options.telop is not None:
-        return ctx.options.telop
-    rule = program_rules(ctx.config, ctx.state.source).telop
-    return ctx.config.features.telop if rule is None else rule
+enabled = switch_enabled("telop")
+applies = switch_applies("telop")
 
 
 def scan(ctx: StageContext) -> TelopScan:
@@ -84,11 +68,20 @@ def reference(ctx: StageContext) -> str | None:
     or no scan (a failed scan is the telop stage's to retry)."""
     if not applies(ctx):
         return None
+    cards = kept_cards(ctx)
+    if cards is None:
+        logger.warning(f"No telop scan at {ctx.layout.telop_scan}; going without it")
+        return None
+    return render_reference(cards.offered)
+
+
+def kept_cards(ctx: StageContext) -> TelopCards | None:
+    """Every card of the kept scan, once the scan side task has finished;
+    `None` without one (no OCR runs for a reader of the cards)."""
     ctx.side_tasks.wait(SideTaskKey.TELOP_SCAN)
     layout = ctx.layout
     found = load_model(layout.telop_scan, TelopScan)
     if found is None:
-        logger.warning(f"No telop scan at {layout.telop_scan}; going without it")
         return None
     transcript = read_srt_file(require(layout.ja_srt, StageKey.TRANSCRIPT))
-    return render_reference(build_cards(found, transcript).offered)
+    return build_cards(found, transcript)

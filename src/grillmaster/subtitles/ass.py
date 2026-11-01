@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
 PLAY_RES_X = 1920
 PLAY_RES_Y = 1080
@@ -84,6 +84,8 @@ HALF_WIDTH_ADVANCE = 0.57
 # radicals block, and the half-width forms.
 _FULL_WIDTH_START = 0x2E80
 _HALF_WIDTH_FORMS = (0xFF61, 0xFFDC)
+# Below the CJK blocks but set full width by the font: ※ (the notes' mark).
+_FULL_WIDTH_SYMBOLS = frozenset({0x203B})
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,7 +105,9 @@ def char_width(char: str, font_size: int) -> float:
     """Approximate advance in `font_size` units, measured with libass."""
     code = ord(char)
     low, high = _HALF_WIDTH_FORMS
-    half = code < _FULL_WIDTH_START or low <= code <= high
+    half = (
+        code < _FULL_WIDTH_START and code not in _FULL_WIDTH_SYMBOLS
+    ) or low <= code <= high
     return font_size * (HALF_WIDTH_ADVANCE if half else FULL_WIDTH_ADVANCE)
 
 
@@ -276,6 +280,11 @@ def script_header(info: Sequence[str], styles: Sequence[str]) -> str:
             "",
         ]
     )
+
+
+def script(header: str, events: Iterable[str]) -> str:
+    """A whole script: `header` (`script_header`), then one event a line."""
+    return header + "".join(f"{event}\n" for event in events)
 
 
 # `[Script Info]` of every full-canvas layer burned over the picture.

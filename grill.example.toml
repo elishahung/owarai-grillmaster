@@ -35,7 +35,7 @@ max_concurrent = 10
 prepass = "agy/gemini-3.1-pro/high"      # whole-film analysis
 chunk = "agy/gemini-3.1-pro/high"        # concurrent chunk translation
 postprocess = "codex/gpt-6.1-sol/high" # refine + glossary check
-proofread = "claude/claude-opus-5-5/high" # final proofread (--proofread); omit to use postprocess
+editor = "claude/claude-opus-5-5/high"   # final proofread (--proofread) + translator's notes; omit to use postprocess
 utility = "codex/gpt-6.1-sol/medium"         # titles, date research, telops, live chat, prepass/chunk fixes
 image = "codex/gpt-6.1-sol/medium"           # cover; needs image generation (codex)
 
@@ -89,6 +89,13 @@ proofread_watch_clip = false
 # program's `telop` and --no-telop override it; `grill telop <dir>` adds them
 # to a finished project). Needs `uv sync --extra telop`.
 telop = false
+# Once the subtitles and telops are final, let the editor agent add short
+# translator's notes at the top of the picture: the events, people, works and
+# customs the talk leans on that a Taiwanese viewer would miss (also --notes;
+# a program's `notes` and --no-notes override it; `grill notes <dir>` adds
+# them to a finished project, `grill notes <dir> --probe` lists what it would
+# note and why, without researching).
+notes = false
 # Write video.xml (title, description, broadcast date) beside each archived
 # video.mp4, so Infuse can sort the archive by broadcast date; it ignores the
 # date embedded in the MP4.
@@ -120,10 +127,13 @@ inserts = ["judge"]
 # [features] telop says; a series overrides its channel, and --telop /
 # --no-telop override both. Leave it out to follow [features] telop.
 telop = true
+# Add translator's notes to this program (true) or never (false), the same
+# way as `telop`; leave it out to follow [features] notes.
+notes = true
 
 # Extra model instructions. `common` goes to every stage, ahead of the
 # stage's own text; stages: prepass, chunks, refine, glossary, proofread,
-# telop (the telop selector).
+# telop (the telop selector), notes (the translator's notes).
 [programs.series."水曜日のダウンタウン".instruction]
 common = "Each segment opens with a 説 (hypothesis) title card; keep 説 as 「說」 and render the title cards consistently."
 prepass = "List every 説 title card in proper_nouns with its exact on-screen wording."
@@ -132,6 +142,7 @@ refine = "Keep the narrator's deadpan tone; do not add exclamation marks to narr
 glossary = "Panelist names follow fixed_glossary even when the on-screen caption abbreviates them."
 proofread = "Check 説 title cards against the frames before any other fix."
 telop = "Keep every 説 title card and the VTR's narration captions."
+notes = "The panel's running jokes about each other need no notes."
 
 [programs.channel."日テレ"]
 remix = true

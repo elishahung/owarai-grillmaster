@@ -3,7 +3,7 @@
   "$defs": {
     "AgentRoles": {
       "additionalProperties": false,
-      "description": "Model per agent role, as backend/model[/effort][/fast]; all but\nproofread are required.",
+      "description": "Model per agent role, as backend/model[/effort][/fast]; all but\neditor are required.",
       "properties": {
         "prepass": {
           "description": "Whole-film pre-pass analysis.",
@@ -23,7 +23,7 @@
           "title": "Postprocess",
           "type": "string"
         },
-        "proofread": {
+        "editor": {
           "anyOf": [
             {
               "description": "backend/model[/effort][/fast]; effort defaults to high, fast (codex only) spends more quota for speed.",
@@ -35,8 +35,8 @@
             }
           ],
           "default": null,
-          "description": "Final proofread after the glossary check; omitted means postprocess.",
-          "title": "Proofread"
+          "description": "Final proofread after the glossary check and the translator's notes; omitted means postprocess.",
+          "title": "Editor"
         },
         "utility": {
           "description": "Lightweight agents: titles, broadcast-date research, telop selection, live-chat replay translation, and the no-audio fix of a pre-pass or chunk output that failed validation.",
@@ -152,6 +152,12 @@
           "default": false,
           "description": "OCR the on-screen text cards (telops) on the GPU and burn the worthwhile ones in, translated (also --telop; a program's telop and --no-telop override it). Needs `uv sync --extra telop`.",
           "title": "Telop",
+          "type": "boolean"
+        },
+        "notes": {
+          "default": false,
+          "description": "Add translator's notes at the top of the picture, explaining references, current events and culture a Taiwanese viewer would miss (also --notes; a program's notes and --no-notes override it).",
+          "title": "Notes",
           "type": "boolean"
         },
         "infuse_metadata": {
@@ -367,6 +373,19 @@
           "default": null,
           "description": "Telop selection and translation: which on-screen cards to keep and how to render them.",
           "title": "Telop"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Translator's notes: what this program's viewers need explained, and what not.",
+          "title": "Notes"
         }
       },
       "title": "ProgramInstruction",
@@ -402,6 +421,19 @@
           "default": null,
           "description": "Translate this program's telops (true) or never (false), whatever [features] telop says; a series overrides its channel, --telop / --no-telop override both.",
           "title": "Telop"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Add translator's notes to this program (true) or never (false), whatever [features] notes says; a series overrides its channel, --notes / --no-notes override both.",
+          "title": "Notes"
         },
         "instruction": {
           "$ref": "#/$defs/ProgramInstruction",

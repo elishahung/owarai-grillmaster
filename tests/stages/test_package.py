@@ -17,6 +17,7 @@ from grillmaster.extras.titles import TitleSuggestion, TitleSuggestions
 from grillmaster.live_chat.layout import ChatLayout
 from grillmaster.live_chat.schema import TranslatedChatLog, TranslatedChatMessage
 from grillmaster.media.errors import MediaError
+from grillmaster.notes.annotate import Note, Notes
 from grillmaster.package.errors import PackageError, PoolError
 from grillmaster.package.pools import CURSOR_FILE_NAME
 from grillmaster.package.remix import select_remix_segments
@@ -85,7 +86,6 @@ def finished(layout: ProjectLayout) -> ProjectLayout:
     """A project whose stages all ran: video, subtitles, briefing, reports."""
     layout.root.mkdir(parents=True, exist_ok=True)
     layout.video.write_bytes(b"video")
-    layout.cht_ass.write_text("ass", encoding="utf-8")
     write_srt_file(
         layout.cht_srt,
         [
@@ -391,9 +391,9 @@ def test_a_repackage_replaces_the_previous_deliverable(
 def test_missing_subtitles_fail_before_anything_is_created(
     make: MakeContext, finished: ProjectLayout, package_root: Path
 ):
-    finished.cht_ass.unlink()
+    finished.cht_srt.unlink()
 
-    with pytest.raises(PackageError, match=r"cht\.ass"):
+    with pytest.raises(PackageError, match=r"cht\.srt"):
         package.STEP.run(make(PackageFfmpeg()))
     assert not package_root.exists()
 
@@ -417,7 +417,8 @@ def test_chat_panel_is_rendered_into_the_package_workdir(
     chain = arg_after(next(a for a in encodes(fake) if "-vf" in a), "-vf")
     assert (
         "pad=1920:1080:0:108:black,subtitles=.work/package/chat.ass,"
-        "subtitles=video.cht.ass:force_style='MarginL=10,MarginR=394,MarginV=24',"
+        "subtitles=.work/package/dialogue.ass:"
+        "force_style='MarginL=10,MarginR=394,MarginV=24',"
     ) in chain
 
 
@@ -433,13 +434,45 @@ def test_telops_burn_under_the_dialogue_unless_left_out(
     package.STEP.run(make(fake))
 
     chain = arg_after(next(a for a in encodes(fake) if "-vf" in a), "-vf")
-    assert "subtitles=.work/package/telop.ass,subtitles=video.cht.ass," in chain
+    assert (
+        "subtitles=.work/package/telop.ass,subtitles=.work/package/dialogue.ass,"
+    ) in chain
+    assert finished.dialogue_ass.read_text(encoding="utf-8").endswith(
+        "Default,,0,0,0,,二\n"
+    )
 
     left_out = burn_in_fake(finished, package_root)
     package.STEP.run(make(left_out, telop=False))
 
     chain = arg_after(next(a for a in encodes(left_out) if "-vf" in a), "-vf")
     assert "telop.ass" not in chain
+
+
+def test_notes_burn_over_the_telops_under_the_dialogue_unless_left_out(
+    make: MakeContext, finished: ProjectLayout, package_root: Path
+):
+    telop = TelopSubtitle(
+        id=1, start=1.0, end=2.0, ja="ja", zh="字卡", boxes=[(0, 0, 1, 1)], beside=[]
+    )
+    write_model(finished.telop_cht_json, TelopSubtitles(items=[telop]))
+    note = Note(block=1, start=0.0, end=4.0, term="一", text="一：說明", evidence="url")
+    write_model(finished.notes_cht_json, Notes(items=[note]))
+    fake = burn_in_fake(finished, package_root)
+
+    package.STEP.run(make(fake))
+
+    chain = arg_after(next(a for a in encodes(fake) if "-vf" in a), "-vf")
+    assert (
+        "subtitles=.work/package/telop.ass,subtitles=.work/package/notes.ass,"
+        "subtitles=.work/package/dialogue.ass,"
+    ) in chain
+    assert "※一：說明" in finished.notes_ass.read_text(encoding="utf-8")
+
+    left_out = burn_in_fake(finished, package_root)
+    package.STEP.run(make(left_out, notes=False))
+
+    chain = arg_after(next(a for a in encodes(left_out) if "-vf" in a), "-vf")
+    assert "notes.ass" not in chain
 
 
 def test_enabled_only_with_a_package_root(loaded: LoadedConfig, state: ProjectState):

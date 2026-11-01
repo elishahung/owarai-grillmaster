@@ -20,6 +20,7 @@ def test_declaration_order_is_execution_order():
         "finalize",
         "chat_translate",
         "telop",
+        "notes",
     ]
 
 

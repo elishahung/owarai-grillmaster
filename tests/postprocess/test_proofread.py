@@ -240,7 +240,7 @@ def test_fixes_and_the_briefing_are_applied_and_reported(
     # The fixed-glossary copies live only for the session.
     assert not any(path.exists() for path in inputs.glossary_copies)
     task = agents.task(TASK_NAME)
-    assert task.role is Role.PROOFREAD
+    assert task.role is Role.EDITOR
     assert isinstance(task.output, SchemaOutput)
     assert task.requires == frozenset({Capability.WEB_SEARCH})
     assert task.add_dirs == (tools.project_root,)

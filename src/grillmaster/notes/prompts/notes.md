@@ -18,7 +18,8 @@ Do not note:
 
 - what the conversation itself explains, earlier or soon after;
 - what a translated card already says; when a card covers part of it, note only the part it leaves out;
-- a person whose identity does not matter to the moment: a name in passing, a cast member the show introduces;
+- a person whose identity does not matter to the moment: a name in passing;
+- who a cast member is (anyone appearing in the episode: hosts, guests, performers), however much their style or career bears on the moment: the viewer watches them through the episode. Note one only for where they stood at the time, when the talk leans on it;
 - the joke itself: give the background and let the viewer get the joke; never explain why something is funny;
 - wordplay the subtitles could not carry, unless a fact behind it is what is missing;
 - what a Taiwanese viewer of Japanese variety shows already knows.

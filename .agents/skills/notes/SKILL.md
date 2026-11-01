@@ -58,7 +58,8 @@ section to tune (show-agnostic; a show's rules go in `instruction.notes`).
 run. Owner's calls: a subtitle that only labels a fact (「涉嫌洛杉磯命案」)
 is not an explanation; a translated card counts as explained, so a note adds
 only what it leaves out; the conversation explaining it nearby means no note;
-never explain the joke itself.
+never explain the joke itself; never note who a cast member is (only where
+they stood at air time).
 
 ## Layer (`render.py`)
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, override
 
 import pytest
+from tests.pipeline.fakes import Journal, fake_delivery
 from typer.testing import CliRunner
 
 from grillmaster.config.load import CONFIG_FILE_NAME, PROJECTS_DIR_NAME
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
     from click.testing import Result
 
     from grillmaster.project.state import ProjectState
+    from grillmaster.stages.base import RunOptions, StageContext
 
 
 @pytest.fixture
@@ -61,3 +63,28 @@ class IsolatedCli(CliRunner):
 @pytest.fixture
 def cli() -> CliRunner:
     return IsolatedCli()
+
+
+class Seen:
+    """What the fake package step was run with."""
+
+    def __init__(self) -> None:
+        self.roots: list[Path] = []
+        self.options: list[RunOptions] = []
+
+    def record(self, ctx: StageContext) -> str:
+        self.roots.append(ctx.layout.root)
+        self.options.append(ctx.options)
+        return "packaged"
+
+
+@pytest.fixture
+def seen() -> Seen:
+    return Seen()
+
+
+@pytest.fixture
+def pipeline(seen: Seen) -> Pipeline:
+    """No stages, and a fake package step recording into `seen`."""
+    step = fake_delivery("package", Journal(), action=seen.record)
+    return Pipeline((), delivery=(step,))

@@ -108,7 +108,7 @@ def _run(ctx: StageContext) -> str:
         chat_ass=layout.chat_panel_ass,
         layout=ctx.options.chat_layout,
     )
-    if ctx.options.burn_telops:
+    if ctx.options.telop is not False:
         burn = with_telops(
             burn,
             layout.telop_cht_json,

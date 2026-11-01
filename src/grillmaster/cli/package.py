@@ -75,7 +75,7 @@ def package_command(
     options = RunOptions(
         source=state.source_id,
         chat_layout=chat_layout,
-        burn_telops=not no_telop,
+        telop=False if no_telop else None,
         remix=resolve_remix(remix, loaded.config.package.remix_pool),
     )
     pipeline = pipeline_from(ctx)

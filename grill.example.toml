@@ -85,9 +85,9 @@ proofread_watch_clip = false
 # OCR the on-screen text cards (telops) on the GPU while the translation runs
 # (the glossary check and proofread read them as a reference), then, once the
 # subtitles are final, let the utility agent keep and translate the ones the
-# dialogue does not carry, and burn them in the package (also --telop, or a
-# program's `telop = true`; `grill telop <dir>` adds them to a finished
-# project). Needs `uv sync --extra telop`.
+# dialogue does not carry, and burn them in the package (also --telop; a
+# program's `telop` and --no-telop override it; `grill telop <dir>` adds them
+# to a finished project). Needs `uv sync --extra telop`.
 telop = false
 # Write video.xml (title, description, broadcast date) beside each archived
 # video.mp4, so Infuse can sort the archive by broadcast date; it ignores the
@@ -116,7 +116,9 @@ when = "remix"     # "remix": remix deliverables only; "always": every one
 remix = true
 # Outputs of [[package.inserts]] enabled for this program.
 inserts = ["judge"]
-# Translate this program's telops even without --telop or [features] telop.
+# Translate this program's telops (true) or never (false), whatever
+# [features] telop says; a series overrides its channel, and --telop /
+# --no-telop override both. Leave it out to follow [features] telop.
 telop = true
 
 # Extra model instructions. `common` goes to every stage, ahead of the

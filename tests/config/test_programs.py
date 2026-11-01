@@ -104,6 +104,38 @@ def test_remix_is_on_when_any_entry_sets_it(config: AppConfig):
     assert not _resolve(config, series="plain").remix
 
 
+@pytest.mark.parametrize(
+    ("series", "channel", "expected"),
+    [
+        (None, None, None),
+        (None, False, False),
+        (True, None, True),
+        (False, True, False),
+        (True, False, True),
+    ],
+)
+def test_telop_is_the_most_specific_explicit_choice(
+    minimal_data: dict[str, Any],
+    series: bool | None,
+    channel: bool | None,
+    expected: bool | None,
+):
+    def entry(telop: bool | None) -> dict[str, Any]:
+        return {} if telop is None else {"telop": telop}
+
+    config = validate_config(
+        {
+            **minimal_data,
+            "programs": {
+                "series": {"s": entry(series)},
+                "channel": {"c": entry(channel)},
+            },
+        },
+        root=Path(),
+    )
+    assert _resolve(config, series="s", channel="c").telop is expected
+
+
 def test_unknown_or_missing_names_match_no_entry(config: AppConfig):
     for rules in (_resolve(config), _resolve(config, series="x", channel="x")):
         assert not rules.remix

@@ -1,9 +1,11 @@
 """Telop glue shared by the scan side task, the telop stage and the stages
 that read the cards as a reference (glossary check, proofread).
 
-Telops run for a project when `--telop`, `[features] telop` or its
-program's `telop = true` asks: `enabled` sees no project, so it stays on
-while any program may ask, and `applies` decides once the program is known.
+Whether a project gets telops is the most specific explicit choice:
+`--telop` / `--no-telop`, then its program's `telop` (series over channel),
+then `[features] telop`. `enabled` sees no project, so without a run flag it
+stays on while the feature or any program may ask, and `applies` decides once
+the program is known.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from grillmaster.core.srt import read_srt_file
 from grillmaster.core.stage_key import SideTaskKey, StageKey
 from grillmaster.events.progress import track
 from grillmaster.media.frames import sample_frames
-from grillmaster.stages._common import flag_or_feature, program_rules
+from grillmaster.stages._common import program_rules
 from grillmaster.stages.base import require
 from grillmaster.telop.ocr import SAMPLE_SIZE, gpu_engine, read_frames
 from grillmaster.telop.reference import render_reference
@@ -30,22 +32,25 @@ if TYPE_CHECKING:
     from grillmaster.stages.base import RunOptions, StageContext
 
 PROGRESS_SCOPE = "telop"
-_asked = flag_or_feature("telop")
 
 
 def enabled(options: RunOptions, config: AppConfig) -> bool:
-    """`--telop`, `[features] telop`, or any program that may switch it on."""
-    return _asked(options, config) or any(
-        rule.telop for _, _, rule in config.programs.rules()
+    """The run flag when given, else `[features] telop` or any program that
+    switches it on."""
+    if options.telop is not None:
+        return options.telop
+    return config.features.telop or any(
+        rule.telop is True for _, _, rule in config.programs.rules()
     )
 
 
 def applies(ctx: StageContext) -> bool:
-    """For this project: the run flag, the feature, or its program's rule."""
-    return (
-        _asked(ctx.options, ctx.config)
-        or program_rules(ctx.config, ctx.state.source).telop
-    )
+    """For this project: the run flag, else its program's rule, else the
+    feature."""
+    if ctx.options.telop is not None:
+        return ctx.options.telop
+    rule = program_rules(ctx.config, ctx.state.source).telop
+    return ctx.config.features.telop if rule is None else rule
 
 
 def scan(ctx: StageContext) -> TelopScan:

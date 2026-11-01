@@ -44,7 +44,7 @@ def serial_command(
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
     proofread: ProofreadOption = False,
-    telop: TelopOption = False,
+    telop: TelopOption = None,
     chat: ChatOption = False,
     chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
     remix: RemixOption = None,

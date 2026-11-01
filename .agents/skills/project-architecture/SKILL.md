@@ -224,7 +224,8 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   from the `.env` path in its manifest.
 - `programs.py` `ProgramRules`: channel then series entries merged (`common`
   text before stage text; stage keys `prepass`, `chunks`, `refine`,
-  `glossary`, `proofread`, `telop`; `remix`/`telop` flags OR-merge). `register_program` (download stage) is the only writer of
+  `glossary`, `proofread`, `telop`; `remix` OR-merges, `telop` is
+  tri-state, series' explicit value over channel's, `None` = follow `[features]`). `register_program` (download stage) is the only writer of
   `grill.toml`, appending empty entries with `tomlkit` under
   `grill.toml.lock`, re-reading the file inside it (concurrent processes).
 
@@ -276,7 +277,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 ## CLI (`cli/`)
 
 `grill <src> [HINT]` = `grill run`; options `--break-after <key>`, `--parent [dir]`,
-`--cover`, `--date-research`, `--proofread`, `--telop`, `--chat`, `--chat-layout`, `--remix [pool]`,
+`--cover`, `--date-research`, `--proofread`, `--telop/--no-telop`, `--chat`, `--chat-layout`, `--remix [pool]`,
 `--start`, `--to`. Also `serial`, `package <dir|id>`, `telop <dir|id>`, `archive <id>`,
 `reset <id> --from|--only <key>`, `status [<id>]`, `doctor`. `package`,
 `archive` and `status` resolve an ID locally only (pass an archived

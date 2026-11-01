@@ -40,9 +40,10 @@ if TYPE_CHECKING:
 class RunOptions:
     """Everything one `grill run` invocation asks for.
 
-    `cover` / `date_research` / `proofread` / `telop` are the per-run flags;
-    their steps combine them with `[features]`. `burn_telops = False`
-    (`grill package --no-telop`) leaves translated telops out of the burn-in. `remix` is a resolved pool name (a bare `--remix`
+    `cover` / `date_research` / `proofread` are the per-run flags; their
+    steps combine them with `[features]`. `telop` is `--telop` / `--no-telop`
+    (`None` without either), which overrides the feature and the program
+    rules; `False` also leaves translated telops out of the burn-in. `remix` is a resolved pool name (a bare `--remix`
     already became `package.remix_pool`). `section` is where `--start` /
     `--to` cut the source; it only applies while the combine stage has not
     run.
@@ -55,10 +56,9 @@ class RunOptions:
     cover: bool = False
     date_research: bool = False
     proofread: bool = False
-    telop: bool = False
+    telop: bool | None = None
     chat: bool = False
     chat_layout: ChatLayout = DEFAULT_CHAT_LAYOUT
-    burn_telops: bool = True
     remix: str | None = None
     section: Section = field(default_factory=Section)
 

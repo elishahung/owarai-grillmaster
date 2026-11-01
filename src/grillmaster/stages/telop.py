@@ -6,12 +6,12 @@ write `.subs/telop.cht.json`, which packaging burns in beside each card, and
 `video.cht.telop.ass` (the dialogue ASS with the telops added) beside the
 video for external playback.
 
-Runs when `--telop`, `[features] telop` or the program's `telop = true` asks
-for it (`stages._telop`). `.work/15_telop/` keeps `cards.json` (the rules'
-view, rewritten every run), the session and the fetched frames. The
-deliverable is hand-editable; `grill reset <id> --only telop` selects again
-from the kept scan. `grill telop` runs this stage on a finished or archived
-project whatever its ledger says, after which `grill package` burns it in.
+Whether it runs is decided in `stages._telop`. `.work/15_telop/` keeps
+`cards.json` (the rules' view, rewritten every run), the session and the
+fetched frames. The deliverable is hand-editable; `grill reset <id> --only
+telop` selects again from the kept scan. `grill telop` runs this stage on a
+finished or archived project whatever its ledger says, after which `grill
+package` burns it in.
 """
 
 from __future__ import annotations

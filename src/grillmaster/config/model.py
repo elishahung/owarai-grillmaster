@@ -209,7 +209,7 @@ class FeaturesConfig(BaseModel):
     )
     telop: bool = Field(
         default=False,
-        description="OCR the on-screen text cards (telops) on the GPU and burn the worthwhile ones in, translated (also --telop or a program's telop = true). Needs `uv sync --extra telop`.",
+        description="OCR the on-screen text cards (telops) on the GPU and burn the worthwhile ones in, translated (also --telop; a program's telop and --no-telop override it). Needs `uv sync --extra telop`.",
     )
     infuse_metadata: bool = Field(
         default=False,
@@ -346,9 +346,9 @@ class ProgramRule(BaseModel):
         default_factory=list,
         description="Outputs of [[package.inserts]] enabled for this program.",
     )
-    telop: bool = Field(
-        default=False,
-        description="Translate this program's telops even without --telop or [features] telop.",
+    telop: bool | None = Field(
+        default=None,
+        description="Translate this program's telops (true) or never (false), whatever [features] telop says; a series overrides its channel, --telop / --no-telop override both.",
     )
     instruction: ProgramInstruction = Field(
         default_factory=ProgramInstruction,

@@ -150,7 +150,7 @@
         },
         "telop": {
           "default": false,
-          "description": "OCR the on-screen text cards (telops) on the GPU and burn the worthwhile ones in, translated (also --telop or a program's telop = true). Needs `uv sync --extra telop`.",
+          "description": "OCR the on-screen text cards (telops) on the GPU and burn the worthwhile ones in, translated (also --telop; a program's telop and --no-telop override it). Needs `uv sync --extra telop`.",
           "title": "Telop",
           "type": "boolean"
         },
@@ -391,10 +391,17 @@
           "type": "array"
         },
         "telop": {
-          "default": false,
-          "description": "Translate this program's telops even without --telop or [features] telop.",
-          "title": "Telop",
-          "type": "boolean"
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Translate this program's telops (true) or never (false), whatever [features] telop says; a series overrides its channel, --telop / --no-telop override both.",
+          "title": "Telop"
         },
         "instruction": {
           "$ref": "#/$defs/ProgramInstruction",

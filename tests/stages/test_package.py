@@ -436,7 +436,7 @@ def test_telops_burn_under_the_dialogue_unless_left_out(
     assert "subtitles=.work/package/telop.ass,subtitles=video.cht.ass," in chain
 
     left_out = burn_in_fake(finished, package_root)
-    package.STEP.run(make(left_out, burn_telops=False))
+    package.STEP.run(make(left_out, telop=False))
 
     chain = arg_after(next(a for a in encodes(left_out) if "-vf" in a), "-vf")
     assert "telop.ass" not in chain

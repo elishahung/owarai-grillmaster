@@ -14,8 +14,10 @@ from grillmaster.project.store import load_state, project_lock, save_state
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tests.cli.conftest import Seen
     from typer.testing import CliRunner
 
+    from grillmaster.pipeline.registry import Pipeline
     from grillmaster.project.state import ProjectState
 
 
@@ -43,6 +45,24 @@ def test_run_dispatch_creates_the_project(
     layout = ProjectLayout.for_id(projects_root, "epnew1")
     assert load_state(layout).id == "epnew1"
     assert list(layout.logs_dir.glob("run-*.log"))
+
+
+@pytest.mark.parametrize(
+    ("flags", "telop"), [([], None), (["--telop"], True), (["--no-telop"], False)]
+)
+def test_run_telop_flags_force_either_way(
+    cli: CliRunner,
+    *,
+    projects_root: Path,
+    pipeline: Pipeline,
+    seen: Seen,
+    flags: list[str],
+    telop: bool | None,
+):
+    result = cli.invoke(app, ["epnew1", *flags], obj=pipeline)
+
+    assert result.exit_code == 0, result.output
+    assert [options.telop for options in seen.options] == [telop]
 
 
 def test_run_passes_the_hint(cli: CliRunner, projects_root: Path):

@@ -23,10 +23,11 @@ the ones the dialogue subtitles do not carry, and burns those in.
 
 ## Flow and artifacts
 
-On for a project with `--telop`, `[features] telop`, or its program's
-`telop = true` (`stages._telop.enabled` sees no project and stays on while
-any program may ask; `applies` decides per project, for the side task and
-the stage alike).
+On for a project by the most specific explicit choice: `--telop` /
+`--no-telop` (`RunOptions.telop`, `None` without either), then its program's tri-state `telop` (series over
+channel), then `[features] telop` (`stages._telop.enabled` sees no project
+and, without a flag, stays on while the feature or any program may ask;
+`applies` decides per project, for the side task and the stage alike).
 
 1. **Scan** — side task `telop_scan`, after `combine`
    (`.work/side/telop_scan/scan.json`, fixed-name cache; delete it to
@@ -78,8 +79,8 @@ the stage alike).
    `.work/package/telop.ass` inside the picture (a `side` layout's shrunk
    box is passed as `subtitles.ass.PictureBox`), placed against
    `video.cht.srt` where the layout sets it (`BurnPlan.dialogue_margins`), and
-   burns it **under the dialogue** (`BurnPlan.top`), which is always the top layer. `grill package --no-telop`
-   (`RunOptions.burn_telops`) leaves it out.
+   burns it **under the dialogue** (`BurnPlan.top`), which is always the top layer. `--no-telop`
+   (`RunOptions.telop = False`, on `run`, `serial` and `package`) leaves it out.
 
 ## Cards (`scan.py`)
 

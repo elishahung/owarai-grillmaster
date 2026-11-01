@@ -16,34 +16,11 @@ from grillmaster.project.store import save_state
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from tests.cli.conftest import Seen
     from typer.testing import CliRunner
 
     from grillmaster.project.state import ProjectState
-    from grillmaster.stages.base import RunOptions, StageContext
-
-
-class Seen:
-    """What the fake package step was run with."""
-
-    def __init__(self) -> None:
-        self.roots: list[Path] = []
-        self.options: list[RunOptions] = []
-
-    def record(self, ctx: StageContext) -> str:
-        self.roots.append(ctx.layout.root)
-        self.options.append(ctx.options)
-        return "packaged"
-
-
-@pytest.fixture
-def seen() -> Seen:
-    return Seen()
-
-
-@pytest.fixture
-def pipeline(seen: Seen) -> Pipeline:
-    step = fake_delivery("package", Journal(), action=seen.record)
-    return Pipeline((), delivery=(step,))
+    from grillmaster.stages.base import StageContext
 
 
 @pytest.fixture
@@ -126,6 +103,23 @@ def test_chat_layout_is_passed_on(
 
     assert result.exit_code == 0, result.output
     assert seen.options[0].chat_layout is ChatLayout.NONE
+
+
+@pytest.mark.parametrize(("flags", "telop"), [([], None), (["--no-telop"], False)])
+def test_no_telop_leaves_the_telops_out(
+    cli: CliRunner,
+    *,
+    packaging_home: Path,
+    layout: ProjectLayout,
+    pipeline: Pipeline,
+    seen: Seen,
+    flags: list[str],
+    telop: bool | None,
+):
+    result = cli.invoke(app, ["package", layout.root.name, *flags], obj=pipeline)
+
+    assert result.exit_code == 0, result.output
+    assert seen.options[0].telop is telop
 
 
 def test_refuses_without_a_package_root(

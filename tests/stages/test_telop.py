@@ -82,33 +82,78 @@ def test_the_stage_runs_last_and_the_scan_after_combine() -> None:
     assert STAGES[-1] is STAGE
     assert STAGE.key is StageKey.TELOP
     assert STAGE.outputs is not None
+    assert STAGE.applies is _telop.applies
+    assert telop_scan.TASK.applies is _telop.applies
     assert telop_scan.TASK.key is SideTaskKey.TELOP_SCAN
     assert telop_scan.TASK.start_after is StageKey.COMBINE
     (step,) = TELOP_ONLY.delivery
     assert (step.key, step.label) == (StageKey.TELOP.value, STAGE.label)
 
 
-def test_enabled_by_the_flag_the_feature_or_any_telop_program(
-    loaded: LoadedConfig, state: ProjectState
-) -> None:
-    config = loaded.config
-    assert STAGE.enabled(RunOptions(source=state.source_id), config)
-    no_program = config.model_copy(
-        update={"programs": config.programs.model_copy(update={"series": {}})}
-    )
-    assert not STAGE.enabled(RunOptions(source=state.source_id), no_program)
-    assert STAGE.enabled(RunOptions(source=state.source_id, telop=True), no_program)
+def _sections(
+    *, feature: bool, series: bool | None = None, channel: bool | None = None
+) -> dict[str, Any]:
+    """`[features] telop` and the `telop` of the series/channel entries (left
+    out when `None`)."""
+    return {
+        "features": {"telop": feature},
+        "programs": {
+            section: {name: {} if value is None else {"telop": value}}
+            for section, name, value in (
+                ("series", "かまいたちの掟", series),
+                ("channel", "テレビ朝日", channel),
+            )
+        },
+    }
 
 
-def test_applies_only_to_the_programs_that_ask(
-    make_context: MakeContext, state: ProjectState
+@pytest.mark.parametrize(
+    ("config_data", "flag", "expected"),
+    [
+        (_sections(feature=False), None, False),
+        (_sections(feature=True), None, True),
+        (_sections(feature=False, channel=True), None, True),
+        # A program can only turn it off for itself; others still follow
+        # the feature.
+        (_sections(feature=True, series=False), None, True),
+        (_sections(feature=False), True, True),
+        (_sections(feature=True, series=True), False, False),
+    ],
+    indirect=["config_data"],
+)
+def test_enabled_by_the_flag_else_the_feature_or_any_telop_program(
+    loaded: LoadedConfig, state: ProjectState, flag: bool | None, expected: bool
 ) -> None:
+    options = RunOptions(source=state.source_id, telop=flag)
+    assert STAGE.enabled(options, loaded.config) is expected
+
+
+@pytest.mark.parametrize(
+    ("config_data", "flag", "expected"),
+    [
+        (_sections(feature=False), None, False),
+        (_sections(feature=True), None, True),
+        (_sections(feature=False, channel=True), None, True),
+        (_sections(feature=True, channel=False), None, False),
+        # The series overrides its channel.
+        (_sections(feature=False, series=True, channel=False), None, True),
+        (_sections(feature=True, series=False, channel=True), None, False),
+        # The run flag overrides everything.
+        (_sections(feature=False, series=False), True, True),
+        (_sections(feature=True, series=True), False, False),
+    ],
+    indirect=["config_data"],
+)
+def test_applies_by_the_most_specific_choice(
+    make_context: MakeContext,
+    state: ProjectState,
+    flag: bool | None,
+    expected: bool,
+) -> None:
+    state.source = SourceInfo(series="かまいたちの掟", channel="テレビ朝日")
     ctx = make_context(StageKey.TELOP)
-    assert STAGE.applies is not None
-    assert telop_scan.TASK.applies is _telop.applies
-    assert not STAGE.applies(ctx)
-    state.source = SourceInfo(series="かまいたちの掟")
-    assert STAGE.applies(ctx)
+    ctx.options = RunOptions(source=state.source_id, telop=flag)
+    assert _telop.applies(ctx) is expected
 
 
 def test_selects_beside_the_final_subtitles_after_the_scan(

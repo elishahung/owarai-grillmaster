@@ -40,13 +40,17 @@ ProofreadOption = Annotated[
     ),
 ]
 TelopOption = Annotated[
-    bool,
+    bool | None,
     typer.Option(
-        "--telop",
+        "--telop/--no-telop",
         help=(
             "OCR the on-screen text cards on the GPU and burn the worthwhile "
-            "ones in, translated, beside each card (needs `uv sync --extra telop`)."
+            "ones in, translated, beside each card (needs `uv sync --extra "
+            "telop`); --no-telop skips them and leaves existing ones out of "
+            "the burn-in. Either overrides [features] telop and the program's "
+            "telop."
         ),
+        show_default=False,
     ),
 ]
 ChatOption = Annotated[
@@ -125,7 +129,7 @@ def run_command(
     cover: CoverOption = False,
     date_research: DateResearchOption = False,
     proofread: ProofreadOption = False,
-    telop: TelopOption = False,
+    telop: TelopOption = None,
     chat: ChatOption = False,
     chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
     remix: RemixOption = None,

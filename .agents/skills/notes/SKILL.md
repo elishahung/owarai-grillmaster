@@ -66,12 +66,16 @@ they stood at air time).
 `※` + text, 40 px, fixed at the top centre of the picture (`TOP`) whatever
 on-screen text is there (owner's call: one place for the eye, like the
 dialogue; avoiding cards pushed notes to mid-picture). Each row is its own
-event `PITCH` (46) apart on libass's own box (`BorderStyle` 3, `PAD` 8), so
-every row's box fits its glyphs and two rows' boxes meet (measured; a drawn
+event `PITCH` (font size + 2 × `YPAD` = 46) apart on libass's own box
+(`BorderStyle` 3, `PAD` 8 left/right; `YPAD` 3 above/below as each event's
+`\ybord`, the one override besides `\pos`: a style has one outline, and the
+owner wants the rows close), so every row's box fits its glyphs and two rows'
+boxes meet without overlapping; an overlap, also between the rows of one
+`\N` event, draws the translucent box twice (measured; a drawn
 box from estimated widths was 50 px too wide on Latin and misjudged the row
 height; rounded corners were dropped for this, owner's call). Rows break at
 `ROOM` (1150 px, ~32 characters) preferring a pause (`uneven` 0.5). The only
-style lives in the header; events carry only `\pos`. Packaging burns it after the telops, under the dialogue
+style lives in the header; events carry only `\pos` and `\ybord`. Packaging burns it after the telops, under the dialogue
 (`assemble.with_notes`, `.work/package/notes.ass`); `--no-notes` on
 `grill package` leaves it out. The compose delivery step adds it to
 `video.cht.ass` (postprocess-and-packaging).

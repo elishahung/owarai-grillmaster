@@ -10,8 +10,11 @@ preferring a pause), which the agent's answer is checked against.
 
 The box is libass's own (`BorderStyle` 3), drawn from the real glyphs of
 each row, so it fits every row exactly; each row is an event of its own,
-`PITCH` apart, so the boxes of two rows meet without overlapping (measured).
-Every look lives in the header's style; an event carries only its position.
+`PITCH` apart, so the boxes of two rows meet without overlapping (measured):
+an overlap draws the translucent box twice, and the rows of one event
+overlap their boxes the same way. Every look lives in the header's style;
+an event carries only its position and `\\ybord`, the box's height a style
+cannot set apart from its width.
 """
 
 from __future__ import annotations
@@ -45,10 +48,14 @@ TEXT_COLOR = "F5F5F5"
 BOX_COLOR = "101010"
 # ASS alpha, 00 opaque to FF clear.
 BOX_ALPHA = "50"
-# The box beyond each row's glyphs (the style's outline, as box padding).
+# The box beyond each row's glyphs left and right (the style's outline, as
+# box padding), and above and below (each event's `\ybord`): rows close
+# together read as one note.
 PAD = 8
-# Row to row: the boxes of two rows meet (measured with libass).
-PITCH = 46
+YPAD = 3
+# Row to row: libass's box spans the font size plus `YPAD` above and below,
+# so the boxes of two rows meet without overlapping (measured).
+PITCH = FONT_SIZE + 2 * YPAD
 # The first row's top, below the picture's top edge.
 TOP = 30
 # The widest row: about 32 characters, so a note of up to 60 fits in two.
@@ -79,7 +86,8 @@ def notes_events(notes: Notes, frame: PictureBox = FULL_PICTURE) -> list[str]:
         end = format_ass_centiseconds(ass_centiseconds(note.end))
         events += [
             f"Dialogue: 0,{start},{end},{STYLE_NAME},,0,0,0,,"
-            f"{{\\pos({x:.0f},{frame.y + TOP + n * PITCH:.0f})}}{escape_text(row)}"
+            f"{{\\pos({x:.0f},{frame.y + TOP + n * PITCH:.0f})\\ybord{YPAD}}}"
+            f"{escape_text(row)}"
             for n, row in enumerate(rows(note.text))
         ]
     return events

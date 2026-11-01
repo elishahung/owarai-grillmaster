@@ -11,6 +11,7 @@ from grillmaster.notes.render import (
     STYLE,
     STYLE_NAME,
     TOP,
+    YPAD,
     notes_events,
     rows,
     write_notes_ass,
@@ -20,7 +21,7 @@ from grillmaster.subtitles.ass import PictureBox
 if TYPE_CHECKING:
     from pathlib import Path
 
-_POS = re.compile(r"\{\\pos\((\d+),(\d+)\)\}")
+_POS = re.compile(r"\{\\pos\((\d+),(\d+)\)")
 LONG = "田中：爆笑問題的另一名成員田中裕二，是太田的搭檔，負責吐槽，兩人自1988年組成至今已近四十年"
 
 
@@ -33,7 +34,7 @@ def test_a_note_sits_at_the_top_centre_on_libass_boxes():
 
     assert event == (
         f"Dialogue: 0,0:00:01.00,0:00:05.00,{STYLE_NAME},,0,0,0,,"
-        f"{{\\pos(960,{TOP})}}※三浦和義：說明"
+        f"{{\\pos(960,{TOP})\\ybord{YPAD}}}※三浦和義：說明"
     )
     # The box is the style's own (BorderStyle 3), drawn per row.
     assert ",0,0,3,8,0,8," in STYLE
@@ -54,10 +55,10 @@ def test_rows_break_at_a_pause_not_inside_a_word():
     )
 
 
-def test_every_look_lives_in_the_header():
+def test_every_look_but_the_box_height_lives_in_the_header():
     for event in notes_events(Notes(items=[note(LONG)])):
         overrides = "".join(re.findall(r"{([^}]*)}", event))
-        assert re.sub(r"\\pos\(\d+,\d+\)", "", overrides) == ""
+        assert re.sub(r"\\pos\(\d+,\d+\)", "", overrides) == f"\\ybord{YPAD}"
 
 
 def test_the_note_follows_a_shrunk_picture():

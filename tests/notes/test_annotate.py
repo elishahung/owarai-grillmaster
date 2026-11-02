@@ -112,9 +112,9 @@ def test_probe_candidates_are_anchored_like_notes():
         )
 
 
-def test_shown_for_reads_slower_than_the_dialogue_within_bounds():
+def test_shown_for_skims_within_bounds():
     assert shown_for("短") == MIN_SHOWN_S
-    assert shown_for("字" * 30) == pytest.approx(6.0)
+    assert shown_for("字" * 30) == pytest.approx(4.0)
     assert shown_for("字" * 200) == MAX_SHOWN_S
 
 

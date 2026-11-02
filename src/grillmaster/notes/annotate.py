@@ -51,12 +51,13 @@ if TYPE_CHECKING:
 TASK_NAME = "notes"
 PROBE_TASK_NAME = "notes_probe"
 
-# How long a note stays: a second to find it, then its text at a reading
-# pace slower than the dialogue's (it is read beside it), within bounds.
-READ_CHARS_PER_S = 6.0
+# How long a note stays: a second to find it, then its text at a skimming
+# pace, within bounds (owner's call: a note is skimmed, not read through, and
+# a full read kept the usual 40-60 character note up 8-10 s).
+READ_CHARS_PER_S = 10.0
 FIND_S = 1.0
 MIN_SHOWN_S = 3.0
-MAX_SHOWN_S = 10.0
+MAX_SHOWN_S = 6.0
 # A note reads as a sentence: it ends on one of these (a quote or a bracket
 # may close after it), else on a full stop added in place of a trailing
 # comma or colon.

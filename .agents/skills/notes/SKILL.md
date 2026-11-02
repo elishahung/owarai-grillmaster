@@ -36,7 +36,7 @@ omitted = postprocess), `WEB_SEARCH` required.
    three), measured after `note_text` closes it on a full stop the agent
    left off (in code, not the prompt); evidence non-empty.
 3. **`to_notes`**: start = the block's start, shown `FIND_S` + chars /
-   `READ_CHARS_PER_S` within 3–10 s; a note due while the previous is up
+   `READ_CHARS_PER_S` (10, a skim) within 3–6 s; a note due while the previous is up
    cuts it short once that has been up `MIN_SHOWN_S`, else starts when it
    leaves (no drift far from its block). Deliverable `.subs/notes.cht.json` (`Notes`), hand-editable;
    `grill reset <id> --only notes` writes it again.

@@ -110,9 +110,11 @@ location show), not settings.
 - **Grouping**: same timing (±1 s) and touching: stacked ≤ 0.5 of the
   smaller line height apart, on one row ≤ 0.25 of it apart (a space; two
   memos or name plates side by side sit further apart), or diagonal within
-  the bigger line's height sideways unless both lines already have a line
+  the bigger character size sideways unless both lines already have a line
   straight above/below (a memo's corner label joins its text; the label of
-  the right one of two side-by-side memos does not join the left). Lines
+  the right one of two side-by-side memos does not join the left; a
+  vertical line's length as the reach let a corner title join a far name
+  plate, 2026-11-03). Lines
   above each other whose character sizes differ > 3.5× stay apart (name
   plate over a caption, footnote under a title, logo by a caption; owner's
   call, 2026-10-28); a smaller lead-in over a big caption stays under the

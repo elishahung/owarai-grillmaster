@@ -631,6 +631,48 @@ def test_a_shirt_print_does_not_label_the_name_plate_under_it():
     assert cards[0].text == "のリーダー / かまいたち / 濱家隆一"
 
 
+# A corner title, shown again as two vertical name plates come up, so it
+# starts with them.
+_PLATES_TITLE: list[Shown] = [
+    (15.75, 73.75, (0.183, 0.003, 0.344, 0.134), "仕掛十人"),
+    (81.75, 86.75, (0.184, 0.006, 0.343, 0.123), "仕掛人"),
+    (154.25, 192.75, (0.184, 0.004, 0.342, 0.123), "仕掛十人"),
+]
+
+# A corner title shown again as a vertical card comes up sits diagonally off
+# the card's top, further sideways than the card's characters are big.
+_CORNER_TITLE_OFF_A_VERTICAL_CARD: dict[str, list[Shown]] = {
+    "name plate across the picture": [
+        *_PLATES_TITLE,
+        (81.25, 84.75, (0.738, 0.106, 0.966, 0.999), "町田和樹"),
+    ],
+    "caption in the middle": [
+        (1674.75, 1750.75, (0.036, 0.047, 0.170, 0.099), "相席食堂"),
+        (1753.25, 1800.25, (0.036, 0.047, 0.170, 0.099), "相席食堂"),
+        (1754.25, 1758.25, (0.456, 0.095, 0.549, 0.814), "へぼを見せてらう"),
+    ],
+}
+
+
+@pytest.mark.parametrize("case", list(_CORNER_TITLE_OFF_A_VERTICAL_CARD))
+def test_a_corner_title_does_not_label_a_vertical_card_off_to_one_side(case: str):
+    lines = _CORNER_TITLE_OFF_A_VERTICAL_CARD[case]
+
+    cards = build_cards(shown(*lines), []).offered
+
+    assert [card.text for card in cards] == [lines[-1][3]]
+
+
+@pytest.mark.xfail(strict=True, reason="a corner title right over a plate labels it")
+def test_a_corner_title_does_not_label_the_vertical_name_plate_under_it():
+    # The other plate sits flush under the title.
+    plate: Shown = (81.25, 84.75, (0.039, 0.106, 0.261, 0.892), "佐木隆史")
+
+    cards = build_cards(shown(*_PLATES_TITLE, plate), []).offered
+
+    assert [card.text for card in cards] == ["佐木隆史"]
+
+
 def test_a_label_set_at_one_size_labels_its_plate_wherever_the_plate_is():
     # Each recommender's plate sits elsewhere; its label keeps its size.
     labels: list[Shown] = [

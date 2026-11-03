@@ -425,9 +425,10 @@ def _transposed(box: Box) -> Box:
 def _touch(a: Box, b: Box) -> _Touch | None:
     """How two boxes touch, if they do. Gaps count in the smaller line's
     height, so a big line does not reach far (map labels, a logo near a
-    card); only a corner label may sit as far sideways as the bigger line
-    is high. Two vertical lines are measured as columns, in their character
-    width. A vertical and a horizontal line on one row are left to
+    card); only a corner label may sit as far sideways as the bigger
+    characters are big (a vertical line's length would reach across half
+    the picture). Two vertical lines are measured as columns, in their
+    character width. A vertical and a horizontal line on one row are left to
     `_may_join`: a vertical label inside a caption's box reads as that row
     whatever its size."""
     same_way = _is_vertical(a) == _is_vertical(b)
@@ -445,8 +446,7 @@ def _touch(a: Box, b: Box) -> _Touch | None:
         return None
     if gap_x < 0:
         return _Touch.STACKED
-    bigger = max(a[3] - a[1], b[3] - b[1])
-    return _Touch.DIAGONAL if gap_x <= bigger * _ASPECT else None
+    return _Touch.DIAGONAL if gap_x <= big * _ASPECT else None
 
 
 _ABOVE_OR_BELOW = (_Touch.STACKED, _Touch.DIAGONAL)

@@ -106,7 +106,16 @@ location show), not settings.
   rescales with the shot (a shirt print by a name plate, bottles, menus,
   product copy, measured 2026-10-29); a memo label in two rows or a
   recommender's label on plates anywhere stays a label (cases in
-  `test_scan.py`).
+  `test_scan.py`). And only where it labels: at a place (same box, same
+  text or a fragment) where it labels cards < 5 % of the time it is up
+  there it labels nothing (`_LABELLING`; logos and corner titles 0–4 %,
+  labels and tags 7–100 %, measured 2026-11-03), so a logo flush on a
+  name plate stays out of it. Unlike the rejected per-place recurrence
+  (below), recurrence stays episode-wide; only the labelling share is per
+  place. Known cost: a survey card's attribution kept up across the answers
+  (`38歳·男性`) leaves its card. Effect on selection unmeasured (no live
+  run; kept selections had translated 3 of ~280 regrouped moments):
+  suspect it when a label goes missing from a card.
 - **Grouping**: same timing (±1 s) and touching: stacked ≤ 0.5 of the
   smaller line height apart, on one row ≤ 0.25 of it apart (a space; two
   memos or name plates side by side sit further apart), or diagonal within

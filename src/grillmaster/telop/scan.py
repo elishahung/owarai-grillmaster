@@ -8,7 +8,8 @@ line. `build_cards` then drops OCR noise, joins lines that share their
 timing and touch on screen into cards (stacked, or close on one row: a card
 beside another stays apart), copies a recurring label that stays up across
 several cards into each card it sits on (an edited-in one, not scene text
-such as a shirt print: see `_Recurs`), and labels each card:
+such as a shirt print: see `_Recurs`; not where it rarely labels one, as a
+logo: see `_LABELLING`), and labels each card:
 
 - `recurring`: every line's text is on screen for over `RECURRING_S`
   across the episode (corner logos and titles, shirt prints, bottle
@@ -499,6 +500,7 @@ def _labels_of(
     biggest line (set the same way, or labelling it): a label kept up while
     the cards it names change (whose memo, which corner), copied into each
     of them."""
+    biggest = max(group, key=lambda line: char_size(line.box))
     return [
         label
         for label in labels
@@ -509,7 +511,7 @@ def _labels_of(
             or abs(label.end - end) <= CARD_TIMING_S
         )
         and any(_touch(label.box, line.box) in _ABOVE_OR_BELOW for line in group)
-        and _may_join(label, max(group, key=lambda line: char_size(line.box)))
+        and _may_join(label, biggest)
     ]
 
 
@@ -528,6 +530,68 @@ def _side_of(label: _Line, group: Sequence[_Line]) -> int:
 
     above = [middle(line.box) < middle(label.box) for line in group]
     return -1 if all(above) else 1 if not any(above) else 0
+
+
+# A recurring text labels cards only at a place where it labels one for at
+# least `_LABELLING` of the time it is up there. Measured 2026-11-03 on every
+# scanned project: memo labels, recommenders' labels and plates' group names
+# label 0.6-1.0 of their time at their place, a tag kept up through a run
+# 0.07-0.3; show logos and corner titles 0.00-0.04 (they labelled vertical
+# name plates, captions and menus beside them).
+_LABELLING = 0.05
+
+
+def _covered_s(spans: Iterable[tuple[float, float]]) -> float:
+    """Seconds inside any of `spans`."""
+    total, reached = 0.0, float("-inf")
+    for start, end in sorted(spans):
+        if end > (begin := max(start, reached)):
+            total += end - begin
+            reached = end
+    return total
+
+
+def _labelling(groups: Sequence[list[_Line]], labels: Sequence[_Line]) -> list[_Line]:
+    """The `labels` that label cards at their place (see `_LABELLING`): a
+    place is every label line in the same box (`_SAME_PLACE`) whose text
+    matches it or is a fragment of it either way (`_SAME_TEXT`)."""
+    spans: dict[int, list[tuple[float, float]]] = {id(label): [] for label in labels}
+    for group in groups:
+        span = _span(group)
+        for label in _labels_of(group, *span, labels):
+            spans[id(label)].append(span)
+
+    by_text: dict[str, list[_Line]] = {}
+    for label in labels:
+        by_text.setdefault(label.normalized, []).append(label)
+    chars = {text: Counter(text) for text in by_text}
+    alike = {
+        text: [
+            other
+            for other in by_text
+            # Shared characters bound the in-order match from above.
+            if (chars[text] & chars[other]).total()
+            >= (least := _SAME_TEXT * min(len(text), len(other)))
+            and _matched(text, other) >= least
+        ]
+        for text in {label.normalized for label in labels if spans[id(label)]}
+    }
+
+    kept: list[_Line] = []
+    for label in labels:
+        if not spans[id(label)]:
+            continue
+        place = [
+            other
+            for text in alike[label.normalized]
+            for other in by_text[text]
+            if _iou(label.box, other.box) >= _SAME_PLACE
+        ]
+        labelled = _covered_s(span for other in place for span in spans[id(other)])
+        up = _covered_s((other.start, other.end) for other in place)
+        if labelled >= _LABELLING * up:
+            kept.append(label)
+    return kept
 
 
 def _bridged(groups: list[list[_Line]], labels: Sequence[_Line]) -> list[list[_Line]]:
@@ -600,13 +664,18 @@ def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:
     ]
     # Fixtures never join fresh lines into one card (a logo under a row of
     # name plates would chain them together); an overlay one only labels a
-    # card, scene text (a shirt print by a name plate) not even that.
+    # card, and not where it rarely labels one (`_LABELLING`), scene text (a
+    # shirt print by a name plate) not even that.
     fixtures = [line for line in lines if recurring[id(line)] is not _Recurs.NO]
-    labels = [line for line in fixtures if recurring[id(line)] is _Recurs.OVERLAY]
     fresh = [line for line in lines if recurring[id(line)] is _Recurs.NO]
+    fresh_groups = _group(fresh)
+    labels = _labelling(
+        fresh_groups,
+        [line for line in fixtures if recurring[id(line)] is _Recurs.OVERLAY],
+    )
     groups = sorted(
         [
-            *((group, False) for group in _bridged(_group(fresh), labels)),
+            *((group, False) for group in _bridged(fresh_groups, labels)),
             *((group, True) for group in _group(fixtures)),
         ],
         key=lambda tagged: tagged[0][0].start,

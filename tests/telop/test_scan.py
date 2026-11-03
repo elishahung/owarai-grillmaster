@@ -22,6 +22,16 @@ def read(box: tuple[float, float, float, float], text: str, score: float = 0.99)
     return TextRead(box=box, text=text, score=score)
 
 
+def up_elsewhere(label: TextRead, *card: TextRead) -> list[list[TextRead]]:
+    """`label` on screen for over a minute across the picture (same text and
+    size), then on `card` for 2 s. A long-running label does not label where
+    it rarely labels a card; the real labels these stand for label 0.29-1.0
+    of their time at their place (measured 2026-11-03)."""
+    x0, y0, x1, y1 = label.box
+    away = label.model_copy(update={"box": (1 - x1, y0, 1 - x0, y1)})
+    return [[away] for _ in range(130)] + [[label, *card]] * 4
+
+
 def scan_of(*frames: list[TextRead]) -> TelopScan:
     return TelopScan(fps=2.0, frames=list(frames))
 
@@ -508,10 +518,10 @@ def test_a_long_running_title_does_not_label_a_vertical_caption_through_a_tag():
 
 def test_a_long_running_group_name_labels_the_vertical_name_plate_it_heads():
     # Columns side by side are measured like stacked rows, so the group name
-    # (on screen all episode) is the plate's label, read first.
+    # (on screen all episode elsewhere) is the plate's label, read first.
     group = read((0.871, 0.056, 0.918, 0.380), "かまいたち")
     name = read((0.821, 0.053, 0.884, 0.393), "濱家隆")
-    frames = [[group] for _ in range(130)] + [[group, name]] * 4
+    frames = up_elsewhere(group, name)
 
     (card,) = build_cards(scan_of(*frames), []).offered
 
@@ -537,7 +547,7 @@ def test_a_plate_split_by_a_long_running_column_is_one_card():
     name = read((0.931, 0.326, 0.972, 0.971), "パンサーオガタタカヒロ")
     event = read((0.887, 0.331, 0.928, 0.910), "足つぼルームランナー")
     title = read((0.849, 0.548, 0.892, 0.977), "世界記録保持者")
-    frames = [[event] for _ in range(130)] + [[event, name, title]] * 4
+    frames = up_elsewhere(event, name, title)
 
     (card,) = build_cards(scan_of(*frames), []).offered
 
@@ -550,7 +560,7 @@ def test_a_long_running_score_between_two_plates_does_not_join_them():
     score = read((0.066, 0.081, 0.183, 0.243), "1 pt")
     upper = read((0.089, 0.029, 0.155, 0.102), "津田")
     lower = read((0.089, 0.270, 0.156, 0.344), "石井")
-    frames = [[score] for _ in range(130)] + [[score, upper, lower]] * 4
+    frames = up_elsewhere(score, upper, lower)
 
     cards = build_cards(scan_of(*frames), []).offered
 
@@ -561,7 +571,7 @@ def test_a_long_running_vertical_tag_still_labels_the_text_beside_it():
     tag = read((0.033, 0.777, 0.086, 0.956), "理由")
     who = read((0.029, 0.692, 0.315, 0.756), "ケツナダル(ワースト2)")
     reason = read((0.078, 0.770, 0.958, 0.970), "誕生日を理由に仕事を断る。")
-    frames = [[tag] for _ in range(130)] + [[tag, who, reason]] * 4
+    frames = up_elsewhere(tag, who, reason)
 
     (card,) = build_cards(scan_of(*frames), []).offered
 
@@ -663,7 +673,6 @@ def test_a_corner_title_does_not_label_a_vertical_card_off_to_one_side(case: str
     assert [card.text for card in cards] == [lines[-1][3]]
 
 
-@pytest.mark.xfail(strict=True, reason="a corner title right over a plate labels it")
 def test_a_corner_title_does_not_label_the_vertical_name_plate_under_it():
     # The other plate sits flush under the title.
     plate: Shown = (81.25, 84.75, (0.039, 0.106, 0.261, 0.892), "佐木隆史")
@@ -671,6 +680,39 @@ def test_a_corner_title_does_not_label_the_vertical_name_plate_under_it():
     cards = build_cards(shown(*_PLATES_TITLE, plate), []).offered
 
     assert [card.text for card in cards] == ["佐木隆史"]
+
+
+def test_a_tag_kept_up_through_each_run_labels_the_card_it_comes_up_with():
+    # The timing tag stays up through each run and labels the run's opening
+    # card, ~7 % of its time there: just above `_LABELLING`.
+    tag: list[Shown] = [
+        (start, end, (0.721, 0.885, 0.887, 0.967), "タイム計測中")
+        for start, end in [
+            (551.75, 565.75),
+            (570.75, 590.25),
+            (671.75, 702.75),
+            (709.25, 763.75),
+            (962.25, 981.25),
+            (986.75, 1072.75),
+            (1080.25, 1132.25),
+            (1342.25, 1383.75),
+            (1390.25, 1437.25),
+        ]
+    ]
+    runs: list[Shown] = [
+        line
+        for start, end in [(671.75, 679.75), (962.25, 969.75), (1342.25, 1349.75)]
+        for line in (
+            (start, end, (0.718, 0.701, 0.862, 0.765), "20秒後から"),
+            (start, end, (0.716, 0.778, 0.890, 0.879), "徐々にスピードUP"),
+        )
+    ]
+
+    cards = build_cards(shown(*tag, *runs), []).offered
+
+    assert [card.text for card in cards] == [
+        "20秒後から / 徐々にスピードUP / タイム計測中"
+    ] * 3
 
 
 def test_a_label_set_at_one_size_labels_its_plate_wherever_the_plate_is():

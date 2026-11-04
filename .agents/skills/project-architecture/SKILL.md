@@ -231,10 +231,11 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
   from the `.env` path in its manifest.
 - `programs.py` `ProgramRules`: channel then series entries merged (`common`
   text before stage text; stage keys `prepass`, `chunks`, `refine`,
-  `glossary`, `proofread`, `telop`, `notes`; `remix` OR-merges, `telop` and
+  `glossary`, `proofread`, `telop`, `notes`; `remix`, `telop` and
   `notes` are tri-state, series' explicit value over channel's, `None` =
-  follow `[features]`; `stages._common.switch_enabled/switch_applies` add the
-  run flag on top). `register_program` (download stage) is the only writer of
+  follow `[features]` (for `remix`, no remix);
+  `stages._common.switch_enabled/switch_applies` add the run flag on top,
+  `stages/package.py` does it for `remix`). `register_program` (download stage) is the only writer of
   `grill.toml`, appending empty entries with `tomlkit` under
   `grill.toml.lock`, re-reading the file inside it (concurrent processes).
 
@@ -286,7 +287,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 ## CLI (`cli/`)
 
 `grill <src> [HINT]` = `grill run`; options `--break-after <key>`, `--parent [dir]`,
-`--cover`, `--date-research`, `--proofread`, `--telop/--no-telop`, `--notes/--no-notes`, `--chat`, `--chat-layout`, `--remix [pool]`,
+`--cover`, `--date-research`, `--proofread`, `--telop/--no-telop`, `--notes/--no-notes`, `--chat`, `--chat-layout`, `--remix [pool]`, `--no-remix`,
 `--start`, `--to`. Also `serial`, `package <dir|id>`, `telop <dir|id>`, `notes <dir|id> [--probe]`, `archive <id>`,
 `reset <id> --from|--only <key>`, `status [<id>]`, `doctor`. `package`,
 `archive` and `status` resolve an ID locally only (pass an archived

@@ -176,8 +176,8 @@ class ArchivedDeliveryError(RuntimeError):
 
     def __init__(self, archived: ProjectLayout, error: Exception) -> None:
         super().__init__(
-            f"{error} (the project is already archived; resume with: "
-            f'grill package "{archived.root}")'
+            f"{error} (the project is already archived; resume with the original "
+            f'packaging flags plus: grill package "{archived.root}")'
         )
         self.archived = archived
 

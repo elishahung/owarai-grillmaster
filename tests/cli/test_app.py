@@ -83,6 +83,47 @@ def test_run_notes_flags_force_either_way(
     assert [options.notes for options in seen.options] == [notes]
 
 
+@pytest.mark.parametrize("command", [[], ["serial"]], ids=["run", "serial"])
+@pytest.mark.parametrize(
+    ("flags", "remix"),
+    [
+        ([], None),
+        (["--remix"], True),
+        (["--remix", "rain"], "rain"),
+        (["--no-remix"], False),
+    ],
+)
+def test_remix_flags_force_either_way(
+    cli: CliRunner,
+    *,
+    projects_root: Path,
+    pipeline: Pipeline,
+    seen: Seen,
+    command: list[str],
+    flags: list[str],
+    remix: str | bool | None,
+):
+    argv = expand_bare_options([*command, "epnew1", *flags])
+
+    result = cli.invoke(app, argv, obj=pipeline)
+
+    assert result.exit_code == 0, result.output
+    assert [options.remix for options in seen.options] == [remix]
+
+
+@pytest.mark.parametrize("command", [[], ["serial"]], ids=["run", "serial"])
+def test_remix_and_no_remix_are_refused_together(
+    cli: CliRunner, projects_root: Path, command: list[str]
+):
+    argv = [*command, "epnew1", "--remix", "rain", "--no-remix"]
+
+    result = cli.invoke(app, argv)
+
+    assert result.exit_code == 1
+    assert "cannot be combined" in result.output
+    assert not projects_root.exists()
+
+
 def test_run_passes_the_hint(cli: CliRunner, projects_root: Path):
     result = cli.invoke(app, ["epnew1", "漫才の大会"])
     assert result.exit_code == 0, result.output

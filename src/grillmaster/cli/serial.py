@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 from loguru import logger
 
-from grillmaster.cli.args import reject_directory_source, resolve_remix
+from grillmaster.cli.args import reject_directory_source
 from grillmaster.cli.common import fail, load_or_exit, pipeline_from
 from grillmaster.cli.live import run_or_exit
 from grillmaster.cli.parent import ParentOption, PickParentOption, resolve_parent
@@ -16,10 +16,12 @@ from grillmaster.cli.run import (
     ChatOption,
     CoverOption,
     DateResearchOption,
+    NoRemixOption,
     NotesOption,
     ProofreadOption,
     RemixOption,
     TelopOption,
+    resolve_remix,
 )
 from grillmaster.live_chat.layout import DEFAULT_CHAT_LAYOUT
 
@@ -50,6 +52,7 @@ def serial_command(
     chat: ChatOption = False,
     chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
     remix: RemixOption = None,
+    no_remix: NoRemixOption = False,
 ) -> None:
     """Process several videos in order, seeding each from the previous one."""
     from grillmaster.core.source_id import parse_source
@@ -74,7 +77,7 @@ def serial_command(
                 notes=notes,
                 chat=chat,
                 chat_layout=chat_layout,
-                remix=resolve_remix(remix, loaded.config.package.remix_pool),
+                remix=resolve_remix(remix, no_remix=no_remix),
             ),
         )
     except ValueError as error:

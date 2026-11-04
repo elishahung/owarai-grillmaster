@@ -1,10 +1,10 @@
 """Per-program rules: merge the matching `[programs.*]` entries, register new ones.
 
 A program matches up to two entries, its channel and its series. They merge
-broadest first (channel, then series): `remix` is on when either entry sets
-it, `telop` and `notes` are the most specific entry's explicit choice (`None`
-when neither sets it), and each stage's instruction text is every entry's `common` text followed
-by its stage text, in that order. Inserts are the ones no program lists plus
+broadest first (channel, then series): `remix`, `telop` and `notes` are the
+most specific entry's explicit choice (`None` when neither sets it), and each
+stage's instruction text is every entry's `common` text followed by its stage
+text, in that order. Inserts are the ones no program lists plus
 the ones a matching entry lists, in declaration order.
 
 The download stage registers names it has not seen as empty entries, ready
@@ -45,7 +45,7 @@ REGISTER_LOCK_TIMEOUT_S = 30.0
 class ProgramRules:
     """The merged rules of every entry matching one program."""
 
-    remix: bool = False
+    remix: bool | None = None
     telop: bool | None = None
     notes: bool | None = None
     inserts: tuple[InsertRule, ...] = ()
@@ -89,7 +89,7 @@ def resolve_program_rules(
     scoped = {name for _, _, rule in programs.rules() for name in rule.inserts}
     listed = {name for rule in entries for name in rule.inserts}
     return ProgramRules(
-        remix=any(rule.remix for rule in entries),
+        remix=_most_specific(rule.remix for rule in entries),
         telop=_most_specific(rule.telop for rule in entries),
         notes=_most_specific(rule.notes for rule in entries),
         inserts=tuple(

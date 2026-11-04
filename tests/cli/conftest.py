@@ -32,8 +32,7 @@ def home(isolated_cwd: Path, monkeypatch: pytest.MonkeyPatch, roles_toml: str) -
     other `grill.toml` (the developer's own) is found."""
     root = isolated_cwd / "home"
     root.mkdir()
-    toml = roles_toml + '\n[package]\nremix_pool = "noise"\n'
-    (root / CONFIG_FILE_NAME).write_text(toml, encoding="utf-8")
+    (root / CONFIG_FILE_NAME).write_text(roles_toml, encoding="utf-8")
     monkeypatch.chdir(root)
     return root
 

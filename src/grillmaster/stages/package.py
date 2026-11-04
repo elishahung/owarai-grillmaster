@@ -11,10 +11,10 @@ chat panel to `.work/package/chat.ass`, the translated telops
 `.work/package/telop.ass` and the notes (`.subs/notes.cht.json`, when
 present and not `--no-notes`) to
 `.work/package/notes.ass`. A remix comes from
-`--remix [pool]` or a program rule (`remix = true`, using `package.remix_pool`);
-inserts follow `[[package.inserts]]` and the program's `inserts`. Pools are
-checked and the remix segments picked before any pool cursor moves; the
-folder is built under a staging name and replaces the previous deliverable
+`--remix [pool]` or a program rule (`remix = true`, using `package.remix_pool`),
+which `--no-remix` overrides; inserts follow `[[package.inserts]]` and the
+program's `inserts`. Pools are checked and the remix segments picked before any
+pool cursor moves; the folder is built under a staging name and replaces the previous deliverable
 only on success; a locked previous deliverable fails before the render
 (rename probe). `preflight` checks the package root and the pools before
 any stage runs. A project without a briefing packages without its data.
@@ -212,20 +212,19 @@ def _remix_pool(
 ) -> str | None:
     """The noise pool of a remix deliverable, `None` for a plain burn-in.
 
-    `--remix` wins; otherwise a program marked `remix` forces one with the
-    default pool (whose absence then fails the package rather than
-    degrading to a burn-in).
+    `--remix` and `--no-remix` win over the program's `remix`. Anything but a
+    named pool uses the default one, whose absence then fails the package
+    rather than degrading to a burn-in.
     """
-    if options.remix is not None:
-        return options.remix
-    if not rules.remix:
+    if options.remix is None and rules.remix:
+        logger.info(
+            f"Program rules force a remix for series={source.series!r} "
+            f"channel={source.channel!r}; using pool {config.package.remix_pool!r}"
+        )
+    choice = rules.remix if options.remix is None else options.remix
+    if not choice:
         return None
-    pool = config.package.remix_pool
-    logger.info(
-        f"Program rules force a remix for series={source.series!r} "
-        f"channel={source.channel!r}; using pool {pool!r}"
-    )
-    return pool
+    return choice if isinstance(choice, str) else config.package.remix_pool
 
 
 def _workdir(layout: ProjectLayout) -> Path:

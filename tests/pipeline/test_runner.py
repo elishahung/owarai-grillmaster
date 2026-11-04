@@ -741,7 +741,7 @@ def test_a_package_failure_after_the_archive_names_the_archived_directory(
         run(pipeline, archive=archive)
     assert caught.value.archived == archived
     message = str(caught.value)
-    assert f'resume with: grill package "{archived.root}"' in message
+    assert f'flags plus: grill package "{archived.root}"' in message
     assert recording_sink.events[-2:] == [
         StepFailed("package", PlanKind.DELIVERY, "render broke"),
         RunFinished(RunOutcome.FAILED, message),

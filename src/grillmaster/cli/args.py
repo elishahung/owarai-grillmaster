@@ -44,13 +44,6 @@ def _is_parent_value(text: str | None) -> bool:
     return Path(text).is_dir() or looks_like_path(text)
 
 
-def resolve_remix(value: str | None, default_pool: str) -> str | None:
-    """The pool a `--remix` value names; `None` when the flag was not given."""
-    if value is None:
-        return None
-    return value or default_pool
-
-
 def looks_like_path(text: str) -> bool:
     """Whether `text` reads as a filesystem path rather than a video ID or URL.
 

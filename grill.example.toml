@@ -119,7 +119,8 @@ when = "remix"     # "remix": remix deliverables only; "always": every one
 # entry; channel applies first, then series. Downloading a new program
 # appends an empty entry here for you to fill in.
 [programs.series."水曜日のダウンタウン"]
-# Package as remix with package.remix_pool even without --remix.
+# Package as remix with package.remix_pool (true) or never (false); a series
+# overrides its channel, and --remix / --no-remix override both.
 remix = true
 # Outputs of [[package.inserts]] enabled for this program.
 inserts = ["judge"]

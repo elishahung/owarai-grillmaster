@@ -44,10 +44,11 @@ class RunOptions:
     steps combine them with `[features]`. `telop` is `--telop` / `--no-telop`
     and `notes` `--notes` / `--no-notes` (`None` without either), which
     override the feature and the program rules; `False` also leaves existing
-    telops or notes out of the burn-in and `video.cht.ass`. `remix` is a resolved pool name (a bare `--remix`
-    already became `package.remix_pool`). `section` is where `--start` /
-    `--to` cut the source; it only applies while the combine stage has not
-    run.
+    telops or notes out of the burn-in and `video.cht.ass`. `remix` overrides
+    the program rules too: the pool `--remix` names, `True` for a bare one
+    (`package.remix_pool`), `False` for `--no-remix`, `None` without either.
+    `section` is where `--start` / `--to` cut the source; it only applies
+    while the combine stage has not run.
     """
 
     source: SourceId
@@ -61,7 +62,7 @@ class RunOptions:
     notes: bool | None = None
     chat: bool = False
     chat_layout: ChatLayout = DEFAULT_CHAT_LAYOUT
-    remix: str | None = None
+    remix: str | bool | None = None
     section: Section = field(default_factory=Section)
 
     @property

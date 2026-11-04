@@ -244,7 +244,8 @@ def test_a_failed_package_after_the_archive_gives_the_resume_command(
     assert isinstance(caught.value.__cause__, PackageError)
     assert str(caught.value) == (
         "burn-in output duration differs (the project is already archived; "
-        f'resume with: grill package "{archived.root}")'
+        "resume with the original packaging flags plus: "
+        f'grill package "{archived.root}")'
     )
     assert load_state(archived).is_done(StageKey.METADATA)
     assert not ProjectLayout.for_id(archiving.projects_root, "epnew1").root.exists()

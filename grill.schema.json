@@ -396,10 +396,17 @@
       "description": "Rules for one series or channel name.",
       "properties": {
         "remix": {
-          "default": false,
-          "description": "Package as remix with package.remix_pool even without --remix.",
-          "title": "Remix",
-          "type": "boolean"
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Package this program as remix with package.remix_pool (true) or never (false); a series overrides its channel, --remix / --no-remix override both.",
+          "title": "Remix"
         },
         "inserts": {
           "description": "Outputs of [[package.inserts]] enabled for this program.",

@@ -143,8 +143,8 @@ reset` remove it until the next complete run.
 ## Packaging (`package/`, `stages/package.py`)
 
 Delivery step, not a stage: no ledger entry, runs every complete run when
-`[paths] package` is set, or alone via `grill package <dir|id> [--remix [pool]]
-[--chat-layout]`. In a run it comes after the archive move
+`[paths] package` is set, or alone via `grill package <dir|id> [--remix [pool]
+| --no-remix] [--chat-layout]`. In a run it comes after the archive move
 (`delivery.run_archive`), so with `[paths] archive` set it reads the archived
 copy; a failure there raises `ArchivedDeliveryError` naming
 `grill package "<archived dir>"`. `grill archive <id>` retries only the move.
@@ -153,8 +153,8 @@ copy; a failure there raises `ArchivedDeliveryError` naming
 be a directory and the remix/insert pools must exist (program rules only once
 the state knows the series/channel).
 `_run` order: require `video.mp4`, `video.cht.srt` → remix pool (`--remix`
-wins, else a `remix = true` program uses `package.remix_pool`; a missing pool
-fails) and inserts → `require_pools`, `check_replaceable(destination)` (a
+or `--no-remix` wins, else a `remix = true` program uses `package.remix_pool`;
+a missing pool fails) and inserts → `require_pools`, `check_replaceable(destination)` (a
 locked old deliverable fails now, not after the render) + `plan_remix`
 **before any cursor moves** → titles → burn plan → `deliverable_dir` (staged
 `<name>.partial`, swapped in only on success). Inside: plain copies first

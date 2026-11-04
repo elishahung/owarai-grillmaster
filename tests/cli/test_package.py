@@ -66,13 +66,14 @@ def test_packages_an_archived_directory(
 
 
 @pytest.mark.parametrize(
-    ("args", "pool"),
+    ("args", "remix"),
     [
-        pytest.param(["--remix"], "noise", id="bare-remix"),
+        pytest.param(["--remix"], True, id="bare-remix"),
         pytest.param(["--remix", "sleep"], "sleep", id="named-pool"),
+        pytest.param(["--no-remix"], False, id="no-remix"),
     ],
 )
-def test_remix_names_the_pool(
+def test_remix_flags_are_passed_on(
     cli: CliRunner,
     *,
     packaging_home: Path,
@@ -80,14 +81,32 @@ def test_remix_names_the_pool(
     pipeline: Pipeline,
     seen: Seen,
     args: list[str],
-    pool: str,
+    remix: str | bool,
 ):
     argv = expand_bare_options(["package", layout.root.name, *args])
 
     result = cli.invoke(app, argv, obj=pipeline)
 
     assert result.exit_code == 0, result.output
-    assert seen.options[0].remix == pool
+    assert seen.options[0].remix == remix
+
+
+@pytest.mark.parametrize("remix", [["--remix"], ["--remix", "sleep"]])
+def test_remix_and_no_remix_fail_together(
+    cli: CliRunner,
+    *,
+    packaging_home: Path,
+    layout: ProjectLayout,
+    pipeline: Pipeline,
+    seen: Seen,
+    remix: list[str],
+):
+    argv = expand_bare_options(["package", layout.root.name, *remix, "--no-remix"])
+
+    result = cli.invoke(app, argv, obj=pipeline)
+
+    assert result.exit_code == 1
+    assert seen.options == []
 
 
 def test_chat_layout_is_passed_on(

@@ -347,9 +347,9 @@ class ProgramRule(BaseModel):
 
     model_config = _STRICT
 
-    remix: bool = Field(
-        default=False,
-        description="Package as remix with package.remix_pool even without --remix.",
+    remix: bool | None = Field(
+        default=None,
+        description="Package this program as remix with package.remix_pool (true) or never (false); a series overrides its channel, --remix / --no-remix override both.",
     )
     inserts: list[str] = Field(
         default_factory=list,

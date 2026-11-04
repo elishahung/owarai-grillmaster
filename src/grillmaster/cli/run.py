@@ -9,9 +9,9 @@ import typer
 from loguru import logger
 
 from grillmaster.cli.args import (
+    DEFAULT_POOL,
     parse_section_time,
     reject_directory_source,
-    resolve_remix,
 )
 from grillmaster.cli.common import fail, load_or_exit, pipeline_from
 from grillmaster.cli.live import run_or_exit
@@ -95,11 +95,28 @@ RemixOption = Annotated[
         "--remix",
         help=(
             "Package as remix with this noise pool; a bare --remix uses "
-            "package.remix_pool."
+            "package.remix_pool. Overrides the program's remix."
         ),
         show_default=False,
     ),
 ]
+NoRemixOption = Annotated[
+    bool,
+    typer.Option(
+        "--no-remix",
+        help="Package as a plain burn-in, whatever the program's remix says.",
+    ),
+]
+
+
+def resolve_remix(value: str | None, *, no_remix: bool) -> str | bool | None:
+    """What `--remix` / `--no-remix` ask for: the pool named, `True` for a bare
+    `--remix`, `False` for `--no-remix`, `None` with neither."""
+    if no_remix:
+        if value is not None:
+            fail("--remix and --no-remix cannot be combined")
+        return False
+    return True if value == DEFAULT_POOL else value
 
 
 def run_command(
@@ -148,6 +165,7 @@ def run_command(
     chat: ChatOption = False,
     chat_layout: ChatLayoutOption = DEFAULT_CHAT_LAYOUT,
     remix: RemixOption = None,
+    no_remix: NoRemixOption = False,
     start: Annotated[
         str | None,
         typer.Option(
@@ -197,7 +215,7 @@ def run_command(
         notes=notes,
         chat=chat,
         chat_layout=chat_layout,
-        remix=resolve_remix(remix, loaded.config.package.remix_pool),
+        remix=resolve_remix(remix, no_remix=no_remix),
         section=section,
     )
     # The dashboard's retry after a failure past the archive move only

@@ -251,6 +251,18 @@ def test_remix_renders_parts_and_carries_the_insert(
     assert json.loads((noise / CURSOR_FILE_NAME).read_text("utf-8"))["index"] == 0
 
 
+def test_a_bare_remix_uses_the_default_pool(
+    make: MakeContext, finished: ProjectLayout, package_root: Path
+):
+    noise = make_pool(package_root, "noise", 2)
+    make_pool(package_root, "judge", 1)
+
+    package.STEP.run(make(remix_fake(finished, package_root), remix=True))
+
+    assert (package_root / DESTINATION / "1.mp4").exists()
+    assert (noise / CURSOR_FILE_NAME).exists()
+
+
 @pytest.mark.parametrize(
     "config_data",
     [
@@ -277,6 +289,66 @@ def test_a_remix_program_forces_a_remix_with_the_default_pool(
 
     assert (package_root / DESTINATION / "1.mp4").exists()
     assert not (package_root / DESTINATION / package.VIDEO_NAME).exists()
+
+
+@pytest.mark.parametrize(
+    "config_data",
+    [
+        pytest.param(
+            {
+                "programs": {
+                    "channel": {"日テレ": {"remix": True}},
+                    "series": {"ドキュメンタル": {"remix": False}},
+                },
+            },
+            id="series-off-channel-on",
+        )
+    ],
+    indirect=True,
+)
+def test_a_series_turns_off_its_channels_remix(
+    make: MakeContext,
+    finished: ProjectLayout,
+    package_root: Path,
+    state: ProjectState,
+):
+    state.source.series = "ドキュメンタル"
+    state.source.channel = "日テレ"
+
+    package.STEP.run(make(burn_in_fake(finished, package_root)))
+
+    assert (package_root / DESTINATION / package.VIDEO_NAME).exists()
+
+
+REMIX_SERIES_WITH_INSERT = {
+    "package": {
+        "remix_pool": "noise",
+        "inserts": [{"pool": "ending", "output": "outro"}],
+    },
+    "programs": {"series": {"ドキュメンタル": {"remix": True, "inserts": ["outro"]}}},
+}
+
+
+@pytest.mark.parametrize(
+    "config_data",
+    [pytest.param(REMIX_SERIES_WITH_INSERT, id="remix-series")],
+    indirect=True,
+)
+def test_no_remix_overrides_a_remix_program(
+    make: MakeContext,
+    finished: ProjectLayout,
+    package_root: Path,
+    state: ProjectState,
+):
+    state.source.series = "ドキュメンタル"
+
+    # Neither the noise pool nor the remix-only insert's pool exists.
+    package.STEP.run(make(burn_in_fake(finished, package_root), remix=False))
+
+    target = package_root / DESTINATION
+    assert (target / package.VIDEO_NAME).exists()
+    assert not (target / "1.mp4").exists()
+    assert not (target / "outro.mp4").exists()
 
 
 @pytest.mark.parametrize(
@@ -544,20 +616,7 @@ def test_preflight_checks_the_remix_and_insert_pools(
 
 @pytest.mark.parametrize(
     "config_data",
-    [
-        pytest.param(
-            {
-                "package": {
-                    "remix_pool": "noise",
-                    "inserts": [{"pool": "ending", "output": "outro"}],
-                },
-                "programs": {
-                    "series": {"ドキュメンタル": {"remix": True, "inserts": ["outro"]}}
-                },
-            },
-            id="remix-series",
-        )
-    ],
+    [pytest.param(REMIX_SERIES_WITH_INSERT, id="remix-series")],
     indirect=True,
 )
 def test_preflight_follows_the_program_rules_once_known(
@@ -572,3 +631,17 @@ def test_preflight_follows_the_program_rules_once_known(
     make_pool(package_root, "ending", 1)
     with pytest.raises(PoolError, match="noise"):
         preflight(loaded, state)
+
+
+@pytest.mark.parametrize(
+    "config_data",
+    [pytest.param(REMIX_SERIES_WITH_INSERT, id="remix-series")],
+    indirect=True,
+)
+def test_preflight_needs_no_pool_with_no_remix(
+    loaded: LoadedConfig, package_root: Path, state: ProjectState
+):
+    package_root.mkdir()
+    state.source.series = "ドキュメンタル"
+
+    preflight(loaded, state, remix=False)

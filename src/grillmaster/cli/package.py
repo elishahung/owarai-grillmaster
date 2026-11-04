@@ -7,7 +7,6 @@ from typing import Annotated
 import typer
 from loguru import logger
 
-from grillmaster.cli.args import resolve_remix
 from grillmaster.cli.common import (
     fail,
     load_or_exit,
@@ -15,6 +14,7 @@ from grillmaster.cli.common import (
     pipeline_from,
 )
 from grillmaster.cli.live import run_or_exit
+from grillmaster.cli.run import NoRemixOption, RemixOption, resolve_remix
 from grillmaster.live_chat.layout import DEFAULT_CHAT_LAYOUT, ChatLayout
 
 
@@ -31,17 +31,8 @@ def package_command(
         ),
     ],
     *,
-    remix: Annotated[
-        str | None,
-        typer.Option(
-            "--remix",
-            help=(
-                "Package as remix with this noise pool; a bare --remix uses "
-                "package.remix_pool."
-            ),
-            show_default=False,
-        ),
-    ] = None,
+    remix: RemixOption = None,
+    no_remix: NoRemixOption = False,
     chat_layout: Annotated[
         ChatLayout,
         typer.Option(
@@ -87,7 +78,7 @@ def package_command(
         chat_layout=chat_layout,
         telop=False if no_telop else None,
         notes=False if no_notes else None,
-        remix=resolve_remix(remix, loaded.config.package.remix_pool),
+        remix=resolve_remix(remix, no_remix=no_remix),
     )
     pipeline = pipeline_from(ctx)
     run_or_exit(

@@ -99,22 +99,18 @@ def test_instructions_reject_stages_that_take_none(config: AppConfig):
         rules.instruction_text(StageKey.CHAT_TRANSLATE)
 
 
-def test_remix_is_on_when_any_entry_sets_it(config: AppConfig):
-    assert _resolve(config, series="plain", channel="日テレ").remix
-    assert not _resolve(config, series="plain").remix
-
-
 @pytest.mark.parametrize(
     ("series", "channel", "expected"),
     [
         (None, None, None),
         (None, False, False),
+        (None, True, True),
         (True, None, True),
         (False, True, False),
         (True, False, True),
     ],
 )
-@pytest.mark.parametrize("switch", ["telop", "notes"])
+@pytest.mark.parametrize("switch", ["remix", "telop", "notes"])
 def test_switches_are_the_most_specific_explicit_choice(
     minimal_data: dict[str, Any],
     switch: str,

@@ -11,7 +11,6 @@ from grillmaster.cli.args import (
     looks_like_path,
     parse_section_time,
     reject_directory_source,
-    resolve_remix,
 )
 
 if TYPE_CHECKING:
@@ -74,14 +73,6 @@ def test_a_directory_after_parent_is_its_value(
         "ep0",
         "ep1",
     ]
-
-
-@pytest.mark.parametrize(
-    ("value", "expected"),
-    [(None, None), (DEFAULT_POOL, "noise"), ("rain", "rain")],
-)
-def test_resolve_remix(value: str | None, expected: str | None):
-    assert resolve_remix(value, "noise") == expected
 
 
 def test_directory_source_is_refused(tmp_path: Path):

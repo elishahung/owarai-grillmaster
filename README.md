@@ -84,7 +84,7 @@ grill reset <專案 ID> --from refine
 grill status [專案 ID]
 ```
 
-其他選項：`--cover`（產生封面）、`--date-research`（查不到播出日時上網找）、`--proofread`（名詞校對後再用另一個模型做最終校對，修正字幕與 briefing）、`--telop` / `--no-telop`（強制開／關字卡翻譯，蓋過 `[features]` 與節目設定）、`--notes` / `--no-notes`（強制開／關譯者註，同上）、`--chat`（翻譯 YouTube 聊天室並燒進畫面，`--chat-layout side|overlay|none`）、`--remix [素材池]`、`--parent <專案資料夾>`（不帶值時，從最近十天處理完的 archived 專案中搜尋挑選）。完整說明見 `grill --help`
+其他選項：`--cover`（產生封面）、`--date-research`（查不到播出日時上網找）、`--proofread`（名詞校對後再用另一個模型做最終校對，修正字幕與 briefing）、`--telop` / `--no-telop`（強制開／關字卡翻譯，蓋過 `[features]` 與節目設定）、`--notes` / `--no-notes`（強制開／關譯者註，同上）、`--chat`（翻譯 YouTube 聊天室並燒進畫面，`--chat-layout side|overlay|none`）、`--remix [素材池]` / `--no-remix`（強制開／關 remix，蓋過節目設定）、`--parent <專案資料夾>`（不帶值時，從最近十天處理完的 archived 專案中搜尋挑選）。完整說明見 `grill --help`
 
 可以同時開多個 `grill` 處理不同影片：每個 agent 工具伺服器都是各自獨立的子行程，互不衝突；同一個 ID 同時只能有一個 `grill` 在處理，第二個會直接報錯
 
@@ -129,7 +129,7 @@ notes = false                       # 譯者註：在畫面頂部補充台灣觀
 
 `[programs.series."<系列名>"]` 或 `[programs.channel."<頻道名>"]` 依節目系列或頻道設定規則。下載時會自動為新出現的名稱加上空白區段，之後手動編輯：
 
-- `remix`：`true` 時打包一律用 remix（同 `--remix`）
+- `remix`：`true` 打包一律用 remix（素材池是 `package.remix_pool`）、`false` 一律不用；不寫就不用。系列優先於頻道，`--remix` / `--no-remix` 又優先於兩者
 - `inserts`：打包時要附上的素材（對應 `[[package.inserts]]`）
 - `telop`：`true` 一律做字卡翻譯、`false` 一律不做，不管 `[features] telop`；不寫就照 `[features]`。系列優先於頻道，`--telop` / `--no-telop` 又優先於兩者
 - `notes`：同 `telop`，對這個節目一律開或關譯者註

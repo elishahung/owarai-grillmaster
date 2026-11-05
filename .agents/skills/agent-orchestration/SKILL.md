@@ -265,8 +265,9 @@ tools with a sub-config in `ToolSession` exist; a bad manifest exits 2.
 returned as MCP image content (with `pending_frames`: text only, paths appended
 to that file). `check_srt(path)`: skeleton check of an
 absolute path against `reference_srt` → `VALID` / `INVALID` + problems.
-`watch_clip(start, end)` (`watch_clip.py`, async: parallel calls overlap, ≤4
-Muse requests at once): cuts ≤ `max_span_s` anywhere in `video` into
+`watch_clip(start, end)` (`watch_clip.py`, async: parallel calls overlap, ≤8
+Muse requests at once; `server.py` marks it `readOnlyHint`, without which
+Claude's CLI runs a turn's MCP calls one by one): cuts ≤ `max_span_s` anywhere in `video` into
 `<clips_dir>/<start>-<end>/` as `audio.flac` (`media.audio.slice_audio`, FLAC by suffix) and
 `clip.mp4` (`media.video.slice_preview`: 480p, 5 fps, mono AAC, ~1 MB per
 20 s), then calls two APIs directly, no agent session, each request

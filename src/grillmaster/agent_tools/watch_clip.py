@@ -23,8 +23,9 @@ each record new since its start to the project's spend
 (`watch_record.cost_since`). Each section stands on its own: a failed
 request leaves its section naming the failure, the other section still
 answers, and only the failed one is asked again next time. The handler is
-async and runs the requests on a worker thread, so parallel calls overlap,
-at most `MAX_CONCURRENT_REQUESTS` Muse requests at once.
+async and runs the requests on a worker thread, so parallel calls overlap
+(Claude's CLI sends them together only because the server marks the tool
+read-only), at most `MAX_CONCURRENT_REQUESTS` Muse requests at once.
 """
 
 from __future__ import annotations
@@ -72,7 +73,7 @@ if TYPE_CHECKING:
 
 # Muse requests one tool server sends at once (the contributor key allows 150
 # RPM); the speech requests are seconds long and run unthrottled.
-MAX_CONCURRENT_REQUESTS = 4
+MAX_CONCURRENT_REQUESTS = 8
 # A time at the start of an answer line, in clip time: `[12.3]` as asked,
 # or the `[12.3s]`, `[0:12.3]` and `- [12.3]` forms a model may slip into.
 _LINE_TIME = re.compile(

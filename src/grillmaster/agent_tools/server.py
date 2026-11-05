@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from grillmaster.agent_tools import srt_check
 from grillmaster.agent_tools.frames import FrameGrabber
@@ -28,6 +29,10 @@ if TYPE_CHECKING:
     from grillmaster.media.ffmpeg import FfmpegRunner
 
 SERVER_NAME = "grill"
+# Claude's CLI runs a turn's calls to an MCP tool one by one unless the tool is
+# marked read-only; `watch_clip` keeps to its own records, and its calls take
+# tens of seconds each.
+_ANNOTATIONS = {ToolName.WATCH_CLIP: ToolAnnotations(readOnlyHint=True)}
 
 
 def build_server(
@@ -40,7 +45,11 @@ def build_server(
     for name in sorted(session.allowed):
         handler, description = _tool(session, name, runner, model, speech)
         server.add_tool(
-            handler, name=name, description=description, structured_output=False
+            handler,
+            name=name,
+            description=description,
+            annotations=_ANNOTATIONS.get(name),
+            structured_output=False,
         )
     return server
 

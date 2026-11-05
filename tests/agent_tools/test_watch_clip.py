@@ -247,6 +247,25 @@ def test_the_server_serves_watch_clip(
     assert texts == [f"{HEADER}{SPEECH}\n\n{SHIFTED}"]
 
 
+def test_only_watch_clip_is_marked_read_only_so_its_calls_overlap(
+    session: ToolSession, config: WatchClipTool, fake_ffmpeg: FakeFfmpeg
+):
+    server = build_server(
+        session.model_copy(update={"watch_clip": config}),
+        fake_ffmpeg,
+        FakeModel(Answer(ANSWER, USAGE)),
+        FakeSpeech(),
+    )
+
+    tools = anyio.run(server.list_tools)
+    marked = {
+        tool.name
+        for tool in tools
+        if tool.annotations and tool.annotations.readOnlyHint
+    }
+    assert marked == {"watch_clip"}
+
+
 def test_a_repeated_span_waits_for_the_first_records(
     config: WatchClipTool, fake_ffmpeg: FakeFfmpeg
 ):

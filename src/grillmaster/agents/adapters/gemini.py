@@ -47,9 +47,11 @@ one `session/prompt` per turn. Facts this module is built on (gemini-cli
   and browsed the project tree; NONE: a `tools.core` allowlist of one inert
   built-in, since the API refuses a request without any function, and
   skills off) go into
-  `<workdir>/.gemini/settings.json`, which `session/new` reads because
-  `--skip-trust` trusts the workdir. The user's own MCP servers stay off
-  through `--allowed-mcp-server-names`. A tool call arrives as a
+  `<workdir>/.gemini/settings.json`, which the CLI reads only in a trusted
+  workdir: `GEMINI_CLI_TRUST_WORKSPACE` says so (`--skip-trust` sets that
+  variable after `main` already loaded the settings, too late for them). The
+  user's own MCP servers stay off through `--allowed-mcp-server-names`. A
+  tool call arrives as a
   `tool_call` update titled `<tool>(<arg>: <value>, …)`, without its raw
   name or arguments.
 * A failed model call answers the prompt with a JSON-RPC error whose code
@@ -62,6 +64,16 @@ one `session/prompt` per turn. Facts this module is built on (gemini-cli
   (its message, model turns and tool results) and the next prompt
   continues it; the CLI closes the dangling tool response with a
   placeholder model turn first (`GeminiChat.sendMessageStream`).
+* Each session has its own `GEMINI_CLI_HOME`, a temp dir deleted with the
+  session (gemini-cli 0.65.0). On a shared home every startup locks
+  `projects.json` with a backoff that doubles without a cap (102, 205, 410,
+  819, 1638, 3277 s in total) and all wake together; for a path it has not
+  seen, which is every chunk's workdir, it also reads the marker of each
+  directory in `tmp` and `history` under that lock (8040 directories: 7-10 s).
+  Ten chunks started together then waited up to 2400 s before `initialize`
+  answered, and the home grew by every session's chat record, inline audio
+  included. A copy of the login refreshes its own access token. Nothing else
+  of the user's home loads: no `GEMINI.md`, skills, agents or policies.
 * Paid API-key variables are removed from the environment so the CLI uses
   the subscription login, which needs `GOOGLE_CLOUD_PROJECT` for a Code
   Assist account.
@@ -72,7 +84,10 @@ from __future__ import annotations
 import base64
 import json
 import re
+import shutil
 from http import HTTPStatus
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, Any, override
 
 from grillmaster.agents import process
@@ -141,7 +156,15 @@ THINKING_BUDGETS = {
 # `model.compressionThreshold` is a fraction of the context window; no
 # history reaches this multiple of it, so the CLI never compresses a session.
 NEVER_COMPRESS = 1000.0
-SETTINGS_RELPATH = (".gemini", "settings.json")
+GEMINI_DIR = ".gemini"
+# What a session's home takes from the user's `~/.gemini`: the login and the
+# settings.
+HOME_FILES = (
+    "oauth_creds.json",
+    "google_accounts.json",
+    "installation_id",
+    "settings.json",
+)
 # The shell and the file-writing built-ins: WRITE access only.
 WRITE_TOOLS = ("run_shell_command", "write_file", "replace")
 # A built-in that reaches no file, shell or network: it lists the session's
@@ -243,7 +266,6 @@ class GeminiAdapter:
             "--acp",
             "--model",
             request.spec.model,
-            "--skip-trust",
             "--approval-mode",
             "yolo",
             "--allowed-mcp-server-names",
@@ -253,17 +275,37 @@ class GeminiAdapter:
             argv += ["--include-directories", str(root)]
         return argv
 
-    def connect(self, request: TurnRequest) -> AcpConnection:
-        """Start the session's CLI in `request.workdir` with its settings."""
+    def connect(self, request: TurnRequest, home: Path) -> AcpConnection:
+        """Start the session's CLI in `request.workdir` with its settings and
+        `home`, the login copied in."""
         write_settings(request)
+        _seed_home(home)
         spec = process.ProcessSpec(
             argv=self.argv(request),
             cwd=request.workdir,
             timeout_s=request.timeout_s,
-            env=subscription_env(),
+            env={
+                **subscription_env(),
+                "GEMINI_CLI_HOME": str(home),
+                "GEMINI_CLI_TRUST_WORKSPACE": "true",
+            },
             keep_stdin_open=True,
         )
         return AcpConnection(self._spawn(spec))
+
+
+def _seed_home(home: Path) -> None:
+    target = home / GEMINI_DIR
+    target.mkdir()
+    for name in HOME_FILES:
+        try:
+            shutil.copyfile(Path.home() / GEMINI_DIR / name, target / name)
+        except FileNotFoundError:
+            # A user who never logged in gets the CLI's own login failure.
+            continue
+        except OSError as error:
+            # Another gemini CLI may be replacing the file right now.
+            raise AgentTransientError(f"gemini login unreadable: {error}") from error
 
 
 def write_settings(request: TurnRequest) -> None:
@@ -291,7 +333,7 @@ def write_settings(request: TurnRequest) -> None:
     settings |= TOOL_SETTINGS[request.tool_access]
     if request.mcp is not None:
         settings["mcpServers"] = mcp_servers(request.mcp)
-    path = request.workdir.joinpath(*SETTINGS_RELPATH)
+    path = request.workdir / GEMINI_DIR / "settings.json"
     atomic_write_text(path, json.dumps(settings, indent=2))
 
 
@@ -302,12 +344,18 @@ class GeminiSession:
     def __init__(self, adapter: GeminiAdapter) -> None:
         self._adapter = adapter
         self._connection: AcpConnection | None = None
+        self._home: TemporaryDirectory[str] | None = None
         self.session_id = ""
 
     def start(self, request: TurnRequest) -> GeminiTurn:
         if self._connection is not None:
             raise RuntimeError("gemini session already started")
-        self._connection = connection = self._adapter.connect(request)
+        self._home = TemporaryDirectory(
+            prefix="grill-gemini-", ignore_cleanup_errors=True
+        )
+        self._connection = connection = self._adapter.connect(
+            request, Path(self._home.name)
+        )
         try:
             connection.call(
                 "initialize",
@@ -333,8 +381,12 @@ class GeminiSession:
         return GeminiTurn(self, self._connection, request)
 
     def close(self) -> None:
-        if self._connection is not None:
-            self._connection.close()
+        try:
+            if self._connection is not None:
+                self._connection.close()
+        finally:
+            if self._home is not None:
+                self._home.cleanup()
 
 
 class GeminiTurn(Turn):

@@ -20,12 +20,19 @@ if TYPE_CHECKING:
 
 
 @pytest.fixture(autouse=True)
-def _isolated_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def _isolated_environment(
+    request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Run every test in `tmp_path` with no `GRILL_HOME` and no ElevenLabs
-    key, so the developer's own `grill.toml` and `.env` are never found."""
+    key, so the developer's own `grill.toml` and `.env` are never found; and,
+    but for the live tests that need them, with `tmp_path` as home, so neither
+    are the developer's agent logins."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("GRILL_HOME", raising=False)
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    if request.node.get_closest_marker("live") is None:
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
 
 
 @pytest.fixture(autouse=True)

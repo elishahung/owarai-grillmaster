@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -28,7 +29,6 @@ from grillmaster.core.model_spec import Backend, Effort, ModelSpec
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from grillmaster.agents.adapters.base import FinalOutput, TurnRequest
     from grillmaster.agents.adapters.gemini import GeminiSession
@@ -91,7 +91,6 @@ def test_start_runs_acp_in_the_workdir_and_attaches_media_inline(
     assert argv[argv.index("--model") + 1] == "gemini-3.8-flash"
     assert argv[argv.index("--approval-mode") + 1] == "yolo"
     assert argv[argv.index("--allowed-mcp-server-names") + 1] == "grill"
-    assert "--skip-trust" in argv
     assert argv[argv.index("--include-directories") + 1] == str(extra)
     assert spec.cwd == request.workdir
     assert spec.keep_stdin_open
@@ -299,6 +298,63 @@ def test_paid_api_keys_are_scrubbed(
     assert env is not None
     assert not set(API_KEY_ENV_VARS) & set(env)
     assert env["GOOGLE_CLOUD_PROJECT"] == "proj"
+
+
+def test_each_session_has_its_own_trusting_home_until_it_closes(
+    make_request: Callable[..., TurnRequest], tmp_path: Path
+):
+    user_dir = tmp_path / ".gemini"  # the test's home: `_isolated_environment`
+    user_dir.mkdir()
+    for name in ("oauth_creds.json", "settings.json", "projects.json"):
+        (user_dir / name).write_text(name, encoding="utf-8")
+    spawn = FakeSpawn(FakeProcess(TURN), FakeProcess(TURN))
+    adapter = GeminiAdapter(spawn=spawn, executable="gemini")
+    first, second = adapter.session(), adapter.session()
+    first.start(make_request(spec=FLASH_LOW)).result()
+    second.start(make_request(spec=FLASH_LOW)).result()
+
+    envs = [spec.env or {} for spec in spawn.specs]
+    assert all(env["GEMINI_CLI_TRUST_WORKSPACE"] == "true" for env in envs)
+    homes = [Path(env["GEMINI_CLI_HOME"]) for env in envs]
+    assert homes[0] != homes[1]
+    login = {name: name for name in ("oauth_creds.json", "settings.json")}
+    for home in homes:  # the shared registry stays behind
+        copied = (home / ".gemini").iterdir()
+        assert {p.name: p.read_text(encoding="utf-8") for p in copied} == login
+    first.close()
+    second.close()
+    assert not homes[0].exists()
+    assert not homes[1].exists()
+
+
+def test_a_login_being_replaced_is_a_retryable_failure(
+    make_request: Callable[..., TurnRequest],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    user_dir = tmp_path / ".gemini"
+    user_dir.mkdir()
+    (user_dir / "oauth_creds.json").write_text("login", encoding="utf-8")
+
+    def locked(_source: Path, _target: Path) -> None:
+        raise PermissionError("in use")
+
+    monkeypatch.setattr("shutil.copyfile", locked)
+    session, spawn = _session()
+    with pytest.raises(AgentTransientError, match="login unreadable"):
+        session.start(make_request(spec=FLASH_LOW))
+    session.close()
+    assert not spawn.specs  # no CLI started
+
+
+def test_a_session_that_failed_to_start_deletes_its_home_on_close(
+    make_request: Callable[..., TurnRequest],
+):
+    session, spawn = _session(acp_handshake()[0])
+    with pytest.raises(AgentTransientError):
+        session.start(make_request(spec=FLASH_LOW))
+    session.close()
+    assert not Path((spawn.specs[0].env or {})["GEMINI_CLI_HOME"]).exists()
 
 
 def test_preflight_refuses_media_the_model_cannot_take(tmp_path: Path):

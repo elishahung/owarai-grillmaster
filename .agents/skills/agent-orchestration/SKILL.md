@@ -130,7 +130,7 @@ turn's.
   is a tool. MCP image results reach the model only as offloaded files it
   must `view_file` (one more turn), so the prompt says so.
 - **gemini** (gemini-cli; Code Assist login, needs `GOOGLE_CLOUD_PROJECT`):
-  one `gemini --acp --skip-trust --approval-mode yolo
+  one `gemini --acp --approval-mode yolo
   --allowed-mcp-server-names grill` process per session (JSON-RPC on
   stdin/stdout: `initialize`, `session/new`, one `session/prompt` per turn,
   the watchdog restarted per turn). Not `--resume`: a resumed process
@@ -159,7 +159,8 @@ turn's.
   API answers a request without any function with a 400, plus
   `skills.enabled: false`, since `activate_skill` is registered again
   outside `tools.core` when a skill exists; verified live) go into
-  `<workdir>/.gemini/settings.json`, read at `session/new`. Model ids are
+  `<workdir>/.gemini/settings.json`, read only because
+  `GEMINI_CLI_TRUST_WORKSPACE=true` trusts the workdir. Model ids are
   gemini-cli's (`gemini-3.1-pro-preview`, not agy's `gemini-3.1-pro`); with
   media attached, an unknown id or an oversized request ends with
   `stopReason: max_tokens` (no model call) → `AgentConfigError`. Tool calls
@@ -167,8 +168,11 @@ turn's.
   codes are HTTP statuses (500 = none). A "no capacity" error leaves the
   process alive; gemini-cli rolls back a refused prompt but keeps a turn
   refused after a finished tool call, so the error names the session and
-  `turn_kept` = a tool finished this turn. Same API-key stripping as agy; the
-  user's `~/.gemini` settings and `GEMINI.md` still load.
+  `turn_kept` = a tool finished this turn. Same API-key stripping as agy.
+  Each session runs in its own `GEMINI_CLI_HOME`, a temp dir with copies of
+  `HOME_FILES` (login, user `settings.json`) deleted on `close`: no user-level
+  `GEMINI.md`, skills or policies load, and the raw stream is the only record
+  (the module docstring has why a shared home stalls concurrent startups).
 - **codex**: `codex exec --json … -`, `--ignore-user-config`, sandbox bypassed,
   `--image` on the start turn only, `--output-schema` (last `agent_message`),
   `-c mcp_servers.grill.*` (codex strips the MCP server's env, so

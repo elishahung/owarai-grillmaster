@@ -156,6 +156,9 @@ THINKING_BUDGETS = {
 # `model.compressionThreshold` is a fraction of the context window; no
 # history reaches this multiple of it, so the CLI never compresses a session.
 NEVER_COMPRESS = 1000.0
+# `initialize` and `session/new` answer in about 3 s, so a CLI silent this long
+# is stuck; the retry's new process costs far less than a whole turn's timeout.
+HANDSHAKE_TIMEOUT_S = 180.0
 GEMINI_DIR = ".gemini"
 # What a session's home takes from the user's `~/.gemini`: the login and the
 # settings.
@@ -283,7 +286,8 @@ class GeminiAdapter:
         spec = process.ProcessSpec(
             argv=self.argv(request),
             cwd=request.workdir,
-            timeout_s=request.timeout_s,
+            # Each turn then sets its own (`GeminiTurn.events`).
+            timeout_s=HANDSHAKE_TIMEOUT_S,
             env={
                 **subscription_env(),
                 "GEMINI_CLI_HOME": str(home),
@@ -368,7 +372,7 @@ class GeminiSession:
         except AcpError as error:
             raise _failure(error) from error
         except AcpClosed as closed:
-            raise _ended(connection, request) from closed
+            raise _ended(connection, "handshake", HANDSHAKE_TIMEOUT_S) from closed
         session_id = created.get("sessionId") if isinstance(created, dict) else None
         if not isinstance(session_id, str) or not session_id:
             raise AgentTransientError(f"gemini opened no session: {created}")
@@ -440,7 +444,7 @@ class GeminiTurn(Turn):
                 self._error.session_id = self._session.session_id
                 self._error.turn_kept = self._updates.tool_done
         except AcpClosed:
-            self._error = _ended(self._connection, self._request)
+            self._error = _ended(self._connection, "turn", self._request.timeout_s)
         finally:
             if self._result is None and self._error is None:
                 # Stopped early: the session cannot take another turn.
@@ -548,16 +552,18 @@ class UpdateReader:
             yield Message(text)
 
 
-def _ended(connection: AcpConnection, request: TurnRequest) -> AgentTransientError:
-    """The error for a CLI whose stdout ended before its answer."""
+def _ended(
+    connection: AcpConnection, step: str, timeout_s: float
+) -> AgentTransientError:
+    """The error for a CLI whose stdout ended before its answer to `step`."""
     code = connection.close()
+    stderr = connection.process.stderr_tail
     if connection.process.timed_out:
         return AgentTransientError(
-            f"gemini turn timed out after {request.timeout_s:g}s"
+            f"gemini {step} timed out after {timeout_s:g}s: {stderr}"
         )
     return AgentTransientError(
-        f"gemini exited with code {code} without a result: "
-        f"{connection.process.stderr_tail}"
+        f"gemini exited with code {code} without a result: {stderr}"
     )
 
 

@@ -133,7 +133,8 @@ turn's.
   one `gemini --acp --approval-mode yolo
   --allowed-mcp-server-names grill` process per session (JSON-RPC on
   stdin/stdout: `initialize`, `session/new`, one `session/prompt` per turn,
-  the watchdog restarted per turn). Not `--resume`: a resumed process
+  the watchdog `HANDSHAKE_TIMEOUT_S` (180 s) for the first two, then restarted
+  per turn). Not `--resume`: a resumed process
   estimates the stored history counting audio by base64 length (3.8 MB ≈
   1.27M tokens), so it compresses the audio away or refuses every later turn
   without a model call. Media go inline as base64 `image`/`audio` blocks (a video

@@ -17,7 +17,11 @@ from tests.agents.fakes import (
 
 from grillmaster.agents.adapters._google import API_KEY_ENV_VARS
 from grillmaster.agents.adapters.base import McpServer, Media, MediaKind, ToolAccess
-from grillmaster.agents.adapters.gemini import MAX_MEDIA_BYTES, GeminiAdapter
+from grillmaster.agents.adapters.gemini import (
+    HANDSHAKE_TIMEOUT_S,
+    MAX_MEDIA_BYTES,
+    GeminiAdapter,
+)
 from grillmaster.agents.errors import (
     AgentAuthError,
     AgentConfigError,
@@ -585,6 +589,18 @@ def test_startup_failures_are_classified(make_request: Callable[..., TurnRequest
     session = GeminiAdapter(spawn=spawn, executable="gemini").session()
     with pytest.raises(AgentTransientError, match="timed out"):
         session.start(request)
+
+
+def test_a_stuck_startup_ends_at_the_handshake_deadline(
+    make_request: Callable[..., TurnRequest],
+):
+    spawn = FakeSpawn(FakeProcess([], timed_out=True, stderr="stuck on a lock"))
+    session = GeminiAdapter(spawn=spawn, executable="gemini").session()
+    message = f"handshake timed out after {HANDSHAKE_TIMEOUT_S:g}s: stuck on a lock"
+    with pytest.raises(AgentTransientError, match=message):
+        session.start(make_request(spec=FLASH_LOW))
+    # Shorter than the turn the runner would otherwise wait out.
+    assert spawn.specs[0].timeout_s == HANDSHAKE_TIMEOUT_S
 
 
 def test_an_answered_turn_is_not_a_timeout(make_request: Callable[..., TurnRequest]):

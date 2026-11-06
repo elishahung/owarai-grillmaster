@@ -370,7 +370,9 @@ def test_timeout_is_transient(
     backend: Backend, make_request: Callable[..., TurnRequest]
 ):
     request = make_request(spec=SPECS[backend], timeout_s=0.05)
-    run = replay(backend, request, lines=[], messages=[], timed_out=True)
+    # Gemini's turn starts once its handshake was answered.
+    lines = acp_handshake() if backend is Backend.GEMINI else []
+    run = replay(backend, request, lines=lines, messages=[], timed_out=True)
     assert isinstance(run.error, AgentTransientError)
     assert f"{backend} turn timed out after 0.05s" in str(run.error)
 

@@ -141,7 +141,7 @@ def source_request(ctx: StageContext) -> SourceRequest:
     platform = source_platform(state.platform)
     return SourceRequest(
         platform=platform,
-        url=platform.url(state.id),
+        url=platform.url(state.origin_source.video_id),
         options=shared_options(platform, ctx.config.paths.cookies),
     )
 

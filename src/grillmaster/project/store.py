@@ -82,20 +82,40 @@ def create_project(
     layout = ProjectLayout.for_id(projects_root, source.video_id)
     if layout.project_json.exists():
         raise ProjectExistsError(f"Project already exists: {layout.root}")
-    if parent is not None:
-        parent = parent.resolve()
-        try:
-            load_state(ProjectLayout(parent))
-        except ProjectNotFoundError as error:
-            raise ProjectNotFoundError(
-                f"Parent is not a project directory: {parent}"
-            ) from error
     state = ProjectState.create(
-        source, translation_hint=translation_hint, parent=parent
+        source,
+        translation_hint=translation_hint,
+        parent=None if parent is None else resolve_parent(parent),
     )
     save_state(layout, state)
     logger.info(f"Created project {state.id} at {layout.root}")
     return layout, state
+
+
+def resolve_parent(parent: Path) -> Path:
+    """`parent` made absolute, refused unless it is a project directory."""
+    resolved = parent.resolve()
+    try:
+        load_state(ProjectLayout(resolved))
+    except ProjectNotFoundError as error:
+        raise ProjectNotFoundError(
+            f"Parent is not a project directory: {resolved}"
+        ) from error
+    return resolved
+
+
+def remove_project(layout: ProjectLayout) -> None:
+    """Delete a local project whose content moved elsewhere, `project.json`
+    first, so a failed deletion (a file held open) leaves only a logged
+    leftover that no later run mistakes for the project."""
+    try:
+        layout.project_json.unlink()
+        shutil.rmtree(layout.root)
+    except OSError as error:
+        logger.warning(
+            f"{layout.root} could not be removed ({error}); it is a leftover "
+            "without project.json: delete it by hand"
+        )
 
 
 def archive_project(

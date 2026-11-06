@@ -145,6 +145,8 @@ def test_run_refuses_a_project_directory(
         pytest.param(["epnew1", "--start", "soon"], id="bad-time"),
         pytest.param(["epnew1", "--start", "10:00", "--to", "5:00"], id="reversed"),
         pytest.param(["https://example.com/watch"], id="bad-url"),
+        pytest.param(["epnew1", "--parts", "1"], id="one-part"),
+        pytest.param(["epnew1", "--parts", "2", "--to", "5:00"], id="parts-section"),
     ],
 )
 def test_run_rejects_bad_input(cli: CliRunner, projects_root: Path, args: list[str]):

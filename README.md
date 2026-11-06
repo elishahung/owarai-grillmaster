@@ -68,6 +68,9 @@ grill BV18KBJBeEmV --start 0 --to 5:00
 # 跑到某個 stage 就停
 grill BV18KBJBeEmV --break-after asr
 
+# 太長的影片：下載後平均切成四段，變成四個專案依序翻譯；中途失敗就重打同一行
+grill BV18KBJBeEmV "翻譯提示" --parts 4
+
 # 依序處理多集，前一集的譯名會帶到下一集；中途失敗會印出接續的指令
 grill serial ep100001 ep100002 ep100003
 

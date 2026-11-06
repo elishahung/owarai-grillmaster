@@ -128,6 +128,14 @@ class SideTasks(StateModel):
                 self.telop_scan = record
 
 
+class PartOrigin(StateModel):
+    """The video a `--parts` project is one part of (`pipeline.split`)."""
+
+    id: str
+    part: int = Field(ge=1)
+    parts: int = Field(ge=2)
+
+
 class ProjectState(StateModel):
     id: str
     # Persisted rather than re-inferred: a bare ID is ambiguous across
@@ -145,6 +153,7 @@ class ProjectState(StateModel):
     broadcast_date: date | None = None
     source: SourceInfo = Field(default_factory=SourceInfo)
     section: Section = Field(default_factory=Section)
+    part_of: PartOrigin | None = None
     # The metered services, cumulative; agents run on subscriptions.
     asr_cost_usd: float = Field(default=0.0, ge=0)  # ElevenLabs
     watch_clip_cost_usd: float = Field(default=0.0, ge=0)  # Meta, `watch_clip`
@@ -170,6 +179,13 @@ class ProjectState(StateModel):
     @property
     def source_id(self) -> SourceId:
         return SourceId(self.platform, self.id)
+
+    @property
+    def origin_source(self) -> SourceId:
+        """The video as the platform knows it: a `--parts` project's own ID
+        exists only here."""
+        video_id = self.part_of.id if self.part_of is not None else self.id
+        return SourceId(self.platform, video_id)
 
     @property
     def effective_broadcast_date(self) -> date | None:

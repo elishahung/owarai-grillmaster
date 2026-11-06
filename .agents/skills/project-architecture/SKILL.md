@@ -166,6 +166,13 @@ and logs the resume command (sources as full URLs; an `ArchivedDeliveryError` pr
 since re-running its source would start over, and so does a source already
 archived (`ArchivedProjectError`): its archived dir seeds the next item); emits `BatchItemStarted`.
 
+**Split (`pipeline/split.py`, `grill <src> --parts N`):** the source project runs through
+`download`, `split_project` cuts `full.mp4` into `<id>p<k>` projects (metadata, download and
+combine in the ledger, `section` on the source timeline, `part_of` naming the source, hint plus
+a part note), the source project is removed, then `SerialRun` chains the parts. Re-running
+resumes (a part's `project.json` is written last). Anything reaching the platform uses
+`state.origin_source`, never `state.id`.
+
 ## Project (`project/`)
 
 - `layout.py` `ProjectLayout` is the **only** place that spells a project
@@ -289,7 +296,7 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 
 `grill <src> [HINT]` = `grill run`; options `--break-after <key>`, `--parent [dir]`,
 `--cover`, `--date-research`, `--proofread`, `--telop/--no-telop`, `--notes/--no-notes`, `--chat`, `--chat-layout`, `--remix [pool]`, `--no-remix`,
-`--start`, `--to`. Also `serial`, `package <dir|id>`, `telop <dir|id>`, `notes <dir|id> [--probe]`, `archive <id>`,
+`--start`, `--to`, `--parts`. Also `serial`, `package <dir|id>`, `telop <dir|id>`, `notes <dir|id> [--probe]`, `archive <id>`,
 `reset <id> --from|--only <key>`, `status [<id>]`, `doctor`. `package`,
 `archive` and `status` resolve an ID locally only (pass an archived
 project's directory). Commands import

@@ -48,8 +48,8 @@ def _context(state: ProjectState) -> ResearchContext:
     source = state.source
     return ResearchContext(
         platform=state.platform.value,
-        source_url=state.source_id.url,
-        video_id=state.id,
+        source_url=state.origin_source.url,
+        video_id=state.origin_source.video_id,
         file_name=state.name,
         title=source.title,
         description=source.description,

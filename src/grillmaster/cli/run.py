@@ -3,7 +3,7 @@ options `grill serial` shares."""
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import typer
 from loguru import logger
@@ -18,6 +18,10 @@ from grillmaster.cli.live import run_or_exit
 from grillmaster.cli.parent import ParentOption, PickParentOption, resolve_parent
 from grillmaster.core.stage_key import StageKey
 from grillmaster.live_chat.layout import DEFAULT_CHAT_LAYOUT, ChatLayout
+
+if TYPE_CHECKING:
+    from grillmaster.config.load import LoadedConfig
+    from grillmaster.stages.base import RunOptions
 
 CoverOption = Annotated[
     bool, typer.Option("--cover", help="Generate a cover image this run.")
@@ -185,6 +189,19 @@ def run_command(
             show_default=False,
         ),
     ] = None,
+    parts: Annotated[
+        int | None,
+        typer.Option(
+            "--parts",
+            help=(
+                "Split a long video into this many equal parts after the download "
+                "and translate them as a serial chain of projects <id>p1, <id>p2, "
+                "...; the source project is removed once they exist. Re-run the "
+                "same command to resume."
+            ),
+            show_default=False,
+        ),
+    ] = None,
 ) -> None:
     """Download, transcribe and translate one video, resuming where it stopped."""
     from grillmaster.core.source_id import parse_source
@@ -218,8 +235,30 @@ def run_command(
         remix=resolve_remix(remix, no_remix=no_remix),
         section=section,
     )
+    if parts is not None:
+        _run_split(ctx, options, parts, loaded)
+        return
     # The dashboard's retry after a failure past the archive move only
     # re-delivers the archived project (see `ProjectRun`).
     run = ProjectRun(loaded, options, pipeline_from(ctx))
     final = run_or_exit(run.run, failure=f"Failed to process {source}")
     logger.success(f"Finished {source}: {final.root}")
+
+
+def _run_split(
+    ctx: typer.Context, options: RunOptions, parts: int, loaded: LoadedConfig
+) -> None:
+    from grillmaster.pipeline.split import SplitRun
+
+    try:
+        split = SplitRun(options, parts)
+    except ValueError as error:
+        fail(str(error))
+    pipeline = pipeline_from(ctx)
+    final = run_or_exit(
+        lambda sinks: split.run(loaded, sinks=sinks, pipeline=pipeline),
+        failure=f"Failed to process {options.source} in {parts} parts",
+    )
+    logger.success(
+        f"Finished {options.source} in {parts} parts: {final.root if final else '-'}"
+    )

@@ -8,7 +8,11 @@ import pytest
 from grillmaster.core.source_id import Platform, SourceId
 from grillmaster.core.stage_key import StageKey
 from grillmaster.pipeline.projects import find_project, open_project
-from grillmaster.project.errors import ArchivedProjectError, DuplicateProjectError
+from grillmaster.project.errors import (
+    ArchivedProjectError,
+    DuplicateProjectError,
+    ProjectNotFoundError,
+)
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.store import (
     archive_project,
@@ -68,16 +72,38 @@ def test_hint_is_ignored_after_the_prepass(
     assert opened.translation_hint is None
 
 
-def test_parent_is_fixed_at_creation(loaded: LoadedConfig, tmp_path: Path):
+def test_parent_applies_before_the_prepass(loaded: LoadedConfig, tmp_path: Path):
+    earlier, _ = create_project(tmp_path / "archive", SourceId(Platform.TVER, "epold"))
+    later, _ = create_project(tmp_path / "archive", SourceId(Platform.TVER, "eplater"))
+    _, created = _open(loaded, RunOptions(source=SOURCE))
+    assert created.parent is None
+
+    layout, opened = _open(loaded, RunOptions(source=SOURCE, parent=earlier.root))
+    assert opened.parent == earlier.root.resolve()
+    assert load_state(layout).parent == earlier.root.resolve()
+
+    _, moved = _open(loaded, RunOptions(source=SOURCE, parent=later.root))
+    assert moved.parent == later.root.resolve()
+
+
+def test_parent_must_be_a_project(loaded: LoadedConfig, tmp_path: Path):
+    _open(loaded, RunOptions(source=SOURCE))
+    with pytest.raises(ProjectNotFoundError, match="not a project directory"):
+        _open(loaded, RunOptions(source=SOURCE, parent=tmp_path))
+
+
+def test_parent_is_refused_after_the_prepass(loaded: LoadedConfig, tmp_path: Path):
     parent_layout, _ = create_project(
         tmp_path / "archive", SourceId(Platform.TVER, "epold")
     )
     options = RunOptions(source=SOURCE, parent=parent_layout.root)
-    _, created = _open(loaded, options)
+    layout, created = _open(loaded, options)
     assert created.parent == parent_layout.root.resolve()
+    created.mark_done(StageKey.PREPASS, elapsed_s=1.0)
+    save_state(layout, created)
     # A resumed serial run repeats the same parent.
     _open(loaded, options)
-    with pytest.raises(ValueError, match="fixed at creation"):
+    with pytest.raises(ValueError, match="--from prepass"):
         _open(loaded, replace(options, parent=tmp_path))
 
 

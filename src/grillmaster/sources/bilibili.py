@@ -21,6 +21,9 @@ class BilibiliPlatform(SourcePlatform):
     cookie_policy = CookiePolicy.ANONYMOUS
     # Descriptions are uploader notes, not program information.
     describes_program = False
+    # The EdgeOne-fronted CDN host answers HTTP 567 to a request without Range
+    # (measured on upos-sz-mirrorcosov.bilivideo.com; yt-dlp issue 17847).
+    http_chunk_size = 10 * 1024 * 1024
 
     @override
     def fetch_extras(self, video_id: str, http: JsonHttp) -> SourceExtras:

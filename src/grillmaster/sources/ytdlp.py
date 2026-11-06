@@ -112,7 +112,8 @@ class LoguruYtDlpLogger:
 
 
 def shared_options(platform: SourcePlatform, cookies: Path | None) -> dict[str, Any]:
-    """Options every yt-dlp run shares: logging, no stdout progress, cookies.
+    """Options every yt-dlp run shares: logging, no stdout progress, cookies,
+    the platform's HTTP chunk size.
 
     An anonymous platform never sends cookies (observed on BiliBili
     BV16D4y1H7Wk: signed-in cookies capped the format list at 480p while
@@ -123,6 +124,7 @@ def shared_options(platform: SourcePlatform, cookies: Path | None) -> dict[str, 
         "logger": LoguruYtDlpLogger(),
         "noprogress": True,
         "cookiefile": str(cookies) if send_cookies else None,
+        "http_chunk_size": platform.http_chunk_size,
     }
 
 

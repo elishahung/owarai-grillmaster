@@ -61,6 +61,16 @@ def test_no_cookies_configured():
     assert shared_options(source_platform(Platform.TVER), None)["cookiefile"] is None
 
 
+def test_only_bilibili_sets_a_chunk_size():
+    sizes = {
+        platform: shared_options(source_platform(platform), None)["http_chunk_size"]
+        for platform in Platform
+    }
+
+    assert sizes.pop(Platform.BILIBILI) == 10 * 1024 * 1024
+    assert set(sizes.values()) == {None}
+
+
 # --- metadata ----------------------------------------------------------------
 
 

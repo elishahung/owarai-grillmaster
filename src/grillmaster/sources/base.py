@@ -54,6 +54,8 @@ class SourcePlatform(Protocol):
     # Whether yt-dlp's description is program information rather than
     # uploader notes.
     describes_program: bool
+    # Bytes per ranged HTTP request; None leaves the choice to yt-dlp.
+    http_chunk_size: int | None = None
 
     def url(self, video_id: str) -> str:
         """The watch URL yt-dlp is given."""

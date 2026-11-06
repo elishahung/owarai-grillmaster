@@ -257,7 +257,8 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 
 - `sources/`: one `SourcePlatform` per platform (`youtube`, `bilibili`,
   `tver`, `abema`) registered in `registry.py`; ID parsing is
-  `core/source_id.py`. BiliBili never sends cookies (format list cap); ABEMA
+  `core/source_id.py`. BiliBili never sends cookies (format list cap)
+  and downloads in `http_chunk_size` ranges (a CDN host answers 567 to a request without Range); ABEMA
   resets yt-dlp's cached token before downloading. Extras and broadcast dates
   are best-effort. A year-less TVer label takes the latest month/day no later
   than availability + 30 days (reruns re-list months later), checked against

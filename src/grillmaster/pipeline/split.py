@@ -32,13 +32,7 @@ from grillmaster.pipeline.registry import PIPELINE, Pipeline
 from grillmaster.pipeline.runner import ProjectRun
 from grillmaster.pipeline.serial import SerialRun
 from grillmaster.project.layout import ProjectLayout
-from grillmaster.project.state import (
-    PartOrigin,
-    ProjectState,
-    Section,
-    SideTasks,
-    now,
-)
+from grillmaster.project.state import PartOrigin, ProjectState, Section, SideTasks
 from grillmaster.project.store import (
     load_state,
     locate_project,
@@ -46,19 +40,14 @@ from grillmaster.project.store import (
     remove_project,
     save_state,
 )
-from grillmaster.sources.official_subs import (
-    normalize_official_subtitles,
-    raw_caption_files,
-)
-from grillmaster.stages._common import tool_params
 from grillmaster.stages.base import require
+from grillmaster.stages.combine import STAGE as COMBINE
+from grillmaster.stages.combine import write_official_subtitles
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
     from grillmaster.config.load import LoadedConfig
-    from grillmaster.config.model import AppConfig
     from grillmaster.events.bus import EventSink
     from grillmaster.media.ffmpeg import FfmpegRunner
     from grillmaster.stages.base import RunOptions
@@ -74,11 +63,12 @@ class SplitError(RuntimeError):
     """A video cannot be split as asked; nothing was changed."""
 
 
+def part_source(source: SourceId, part: int) -> SourceId:
+    return SourceId(source.platform, f"{source.video_id}p{part}")
+
+
 def part_sources(source: SourceId, parts: int) -> tuple[SourceId, ...]:
-    return tuple(
-        SourceId(source.platform, f"{source.video_id}p{part}")
-        for part in range(1, parts + 1)
-    )
+    return tuple(part_source(source, part) for part in range(1, parts + 1))
 
 
 def part_sections(total: float, parts: int) -> tuple[Section, ...]:
@@ -95,72 +85,65 @@ def part_sections(total: float, parts: int) -> tuple[Section, ...]:
 
 
 def split_project(
-    layout: ProjectLayout,
-    state: ProjectState,
-    parts: int,
-    *,
-    ffmpeg: FfmpegRunner,
-    projects_root: Path,
-    config: AppConfig,
+    loaded: LoadedConfig, source: SourceId, parts: int, *, ffmpeg: FfmpegRunner
 ) -> None:
-    """Seed the parts of the downloaded project at `layout` that do not exist yet."""
-    if state.is_done(StageKey.COMBINE):
-        raise SplitError(
-            f"{state.id} is already past the download; run `grill reset {state.id} "
-            "--from combine` to split it"
-        )
+    """Seed the parts of the downloaded project of `source` that do not exist yet."""
+    layout = ProjectLayout.for_id(loaded.projects_root, source.video_id)
+    state = load_state(layout)
+    _refuse_past_download(state)
     full = require(layout.full_video, StageKey.DOWNLOAD)
     sections = part_sections(duration(ffmpeg, full), parts)
-    sources = part_sources(state.source_id, parts)
-    for part, (source, section) in enumerate(zip(sources, sections, strict=True), 1):
-        target = ProjectLayout.for_id(projects_root, source.video_id)
+    for part, section in enumerate(sections, 1):
+        seeded = _part_state(state, section, part, parts)
+        target = ProjectLayout.for_id(loaded.projects_root, seeded.id)
         if target.project_json.exists():
             continue
         started = time.monotonic()
         target.root.mkdir(parents=True, exist_ok=True)
+        write_official_subtitles(loaded.config, layout, target, section)
         cut(ffmpeg, full, target.video, start=section.start, end=section.end)
-        if config.features.official_subtitles:
-            normalize_official_subtitles(
-                raw_caption_files(layout.download_parts_dir),
-                target.ja_official_srt,
-                section_start=section.start,
-                section_end=section.end,
-            )
         if layout.poster.exists():
             shutil.copy2(layout.poster, target.poster)
-        seeded = _part_state(state, source, section, part, parts)
         seeded.mark_done(
             StageKey.COMBINE,
             elapsed_s=time.monotonic() - started,
-            params=tool_params("ffmpeg")(config),
+            params=COMBINE.params(loaded.config),
         )
         save_state(target, seeded)
         logger.info(f"Seeded part {part}/{parts}: {target.root}")
 
 
+def _refuse_past_download(state: ProjectState) -> None:
+    """A source project that went on has work a split would discard."""
+    if state.is_done(StageKey.COMBINE):
+        raise SplitError(
+            f"{state.id} is already past the download; run `grill reset {state.id} "
+            "--from combine` first"
+        )
+
+
 def _part_state(
-    state: ProjectState, source: SourceId, section: Section, part: int, parts: int
+    state: ProjectState, section: Section, part: int, parts: int
 ) -> ProjectState:
     note = _PART_NOTE.format(part=part, parts=parts)
     hint = state.translation_hint
     title = state.source.title
-    return ProjectState(
-        id=source.video_id,
-        platform=source.platform,
-        created_at=now(),
-        name=f"{state.name}_{part}" if state.name else None,
+    seeded = ProjectState.create(
+        part_source(state.source_id, part),
         translation_hint=f"{hint}\n{note}" if hint else note,
-        broadcast_date=state.broadcast_date,
-        source=state.source.model_copy(
-            update={"title": f"{title} Part {part}" if title else None}
-        ),
-        section=section,
-        part_of=PartOrigin(id=state.id, part=part, parts=parts),
-        stages={
-            key: state.stages[key] for key in (StageKey.METADATA, StageKey.DOWNLOAD)
-        },
-        side_tasks=SideTasks(date_research=state.side_tasks.date_research),
     )
+    seeded.name = f"{state.name}_{part}" if state.name else None
+    seeded.broadcast_date = state.broadcast_date
+    seeded.source = state.source.model_copy(
+        update={"title": f"{title} Part {part}" if title else None}
+    )
+    seeded.section = section
+    seeded.part_of = PartOrigin(id=state.id, parts=parts)
+    seeded.stages = {
+        key: state.stages[key] for key in (StageKey.METADATA, StageKey.DOWNLOAD)
+    }
+    seeded.side_tasks = SideTasks(date_research=state.side_tasks.date_research)
+    return seeded
 
 
 @dataclass(slots=True)
@@ -176,7 +159,7 @@ class SplitRun:
     template: RunOptions
     parts: int
     ffmpeg: FfmpegRunner = field(default_factory=SubprocessFfmpegRunner)
-    serial: SerialRun | None = None
+    serial: SerialRun | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         if self.parts < _MIN_PARTS:
@@ -208,29 +191,28 @@ class SplitRun:
         source = self.template.source
         root = loaded.projects_root
         layout = ProjectLayout.for_id(root, source.video_id)
-        if self._existing_parts(loaded) < self.parts:
+        if not self._all_parts_exist(loaded):
+            # The source run stops at the download, so its own check stops there
+            # too; a run the parts could not finish fails before downloading.
+            pipeline.check(self.template, loaded.config, loaded.secrets)
             ProjectRun(
                 loaded, replace(self.template, break_after=StageKey.DOWNLOAD), pipeline
             ).run(sinks)
             with project_lock(root, source.video_id):
-                split_project(
-                    layout,
-                    load_state(layout),
-                    self.parts,
-                    ffmpeg=self.ffmpeg,
-                    projects_root=root,
-                    config=loaded.config,
-                )
+                split_project(loaded, source, self.parts, ffmpeg=self.ffmpeg)
         if layout.project_json.is_file():
             with project_lock(root, source.video_id):
+                _refuse_past_download(load_state(layout))
                 remove_project(layout)
             logger.info(f"Removed {layout.root}; its parts hold the video now")
 
-    def _existing_parts(self, loaded: LoadedConfig) -> int:
-        """How many of the parts exist, local or archived. One ID past the last
-        is checked too: it can only come from an earlier, larger split."""
+    def _all_parts_exist(self, loaded: LoadedConfig) -> bool:
+        """Whether every part exists, local or archived; a project under a part
+        ID that is not from this split is refused. One ID past the last is
+        checked too: it can only come from an earlier, larger split."""
         source = self.template.source
-        count = 0
+        expected = PartOrigin(id=source.video_id, parts=self.parts)
+        found = 0
         for candidate in part_sources(source, self.parts + 1):
             location = locate_project(
                 loaded.projects_root,
@@ -239,15 +221,10 @@ class SplitRun:
             )
             if location is None:
                 continue
-            origin = load_state(location.layout).part_of
-            if (
-                origin is None
-                or origin.id != source.video_id
-                or origin.parts != self.parts
-            ):
+            if load_state(location.layout).part_of != expected:
                 raise SplitError(
                     f"{location.layout.root} is not part of a {self.parts}-part "
                     f"split of {source}; remove it to split differently"
                 )
-            count += 1
-        return count
+            found += 1
+        return found == self.parts

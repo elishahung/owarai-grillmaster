@@ -65,7 +65,10 @@ def reset_command(
             typer.confirm(
                 f"Reset {scope} of {state.id}? Their outputs are deleted.", abort=True
             )
-        result = reset(layout, state, keys)
+        try:
+            result = reset(layout, state, keys)
+        except ValueError as error:
+            fail(str(error))
     typer.echo(f"Reset {', '.join(result.stages)} of {state.id}")
     for path in result.removed:
         typer.echo(f"  removed {path}")

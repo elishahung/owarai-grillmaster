@@ -28,6 +28,8 @@ if TYPE_CHECKING:
     from grillmaster.project.layout import ProjectLayout
     from grillmaster.project.state import ProjectState
 
+_PART_SEEDED = (StageKey.METADATA, StageKey.DOWNLOAD, StageKey.COMBINE)
+
 
 @dataclass(frozen=True, slots=True)
 class ResetResult:
@@ -48,8 +50,17 @@ def reset(
     pipeline: Pipeline = PIPELINE,
 ) -> ResetResult:
     """Clear `keys`, registered or not, so files and ledger entries of stages
-    without a definition yet are removed too."""
+    without a definition yet are removed too.
+
+    A `--parts` project refuses the stages its split seeded: its source
+    project is gone, so they could not rebuild this part (`ValueError`).
+    """
     keys = tuple(keys)
+    if state.part_of is not None and (seeded := set(keys) & set(_PART_SEEDED)):
+        raise ValueError(
+            f"{state.id} is a part cut from {state.part_of.id}, which is gone: "
+            f"{', '.join(sorted(seeded))} cannot run again; reset a later stage"
+        )
     for key in keys:
         if (stage := pipeline.stage(key)) is not None:
             stage.clear_state(state)

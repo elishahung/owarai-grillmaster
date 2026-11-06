@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from typing import TYPE_CHECKING
 
@@ -13,6 +14,7 @@ from grillmaster.core.source_id import Platform, SourceId, parse_source
 from grillmaster.core.srt import read_srt_file
 from grillmaster.core.stage_key import StageKey
 from grillmaster.pipeline.registry import Pipeline
+from grillmaster.pipeline.reset import reset, stages_from
 from grillmaster.pipeline.split import (
     SplitError,
     SplitRun,
@@ -22,6 +24,7 @@ from grillmaster.pipeline.split import (
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.project.state import PartOrigin, ProjectState, Section, SourceInfo
 from grillmaster.project.store import create_project, load_state, save_state
+from grillmaster.sources.errors import SourceError
 from grillmaster.stages.base import RunOptions
 
 if TYPE_CHECKING:
@@ -32,6 +35,8 @@ if TYPE_CHECKING:
 
     from grillmaster.config.load import LoadedConfig
     from grillmaster.stages.base import StageContext
+
+    type RunSplit = Callable[..., ProjectLayout | None]
 
 SOURCE = SourceId(Platform.BILIBILI, "BVlong1")
 CAPTIONS = "1\n00:00:01,000 --> 00:00:02,000\nearly\n\n2\n00:40:00,000 --> 00:40:02,000\nlate\n\n"
@@ -80,10 +85,38 @@ def split(ffmpeg: FakeFfmpeg, parts: int = 2, **options: object) -> SplitRun:
     return SplitRun(template, parts, ffmpeg=ffmpeg)
 
 
-def part_layouts(loaded: LoadedConfig, parts: int = 2) -> list[ProjectLayout]:
+@pytest.fixture
+def run_split(
+    loaded: LoadedConfig, journal: Journal, recording_sink: RecordingSink
+) -> RunSplit:
+    def run(
+        ffmpeg: FakeFfmpeg | None = None,
+        *,
+        on_asr: Callable[[StageContext], None] | None = None,
+        **split_options: object,
+    ) -> ProjectLayout | None:
+        return split(ffmpeg or FakeFfmpeg(duration=3600.0), **split_options).run(  # pyright: ignore[reportArgumentType]
+            loaded, sinks=[recording_sink], pipeline=pipeline(journal, on_asr)
+        )
+
+    return run
+
+
+def failing_on(*ids: str) -> tuple[Callable[[StageContext], None], set[str]]:
+    """An `asr` action failing for `ids`, and the set to clear to let it pass."""
+    failures = set(ids)
+
+    def on_asr(ctx: StageContext) -> None:
+        if ctx.state.id in failures:
+            raise StageFailedError("boom")
+
+    return on_asr, failures
+
+
+def part_layouts(loaded: LoadedConfig) -> list[ProjectLayout]:
     return [
         ProjectLayout.for_id(loaded.projects_root, source.video_id)
-        for source in part_sources(SOURCE, parts)
+        for source in part_sources(SOURCE, 2)
     ]
 
 
@@ -105,12 +138,11 @@ def test_sections_cover_the_whole_video():
 
 
 def test_download_then_a_chain_of_parts(
-    loaded: LoadedConfig, journal: Journal, recording_sink: RecordingSink
+    loaded: LoadedConfig, journal: Journal, run_split: RunSplit
 ):
     ffmpeg = FakeFfmpeg(duration=3600.0)
-    run = split(ffmpeg, hint="節目資訊")
 
-    final = run.run(loaded, sinks=[recording_sink], pipeline=pipeline(journal))
+    final = run_split(ffmpeg, hint="節目資訊")
 
     first, second = part_layouts(loaded)
     assert final == second
@@ -137,7 +169,7 @@ def test_download_then_a_chain_of_parts(
     assert {state.broadcast_date for state in states} == {date(2026, 11, 6)}
     assert states[0].section == Section(end=1800.0)
     assert states[1].section == Section(start=1800.0)
-    assert states[1].part_of == PartOrigin(id="BVlong1", part=2, parts=2)
+    assert states[1].part_of == PartOrigin(id="BVlong1", parts=2)
     assert states[1].origin_source == SOURCE
     assert states[1].translation_hint == (
         "節目資訊\nThis is part 2 of 2 of one continuous video, so it may start "
@@ -156,12 +188,8 @@ def test_download_then_a_chain_of_parts(
     assert "-t" not in second_cut
 
 
-def test_captions_are_shifted_onto_each_part(
-    loaded: LoadedConfig, journal: Journal, recording_sink: RecordingSink
-):
-    split(FakeFfmpeg(duration=3600.0)).run(
-        loaded, sinks=[recording_sink], pipeline=pipeline(journal)
-    )
+def test_captions_are_shifted_onto_each_part(loaded: LoadedConfig, run_split: RunSplit):
+    run_split()
 
     first, second = part_layouts(loaded)
     assert [block.text for block in read_srt_file(first.ja_official_srt)] == ["early"]
@@ -171,27 +199,18 @@ def test_captions_are_shifted_onto_each_part(
 
 
 def test_a_re_run_resumes_without_download_or_cut(
-    loaded: LoadedConfig, journal: Journal, recording_sink: RecordingSink
+    loaded: LoadedConfig, journal: Journal, run_split: RunSplit
 ):
-    failures = {"BVlong1p2"}
-
-    def on_asr(ctx: StageContext) -> None:
-        if ctx.state.id in failures:
-            raise StageFailedError("boom")
-
+    on_asr, failures = failing_on("BVlong1p2")
     ffmpeg = FakeFfmpeg(duration=3600.0)
     with pytest.raises(StageFailedError):
-        split(ffmpeg, hint="節目資訊").run(
-            loaded, sinks=[recording_sink], pipeline=pipeline(journal, on_asr)
-        )
+        run_split(ffmpeg, on_asr=on_asr, hint="節目資訊")
     assert journal.entries.count("run:download@download") == 1
     failures.clear()
     first, second = part_layouts(loaded)
     calls = len(ffmpeg.calls)
 
-    final = split(ffmpeg, hint="另一個提示").run(
-        loaded, sinks=[recording_sink], pipeline=pipeline(journal, on_asr)
-    )
+    final = run_split(ffmpeg, on_asr=on_asr, hint="另一個提示")
 
     assert final == second
     assert len(ffmpeg.calls) == calls
@@ -203,40 +222,30 @@ def test_a_re_run_resumes_without_download_or_cut(
 def test_the_dashboard_retry_continues_the_chain(
     loaded: LoadedConfig, journal: Journal, recording_sink: RecordingSink
 ):
-    failures = {"BVlong1p1"}
-
-    def on_asr(ctx: StageContext) -> None:
-        if ctx.state.id in failures:
-            raise StageFailedError("boom")
-
-    ffmpeg = FakeFfmpeg(duration=3600.0)
-    run = split(ffmpeg)
+    on_asr, failures = failing_on("BVlong1p1")
+    run = split(FakeFfmpeg(duration=3600.0))
     stages = pipeline(journal, on_asr)
     with pytest.raises(StageFailedError):
         run.run(loaded, sinks=[recording_sink], pipeline=stages)
     failures.clear()
 
-    assert (
-        run.run(loaded, sinks=[recording_sink], pipeline=stages)
-        == (part_layouts(loaded)[1])
-    )
+    final = run.run(loaded, sinks=[recording_sink], pipeline=stages)
+
+    assert final == part_layouts(loaded)[1]
 
 
 class _FailsOnSecondCut(FakeFfmpeg):
-    armed = True
-
     def run(self, argv: Sequence[str], **kwargs: object) -> str:
-        if self.armed and argv[0] != "ffprobe" and cuts(self):
+        if argv[0] != "ffprobe" and cuts(self):
             raise StageFailedError("disk full")
         return super().run(argv, **kwargs)  # pyright: ignore[reportArgumentType]
 
 
 def test_an_interrupted_split_keeps_the_source_and_cuts_only_the_rest(
-    loaded: LoadedConfig, journal: Journal, recording_sink: RecordingSink
+    loaded: LoadedConfig, journal: Journal, run_split: RunSplit
 ):
-    ffmpeg = _FailsOnSecondCut(duration=3600.0)
     with pytest.raises(StageFailedError, match="disk full"):
-        split(ffmpeg).run(loaded, sinks=[recording_sink], pipeline=pipeline(journal))
+        run_split(_FailsOnSecondCut(duration=3600.0))
 
     first, second = part_layouts(loaded)
     source = ProjectLayout.for_id(loaded.projects_root, "BVlong1")
@@ -244,41 +253,56 @@ def test_an_interrupted_split_keeps_the_source_and_cuts_only_the_rest(
     assert not second.project_json.exists()
     assert source.full_video.is_file()
 
-    ffmpeg.armed = False
-    split(ffmpeg).run(loaded, sinks=[recording_sink], pipeline=pipeline(journal))
+    retry = FakeFfmpeg(duration=3600.0)
+    run_split(retry)
 
-    assert len(cuts(ffmpeg)) == 2
+    assert len(cuts(retry)) == 1
     assert journal.entries.count("run:download@download") == 1
     assert load_state(second).section == Section(start=1800.0)
     assert not source.root.exists()
 
 
-@pytest.mark.parametrize("parts", [2, 4])
-def test_a_different_part_count_is_refused(
-    loaded: LoadedConfig, journal: Journal, recording_sink: RecordingSink, parts: int
+def test_unusable_captions_fail_before_any_cut(
+    loaded: LoadedConfig, recording_sink: RecordingSink
 ):
+    journal = Journal()
+
+    def download(ctx: StageContext) -> None:
+        ctx.layout.full_video.parent.mkdir(parents=True, exist_ok=True)
+        ctx.layout.full_video.write_bytes(b"video")
+        ctx.layout.download_parts_dir.mkdir(parents=True, exist_ok=True)
+        (ctx.layout.download_parts_dir / "0.ja.srt").write_text("", encoding="utf-8")
+
     ffmpeg = FakeFfmpeg(duration=3600.0)
-    split(ffmpeg, parts=3).run(
-        loaded, sinks=[recording_sink], pipeline=pipeline(journal)
-    )
-    with pytest.raises(SplitError, match=f"{parts}-part"):
-        split(ffmpeg, parts=parts).run(
-            loaded, sinks=[recording_sink], pipeline=pipeline(journal)
+    stages = Pipeline(
+        (
+            fake_stage(StageKey.METADATA, journal),
+            fake_stage(StageKey.DOWNLOAD, journal, action=download),
         )
+    )
+    with pytest.raises(SourceError, match="no subtitles"):
+        split(ffmpeg).run(loaded, sinks=[recording_sink], pipeline=stages)
+
+    assert cuts(ffmpeg) == []
+
+
+@pytest.mark.parametrize("parts", [2, 4])
+def test_a_different_part_count_is_refused(run_split: RunSplit, parts: int):
+    run_split(parts=3)
+    with pytest.raises(SplitError, match=f"{parts}-part"):
+        run_split(parts=parts)
 
 
 def test_an_unrelated_project_with_a_part_id_is_refused(
-    loaded: LoadedConfig, journal: Journal, recording_sink: RecordingSink
+    loaded: LoadedConfig, run_split: RunSplit
 ):
     create_project(loaded.projects_root, SourceId(Platform.BILIBILI, "BVlong1p1"))
     with pytest.raises(SplitError, match="2-part"):
-        split(FakeFfmpeg(duration=3600.0)).run(
-            loaded, sinks=[recording_sink], pipeline=pipeline(journal)
-        )
+        run_split()
 
 
 def test_a_project_past_the_download_is_refused(
-    loaded: LoadedConfig, journal: Journal, recording_sink: RecordingSink
+    loaded: LoadedConfig, run_split: RunSplit
 ):
     layout, state = create_project(loaded.projects_root, SOURCE)
     for key in (StageKey.METADATA, StageKey.DOWNLOAD, StageKey.COMBINE):
@@ -286,9 +310,7 @@ def test_a_project_past_the_download_is_refused(
     save_state(layout, state)
 
     with pytest.raises(SplitError, match="--from combine"):
-        split(FakeFfmpeg(duration=3600.0)).run(
-            loaded, sinks=[recording_sink], pipeline=pipeline(journal)
-        )
+        run_split()
     assert layout.project_json.is_file()
 
 
@@ -308,15 +330,74 @@ def test_impossible_requests_fail_before_any_work(
 
 
 def test_the_parent_seeds_the_first_part(
-    loaded: LoadedConfig,
-    journal: Journal,
-    recording_sink: RecordingSink,
-    tmp_path: Path,
+    loaded: LoadedConfig, run_split: RunSplit, tmp_path: Path
 ):
     earlier, _ = create_project(
         tmp_path / "archive", SourceId(Platform.TVER, "epearlier")
     )
-    split(FakeFfmpeg(duration=3600.0), parent=earlier.root).run(
-        loaded, sinks=[recording_sink], pipeline=pipeline(journal)
-    )
+    run_split(parent=earlier.root)
     assert load_state(part_layouts(loaded)[0]).parent == earlier.root.resolve()
+
+
+def test_a_run_the_parts_could_not_finish_fails_before_the_download(
+    loaded: LoadedConfig, journal: Journal, recording_sink: RecordingSink
+):
+    def missing_key(*_: object) -> None:
+        raise ValueError("no ASR key")
+
+    metadata, download, combine, asr = pipeline(journal).stages
+    stages = Pipeline(
+        (metadata, download, combine, replace(asr, preflight=missing_key))
+    )
+    ffmpeg = FakeFfmpeg(duration=3600.0)
+
+    with pytest.raises(ValueError, match="no ASR key"):
+        split(ffmpeg).run(loaded, sinks=[recording_sink], pipeline=stages)
+
+    assert journal.entries == []
+    assert ffmpeg.calls == []
+    assert not ProjectLayout.for_id(loaded.projects_root, "BVlong1").root.exists()
+
+
+def test_a_source_that_went_on_survives_a_re_run(
+    loaded: LoadedConfig, run_split: RunSplit
+):
+    run_split()
+    layout, state = create_project(loaded.projects_root, SOURCE)
+    for key in (StageKey.METADATA, StageKey.DOWNLOAD, StageKey.COMBINE):
+        state.mark_done(key, elapsed_s=1.0)
+    save_state(layout, state)
+
+    with pytest.raises(SplitError, match="--from combine"):
+        run_split()
+
+    assert layout.project_json.is_file()
+
+
+@pytest.mark.parametrize(
+    "stage", [StageKey.METADATA, StageKey.DOWNLOAD, StageKey.COMBINE]
+)
+def test_a_part_refuses_a_reset_of_what_its_split_seeded(
+    loaded: LoadedConfig, run_split: RunSplit, stage: StageKey
+):
+    run_split()
+    part = part_layouts(loaded)[1]
+    before = load_state(part)
+
+    with pytest.raises(ValueError, match="cannot run again"):
+        reset(part, before, stages_from(stage))
+
+    assert part.video.is_file()
+    assert load_state(part).section == Section(start=1800.0)
+
+
+def test_a_part_can_reset_a_later_stage(loaded: LoadedConfig, run_split: RunSplit):
+    run_split()
+    part = part_layouts(loaded)[1]
+
+    reset(part, load_state(part), stages_from(StageKey.ASR))
+
+    state = load_state(part)
+    assert not state.is_done(StageKey.ASR)
+    assert state.is_done(StageKey.COMBINE)
+    assert part.video.is_file()

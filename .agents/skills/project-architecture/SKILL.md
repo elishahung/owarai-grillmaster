@@ -170,8 +170,9 @@ archived (`ArchivedProjectError`): its archived dir seeds the next item); emits 
 `download`, `split_project` cuts `full.mp4` into `<id>p<k>` projects (metadata, download and
 combine in the ledger, `section` on the source timeline, `part_of` naming the source, hint plus
 a part note), the source project is removed, then `SerialRun` chains the parts. Re-running
-resumes (a part's `project.json` is written last). Anything reaching the platform uses
-`state.origin_source`, never `state.id`.
+resumes (a part's `project.json` is written last). `grill reset` refuses a part's seeded stages,
+since nothing can rebuild them. Anything reaching the platform uses `state.origin_source`, never
+`state.id`.
 
 ## Project (`project/`)
 

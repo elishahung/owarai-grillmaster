@@ -189,15 +189,7 @@ def _move_to_archive(
     with staged_dir(destination, create=False) as staging:
         shutil.copytree(layout.root, staging)
         _verify_copy(layout.root, staging)
-    try:
-        layout.project_json.unlink()
-        shutil.rmtree(layout.root)
-    except OSError as error:
-        logger.warning(
-            f"Archived to {destination}, but the local copy could not be "
-            f"removed ({error}); {layout.root} is a leftover without "
-            "project.json: delete it by hand"
-        )
+    remove_project(layout)
     return archived
 
 

@@ -132,7 +132,6 @@ class PartOrigin(StateModel):
     """The video a `--parts` project is one part of (`pipeline.split`)."""
 
     id: str
-    part: int = Field(ge=1)
     parts: int = Field(ge=2)
 
 

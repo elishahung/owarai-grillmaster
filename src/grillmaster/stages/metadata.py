@@ -33,7 +33,7 @@ def _run(ctx: StageContext) -> None:
     info = fetch_info(
         ctx.ytdlp, request.url, ctx.layout.metadata_info, options=request.options
     )
-    extras = platform.fetch_extras(state.origin_source.video_id, ctx.http)
+    extras = platform.fetch_extras(state.id, ctx.http)
     broadcast_date = platform.resolve_broadcast_date(info, extras)
     if broadcast_date is None:
         logger.warning(

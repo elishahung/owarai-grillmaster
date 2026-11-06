@@ -29,9 +29,25 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
+    from grillmaster.config.model import AppConfig
     from grillmaster.project.layout import ProjectLayout
     from grillmaster.project.state import ProjectState
     from grillmaster.stages.base import StageContext
+
+
+def write_official_subtitles(
+    config: AppConfig, source: ProjectLayout, target: ProjectLayout, section: Section
+) -> None:
+    """`target`'s official SRT from the captions `source` downloaded, shifted
+    onto `section`; `pipeline.split` shares it. Before any cut: unusable
+    captions fail without wasting one."""
+    if config.features.official_subtitles:
+        normalize_official_subtitles(
+            raw_caption_files(source.download_parts_dir),
+            target.ja_official_srt,
+            section_start=section.start,
+            section_end=section.end,
+        )
 
 
 def _run(ctx: StageContext) -> None:
@@ -50,13 +66,7 @@ def _run(ctx: StageContext) -> None:
 
     ctx.update(record_section)
 
-    if ctx.config.features.official_subtitles:
-        normalize_official_subtitles(
-            raw_caption_files(layout.download_parts_dir),
-            layout.ja_official_srt,
-            section_start=section.start,
-            section_end=section.end,
-        )
+    write_official_subtitles(ctx.config, layout, layout, section)
 
     if ctx.options.has_section:
         cut(ctx.ffmpeg, full, layout.video, start=section.start, end=section.end)

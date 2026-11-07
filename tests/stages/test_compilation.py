@@ -15,16 +15,16 @@ from tests.sources.fakes import FakeJsonHttp, FakeYtDlp, write_download
 from grillmaster.core.source_id import Platform, SourceId
 from grillmaster.core.stage_key import SideTaskKey, StageKey
 from grillmaster.core.timecode import TimeRange
-from grillmaster.events.types import ProgressStarted
+from grillmaster.events.types import ProgressAdvanced, ProgressFinished, ProgressStarted
 from grillmaster.project.state import Compilation, ProjectState, Segment
 from grillmaster.project.store import load_state
-from grillmaster.sources.ytdlp import ENTRY_THUMBNAIL, safe_filename
+from grillmaster.sources.ytdlp import ENTRIES_SCOPE, ENTRY_THUMBNAIL, safe_filename
 from grillmaster.stages import date_research, download, metadata
 from grillmaster.stages._common import source_context
 
 if TYPE_CHECKING:
     import threading
-    from collections.abc import Sequence
+    from collections.abc import Mapping, Sequence
 
     from tests.fakes import RecordingSink
     from tests.stages.conftest import MakeContext
@@ -70,9 +70,26 @@ def state(compilation: Compilation) -> ProjectState:
     )
 
 
+def download_with_progress(options: Mapping[str, Any]) -> None:
+    """`write_download`, reporting the video stream to the progress hook."""
+    (hook,) = options["progress_hooks"]
+    filename = str(Path(options["outtmpl"]["default"]).parent / "0.f616.mp4")
+    hook(
+        {
+            "status": "downloading",
+            "filename": filename,
+            "downloaded_bytes": 1,
+            "total_bytes": 2,
+            "info_dict": {"vcodec": "vp9", "acodec": "none"},
+        }
+    )
+    hook({"status": "finished", "filename": filename})
+    write_download(options)
+
+
 def entry_ytdlp(infos: dict[str, dict[str, Any]] = INFOS) -> FakeYtDlp:
     """Each entry URL answered with its own info; a download writes `0.mp4`."""
-    return FakeYtDlp(by_url=dict(infos), on_download=write_download)
+    return FakeYtDlp(by_url=dict(infos), on_download=download_with_progress)
 
 
 def visited(ytdlp: FakeYtDlp) -> list[tuple[str, bool]]:
@@ -204,6 +221,28 @@ def test_download_records_the_segments_then_joins_the_entries(
         if isinstance(e, ProgressStarted) and e.scope == "download:join"
     ]
     assert bar.total == pytest.approx(500.5)
+    # One step of the Videos bar per entry, naming it.
+    videos = [
+        e for e in recording_sink.events if getattr(e, "scope", None) == ENTRIES_SCOPE
+    ]
+    assert videos == [
+        ProgressStarted(ENTRIES_SCOPE, "Videos", 2),
+        ProgressAdvanced(ENTRIES_SCOPE, 1, "done 1/2 · A/B"),
+        ProgressAdvanced(ENTRIES_SCOPE, 1, "done 2/2 · C/D"),
+        ProgressFinished(ENTRIES_SCOPE),
+    ]
+    # Each file's bar names its entry, not yt-dlp's `0.f616.mp4`.
+    files = [
+        e.label
+        for e in recording_sink.events
+        if isinstance(e, ProgressStarted)
+        and e.scope.startswith("download:")
+        and e.scope not in {ENTRIES_SCOPE, "download:join"}
+    ]
+    assert files == [
+        "Downloading 1/2 · A/B (video)",
+        "Downloading 2/2 · C/D (video)",
+    ]
 
 
 def test_an_existing_full_video_is_the_finished_compilation_download(

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -20,6 +21,7 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict, field_validator
 
 from grillmaster.core.fs import atomic_write_text
+from grillmaster.events.progress import track
 from grillmaster.events.types import ProgressAdvanced, ProgressFinished, ProgressStarted
 from grillmaster.media.audio import find_audio_gaps
 from grillmaster.media.video import join_parts
@@ -46,6 +48,8 @@ CAPTION_LANGUAGES = ("ja", "ja-*")
 _PART_NAME = re.compile(r"\d+\.mp4")
 # A compilation entry's thumbnail, beside its parts (the first one's is the poster).
 ENTRY_THUMBNAIL = "thumbnail.jpg"
+# The bar over a compilation's entries, one step per downloaded video.
+ENTRIES_SCOPE = "download:videos"
 # A compilation's entries, uploaded apart, would each take the best codec
 # offered (AV1 on newer uploads, VP9 on older), forcing the join to re-encode;
 # resolution still comes first, then codecs up to VP9. A preference, not a
@@ -204,9 +208,11 @@ def download_video(
     options: Mapping[str, Any],
     captions: bool,
     events: EventSink,
+    subject: DownloadSubject | None = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> None:
-    """Download the best video+audio as numbered parts into `parts_dir`.
+    """Download the best video+audio as numbered parts into `parts_dir`
+    (`subject` labels the progress bars of a compilation's entry).
 
     Parts are `<playlist index>.mp4` (yt-dlp zero-pads the index, so name
     order is playlist order) with the thumbnail embedded; the thumbnail is
@@ -225,7 +231,7 @@ def download_video(
 
     if poster.suffix != ".jpg":
         raise ValueError(f"The poster is converted to JPEG: {poster}")
-    progress = DownloadProgress(events, clock)
+    progress = DownloadProgress(events, clock, subject)
     download_options: dict[str, Any] = {
         **options,
         "writethumbnail": True,
@@ -315,6 +321,7 @@ def download_entries(
     ffmpeg: FfmpegRunner,
     urls: Sequence[str],
     *,
+    titles: Sequence[str],
     entry_dirs: Sequence[Path],
     poster: Path,
     options: Mapping[str, Any],
@@ -328,20 +335,29 @@ def download_entries(
     beside their parts. No captions: a compilation's timeline is no one
     video's. A finished part is not fetched again on a re-run. Formats
     prefer one codec (`ENTRY_FORMAT_SORT`) so the join can stream-copy.
+    Progress: a `Videos` bar over the entries (`ENTRIES_SCOPE`), and each
+    file's bar labelled with its entry's number and title.
     """
     entry_options = {**options, "format_sort": list(ENTRY_FORMAT_SORT)}
+    total = len(urls)
     entries: list[list[Path]] = []
-    for url, entry_dir in zip(urls, entry_dirs, strict=True):
-        download_video(
-            ytdlp,
-            url,
-            parts_dir=entry_dir,
-            poster=poster if not entries else entry_dir / ENTRY_THUMBNAIL,
-            options=entry_options,
-            captions=False,
-            events=events,
-        )
-        entries.append(checked_parts(ffmpeg, entry_dir))
+    with track(events, ENTRIES_SCOPE, "Videos", total) as advance:
+        for number, (url, title, entry_dir) in enumerate(
+            zip(urls, titles, entry_dirs, strict=True), 1
+        ):
+            subject = DownloadSubject(number, total, title)
+            download_video(
+                ytdlp,
+                url,
+                parts_dir=entry_dir,
+                poster=poster if not entries else entry_dir / ENTRY_THUMBNAIL,
+                options=entry_options,
+                captions=False,
+                events=events,
+                subject=subject,
+            )
+            entries.append(checked_parts(ffmpeg, entry_dir))
+            advance(1, f"done {subject}")
     return entries
 
 
@@ -381,16 +397,36 @@ def downloaded_parts(parts_dir: Path) -> list[Path]:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class DownloadSubject:
+    """Which of a compilation's videos a download is, for its progress bars."""
+
+    number: int
+    total: int
+    title: str
+
+    def __str__(self) -> str:
+        return f"{self.number}/{self.total} · {self.title}"
+
+
 class DownloadProgress:
     """yt-dlp progress hook: one event progress bar per downloaded file.
 
     yt-dlp downloads the video and audio formats as separate files, each
-    with its own bar; updates are throttled to `_PROGRESS_INTERVAL_S`.
+    with its own bar, labelled by the file, or by `subject` (a compilation's
+    entry, whose files are all named alike), plus the stream it carries;
+    updates are throttled to `_PROGRESS_INTERVAL_S`.
     """
 
-    def __init__(self, events: EventSink, clock: Callable[[], float]) -> None:
+    def __init__(
+        self,
+        events: EventSink,
+        clock: Callable[[], float],
+        subject: DownloadSubject | None = None,
+    ) -> None:
         self._events = events
         self._clock = clock
+        self._subject = subject
         self._scope: str | None = None
         self._filename: str | None = None
         self._fraction = 0.0
@@ -406,7 +442,7 @@ class DownloadProgress:
         filename = Path(update.get("filename") or "").name
         if filename != self._filename:
             self._finish_current()
-            self._start(filename)
+            self._start(filename, _stream_kind(update))
         now = self._clock()
         if now - self._last_update < _PROGRESS_INTERVAL_S:
             return
@@ -419,11 +455,17 @@ class DownloadProgress:
         )
         self._fraction = fraction
 
-    def _start(self, filename: str) -> None:
+    def _start(self, filename: str, kind: str | None) -> None:
         self._filename = filename
-        self._scope = f"download:{filename}"
         self._fraction = 0.0
-        self._events.emit(ProgressStarted(self._scope, f"Downloading {filename}", 1.0))
+        if self._subject is None:
+            self._scope = f"download:{filename}"
+            name = filename
+        else:
+            self._scope = f"download:{self._subject.number}:{filename}"
+            name = str(self._subject)
+        label = f"Downloading {name}" + (f" ({kind})" if kind else "")
+        self._events.emit(ProgressStarted(self._scope, label, 1.0))
 
     def close(self) -> None:
         """After a successful download: finish a bar yt-dlp left open (no
@@ -447,6 +489,18 @@ class DownloadProgress:
         self._scope = None
         self._filename = None
         self._fraction = 0.0
+
+
+def _stream_kind(update: Mapping[str, Any]) -> str | None:
+    """`video` or `audio` for a file carrying only that stream, else None."""
+    info = update.get("info_dict")
+    if not isinstance(info, dict):
+        return None
+    if info.get("vcodec") == "none":
+        return "audio"
+    if info.get("acodec") == "none":
+        return "video"
+    return None
 
 
 def _fraction(update: Mapping[str, Any]) -> float | None:

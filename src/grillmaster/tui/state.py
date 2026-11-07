@@ -323,12 +323,21 @@ class PipelineState:
         stats = self.chunk_stats(step.key)
         if stats.total:
             return stats.done / stats.total
-        fractions = [
-            fraction
+        # Open bars nest in start order: the first is the step's own (videos
+        # of a compilation), a later one the current item inside it (one
+        # file), worth one step of the outer bar.
+        bars = [
+            bar
             for bar in step.bars.values()
-            if not bar.done and (fraction := bar.fraction) is not None
+            if not bar.done and bar.fraction is not None
         ]
-        return max(fractions, default=0.0)
+        if not bars:
+            return 0.0
+        outer, *inner = bars
+        fraction = outer.fraction or 0.0
+        if inner and outer.total:
+            fraction += max(bar.fraction or 0.0 for bar in inner) / outer.total
+        return min(1.0, fraction)
 
     def total_progress(self) -> float:
         """Weighted progress over the stages and delivery steps that run."""
@@ -378,6 +387,9 @@ class PipelineState:
                 step.state = ItemState.RUNNING
                 step.started_at = at
                 step.error = None
+                # A retried step starts over: bars a failed attempt left open
+                # would otherwise read as this attempt's (the first is outer).
+                step.bars.clear()
                 if kind is not PlanKind.SIDE_TASK:
                     self.current_step_key = key
             case StepCompleted(key=key, kind=kind, elapsed=elapsed, result=result):

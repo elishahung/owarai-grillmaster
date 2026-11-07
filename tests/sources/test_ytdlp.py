@@ -16,6 +16,7 @@ from grillmaster.sources.ytdlp import (
     CAPTION_LANGUAGES,
     FRAGMENT_RETRIES,
     DownloadProgress,
+    DownloadSubject,
     LoguruYtDlpLogger,
     VideoInfo,
     download_video,
@@ -294,6 +295,26 @@ def test_progress_is_one_bar_per_file_and_throttled():
         ProgressAdvanced(scope, 0.5, "3.0 MiB/s · eta 12s"),
         ProgressAdvanced(scope, 0.25),  # topped up to 100% on finish
         ProgressFinished(scope),
+    ]
+
+
+def test_a_compilation_entry_labels_its_bars_by_number_title_and_stream():
+    sink = RecordingSink()
+    hook = DownloadProgress(sink, clock(1.0, 2.0), DownloadSubject(2, 6, "A/B"))
+
+    hook(
+        progress_update("0.f616.mp4", 0)
+        | {"info_dict": {"vcodec": "av01", "acodec": "none"}}
+    )
+    hook(
+        progress_update("0.f251.webm", 0)
+        | {"info_dict": {"vcodec": "none", "acodec": "opus"}}
+    )
+
+    started = [e for e in sink.events if isinstance(e, ProgressStarted)]
+    assert started == [
+        ProgressStarted("download:2:0.f616.mp4", "Downloading 2/6 · A/B (video)", 1.0),
+        ProgressStarted("download:2:0.f251.webm", "Downloading 2/6 · A/B (audio)", 1.0),
     ]
 
 

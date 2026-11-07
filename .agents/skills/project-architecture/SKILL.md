@@ -268,7 +268,8 @@ listing, in order, least-squares balanced groups of ≥2) into manifests, never 
   added by the pipeline), `tui.TuiSink`. `pipeline/logs.py` also writes
   `.logs/run-<ts>.log`.
 - TUI: `PipelineState` is a pure reducer over events; plan, labels and weights
-  come from `RunStarted`; the chunk board is sessions named `chunks/…`. Abort
+  come from `RunStarted`; the chunk board is sessions named `chunks/…`. A step's
+  progress is its first open bar, a later open bar filling one step of it (nested bars). Abort
   kills every live child tree (`core.process.kill_all`).
 
 ## Infrastructure

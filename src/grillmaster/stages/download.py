@@ -82,10 +82,17 @@ def _download_compilation(ctx: StageContext) -> None:
     request.platform.before_download()
     sources = ctx.state.entry_sources
     numbers = range(1, len(sources) + 1)
+    titles = [
+        read_model(
+            require(layout.metadata_entry_info(number), StageKey.METADATA), VideoInfo
+        ).title
+        for number in numbers
+    ]
     entries = download_entries(
         ctx.ytdlp,
         ctx.ffmpeg,
         [request.platform.url(source.video_id) for source in sources],
+        titles=titles,
         entry_dirs=[layout.download_entry_dir(number) for number in numbers],
         poster=layout.poster,
         options=request.options,
@@ -93,11 +100,9 @@ def _download_compilation(ctx: StageContext) -> None:
     )
     segments: list[Segment] = []
     start = 0.0
-    for number, parts in zip(numbers, entries, strict=True):
-        info_path = require(layout.metadata_entry_info(number), StageKey.METADATA)
-        info = read_model(info_path, VideoInfo)
+    for title, parts in zip(titles, entries, strict=True):
         end = start + sum(duration(ctx.ffmpeg, part) for part in parts)
-        segments.append(Segment(title=info.title, start=start, end=end))
+        segments.append(Segment(title=title, start=start, end=end))
         start = end
 
     def record(state: ProjectState) -> None:

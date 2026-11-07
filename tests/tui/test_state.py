@@ -394,6 +394,37 @@ def test_chunk_board_is_derived_from_chunk_sessions(run_state: PipelineState):
     assert run_state.chunk_cells("refine") == []
 
 
+def test_a_later_open_bar_fills_one_step_of_the_first(run_state: PipelineState):
+    run_state.apply(StepStarted("download", STAGE))
+    run_state.apply(ProgressStarted("videos", "Videos", 4), stage="download")
+    run_state.apply(ProgressAdvanced("videos"), stage="download")
+    run_state.apply(ProgressStarted("file", "Downloading 2/4", 1.0), stage="download")
+    run_state.apply(ProgressAdvanced("file", 0.5), stage="download")
+
+    # One video done, the second half way: 1.5 of 4, not the file's 50%.
+    step = _step(run_state, "download")
+    assert run_state.step_progress(step) == pytest.approx(1.5 / 4)
+
+    run_state.apply(ProgressFinished("file"), stage="download")
+    assert run_state.step_progress(step) == pytest.approx(1 / 4)
+
+
+def test_a_retried_step_drops_the_bars_its_failed_attempt_left(
+    run_state: PipelineState,
+):
+    run_state.apply(StepStarted("download", STAGE))
+    run_state.apply(ProgressStarted("join", "Joining", 100.0), stage="download")
+    run_state.apply(ProgressAdvanced("join", 30.0), stage="download")
+    run_state.apply(StepFailed("download", STAGE, "killed"))
+
+    run_state.apply(StepStarted("download", STAGE))
+    run_state.apply(ProgressStarted("videos", "Videos", 4), stage="download")
+
+    step = _step(run_state, "download")
+    assert list(step.bars) == ["videos"]
+    assert run_state.step_progress(step) == 0.0
+
+
 def test_chunk_progress_counts_cache_hits_without_cells(run_state: PipelineState):
     run_state.apply(StepStarted("chunks", STAGE))
     run_state.apply(ProgressStarted("chunks", "chunks", 5), stage="chunks")

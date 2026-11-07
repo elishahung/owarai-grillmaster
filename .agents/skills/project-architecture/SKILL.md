@@ -85,7 +85,11 @@ stages and delivery.
   clear_state, preflight, on_reset)`. `run(ctx)` returns optional `StepCompleted` result
   text. `enabled(options, config)`, like side tasks and delivery steps;
   `applies(ctx)` skips an enabled stage as disabled per project (program
-  rules), like `SideTaskDef.applies`. `outputs(layout)` = root deliverables it writes (what `grill reset`
+  rules), like `SideTaskDef.applies`; once `metadata` passes, the runner
+  reports every later stage/side task that is off (`enabled` or `applies`)
+  as disabled at once, deduped per run (the plan, built before the program
+  is known, shows `applies`-off steps pending).
+  `outputs(layout)` = root deliverables it writes (what `grill reset`
   deletes, with the work dir). `clear_state` resets the state fields it writes.
   `params(config)` is a display/ledger snapshot, **never a cache key**.
   `preflight(config, secrets)` raises before any stage runs (missing ASR key).
@@ -94,7 +98,8 @@ stages and delivery.
 - `SideTaskDef[T](key, start_after, run, enabled, applies, record, describe,
   is_done, on_skip, …)`: `run` returns a payload; the manager writes the record
   (default `TaskRecord`) under the state lock. `applies(ctx)` skips it as
-  disabled per project (program rules are known only at the start point).
+  disabled per project (reported after `metadata`; `on_skip` still runs at
+  the start point).
 - `DeliveryStepDef(key, run, workdir, outputs, enabled, preflight, …)`: no ledger,
   re-runs on every complete run; `outputs` = root deliverables derived from
   the stages' (`video.cht.ass`), removed by any reset; `preflight(options, config, state|None)`

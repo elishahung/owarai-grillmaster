@@ -73,6 +73,8 @@ class SideTaskManager:
         self._clock = clock
         self._interrupt_wait_s = interrupt_wait_s
         self._threads: dict[SideTaskKey, threading.Thread] = {}
+        # Tasks already reported disabled (`announce_off` reports early).
+        self._reported_off: set[SideTaskKey] = set()
 
     def __enter__(self) -> SideTaskManager:
         return self
@@ -91,6 +93,16 @@ class SideTaskManager:
         for task in self._tasks:
             if task.start_after == key:
                 self._dispatch(task)
+
+    def announce_off(self) -> None:
+        """The project's program is known: report the tasks that are off, so
+        they read as disabled before their start point (where `on_skip`
+        still runs)."""
+        if not self._options.complete_run:
+            return
+        for task in self._tasks:
+            if self._disabled(task, self._context(task)):
+                self._report_off(task)
 
     def wait(self, key: SideTaskKey) -> None:
         """Block until task `key` has finished, if this run started it."""
@@ -116,9 +128,7 @@ class SideTaskManager:
         if not self._options.complete_run:
             self._skip(task, ctx, SkipReason.BREAKPOINT)
             return
-        if not task.enabled(self._options, self._config) or (
-            task.applies is not None and not task.applies(ctx)
-        ):
+        if self._disabled(task, ctx):
             self._skip(task, ctx, SkipReason.DISABLED)
             return
         if task.done(ctx.state):
@@ -140,7 +150,24 @@ class SideTaskManager:
     ) -> None:
         if task.on_skip is not None:
             task.on_skip(ctx, reason)
-        self._events.emit(StepSkipped(task.key, PlanKind.SIDE_TASK, reason))
+        if reason is SkipReason.DISABLED:
+            self._report_off(task)
+        else:
+            self._events.emit(StepSkipped(task.key, PlanKind.SIDE_TASK, reason))
+
+    def _report_off(self, task: SideTaskDef[Any]) -> None:
+        """Report `task` disabled, once per run."""
+        if task.key not in self._reported_off:
+            self._reported_off.add(task.key)
+            self._events.emit(
+                StepSkipped(task.key, PlanKind.SIDE_TASK, SkipReason.DISABLED)
+            )
+
+    def _disabled(self, task: SideTaskDef[Any], ctx: StageContext) -> bool:
+        """Off for this run (`enabled`) or for this project (`applies`)."""
+        return not task.enabled(self._options, self._config) or (
+            task.applies is not None and not task.applies(ctx)
+        )
 
     def _work[T](self, task: SideTaskDef[T], ctx: StageContext) -> None:
         def finish(outcome: StepOutcome[T]) -> str | None:

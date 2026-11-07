@@ -4,7 +4,10 @@ Per stage, in registry order: skip it when disabled for this run, skip it
 (running `on_skip`) when the ledger already has it, otherwise run it as a
 step and record it in the ledger with an atomic save. The run stops after the
 `--break-after` stage whether that stage ran, was already complete or was
-disabled; the stages after it are reported skipped (`breakpoint`). Side
+disabled; the stages after it are reported skipped (`breakpoint`). Once the
+metadata stage has named the program, every later stage and side task that
+is off (for this run, or for this project by `applies`) is reported disabled
+at once rather than at its turn, so no sink shows it pending meanwhile. Side
 tasks start as the loop passes their stage and are joined when the loop
 ends, however it ends. Then the archive move (when one is wired) relocates
 the project, its logs and its state store, and the delivery steps run on the
@@ -28,6 +31,7 @@ from grillmaster.agents.adapters import AdapterRegistry
 from grillmaster.agents.runner import AgentRunner
 from grillmaster.agents.workspace import seal_workspace_root
 from grillmaster.asr.client import connect_elevenlabs
+from grillmaster.core.stage_key import StageKey
 from grillmaster.events.bus import EventBus
 from grillmaster.events.context import stage_scope
 from grillmaster.events.types import (
@@ -311,6 +315,8 @@ class _Run:
         self._archive = archive
         self._clock = clock
         self._usage = UsageCollector()
+        # Stages already reported disabled (`_announce_off` reports early).
+        self._reported_off: set[StageKey] = set()
 
     def execute(self, started_at: datetime) -> ProjectLayout:
         state = self._store.state
@@ -382,6 +388,9 @@ class _Run:
             for index, stage in enumerate(stages):
                 self._run_stage(stage, side_tasks)
                 side_tasks.stage_passed(stage.key)
+                if stage.key == StageKey.METADATA:
+                    self._announce_off(stages[index + 1 :])
+                    side_tasks.announce_off()
                 if self._options.break_after == stage.key:
                     logger.warning(
                         f"Breakpoint reached after {stage.key}; stopping "
@@ -398,12 +407,30 @@ class _Run:
             if self._disabled(
                 stage, self._context(self._store.layout.work_dir(stage.key))
             ):
-                reason = SkipReason.DISABLED
-            elif self._store.state.is_done(stage.key):
+                self._report_off(stage)
+                continue
+            if self._store.state.is_done(stage.key):
                 reason = SkipReason.ALREADY_COMPLETE
             else:
                 reason = SkipReason.BREAKPOINT
             self._events.emit(StepSkipped(stage.key, PlanKind.STAGE, reason))
+
+    def _announce_off(self, stages: Sequence[StageDef]) -> None:
+        """Report the later stages that are off, now that the program is
+        known: the plan could not tell those its program switches off."""
+        for stage in stages:
+            if self._disabled(
+                stage, self._context(self._store.layout.work_dir(stage.key))
+            ):
+                self._report_off(stage)
+
+    def _report_off(self, stage: StageDef) -> None:
+        """Report `stage` disabled, once per run."""
+        if stage.key not in self._reported_off:
+            self._reported_off.add(stage.key)
+            self._events.emit(
+                StepSkipped(stage.key, PlanKind.STAGE, SkipReason.DISABLED)
+            )
 
     def _disabled(self, stage: StageDef, ctx: StageContext) -> bool:
         """Off for this run (`enabled`) or for this project (`applies`)."""
@@ -415,7 +442,7 @@ class _Run:
         key = stage.key
         ctx = self._context(self._store.layout.work_dir(key), side_tasks)
         if self._disabled(stage, ctx):
-            self._events.emit(StepSkipped(key, PlanKind.STAGE, SkipReason.DISABLED))
+            self._report_off(stage)
             return
         if self._store.state.is_done(key):
             with stage_scope(key):

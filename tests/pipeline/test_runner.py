@@ -308,6 +308,43 @@ def test_a_stage_that_does_not_apply_to_the_project_is_skipped_disabled(
     )
 
 
+def test_steps_off_for_the_project_are_reported_once_the_metadata_has_passed(
+    run: Runner, journal: Journal, recording_sink: RecordingSink
+):
+    def off(ctx: StageContext) -> bool:
+        return False
+
+    pipeline = Pipeline(
+        (
+            fake_stage(StageKey.METADATA, journal),
+            fake_stage(StageKey.DOWNLOAD, journal),
+            fake_stage(StageKey.COMBINE, journal),
+            replace(fake_stage(StageKey.TELOP, journal), applies=off),
+        ),
+        side_tasks=(
+            replace(
+                fake_side_task(SideTaskKey.TELOP_SCAN, StageKey.COMBINE, journal),
+                applies=off,
+            ),
+        ),
+    )
+
+    run(pipeline)
+
+    disabled = [
+        StepSkipped("telop", PlanKind.STAGE, SkipReason.DISABLED),
+        StepSkipped("telop_scan", PlanKind.SIDE_TASK, SkipReason.DISABLED),
+    ]
+    assert steps(recording_sink.events)[:4] == [
+        StepStarted("metadata", PlanKind.STAGE),
+        StepCompleted("metadata", PlanKind.STAGE, 1.0),
+        *disabled,
+    ]
+    assert [event for event in recording_sink.events if event in disabled] == disabled
+    assert "side_skip:telop_scan:disabled" in journal.entries
+    assert "run:telop@telop" not in journal.entries
+
+
 def test_break_after_stops_and_skips_side_tasks_delivery_and_archive(
     run: Runner,
     journal: Journal,

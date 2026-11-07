@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from grillmaster.sources.errors import SourceHttpError
@@ -23,12 +24,14 @@ class YtDlpCall:
 
 @dataclass
 class FakeYtDlp:
-    """A `YtDlp` returning `info`; `on_download(options)` plays the download.
+    """A `YtDlp` returning `info` (or `by_url[url]` for a URL it holds);
+    `on_download(options)` plays the download.
 
     `fail_with` is raised by every call after it is recorded.
     """
 
     info: dict[str, Any] = field(default_factory=lambda: {"id": "x", "title": "t"})
+    by_url: dict[str, dict[str, Any]] = field(default_factory=dict)
     on_download: Callable[[Mapping[str, Any]], None] | None = None
     fail_with: Exception | None = None
     calls: list[YtDlpCall] = field(default_factory=list)
@@ -53,7 +56,15 @@ class FakeYtDlp:
             raise self.fail_with
         if download and self.on_download is not None:
             self.on_download(options)
-        return dict(self.info)
+        return dict(self.by_url.get(url, self.info))
+
+
+def write_download(options: Mapping[str, Any]) -> None:
+    """Play yt-dlp: one part plus the poster, at the templated paths."""
+    template = Path(options["outtmpl"]["default"])
+    template.parent.mkdir(parents=True, exist_ok=True)
+    (template.parent / "0.mp4").write_bytes(b"video")
+    Path(options["outtmpl"]["thumbnail"]).with_suffix(".jpg").write_bytes(b"jpeg")
 
 
 @dataclass(frozen=True, slots=True)

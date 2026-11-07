@@ -94,6 +94,8 @@ class Pipeline:
             raise ValueError(
                 f"--break-after {options.break_after}: that stage is not registered"
             )
+        if options.compilation is not None or (state and state.compilation):
+            _check_compilation_options(options)
         for stage in self.stages:
             if stage.enabled(options, config) and not (
                 state and state.is_done(stage.key)
@@ -162,6 +164,15 @@ def _entry(
         params=definition.params(config),
         weight=definition.weight,
     )
+
+
+def _check_compilation_options(options: RunOptions) -> None:
+    """A compilation joins several platform videos: there is no one live chat
+    to fetch, and a cut would shift the segment timeline its prompts read."""
+    if options.chat:
+        raise ValueError("--chat cannot be used on a compilation")
+    if options.has_section:
+        raise ValueError("--start/--to cannot be used on a compilation")
 
 
 def _check_unique(kind: str, keys: list[str]) -> None:

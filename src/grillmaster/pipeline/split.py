@@ -113,8 +113,15 @@ def split_project(
         logger.info(f"Seeded part {part}/{parts}: {target.root}")
 
 
+def _refuse_compilation(state: ProjectState) -> None:
+    """A compilation's segments and identity have no place in a part."""
+    if state.compilation is not None:
+        raise SplitError(f"{state.id} is a compilation; --parts cannot split it")
+
+
 def _refuse_past_download(state: ProjectState) -> None:
     """A source project that went on has work a split would discard."""
+    _refuse_compilation(state)
     if state.is_done(StageKey.COMBINE):
         raise SplitError(
             f"{state.id} is already past the download; run `grill reset {state.id} "
@@ -191,6 +198,9 @@ class SplitRun:
         source = self.template.source
         root = loaded.projects_root
         layout = ProjectLayout.for_id(root, source.video_id)
+        if layout.project_json.is_file():
+            # Before the download: resumed by its ID, a compilation reaches here.
+            _refuse_compilation(load_state(layout))
         if not self._all_parts_exist(loaded):
             # The source run stops at the download, so its own check stops there
             # too; a run the parts could not finish fails before downloading.

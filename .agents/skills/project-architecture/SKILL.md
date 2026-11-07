@@ -59,7 +59,7 @@ members is a layout change. `pipeline/registry.py` holds the only lists:
 | # | key | writes (besides `.work/NN_<key>/`) |
 |---|---|---|
 | 1 | `metadata` | state: name, broadcast date, `source` (title, series, channel, talents, broadcast_label) |
-| 2 | `download` | `poster.jpg`; `.work/02_download/{parts/,full.mp4}`; appends new programs to `grill.toml` |
+| 2 | `download` | `poster.jpg`; `.work/02_download/{parts/,full.mp4}` (parts of differing formats are re-encoded to HEVC NVENC, else stream-copied); appends new programs to `grill.toml`; state `segments` (compilations) |
 | 3 | `combine` | `video.mp4` (cut to the section, else `full.mp4` moved), `.subs/ja.official.srt` (normally none without CC or with multi-part CC; unusable downloaded CC fails); state `section` |
 | 4 | `chat_fetch` | `--chat` only (see live-chat) |
 | 5 | `audio` | `.work/05_audio/audio.ogg` |
@@ -173,6 +173,16 @@ a part note), the source project is removed, then `SerialRun` chains the parts. 
 resumes (a part's `project.json` is written last). `grill reset` refuses a part's seeded stages,
 since nothing can rebuild them. Anything reaching the platform uses `state.origin_source`, never
 `state.id`.
+
+**Compilation (`sources/compilation.py`, `pipeline/compilation.py`, `grill <manifest.json>`):**
+the mirror of a split: one project (`manifest.id`) joining several videos of one platform. The
+manifest becomes `state.compilation` at creation (identity, like `part_of`; a later run with a
+different manifest is refused, a bare-ID run resumes). Metadata fetches each entry
+(`entries/<NN>.json`; name/title/overrides from the manifest, date = latest entry's); download
+fetches each into `parts/<NN>/` (preferring VP9, `ENTRY_FORMAT_SORT`, so the join can stream-copy), writes `state.segments` (its own `clear_state`) before the
+join; prompts get them via `SourceContext.segments`. Refused: `--parts`, `--chat`,
+`--start/--to`; `date_research` never applies. `grill plan <playlist>` cuts a playlist (flat
+listing, in order, least-squares balanced groups of ≥2) into manifests, never overwriting one.
 
 ## Project (`project/`)
 
@@ -297,7 +307,7 @@ since nothing can rebuild them. Anything reaching the platform uses `state.origi
 
 `grill <src> [HINT]` = `grill run`; options `--break-after <key>`, `--parent [dir]`,
 `--cover`, `--date-research`, `--proofread`, `--telop/--no-telop`, `--notes/--no-notes`, `--chat`, `--chat-layout`, `--remix [pool]`, `--no-remix`,
-`--start`, `--to`, `--parts`. Also `serial`, `package <dir|id>`, `telop <dir|id>`, `notes <dir|id> [--probe]`, `archive <id>`,
+`--start`, `--to`, `--parts`. Also `serial`, `plan <playlist>`, `package <dir|id>`, `telop <dir|id>`, `notes <dir|id> [--probe]`, `archive <id>`,
 `reset <id> --from|--only <key>`, `status [<id>]`, `doctor`. `package`,
 `archive` and `status` resolve an ID locally only (pass an archived
 project's directory). Commands import

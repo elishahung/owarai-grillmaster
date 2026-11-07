@@ -62,6 +62,17 @@ def reject_directory_source(text: str) -> None:
         )
 
 
+def reject_manifest_source(text: str) -> None:
+    """Refuse a compilation manifest where only a video source belongs."""
+    from grillmaster.sources.compilation import is_manifest_path
+
+    if is_manifest_path(text):
+        raise ValueError(
+            f"grill serial takes no compilation manifests: {text}; "
+            "run each with 'grill <manifest.json>'"
+        )
+
+
 def parse_section_time(text: str) -> float:
     """Seconds from `90`, `1:30`, `0:01:30` or `1h30m` (yt-dlp's parser)."""
     # yt-dlp is slow to import; only a run with --start/--to needs it.

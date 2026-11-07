@@ -66,8 +66,14 @@ def open_project(
             options.source,
             translation_hint=options.hint,
             parent=options.parent,
+            compilation=options.compilation,
         )
     layout, state = existing
+    if options.compilation is not None and options.compilation != state.compilation:
+        raise ValueError(
+            f"The manifest of {state.id} differs from the project's compilation "
+            f"(project.json); remove {layout.root} to start it from this manifest"
+        )
     logger.info(f"Loaded existing project {state.id} ({state.name or 'unnamed'})")
     if options.parent is not None and options.parent.resolve() != state.parent:
         if state.is_done(StageKey.PREPASS):

@@ -8,8 +8,9 @@ from tests.fakes import make_briefing
 from grillmaster.core.prompts import load_prompt, name_span_rules
 from grillmaster.core.srt import SrtBlock
 from grillmaster.core.talent import Talent
+from grillmaster.core.timecode import TimeRange
 from grillmaster.translate import prompt
-from grillmaster.translate.inputs import SourceContext
+from grillmaster.translate.inputs import SourceContext, SourceSegment
 from grillmaster.translate.prompt import PromptSection, render_audio_template
 
 if TYPE_CHECKING:
@@ -169,14 +170,19 @@ def test_prepass_message_sections(
 
 
 def test_chunk_instruction(chunk_inputs: Callable[..., ChunkInputs]) -> None:
-    text = prompt.chunk_instruction("チャンクルール", has_audio=True)
+    text = prompt.chunk_instruction(
+        SourceContext(program_instruction="チャンクルール"), has_audio=True
+    )
     assert "chunk-specific audio slice" in text
     assert name_span_rules() in text
     assert "the window stated for `get_frames` under 【可用工具】" in text
     assert text.index("### PROGRAM-SPECIFIC INSTRUCTIONS") < text.index(
         "## On-demand video frames"
     )
-    assert "### PROGRAM-SPECIFIC" not in prompt.chunk_instruction("", has_audio=True)
+    assert "### PROGRAM-SPECIFIC" not in prompt.chunk_instruction(
+        SourceContext(), has_audio=True
+    )
+    assert "### COMPILATION" not in text
 
 
 def test_chunk_message(chunk_inputs: Callable[..., ChunkInputs]) -> None:
@@ -250,3 +256,48 @@ def test_prepass_prompt_describes_terms_in_the_strict_schema_shape(
         assert (
             f'- **{field}**: List of `{{"source": ..., "target": ...}}` objects' in text
         )
+
+
+# --- compilations ------------------------------------------------------------
+
+SEGMENTS = (
+    SourceSegment("A/B", TimeRange(0.0, 5.0)),
+    SourceSegment("C/D", TimeRange(5.0, 9.0)),
+    SourceSegment("E/F", TimeRange(9.0, 20.0)),
+)
+
+
+def test_a_compilation_adds_its_rules_and_segment_list_to_the_prepass(
+    prepass_inputs: Callable[..., PrepassInputs],
+) -> None:
+    inputs = prepass_inputs(source=SourceContext(title="M-1 #1", segments=SEGMENTS))
+
+    assert "### COMPILATION" in prompt.prepass_instruction(inputs, has_audio=True)
+    message = prompt.prepass_message(inputs)
+    assert (
+        f"{PromptSection.COMPILATION}\n"
+        "- 0.000s - 5.000s A/B\n- 5.000s - 9.000s C/D\n- 9.000s - 20.000s E/F"
+    ) in message
+    assert message.index(PromptSection.COMPILATION) < message.index(
+        PromptSection.FULL_SRT
+    )
+    plain = prepass_inputs()
+    assert "### COMPILATION" not in prompt.prepass_instruction(plain, has_audio=True)
+    assert PromptSection.COMPILATION not in prompt.prepass_message(plain)
+
+
+def test_a_chunk_sees_only_the_segments_it_spans(
+    chunk_inputs: Callable[..., ChunkInputs],
+) -> None:
+    source = SourceContext(segments=SEGMENTS)
+
+    message = prompt.chunk_message(chunk_inputs(source=source))
+
+    # The chunk runs 2.0-7.5 s.
+    assert (
+        f"{PromptSection.CHUNK_COMPILATION}\n"
+        "- 0.000s - 5.000s A/B\n- 5.000s - 9.000s C/D\n\n"
+    ) in message
+    assert "E/F" not in message
+    assert "### COMPILATION" in prompt.chunk_instruction(source, has_audio=False)
+    assert PromptSection.CHUNK_COMPILATION not in prompt.chunk_message(chunk_inputs())

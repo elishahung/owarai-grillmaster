@@ -36,7 +36,12 @@ if TYPE_CHECKING:
     from grillmaster.core.srt import SrtBlock
     from grillmaster.core.talent import Talent
     from grillmaster.translate.chunker import Chunk
-    from grillmaster.translate.inputs import ChunkInputs, PrepassInputs
+    from grillmaster.translate.inputs import (
+        ChunkInputs,
+        PrepassInputs,
+        SourceContext,
+        SourceSegment,
+    )
 
 _SLOT = re.compile(r"\{\{audio:([a-z_]+)\}\}")
 _FRAGMENT_HEADER = re.compile(r"^<!-- ([a-z_]+) -->$", re.MULTILINE)
@@ -61,6 +66,10 @@ class PromptSection:
     CHUNK_TIME_RANGE: Final = "【Chunk 時間範圍】"
     CHUNK_FRAME_TIMES: Final = "【Chunk 圖片時間點】"
     BRIEFING: Final = "【Pre-pass 簡報】"
+    COMPILATION: Final = (
+        "【合輯分段（各段為獨立影片，依序接成本片；時間為本片時間軸）】"
+    )
+    CHUNK_COMPILATION: Final = "【本塊涵蓋的合輯分段】"
     CHUNK_OFFICIAL_CC: Final = (
         "【官方CC字幕參照（僅涵蓋部分口說台詞，時間軸為近似參考）】"
     )
@@ -127,6 +136,7 @@ def prepass_instruction(inputs: PrepassInputs, *, has_audio: bool) -> str:
         load_prompt(__package__, "official_subtitle.md")
         if source.official_subtitles
         else None,
+        _compilation_rules(source),
         load_prompt(__package__, "fixed_glossary.md"),
         name_span_rules(),
         load_prompt(__package__, "parent_pre_pass.md")
@@ -154,6 +164,10 @@ def prepass_message(inputs: PrepassInputs) -> str:
     if source.talents:
         parts.append(
             f"\n{PromptSection.SOURCE_METADATA}\n{_talent_lines(source.talents)}"
+        )
+    if source.segments:
+        parts.append(
+            f"\n{PromptSection.COMPILATION}\n{_segment_lines(source.segments)}"
         )
     if source.parent_briefing is not None:
         parts.append(
@@ -195,16 +209,29 @@ def _talent_lines(talents: Sequence[Talent]) -> str:
     )
 
 
+def _compilation_rules(source: SourceContext) -> str | None:
+    return load_prompt(__package__, "compilation.md") if source.segments else None
+
+
+def _segment_lines(segments: Sequence[SourceSegment]) -> str:
+    """One `- <start>s - <end>s <title>` line per compilation video."""
+    return "\n".join(
+        f"- {segment.span.start:.3f}s - {segment.span.end:.3f}s {segment.title}"
+        for segment in segments
+    )
+
+
 # --- chunks -----------------------------------------------------------------
 
 
-def chunk_instruction(program_instruction: str, *, has_audio: bool) -> str:
-    """Translation rules (audio variant), the name-span rule, program rules,
-    frame-tool guidance."""
+def chunk_instruction(source: SourceContext, *, has_audio: bool) -> str:
+    """Translation rules (audio variant), the compilation rules for a
+    compilation, the name-span rule, program rules, frame-tool guidance."""
     return join_sections(
         render_audio_template("chunk", has_audio=has_audio),
+        _compilation_rules(source),
         name_span_rules(),
-        render_program_instruction(program_instruction),
+        render_program_instruction(source.program_instruction),
         frames_guidance(),
     )
 
@@ -229,6 +256,14 @@ def chunk_message(inputs: ChunkInputs) -> str:
             else ""
         )
         for frame in inputs.assets.frames
+    )
+    segments = [
+        segment for segment in inputs.source.segments if segment.span.overlaps(span)
+    ]
+    segment_section = (
+        f"{PromptSection.CHUNK_COMPILATION}\n{_segment_lines(segments)}\n\n"
+        if segments
+        else ""
     )
     official = official_subtitle_slice(inputs.source.official_subtitles, chunk)
     official_section = (
@@ -255,6 +290,7 @@ def chunk_message(inputs: ChunkInputs) -> str:
         f"{frame_lines or '無'}\n\n"
         f"{PromptSection.BRIEFING}\n"
         f"{inputs.briefing.render_for_prompt(chunk=chunk.index_range)}\n\n"
+        f"{segment_section}"
         f"{official_section}"
         f"{preceding_section}"
         f"{PromptSection.srt_slice(chunk)}\n"

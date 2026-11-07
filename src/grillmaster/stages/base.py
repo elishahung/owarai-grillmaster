@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from grillmaster.events.types import SkipReason
     from grillmaster.media.ffmpeg import FfmpegRunner
     from grillmaster.project.layout import ProjectLayout
-    from grillmaster.project.state import ProjectState
+    from grillmaster.project.state import Compilation, ProjectState
     from grillmaster.sources.http import JsonHttp
     from grillmaster.sources.ytdlp import YtDlp
 
@@ -48,7 +48,9 @@ class RunOptions:
     the program rules too: the pool `--remix` names, `True` for a bare one
     (`package.remix_pool`), `False` for `--no-remix`, `None` without either.
     `section` is where `--start` / `--to` cut the source; it only applies
-    while the combine stage has not run.
+    while the combine stage has not run. `compilation` is the manifest of a
+    `grill <manifest.json>` run, `None` for a video source (and for a
+    compilation resumed by its ID).
     """
 
     source: SourceId
@@ -64,6 +66,7 @@ class RunOptions:
     chat_layout: ChatLayout = DEFAULT_CHAT_LAYOUT
     remix: str | bool | None = None
     section: Section = field(default_factory=Section)
+    compilation: Compilation | None = None
 
     @property
     def has_section(self) -> bool:

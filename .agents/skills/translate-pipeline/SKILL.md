@@ -22,7 +22,8 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
 - `translate/` is pure domain code: it never imports `project` or `config`.
   `stages/` binds layout/state/config into the frozen inputs in `inputs.py`:
   `SourceContext` (title, description, hint, talents, `program_instruction`
-  for the running stage, `official_subtitles` CC blocks, `parent_briefing`),
+  for the running stage, `official_subtitles` CC blocks, `parent_briefing`,
+  `segments`: a compilation's videos from `state.segments`),
   `PrepassInputs`, `ChunkInputs` (one call), `ChunkBatchInputs` (whole run).
 - `chunker.split_into_chunks` (char-balanced, blocks never split);
   `prepass.py` builds/validates the pre-pass task and caches the briefing;
@@ -109,11 +110,13 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
   template's slots or rendering raises — add/rename slots in all three files.
 - Pre-pass instruction order: audio-rendered `pre_pass.md`, then conditional
   `official_source_metadata.md` (talents), `official_subtitle.md` (CC),
-  `fixed_glossary.md`, `name_span_rules()`, `parent_pre_pass.md` (parent),
+  `compilation.md` (segments), `fixed_glossary.md`, `name_span_rules()`, `parent_pre_pass.md` (parent),
   program instruction, `frames_guidance(pre_pass_frames.md)`,
   `pre_pass_web_search.md`.
-  Chunk instruction: audio-rendered `chunk.md`, `name_span_rules()`, program
-  instruction, `frames_guidance()`.
+  Chunk instruction: audio-rendered `chunk.md`, `compilation.md` (segments),
+  `name_span_rules()`, program instruction, `frames_guidance()`. The pre-pass
+  message lists every segment; a chunk message only those its time range
+  overlaps. Chunk boundaries ignore segments (deliberately).
 - `core/prompts.py`: `load_prompt`, strict-slot `render_template`,
   `join_sections`, `render_program_instruction`, `frames_guidance` (shared
   `core/prompts/frames_tool.md` + stage fragment), `name_span_rules`

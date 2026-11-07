@@ -36,3 +36,10 @@ def test_serial_refuses_a_project_directory(
     result = cli.invoke(app, ["serial", "epone111", str(layout.root)])
     assert result.exit_code == 1
     assert "grill package" in result.output
+
+
+def test_serial_refuses_a_compilation_manifest(cli: CliRunner, projects_root: Path):
+    result = cli.invoke(app, ["serial", "epone111", "plans/m1r3e01.json"])
+    assert result.exit_code == 1
+    assert "takes no compilation manifests" in result.output
+    assert not projects_root.exists()

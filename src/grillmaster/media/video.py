@@ -1,6 +1,7 @@
-"""Joining downloaded parts and cutting a section, both without re-encoding,
-the concat demuxer run they and the package renders share, and the small
-preview clip a model watches (`slice_preview`).
+"""Joining downloaded parts (stream copy, or one re-encode when their formats
+differ) and cutting a section without re-encoding, the concat demuxer run
+they and the package renders share, and the small preview clip a model
+watches (`slice_preview`).
 
 `join_parts` and `cut` write under a temporary name and rename into place
 (`core.fs.partial_path`), so an interrupted run never leaves a truncated
@@ -17,7 +18,9 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from grillmaster.core.fs import partial_path
+from grillmaster.media.errors import MediaError
 from grillmaster.media.ffmpeg import ffmpeg
+from grillmaster.media.probe import stream_format
 
 if TYPE_CHECKING:
     import threading
@@ -25,6 +28,7 @@ if TYPE_CHECKING:
 
     from grillmaster.core.timecode import TimeRange
     from grillmaster.media.ffmpeg import FfmpegRunner, ProgressCallback
+    from grillmaster.media.probe import StreamFormat
 
 # Stream copy of a long show over a slow disk can take minutes; never time out.
 _COPY_TIMEOUT_S = None
@@ -32,12 +36,21 @@ _COPY_TIMEOUT_S = None
 _MP4 = ("-f", "mp4")
 
 
-def join_parts(runner: FfmpegRunner, parts: Sequence[Path], output: Path) -> None:
+def join_parts(
+    runner: FfmpegRunner,
+    parts: Sequence[Path],
+    output: Path,
+    *,
+    on_progress: ProgressCallback | None = None,
+) -> None:
     """Join `parts` (in the given order) into `output`, consuming them.
 
-    A single part is moved into place; several are concatenated with the
-    concat demuxer and stream copy. The parts are deleted only once `output`
-    is complete, so a run interrupted while deleting already has `output`.
+    A single part is moved into place. Parts of one stream format are
+    concatenated with the concat demuxer and stream copy; parts that differ
+    (codec, size, frame rate, sound: videos uploaded apart) cannot be, so
+    they are re-encoded into one format (`_normalize`, reporting the output
+    time to `on_progress`). The parts are deleted only once `output` is
+    complete, so a run interrupted while deleting already has `output`.
     """
     if not parts:
         raise ValueError("No video parts to join")
@@ -46,22 +59,89 @@ def join_parts(runner: FfmpegRunner, parts: Sequence[Path], output: Path) -> Non
         logger.info(f"Moving the only part {parts[0].name} to {output}")
         parts[0].replace(output)
         return
-    logger.info(f"Joining {len(parts)} parts into {output}")
+    formats = [stream_format(runner, part) for part in parts]
     with _into_place(output) as partial:
-        concat_copy(
-            runner,
-            parts,
-            partial,
-            "-map",
-            "0",
-            "-c",
-            "copy",
-            "-movflags",
-            "faststart",
-            *_MP4,
-        )
+        if len(set(formats)) == 1:
+            logger.info(f"Joining {len(parts)} parts into {output}")
+            concat_copy(
+                runner,
+                parts,
+                partial,
+                "-map",
+                "0",
+                "-c",
+                "copy",
+                "-movflags",
+                "faststart",
+                *_MP4,
+            )
+        else:
+            logger.info(
+                f"Re-encoding {len(parts)} parts of different formats into {output}"
+            )
+            _normalize(runner, parts, formats, partial, on_progress)
     for part in parts:
         part.unlink()
+
+
+# One format for parts that cannot be stream-copied together: HEVC on NVENC
+# at a quality that survives the package's second encode, AAC stereo.
+_NORMALIZE_ENCODE = (
+    "-c:v", "hevc_nvenc", "-preset", "p5", "-tune", "hq",
+    "-rc", "vbr", "-cq", "19", "-b:v", "0", "-tag:v", "hvc1",
+    "-c:a", "aac", "-b:a", "192k",
+    "-movflags", "faststart",
+)  # fmt: skip
+_NORMALIZE_SAMPLE_RATE = 48000
+
+
+def _normalize(
+    runner: FfmpegRunner,
+    parts: Sequence[Path],
+    formats: Sequence[StreamFormat],
+    output: Path,
+    on_progress: ProgressCallback | None,
+) -> None:
+    """Re-encode `parts` back to back into `output`: each scaled (letterboxed,
+    never stretched) to the largest part's size and resampled to the highest
+    frame rate, so the result plays every part at its own pace."""
+    if silent := [
+        part.name
+        for part, fmt in zip(parts, formats, strict=True)
+        if fmt.audio_codec is None
+    ]:
+        raise MediaError(f"Parts without sound cannot be joined: {', '.join(silent)}")
+    largest = max(formats, key=lambda fmt: fmt.width * fmt.height)
+    width, height = largest.width, largest.height
+    fps = max(fmt.frame_rate for fmt in formats)
+    chains = [
+        f"[{index}:v:0]scale={width}:{height}:force_original_aspect_ratio=decrease"
+        ":force_divisible_by=2,"
+        f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},"
+        f"format=yuv420p[v{index}];"
+        f"[{index}:a:0]aresample={_NORMALIZE_SAMPLE_RATE},"
+        f"aformat=channel_layouts=stereo[a{index}]"
+        for index in range(len(parts))
+    ]
+    pairs = "".join(f"[v{index}][a{index}]" for index in range(len(parts)))
+    graph = ";".join(chains) + f";{pairs}concat=n={len(parts)}:v=1:a=1[v][a]"
+    inputs = [arg for part in parts for arg in ("-i", str(part))]
+    runner.run(
+        ffmpeg(
+            *inputs,
+            "-filter_complex",
+            graph,
+            "-map",
+            "[v]",
+            "-map",
+            "[a]",
+            *_NORMALIZE_ENCODE,
+            *_MP4,
+            str(output),
+        ),
+        timeout=_COPY_TIMEOUT_S,
+        on_progress=on_progress,
+    )
 
 
 def concat_copy(

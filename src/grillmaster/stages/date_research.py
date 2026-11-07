@@ -7,7 +7,7 @@ is moot once the project has a date or a recorded verdict. Either verdict
 is recorded in `state.side_tasks.date_research` (a found date there, where
 `ProjectState.effective_broadcast_date` reads it) so a resume never pays
 twice. A verdict already paid for is applied even when the task is skipped
-(disabled, or a `--break-after` run).
+(disabled, or a `--break-after` run). It never applies to a compilation.
 """
 
 from __future__ import annotations
@@ -102,6 +102,12 @@ def _is_done(state: ProjectState) -> bool:
     )
 
 
+def _applies(ctx: StageContext) -> bool:
+    # A compilation's date comes from its manifest or its entries; no one
+    # source page holds it.
+    return ctx.state.compilation is None
+
+
 def _on_skip(ctx: StageContext, reason: SkipReason) -> None:
     # Disabled and breakpoint skips come before the completion check.
     if reason is SkipReason.ALREADY_COMPLETE or _is_done(ctx.state):
@@ -119,6 +125,7 @@ TASK: SideTaskDef[_Verdict] = SideTaskDef(
     start_after=StageKey.METADATA,
     run=_run,
     enabled=flag_or_feature("date_research"),
+    applies=_applies,
     record=_record,
     describe=_describe,
     is_done=_is_done,

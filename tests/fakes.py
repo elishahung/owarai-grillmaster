@@ -38,14 +38,44 @@ if TYPE_CHECKING:
 
 # What `FakeFfmpeg` writes as each ffmpeg output: a JPEG SOI marker and filler.
 FAKE_JPEG = b"\xff\xd8jpeg"
+# Audio packet times of a gap-free part, as the audio-gap probe reads them.
+CONTIGUOUS = "0.000000\n0.021333\n0.042667\n"
+
+
+def stream_json(
+    *, codec: str = "h264", width: int = 1920, height: int = 1080, fps: str = "30/1"
+) -> str:
+    """ffprobe's JSON for one video stream and one AAC stereo stream."""
+    return json.dumps(
+        {
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "codec_name": codec,
+                    "width": width,
+                    "height": height,
+                    "r_frame_rate": fps,
+                    "pix_fmt": "yuv420p",
+                },
+                {
+                    "codec_type": "audio",
+                    "codec_name": "aac",
+                    "sample_rate": "48000",
+                    "channels": 2,
+                },
+            ]
+        }
+    )
 
 
 class FakeFfmpeg:
     """An `FfmpegRunner` that records each argv; thread-safe.
 
-    `fail_with` is raised by every run. Otherwise ffprobe returns
-    `duration` (when set) or `stdout`, and ffmpeg writes `FAKE_JPEG` at its
-    last argument (unless `write_output` is off) and returns `stdout`.
+    `fail_with` is raised by every run. Otherwise an ffprobe of stream
+    formats returns `streams(path)` (by default one format for every file),
+    any other ffprobe `duration` (when set) or `stdout`, and ffmpeg writes
+    `FAKE_JPEG` at its last argument (unless `write_output` is off) and
+    returns `stdout`.
     """
 
     def __init__(
@@ -54,10 +84,12 @@ class FakeFfmpeg:
         *,
         duration: float | None = None,
         write_output: bool = True,
+        streams: Callable[[str], str] | None = None,
     ) -> None:
         self.stdout = stdout
         self.duration = duration
         self.write_output = write_output
+        self.streams = streams or (lambda _path: stream_json())
         self.fail_with: Exception | None = None
         self._lock = threading.Lock()
         self._calls: list[list[str]] = []
@@ -81,6 +113,8 @@ class FakeFfmpeg:
         if self.fail_with is not None:
             raise self.fail_with
         if argv[0] == "ffprobe":
+            if any(arg.startswith("stream=") for arg in argv):
+                return self.streams(argv[-1])
             return self.stdout if self.duration is None else f"{self.duration}\n"
         if self.write_output:
             Path(argv[-1]).write_bytes(FAKE_JPEG)

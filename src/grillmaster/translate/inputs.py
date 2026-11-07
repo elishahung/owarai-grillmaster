@@ -17,19 +17,30 @@ if TYPE_CHECKING:
     from grillmaster.core.briefing import Briefing
     from grillmaster.core.srt import SrtBlock
     from grillmaster.core.talent import Talent
+    from grillmaster.core.timecode import TimeRange
     from grillmaster.glossary.fixed import FixedGlossary
     from grillmaster.translate.assets import MediaAssets
     from grillmaster.translate.chunker import Chunk
 
 
 @dataclass(frozen=True, slots=True)
+class SourceSegment:
+    """One video of a compilation: its title and its span on the timeline."""
+
+    title: str
+    span: TimeRange
+
+
+@dataclass(frozen=True, slots=True)
 class SourceContext:
     """Program context: platform metadata, the user's hint, program rules,
-    the platform's closed captions and the parent episode's briefing.
+    the platform's closed captions, the parent episode's briefing and, for
+    a compilation, the videos it joins.
 
     `program_instruction` is the configured text for the stage being run
     (empty when none); prompts wrap it in its header. `official_subtitles`
-    is empty when the platform had no captions.
+    is empty when the platform had no captions, `segments` for anything but
+    a compilation.
     """
 
     title: str | None = None
@@ -39,6 +50,7 @@ class SourceContext:
     program_instruction: str = ""
     official_subtitles: tuple[SrtBlock, ...] = ()
     parent_briefing: Briefing | None = None
+    segments: tuple[SourceSegment, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

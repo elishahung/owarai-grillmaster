@@ -222,11 +222,20 @@ class ProjectLayout:
         """yt-dlp's info JSON."""
         return self.work_dir(StageKey.METADATA) / "info.json"
 
+    def metadata_entry_info(self, entry: int) -> Path:
+        """yt-dlp's info JSON of a compilation's `entry` (1-based)."""
+        return self.work_dir(StageKey.METADATA) / "entries" / f"{entry:02d}.json"
+
     @property
     def download_parts_dir(self) -> Path:
         """Numbered video parts and the raw platform caption files yt-dlp
         writes next to them (`<part>.<lang>.srt`)."""
         return self.work_dir(StageKey.DOWNLOAD) / "parts"
+
+    def download_entry_dir(self, entry: int) -> Path:
+        """A compilation `entry`'s numbered parts (1-based), and its
+        thumbnail (`thumbnail.jpg`) after the first entry's `poster`."""
+        return self.download_parts_dir / f"{entry:02d}"
 
     @property
     def full_video(self) -> Path:

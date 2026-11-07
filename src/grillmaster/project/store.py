@@ -40,6 +40,7 @@ if TYPE_CHECKING:
     from pydantic import BaseModel
 
     from grillmaster.core.source_id import SourceId
+    from grillmaster.project.state import Compilation
 
 # Under the local projects root: one `<id>.lock` per project (`project_lock`).
 LOCKS_DIR_NAME = ".locks"
@@ -73,6 +74,7 @@ def create_project(
     *,
     translation_hint: str | None = None,
     parent: Path | None = None,
+    compilation: Compilation | None = None,
 ) -> tuple[ProjectLayout, ProjectState]:
     """Start a new project for `source` and persist its initial state.
 
@@ -86,6 +88,7 @@ def create_project(
         source,
         translation_hint=translation_hint,
         parent=None if parent is None else resolve_parent(parent),
+        compilation=compilation,
     )
     save_state(layout, state)
     logger.info(f"Created project {state.id} at {layout.root}")

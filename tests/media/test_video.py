@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
-from tests.fakes import FAKE_JPEG
+from tests.fakes import FAKE_JPEG, FakeFfmpeg, stream_json
 
 from grillmaster.core.timecode import TimeRange
 from grillmaster.media.errors import MediaError
@@ -22,8 +22,6 @@ from grillmaster.media.video import (
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-
-    from tests.fakes import FakeFfmpeg
 
 
 def make_parts(directory: Path, count: int) -> list[Path]:
@@ -57,7 +55,8 @@ def test_several_parts_are_concatenated_and_consumed(
 
     join_parts(fake_ffmpeg, parts, output)
 
-    (argv,) = fake_ffmpeg.calls
+    *probes, argv = fake_ffmpeg.calls
+    assert [probe[-1] for probe in probes] == [str(part) for part in parts]
     assert option(argv, "-f") == "concat"
     assert option(argv, "-safe") == "0"
     assert option(argv, "-c") == "copy"
@@ -68,6 +67,45 @@ def test_several_parts_are_concatenated_and_consumed(
     assert output.read_bytes() == FAKE_JPEG
     assert not any(part.exists() for part in parts)
     assert [path.name for path in output.parent.iterdir()] == ["video.mp4"]
+
+
+def test_parts_of_different_formats_are_re_encoded_into_one(tmp_path: Path):
+    parts = make_parts(tmp_path / "parts", 2)
+    formats = {
+        "0.mp4": stream_json(codec="av1", fps="30000/1001"),
+        "1.mp4": stream_json(codec="vp9", width=1280, height=720, fps="30/1"),
+    }
+    ffmpeg = FakeFfmpeg(streams=lambda path: formats[Path(path).name])
+    output = tmp_path / "video.mp4"
+
+    join_parts(ffmpeg, parts, output)
+
+    *_probes, argv = ffmpeg.calls
+    assert [argv[i + 1] for i, arg in enumerate(argv) if arg == "-i"] == [
+        str(part) for part in parts
+    ]
+    graph = option(argv, "-filter_complex")
+    # The largest size, the highest frame rate, each part letterboxed into it.
+    assert "[1:v:0]scale=1920:1080:force_original_aspect_ratio=decrease" in graph
+    assert "fps=30," in graph
+    assert "fps=30000/1001" not in graph
+    assert graph.endswith("[v0][a0][v1][a1]concat=n=2:v=1:a=1[v][a]")
+    assert option(argv, "-c:v") == "hevc_nvenc"
+    assert argv[-1] == str(output.with_name(".video.mp4.partial"))
+    assert output.read_bytes() == FAKE_JPEG
+    assert not any(part.exists() for part in parts)
+
+
+def test_a_part_without_sound_is_never_re_encoded(tmp_path: Path):
+    parts = make_parts(tmp_path / "parts", 2)
+    silent = '{"streams": [{"codec_type": "video", "codec_name": "vp9", "width": 1920, "height": 1080, "r_frame_rate": "30/1", "pix_fmt": "yuv420p"}]}'
+    ffmpeg = FakeFfmpeg(
+        streams=lambda path: silent if path.endswith("1.mp4") else stream_json()
+    )
+
+    with pytest.raises(MediaError, match=r"without sound .*1\.mp4"):
+        join_parts(ffmpeg, parts, tmp_path / "video.mp4")
+    assert all(part.exists() for part in parts)
 
 
 class TruncatingFfmpeg:

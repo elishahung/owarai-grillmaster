@@ -55,12 +55,19 @@ def parse_source(text: str) -> SourceId:
     """
     if text.startswith(_YOUTUBE_PREFIX):
         return SourceId(Platform.YOUTUBE, text)
-    for host, platform in _HOSTS:
-        if host in text:
-            return SourceId(platform, _id_from_url(text, platform))
+    if (platform := platform_of_url(text)) is not None:
+        return SourceId(platform, _id_from_url(text, platform))
     if is_url(text):
         raise ValueError(f"Invalid video source: {text}")
     return SourceId(platform_of(text), text)
+
+
+def platform_of_url(text: str) -> Platform | None:
+    """The platform whose host `text` names (a video, playlist or any page)."""
+    for host, platform in _HOSTS:
+        if host in text:
+            return platform
+    return None
 
 
 def is_url(text: str) -> bool:

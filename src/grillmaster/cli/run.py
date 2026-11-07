@@ -3,6 +3,7 @@ options `grill serial` shares."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated
 
 import typer
@@ -130,8 +131,8 @@ def run_command(
         typer.Argument(
             help=(
                 "Video ID or URL (e.g. 'BV1ZArvBaEqL', 'https://youtu.be/dQw4w9WgXcQ', "
-                "'v=dQw4w9WgXcQ'). A local directory is not a source; use "
-                "'grill package <dir>'."
+                "'v=dQw4w9WgXcQ'), or a compilation manifest (*.json, see 'grill "
+                "plan'). A local directory is not a source; use 'grill package <dir>'."
             ),
             show_default=False,
         ),
@@ -205,21 +206,35 @@ def run_command(
 ) -> None:
     """Download, transcribe and translate one video, resuming where it stopped."""
     from grillmaster.core.source_id import parse_source
+    from grillmaster.pipeline.compilation import manifest_compilation, manifest_source
     from grillmaster.pipeline.runner import ProjectRun
     from grillmaster.project.state import Section
+    from grillmaster.sources.compilation import (
+        CompilationError,
+        is_manifest_path,
+        load_manifest,
+    )
     from grillmaster.stages.base import RunOptions
 
     loaded = load_or_exit()
     parent = resolve_parent(parent, pick=pick_parent, loaded=loaded)
+    compilation = None
     try:
         reject_directory_source(source)
-        source_id = parse_source(source)
+        if is_manifest_path(source):
+            manifest = load_manifest(Path(source))
+            source_id = manifest_source(manifest)
+            compilation = manifest_compilation(manifest)
+        else:
+            source_id = parse_source(source)
         section = Section(
             start=parse_section_time(start) if start else None,
             end=parse_section_time(to) if to else None,
         )
-    except ValueError as error:
+    except (ValueError, CompilationError) as error:
         fail(str(error))
+    if parts is not None and compilation is not None:
+        fail("--parts cannot split a compilation")
     options = RunOptions(
         source=source_id,
         hint=hint,
@@ -234,6 +249,7 @@ def run_command(
         chat_layout=chat_layout,
         remix=resolve_remix(remix, no_remix=no_remix),
         section=section,
+        compilation=compilation,
     )
     if parts is not None:
         _run_split(ctx, options, parts, loaded)

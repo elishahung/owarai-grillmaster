@@ -135,6 +135,31 @@ class PartOrigin(StateModel):
     parts: int = Field(ge=2)
 
 
+class Compilation(StateModel):
+    """The platform videos a compilation project joins end to end, in order,
+    and what its manifest sets for the whole (`grill <manifest.json>`).
+
+    Identity like `part_of`: written once at creation, never by a stage, so
+    no reset clears it. `series` / `channel` / `broadcast_date` override what
+    the metadata stage would derive from the entries.
+    """
+
+    title: str = Field(min_length=1)
+    entries: list[str] = Field(min_length=2)
+    series: str | None = None
+    channel: str | None = None
+    broadcast_date: date | None = None
+
+
+class Segment(StateModel):
+    """Where one compilation entry (by position) lies on `full.mp4`, with
+    its title (the download stage)."""
+
+    title: str
+    start: float = Field(ge=0)
+    end: float = Field(gt=0)
+
+
 class ProjectState(StateModel):
     id: str
     # Persisted rather than re-inferred: a bare ID is ambiguous across
@@ -153,6 +178,9 @@ class ProjectState(StateModel):
     source: SourceInfo = Field(default_factory=SourceInfo)
     section: Section = Field(default_factory=Section)
     part_of: PartOrigin | None = None
+    compilation: Compilation | None = None
+    # A compilation's entries on the `full.mp4` timeline (download stage).
+    segments: list[Segment] = Field(default_factory=list)
     # The metered services, cumulative; agents run on subscriptions.
     asr_cost_usd: float = Field(default=0.0, ge=0)  # ElevenLabs
     watch_clip_cost_usd: float = Field(default=0.0, ge=0)  # Meta, `watch_clip`
@@ -166,6 +194,7 @@ class ProjectState(StateModel):
         *,
         translation_hint: str | None = None,
         parent: Path | None = None,
+        compilation: Compilation | None = None,
     ) -> ProjectState:
         return cls(
             id=source.video_id,
@@ -173,6 +202,7 @@ class ProjectState(StateModel):
             created_at=now(),
             translation_hint=translation_hint,
             parent=parent,
+            compilation=compilation,
         )
 
     @property
@@ -185,6 +215,16 @@ class ProjectState(StateModel):
         exists only here."""
         video_id = self.part_of.id if self.part_of is not None else self.id
         return SourceId(self.platform, video_id)
+
+    @property
+    def entry_sources(self) -> tuple[SourceId, ...]:
+        """A compilation's videos as the platform knows them, in order;
+        empty for any other project."""
+        if self.compilation is None:
+            return ()
+        return tuple(
+            SourceId(self.platform, entry) for entry in self.compilation.entries
+        )
 
     @property
     def effective_broadcast_date(self) -> date | None:

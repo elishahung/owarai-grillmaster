@@ -9,6 +9,7 @@ fast.
 
 from __future__ import annotations
 
+import io
 import sys
 
 from grillmaster.cli.app import app
@@ -19,6 +20,16 @@ __all__ = ["app", "main"]
 
 
 def main(argv: list[str] | None = None) -> None:
+    redirected_streams_as_utf8()
     configure_console_logging()
     args = expand_bare_options(sys.argv[1:] if argv is None else argv)
     app(args=args, prog_name="grill")
+
+
+def redirected_streams_as_utf8() -> None:
+    """Write UTF-8 to a redirected stdout/stderr. A console already takes
+    Unicode, but a pipe or file defaults to the locale code page (cp950),
+    which cannot encode the Japanese titles commands print."""
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper) and not stream.isatty():
+            stream.reconfigure(encoding="utf-8")

@@ -12,6 +12,7 @@ from grillmaster.core.briefing import Briefing
 from grillmaster.core.json_artifact import read_model
 from grillmaster.core.srt import read_srt_file, strip_voice_tags
 from grillmaster.core.stage_key import StageKey
+from grillmaster.core.timecode import TimeRange
 from grillmaster.core.tool_session import FramesTool
 from grillmaster.project.layout import ProjectLayout
 from grillmaster.sources.registry import source_platform
@@ -19,7 +20,7 @@ from grillmaster.sources.ytdlp import shared_options
 from grillmaster.stages.base import require
 from grillmaster.translate.chunker import Chunk, split_into_chunks
 from grillmaster.translate.errors import TranslateError
-from grillmaster.translate.inputs import SourceContext
+from grillmaster.translate.inputs import SourceContext, SourceSegment
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -217,6 +218,10 @@ def source_context(
         program_instruction=program_rules(ctx.config, info).instruction_text(stage),
         official_subtitles=tuple(read_srt_file(official)) if official.exists() else (),
         parent_briefing=parent_briefing,
+        segments=tuple(
+            SourceSegment(segment.title, TimeRange(segment.start, segment.end))
+            for segment in state.segments
+        ),
     )
 
 

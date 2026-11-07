@@ -7,7 +7,7 @@ from typing import Annotated
 import typer
 from loguru import logger
 
-from grillmaster.cli.args import reject_directory_source
+from grillmaster.cli.args import reject_directory_source, reject_manifest_source
 from grillmaster.cli.common import fail, load_or_exit, pipeline_from
 from grillmaster.cli.live import run_or_exit
 from grillmaster.cli.parent import ParentOption, PickParentOption, resolve_parent
@@ -64,6 +64,7 @@ def serial_command(
     try:
         for source in sources:
             reject_directory_source(source)
+            reject_manifest_source(source)
         ids = tuple(parse_source(source) for source in sources)
         serial = SerialRun(
             ids,

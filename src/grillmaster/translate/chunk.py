@@ -229,12 +229,12 @@ def build_chunk_task(
     translation that fails it goes to the `utility` model with the same inputs
     but no audio."""
     assets = inputs.assets
-    program = inputs.source.program_instruction
+    source = inputs.source
     return AgentTask(
         name=task_name(inputs.chunk),
         role=Role.CHUNK,
         instructions=prompt.chunk_instruction(
-            program, has_audio=assets.audio is not None
+            source, has_audio=assets.audio is not None
         ),
         prompt=prompt.chunk_message(inputs),
         session_dir=session_dir,
@@ -245,7 +245,7 @@ def build_chunk_task(
         validate=chunk_validator(inputs.chunk),
         attempts=attempts,
         handoff=Handoff(
-            Role.UTILITY, prompt.chunk_instruction(program, has_audio=False)
+            Role.UTILITY, prompt.chunk_instruction(source, has_audio=False)
         ),
     )
 

@@ -22,7 +22,13 @@ from grillmaster.pipeline.split import (
     part_sources,
 )
 from grillmaster.project.layout import ProjectLayout
-from grillmaster.project.state import PartOrigin, ProjectState, Section, SourceInfo
+from grillmaster.project.state import (
+    Compilation,
+    PartOrigin,
+    ProjectState,
+    Section,
+    SourceInfo,
+)
 from grillmaster.project.store import create_project, load_state, save_state
 from grillmaster.sources.errors import SourceError
 from grillmaster.stages.base import RunOptions
@@ -311,6 +317,21 @@ def test_a_project_past_the_download_is_refused(
 
     with pytest.raises(SplitError, match="--from combine"):
         run_split()
+    assert layout.project_json.is_file()
+
+
+def test_a_compilation_is_refused_before_any_work(
+    loaded: LoadedConfig, run_split: RunSplit, journal: Journal
+):
+    layout, _ = create_project(
+        loaded.projects_root,
+        SOURCE,
+        compilation=Compilation(title="C", entries=["BVa", "BVb"]),
+    )
+
+    with pytest.raises(SplitError, match="is a compilation"):
+        run_split()
+    assert journal.entries == []
     assert layout.project_json.is_file()
 
 

@@ -44,6 +44,13 @@ FRAGMENT_RETRY_MAX_SLEEP_S = 30.0
 # next to the numbered video parts.
 CAPTION_LANGUAGES = ("ja", "ja-*")
 _PART_NAME = re.compile(r"\d+\.mp4")
+# A compilation entry's thumbnail, beside its parts (the first one's is the poster).
+ENTRY_THUMBNAIL = "thumbnail.jpg"
+# A compilation's entries, uploaded apart, would each take the best codec
+# offered (AV1 on newer uploads, VP9 on older), forcing the join to re-encode;
+# resolution still comes first, then codecs up to VP9. A preference, not a
+# filter: an entry without VP9 still downloads, and the join re-encodes then.
+ENTRY_FORMAT_SORT = ("res", "vcodec:vp9")
 _PROGRESS_INTERVAL_S = 0.25  # yt-dlp fires hooks far more often
 _MIB = 1024 * 1024
 
@@ -167,9 +174,13 @@ class VideoInfo(BaseModel):
 
     @property
     def filename(self) -> str:
-        """The title reduced to word characters, joined by underscores."""
-        safe = re.sub(r"[^\w\s-]", "", self.title).strip()
-        return re.sub(r"[-\s]+", "_", safe)
+        return safe_filename(self.title)
+
+
+def safe_filename(title: str) -> str:
+    """`title` reduced to word characters, joined by underscores."""
+    safe = re.sub(r"[^\w\s-]", "", title).strip()
+    return re.sub(r"[-\s]+", "_", safe)
 
 
 def fetch_info(
@@ -296,12 +307,52 @@ def download_full_video(
         captions=captions,
         events=events,
     )
+    join_parts(ffmpeg, checked_parts(ffmpeg, parts_dir), output)
+
+
+def download_entries(
+    ytdlp: YtDlp,
+    ffmpeg: FfmpegRunner,
+    urls: Sequence[str],
+    *,
+    entry_dirs: Sequence[Path],
+    poster: Path,
+    options: Mapping[str, Any],
+    events: EventSink,
+) -> list[list[Path]]:
+    """Download each of a compilation's videos into its own directory, in
+    order, and return each one's checked parts (not joined: the caller
+    records where each lies first).
+
+    The first video's thumbnail is the `poster`; the others keep theirs
+    beside their parts. No captions: a compilation's timeline is no one
+    video's. A finished part is not fetched again on a re-run. Formats
+    prefer one codec (`ENTRY_FORMAT_SORT`) so the join can stream-copy.
+    """
+    entry_options = {**options, "format_sort": list(ENTRY_FORMAT_SORT)}
+    entries: list[list[Path]] = []
+    for url, entry_dir in zip(urls, entry_dirs, strict=True):
+        download_video(
+            ytdlp,
+            url,
+            parts_dir=entry_dir,
+            poster=poster if not entries else entry_dir / ENTRY_THUMBNAIL,
+            options=entry_options,
+            captions=False,
+            events=events,
+        )
+        entries.append(checked_parts(ffmpeg, entry_dir))
+    return entries
+
+
+def checked_parts(ffmpeg: FfmpegRunner, parts_dir: Path) -> list[Path]:
+    """The downloaded parts in `parts_dir`, each checked for audio gaps."""
     parts = downloaded_parts(parts_dir)
     if not parts:
         raise SourceError(f"yt-dlp finished without video parts in {parts_dir}")
     for part in parts:
         verify_audio(ffmpeg, part)
-    join_parts(ffmpeg, parts, output)
+    return parts
 
 
 def verify_audio(ffmpeg: FfmpegRunner, part: Path) -> None:

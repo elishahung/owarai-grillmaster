@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, override
 
 import pytest
-from tests.fakes import FAKE_JPEG, FakeFfmpeg
-from tests.sources.fakes import FakeYtDlp
+from tests.fakes import CONTIGUOUS, FAKE_JPEG, FakeFfmpeg
+from tests.sources.fakes import FakeYtDlp, write_download
 
 from grillmaster.core.stage_key import StageKey
 from grillmaster.media.errors import MediaError
@@ -26,7 +26,6 @@ if TYPE_CHECKING:
     from grillmaster.project.state import ProjectState
 
 GRILL_TOML = '[agents.roles]\nprepass = "agy/gemini-3.1-pro/high"\n'
-CONTIGUOUS = "0.000000\n0.021333\n0.042667\n"
 
 
 @pytest.fixture
@@ -34,14 +33,6 @@ def config_sections(tmp_path: Path) -> dict[str, Any]:
     """Cookies configured, and a real `grill.toml` to register programs in."""
     (tmp_path / "grill.toml").write_text(GRILL_TOML, encoding="utf-8")
     return {"paths": {"cookies": "cookies.txt"}}
-
-
-def write_download(options: Mapping[str, Any]) -> None:
-    """Play yt-dlp: one part plus the poster, at the templated paths."""
-    template = Path(options["outtmpl"]["default"])
-    template.parent.mkdir(parents=True, exist_ok=True)
-    (template.parent / "0.mp4").write_bytes(b"video")
-    Path(options["outtmpl"]["thumbnail"]).with_suffix(".jpg").write_bytes(b"jpeg")
 
 
 @pytest.fixture
@@ -121,9 +112,9 @@ def test_parts_are_joined_atomically_then_deleted(
     download.STAGE.run(make_context(StageKey.DOWNLOAD, ytdlp=ytdlp))
 
     *probes, concat = fake_ffmpeg.calls
-    assert [probe[-1] for probe in probes] == [
-        str(layout.download_parts_dir / name) for name in ("0.mp4", "1.mp4")
-    ]
+    parts = [str(layout.download_parts_dir / name) for name in ("0.mp4", "1.mp4")]
+    # The audio-gap checks, then the stream formats the join compares.
+    assert [probe[-1] for probe in probes] == [*parts, *parts]
     assert concat[-1] == str(layout.full_video.with_name(".full.mp4.partial"))
     assert layout.full_video.exists()
     assert sorted(p.name for p in layout.download_parts_dir.iterdir()) == ["1.f299.mp4"]

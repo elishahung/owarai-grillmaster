@@ -36,7 +36,8 @@ prepass → chunks → refine → glossary → (proofread) → finalize → (cha
 and `(package)`, which read the archived copy. Side tasks `(cover)`, `(date_research)` and `(telop_scan)` run beside
 the stages. Parentheses mark optional steps.
 
-Commands (`bin/grill.bat` is the PATH launcher; `scripts/` holds dev tools):
+Commands (`bin/grill.bat` is the PATH launcher: it runs in the caller's directory with
+`GRILL_HOME` set to the repo; `scripts/` holds dev tools):
 `grill <SOURCE> [HINT]` (= `grill run`; SOURCE may be a compilation manifest `*.json`),
 `grill plan <playlist>` (writes manifests), `grill serial`,
 `grill package`, `grill telop`, `grill notes`, `grill archive`, `grill reset <id> --from|--only <stage>`,

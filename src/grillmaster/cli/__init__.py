@@ -9,6 +9,7 @@ fast.
 
 from __future__ import annotations
 
+import codecs
 import io
 import sys
 
@@ -27,9 +28,13 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def redirected_streams_as_utf8() -> None:
-    """Write UTF-8 to a redirected stdout/stderr. A console already takes
-    Unicode, but a pipe or file defaults to the locale code page (cp950),
-    which cannot encode the Japanese titles commands print."""
+    """Write UTF-8 to a redirected stdout/stderr. A console stream is UTF-8
+    already, but a pipe, a file or `NUL` (which reports itself a TTY) defaults
+    to the locale code page (cp950), which cannot encode the Japanese titles
+    commands print."""
     for stream in (sys.stdout, sys.stderr):
-        if isinstance(stream, io.TextIOWrapper) and not stream.isatty():
+        if (
+            isinstance(stream, io.TextIOWrapper)
+            and codecs.lookup(stream.encoding).name != "utf-8"
+        ):
             stream.reconfigure(encoding="utf-8")

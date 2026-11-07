@@ -44,7 +44,7 @@ uv tool install --editable .   # 把 grill 裝到 PATH
 
 要用字卡翻譯的話改用 `uv sync --extra telop`（多裝 GPU 文字辨識套件；之後單純 `uv sync` 會把它移除）
 
-或者把 `bin/` 加到 PATH，用 `bin/grill.bat` 執行 repo 內 `.venv` 的 `grill`（`bin/` 只放這個啟動器；`scripts/` 是開發工具，不要加進 PATH）
+或者把 `bin/` 加到 PATH，用 `bin/grill.bat` 執行 repo 內 `.venv` 的 `grill`（`bin/` 只放這個啟動器；`scripts/` 是開發工具，不要加進 PATH）。啟動器留在你下指令的目錄執行，並把 `GRILL_HOME` 設成 repo 根目錄，所以 manifest、`--out` 這類相對路徑以你所在的目錄為準
 
 `grill` 會從目前目錄往上找 `grill.toml`，找不到就用 `GRILL_HOME` 指定的目錄；`projects/` 與 `.env` 都放在 `grill.toml` 旁邊。用 `uv tool install` 在其他目錄執行時，把 `GRILL_HOME` 設成 repo 根目錄即可
 

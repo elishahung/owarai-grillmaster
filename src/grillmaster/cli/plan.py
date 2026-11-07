@@ -102,7 +102,7 @@ def plan_command(
     request = PlanRequest(
         url=playlist,
         id_prefix=id_prefix,
-        out_dir=out,
+        out_dir=out.resolve(),
         episodes=episodes,
         minutes=minutes,
         title=title,

@@ -8,6 +8,8 @@ from pydantic import SecretStr
 from tests.fakes import FakeSpeechToText
 
 from grillmaster.asr.client import PRICE_PER_HOUR_USD
+from grillmaster.asr.errors import AsrError
+from grillmaster.asr.timing import COLLAPSED_STACK_WORDS
 from grillmaster.config.errors import ConfigError
 from grillmaster.config.secrets import Secrets
 from grillmaster.core.stage_key import StageKey
@@ -94,6 +96,41 @@ def test_existing_response_is_a_free_cache_hit(
     assert layout.asr_json.read_text(encoding="utf-8") == "{}"
     assert ctx.state.asr_cost_usd == 0.0
     assert result == "cached · project $0.0000"
+
+
+COLLAPSED = {
+    "text": "",
+    "words": [
+        {"text": "あ", "start": 908.98, "end": 908.98, "type": "word"}
+        for _ in range(COLLAPSED_STACK_WORDS)
+    ],
+    "audio_duration_secs": 3600,
+}
+
+
+@pytest.mark.usefixtures("audio_file")
+def test_collapsed_timings_are_paid_discarded_and_fail(
+    make_context: MakeContext, layout: ProjectLayout
+):
+    ctx = make_context(StageKey.ASR, speech_to_text=FakeSpeechToText(COLLAPSED).connect)
+
+    with pytest.raises(AsrError, match=r"15:08: 100 words.*run again"):
+        asr.STAGE.run(ctx)
+    assert not layout.asr_json.exists()
+    assert load_state(layout).asr_cost_usd == pytest.approx(PRICE_PER_HOUR_USD)
+
+
+@pytest.mark.usefixtures("audio_file")
+def test_a_cached_collapsed_response_is_discarded_too(
+    make_context: MakeContext, layout: ProjectLayout, api: FakeSpeechToText
+):
+    layout.asr_json.parent.mkdir(parents=True)
+    layout.asr_json.write_text(json.dumps(COLLAPSED), encoding="utf-8")
+
+    with pytest.raises(AsrError, match="15:08: 100 words"):
+        asr.STAGE.run(make_context(StageKey.ASR))
+    assert api.calls == []
+    assert not layout.asr_json.exists()
 
 
 @pytest.mark.parametrize("secrets", [None, ""], indirect=True)

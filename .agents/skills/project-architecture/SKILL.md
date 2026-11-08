@@ -63,7 +63,7 @@ members is a layout change. `pipeline/registry.py` holds the only lists:
 | 3 | `combine` | `video.mp4` (cut to the section, else `full.mp4` moved), `.subs/ja.official.srt` (normally none without CC or with multi-part CC; unusable downloaded CC fails); state `section` |
 | 4 | `chat_fetch` | `--chat` only (see live-chat) |
 | 5 | `audio` | `.work/05_audio/audio.ogg` |
-| 6 | `asr` | `.work/06_asr/asr.json`; adds `asr_cost_usd` (an existing `asr.json` costs nothing) |
+| 6 | `asr` | `.work/06_asr/asr.json`; adds `asr_cost_usd` (an existing `asr.json` costs nothing); a response with 100+ words stacked on one timestamp (`asr/timing.py`), cached or not, is deleted and fails the stage, so the next run requests a new one |
 | 7 | `transcript` | `.subs/ja.srt` + `ja.voiced.srt` (same blocks, diarized `[V<n>] ` tags for the agents) |
 | 8–11 | `prepass`, `chunks`, `refine`, `glossary` | work dirs only (translate-pipeline, postprocess-and-packaging) |
 | 12 | `proofread` | `--proofread` / `[features] proofread` only: work dir only; adds `watch_clip_cost_usd` (postprocess-and-packaging) |

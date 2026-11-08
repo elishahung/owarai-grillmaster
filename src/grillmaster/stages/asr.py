@@ -5,6 +5,10 @@ An existing `asr.json` is a cache hit: the stage costs nothing and records
 nothing, so a resume after a failure past the request never pays twice. A
 missing API key fails the run's preflight, before anything is downloaded.
 The step result reports the stage's cost and the project's total.
+
+A response with collapsed word timings (`asr/timing.py`), cached or new,
+fails the stage after its cost is recorded and is deleted, so the next run
+requests a new one.
 """
 
 from __future__ import annotations
@@ -14,6 +18,9 @@ from typing import TYPE_CHECKING
 from loguru import logger
 
 from grillmaster.asr.client import AsrOptions, ensure_transcription
+from grillmaster.asr.errors import AsrError
+from grillmaster.asr.payload import read_payload
+from grillmaster.asr.timing import collapsed_stacks
 from grillmaster.core.stage_key import StageKey
 from grillmaster.stages.base import StageDef, require
 
@@ -38,18 +45,26 @@ def _run(ctx: StageContext) -> str:
         require(layout.audio, StageKey.AUDIO),
         layout.asr_json,
     )
-    if cost is None:
-        return f"cached · project ${ctx.state.asr_cost_usd:.4f}"
+    if cost is not None:
 
-    def add_cost(state: ProjectState) -> None:
-        state.add_asr_cost(cost.total_usd)
+        def add_cost(state: ProjectState) -> None:
+            state.add_asr_cost(cost.total_usd)
 
-    ctx.update(add_cost)
+        ctx.update(add_cost)
+        logger.info(
+            f"Stage ASR cost: ${cost.total_usd:.4f} for {cost.audio_duration_s:.2f}s "
+            f"(project ASR total ${ctx.state.asr_cost_usd:.4f})"
+        )
+    # Checked once the cost is recorded: a discarded response was still paid.
+    if stacks := collapsed_stacks(read_payload(layout.asr_json)):
+        layout.asr_json.unlink()
+        raise AsrError(
+            f"ElevenLabs stacked words on one timestamp ({'; '.join(stacks)}); "
+            "the response was discarded, run again to request a new transcription"
+        )
     total = ctx.state.asr_cost_usd
-    logger.info(
-        f"Stage ASR cost: ${cost.total_usd:.4f} for {cost.audio_duration_s:.2f}s "
-        f"(project ASR total ${total:.4f})"
-    )
+    if cost is None:
+        return f"cached · project ${total:.4f}"
     return f"${cost.total_usd:.4f} · project ${total:.4f}"
 
 

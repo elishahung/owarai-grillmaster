@@ -114,7 +114,8 @@ def ensure_transcription(
 
     Existence alone is the hit check, deliberately (not a parse like the
     other caches): this is the one metered call, so a paid response is
-    never requested again; a bad one is for `grill reset` to discard.
+    never requested again; a bad one is for its caller (the ASR stage drops
+    collapsed timings) or `grill reset` to discard.
     """
     if output.exists():
         logger.info(f"Reusing ElevenLabs STT response: {output}")

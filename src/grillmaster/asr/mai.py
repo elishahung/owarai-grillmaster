@@ -1,13 +1,12 @@
-"""Azure Speech's MAI-Transcribe-2: whole-episode transcription (the default
-`[asr] provider`) and clip hearing (`watch_clip`'s second hearing when
-Scribe transcribes the episode), priced by audio length.
+"""Azure Speech's MAI-Transcribe-2: the episode's ASR, priced by audio
+length.
 
 One fast-transcription REST call (`transcriptions:transcribe`, multipart:
-the FLAC `audio` and a JSON `definition`) per file, enhanced mode on
+the FLAC `audio` and a JSON `definition`) per episode, enhanced mode on
 MAI-Transcribe-2, Japanese forced, the verbatim style (fillers, false
-starts and cut-off words kept), speaker diarization. `phrases` (cast names)
-bias recognition toward them; they are hints, not forced output. An episode
-asks for word times; a clip for phrase (segment) times. The REST reference
+starts and cut-off words kept), word times, speaker diarization. `phrases`
+(cast names) bias recognition toward them; they are hints, not forced
+output. The REST reference
 caps a file at 2 hours and 250 MB; 90 minutes of 16 kHz mono FLAC is about
 200 MB. MAI reads WAV, MP3 or FLAC, not Opus.
 
@@ -16,44 +15,38 @@ Measured (2026-11-09, `asr-provider-evaluation.md`): 11 of 11 diarized
 stacks where Scribe had them; more back-channels and quick exchanges kept
 as their own speaker turns. One response came back with every phrase's
 offset and duration 0 while its word times were right, so tokens take the
-word times alone. On 13 proofread spans (2026-10-23): no speech dropped,
-2 to 5 s per request; names and homophones are often written with the
-wrong kanji (尾形 → 緒方), which only the captions settle.
+word times alone. Names and homophones are often written with the wrong
+kanji (尾形 → 緒方), which only the captions settle.
 
 The response is kept raw as `asr.json`: `phrases[{speaker, text,
 words[{text, offsetMilliseconds, durationMilliseconds}]}]` and
 `durationMilliseconds`. Japanese words come one character at a time with
 punctuation as its own word, now and then a punctuation mark glued in front
-(`、YouTube`). The key and endpoint come from the ASR stage's secrets, or
-for `watch_clip` from the `.env` the manifest names (`read_credentials`).
-`httpx` is imported on use.
+(`、YouTube`). A kept response of another shape (an ElevenLabs Scribe
+`asr.json` from before MAI) is refused by `read_response`, not converted.
+The key and endpoint come from the ASR stage's secrets. `httpx` is
+imported on use.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from itertools import groupby
 from typing import TYPE_CHECKING, Any, Protocol
 
 from loguru import logger
 
 from grillmaster.asr.errors import AsrError
-from grillmaster.asr.model import (
-    Hearing,
-    Phrase,
-    TranscriptionCost,
-    WordToken,
-    split_leading_mark,
-)
+from grillmaster.asr.model import TranscriptionCost, WordToken, split_leading_mark
+from grillmaster.asr.payload import read_payload
 from grillmaster.asr.srt_builder import (
     JAPANESE_HARD_PUNCTUATION,
     JAPANESE_SOFT_PUNCTUATION,
-    SrtFormatOptions,
+    MAX_CHARACTERS_PER_LINE,
     ends_with_hard_punctuation,
 )
-from grillmaster.core.env_file import read_env_values
 from grillmaster.core.fs import atomic_write_text
 
 if TYPE_CHECKING:
@@ -82,16 +75,6 @@ MAX_PHRASES = 500
 # (diarization has failed this way for whole regions at a time).
 _RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 
-# MAI's SRT knobs, the Scribe-tuned defaults otherwise.
-#
-# `merge_speaker_turns_gap_s = 0.2` (Scribe 0.05): measured as for Scribe,
-# over 17,498 speaker changes in 11 episodes (2026-11-09). MAI's turn gaps
-# spread wider than Scribe's, and the share of turns whose reply starts
-# with a response cue (はい/いや/うん/え/そう…) stays at 31-35 % from 0.05 to
-# 0.2 s, then falls (27 % at 0.2-0.3 s, 20 % past 0.45 s). Merging up to
-# 0.2 s keeps quick exchanges in one `-` dialogue block and cuts blocks
-# under 0.6 s by about two thirds.
-SRT_OPTIONS = replace(SrtFormatOptions(), merge_speaker_turns_gap_s=0.2)
 # MAI glues 、 as often as 。 in front of a word (`、YouTube`); both come
 # off, so the mark ends the text before it.
 _LEADING_MARKS = JAPANESE_HARD_PUNCTUATION + JAPANESE_SOFT_PUNCTUATION
@@ -132,18 +115,7 @@ class AzureSpeech:
     key: str
 
 
-def clip_hearing(env_file: Path, timeout_s: float) -> MaiClient:
-    """`watch_clip`'s hearing with the credentials in `env_file`."""
-    return MaiClient(read_credentials(env_file), timeout_s)
-
-
-def read_credentials(env_file: Path) -> AzureSpeech:
-    """The Azure Speech key and endpoint from `env_file` alone."""
-    values = read_env_values(env_file, (KEY_ENV, ENDPOINT_ENV), MaiError)
-    return AzureSpeech(endpoint=values[ENDPOINT_ENV].rstrip("/"), key=values[KEY_ENV])
-
-
-def definition(phrases: Sequence[str], *, word_times: bool) -> dict[str, Any]:
+def definition(phrases: Sequence[str]) -> dict[str, Any]:
     """The request's `definition` field."""
     body: dict[str, Any] = {
         "locales": [LANGUAGE],
@@ -151,7 +123,7 @@ def definition(phrases: Sequence[str], *, word_times: bool) -> dict[str, Any]:
             "enabled": True,
             "model": MODEL,
             "modelOptions": {
-                "timestamps": "word" if word_times else "segment",
+                "timestamps": "word",
                 "transcribeStyle": "verbatim",
             },
         },
@@ -182,7 +154,7 @@ class MaiClient:
         the raw response to `output` atomically, and return its cost. A
         timeout, throttling or server error is tried once more."""
         logger.info(f"Submitting MAI-Transcribe-2 request: {audio}")
-        body = definition(phrases, word_times=True)
+        body = definition(phrases)
         try:
             data = self._post(audio, body)
         except MaiError as error:
@@ -200,13 +172,6 @@ class MaiClient:
         )
         logger.success(f"Saved MAI-Transcribe-2 response: {output}")
         return cost
-
-    def hear(self, audio: Path, phrases: Sequence[str]) -> Hearing:
-        """A `watch_clip` span's FLAC `audio` as diarized phrases."""
-        data = self._post(audio, definition(phrases, word_times=False))
-        return Hearing(
-            model=MODEL, phrases=clip_phrases(data), cost=transcription_cost(data)
-        )
 
     def _post(self, audio: Path, body: Mapping[str, Any]) -> dict[str, Any]:
         import httpx  # noqa: PLC0415 - imported on use
@@ -280,20 +245,16 @@ def is_response(payload: AsrPayload) -> bool:
     return "phrases" in payload and "durationMilliseconds" in payload
 
 
-def clip_phrases(payload: AsrPayload) -> tuple[Phrase, ...]:
-    """A segment-timed response's phrases."""
-    try:
-        return tuple(
-            Phrase(
-                start_s=phrase["offsetMilliseconds"] / 1000,
-                speaker=phrase.get("speaker"),
-                text=phrase["text"],
-            )
-            for phrase in payload.get("phrases", [])
+def read_response(path: Path) -> AsrPayload:
+    """The kept `asr.json`; `AsrError` unless MAI-Transcribe-2 wrote it."""
+    payload = read_payload(path)
+    if not is_response(payload):
+        raise AsrError(
+            f"{path} is not a MAI-Transcribe-2 response (keys: "
+            f"{sorted(payload)[:8]}); run `grill reset <id> --from asr` to "
+            "transcribe the episode again"
         )
-    # A missing field or a wrong type; pydantic's errors are ValueErrors.
-    except (KeyError, TypeError, AttributeError, ValueError) as error:
-        raise MaiError(f"unexpected transcription result: {error!r}") from error
+    return payload
 
 
 def timed_words(payload: AsrPayload) -> list[WordToken]:
@@ -330,7 +291,7 @@ def srt_tokens(payload: AsrPayload) -> list[WordToken]:
         for part in split_leading_mark(word, _LEADING_MARKS)
     ]
     tokens.sort(key=lambda token: (token.start, token.end))
-    return place_backchannels(tokens, SRT_OPTIONS.max_characters_per_line)
+    return place_backchannels(tokens, MAX_CHARACTERS_PER_LINE)
 
 
 def place_backchannels(tokens: Sequence[WordToken], line_chars: int) -> list[WordToken]:

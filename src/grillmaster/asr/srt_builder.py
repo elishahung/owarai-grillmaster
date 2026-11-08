@@ -1,17 +1,15 @@
 """Convert word-level ASR tokens into Japanese source SRT blocks.
 
-Provider-neutral: each provider turns its response into time-ordered
-`WordToken`s and picks its `SrtFormatOptions` (`asr.providers`). Words are grouped into utterances (speaker
-change, silence, punctuation, length), utterances into subtitle blocks
-(close turns become `-` dialogue), then timings are de-overlapped and held
-briefly after speech ends. The same blocks are also rendered with diarized
-voice tags for the agents.
+`asr.mai.srt_tokens` turns the response into time-ordered `WordToken`s
+(the provider's quirks, such as its back-channel placement, live there).
+Words are grouped into utterances (speaker change, silence, punctuation,
+length), utterances into subtitle blocks (close turns become `-` dialogue),
+then timings are de-overlapped and held briefly after speech ends. The same
+blocks are also rendered with diarized voice tags for the agents.
 
-Nothing here knows the provider: a provider's quirks live in its own
-module (its tokens, any pre-pass over them, its options). The rules and the
-default knobs were tuned on ElevenLabs Scribe v2 output (single characters,
-punctuation as its own token, coarse diarization); `asr.mai.SRT_OPTIONS`
-documents what MAI-Transcribe-2 changes.
+The rules were first tuned on ElevenLabs Scribe v2 output (single
+characters, punctuation as its own token, coarse diarization), which
+MAI-Transcribe-2 shares but for its finer speaker turns.
 """
 
 from __future__ import annotations
@@ -78,16 +76,18 @@ DIALOGUE_PREFIX = "-"
 # Wrap scoring: a line this short (or shorter) after a break is penalized.
 _VERY_SHORT_WRAP_LINE = 3
 _SHORT_WRAP_LINE = 6
+# A subtitle line's characters (`SrtFormatOptions.max_characters_per_line`).
+MAX_CHARACTERS_PER_LINE = 24
 
 
 @dataclass(frozen=True, slots=True)
 class SrtFormatOptions:
-    """The tunable formatting knobs. The defaults are Scribe's (`asr.scribe`
-    uses them as they are); `asr.mai.SRT_OPTIONS` overrides fields for MAI.
+    """The tunable formatting knobs; production uses the defaults.
 
     They are fine-tuned against real ASR output, not user settings; tests
     and tuning experiments override single fields. Re-validate against
-    representative ASR JSON before changing a default. Rationale (Scribe):
+    representative ASR JSON before changing a default. Rationale (measured
+    on Scribe unless stated):
 
     - `max_segment_chars = 44` (was 48): at 48 (exactly two 24-char lines)
       an utterance can grow past the cap when the segmenter absorbs a
@@ -96,14 +96,12 @@ class SrtFormatOptions:
       blocks): 48 -> 10 three-line blocks, 44 -> 4, 42 -> 4. The remaining
       4 are >=49-char utterances without internal punctuation, intrinsic to
       rapid variety-show speech.
-    - `merge_speaker_turns_gap_s = 0.05` (was 0.45): cross-speaker gaps over
-      308 transitions are roughly flat in 0.01-0.10 s, with density peaks in
-      [0.05, 0.10) and [0.45, inf); 0.45 merged unrelated narration into
-      dialogue. Marginal merges per band: 0.01-0.05 clear back-and-forth and
-      Q&A; 0.05-0.08 mostly reactions, some narration; 0.08-0.10 about half
-      co-narration. The response-cue ratio (the second utterance starts with
-      はい/いや/なるほど...) peaks at 0.05 (~28%). 0.01 rejects ~25 ms
-      quick-fire dialogue.
+    - `merge_speaker_turns_gap_s = 0.2` (MAI; Scribe's was 0.05), over
+      17,498 speaker changes in 11 episodes (2026-11-09): the share of turns
+      whose reply starts with a response cue (はい/いや/うん/え/そう…) stays
+      at 31-35 % from 0.05 to 0.2 s, then falls (27 % at 0.2-0.3 s, 20 %
+      past 0.45 s). Merging up to 0.2 s keeps quick exchanges in one `-`
+      dialogue block and cuts blocks under 0.6 s by about two thirds.
     - `subtitle_hold_after_end_s = 0.5`: ASR end times match the exact
       speech end, but the eye needs a beat to finish reading; the Netflix
       Japanese guide sets a 0.5 s minimum hold (BBC/EBU: ~0.4 s).
@@ -113,12 +111,12 @@ class SrtFormatOptions:
       sits below their end and a hold never shrinks an end.
     """
 
-    max_characters_per_line: int = 24
+    max_characters_per_line: int = MAX_CHARACTERS_PER_LINE
     max_segment_chars: int = 44
     # 0 disables duration-based splitting.
     max_segment_duration_s: float = 0.0
     segment_on_silence_longer_than_s: float = 0.7
-    merge_speaker_turns_gap_s: float = 0.05
+    merge_speaker_turns_gap_s: float = 0.2
     max_lines_per_block: int = 2
     subtitle_hold_after_end_s: float = 0.5
     min_inter_subtitle_gap_s: float = 0.08
@@ -161,8 +159,7 @@ def build_srt_blocks(
 ) -> SourceSrt:
     """Subtitle blocks, numbered from 1, for time-ordered `tokens`.
 
-    Production passes the provider's options (`asr.providers`);
-    other overrides are for tests and tuning experiments. Raises `AsrError`
+    Overriding `options` is for tests and tuning experiments. Raises `AsrError`
     when there are no tokens.
     """
     if not tokens:

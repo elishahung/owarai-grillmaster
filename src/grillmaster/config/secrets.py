@@ -16,7 +16,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from grillmaster.config.errors import ConfigError
 from grillmaster.config.load import ENV_FILE_NAME
-from grillmaster.core.asr_provider import AsrProvider
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -27,7 +26,7 @@ class Secrets(BaseSettings):
         env_file_encoding="utf-8", extra="ignore", frozen=True
     )
 
-    # The speech providers' (`[asr] provider`, `[watch_clip] speech`). The
+    # ElevenLabs for `watch_clip`'s speech, Azure for the ASR stage. The
     # Azure endpoint is no secret but is tied to the key's Azure resource.
     elevenlabs_api_key: SecretStr | None = None
     azure_speech_key: SecretStr | None = None
@@ -36,10 +35,6 @@ class Secrets(BaseSettings):
     # `.env` alone; required here so a missing key fails before the run.
     meta_api_key: SecretStr | None = None
 
-    def require_elevenlabs_api_key(self) -> str:
-        """The ElevenLabs key; `ConfigError` when it is not set."""
-        return _require(self.elevenlabs_api_key, "ELEVENLABS_API_KEY")
-
     def require_azure_speech(self) -> tuple[str, str]:
         """The Azure Speech endpoint and key; `ConfigError` when one is not set."""
         return (
@@ -47,20 +42,12 @@ class Secrets(BaseSettings):
             _require(self.azure_speech_key, "AZURE_SPEECH_KEY"),
         )
 
-    def require_speech_keys(self, provider: AsrProvider) -> None:
-        """The keys `provider` needs; `ConfigError` when one is not set."""
-        match provider:
-            case AsrProvider.MAI:
-                self.require_azure_speech()
-            case AsrProvider.SCRIBE:
-                self.require_elevenlabs_api_key()
-
-    def require_watch_clip_keys(self, speech: AsrProvider | None) -> None:
-        """`watch_clip`'s Meta key and its speech provider's keys;
-        `ConfigError` when one is not set."""
+    def require_watch_clip_keys(self, *, speech: bool) -> None:
+        """`watch_clip`'s Meta key, and the ElevenLabs key when it hears
+        speech; `ConfigError` when one is not set."""
         _require(self.meta_api_key, "META_API_KEY")
-        if speech is not None:
-            self.require_speech_keys(speech)
+        if speech:
+            _require(self.elevenlabs_api_key, "ELEVENLABS_API_KEY")
 
 
 def _require(key: SecretStr | None, name: str) -> str:

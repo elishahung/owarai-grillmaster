@@ -1,20 +1,20 @@
 # ASR provider evaluation
 
-MAI-Transcribe-2 is the default ASR provider and ElevenLabs Scribe v2 the
-backup (`[asr] provider`). This file records
+MAI-Transcribe-2 is the ASR. ElevenLabs Scribe v2, the ASR until
+2026-11-09, now only hears `watch_clip` spans. This file records
 two rounds of evaluation, so a later candidate is checked against the same
 failures first instead of re-running a whole comparison:
 
 - **2026-10-10:** Grok Voice Transcribe 2.0 was rejected for dropping speech.
-- **2026-11-09:** MAI-Transcribe-2 passed and became the default.
+- **2026-11-09:** MAI-Transcribe-2 passed and replaced Scribe.
 
 ## Candidates and outcome
 
 | Candidate | Price (batch) | Outcome |
 |---|---|---|
-| ElevenLabs Scribe v2 | $0.22/h, keyterms +$0.05/h | backup; `watch_clip`'s second hearing |
+| ElevenLabs Scribe v2 | $0.22/h, keyterms +$0.05/h | ASR until 2026-11-09; now `watch_clip`'s second hearing only |
 | xAI Grok Voice Transcribe 2.0 | $0.10/h, keyterms/diarization included | rejected: drops speech |
-| Microsoft MAI-Transcribe-2 (Azure Speech) | $0.10/h promo until 2026-12-31 | default since 2026-11-09 |
+| Microsoft MAI-Transcribe-2 (Azure Speech) | $0.10/h promo until 2026-12-31 | the ASR since 2026-11-09 |
 
 An earlier round had already ranked Scribe v2 above Doubao, Fun-ASR,
 Chirp 3, GPT-4o-transcribe and self-hosted Qwen3-ASR. 104 archived
@@ -236,18 +236,20 @@ All six questions went MAI's way, or were acceptable for MAI:
 
 ### Adoption (2026-11-09)
 
-- MAI is the default `[asr] provider`, Scribe the backup, switched by
-  config. The promo price ends 2026-12-31. Each project keeps the response
-  it has, and `transcript` reads it by its shape.
-- The SRT builder stayed one provider-neutral module. Each provider maps its
-  response to the same per-character tokens; MAI word times are used, never
-  phrase times. The split left Scribe's `ja.srt` and `ja.voiced.srt`
-  byte-identical over 945 archived responses.
-- MAI's SRT differences live in `asr/mai.py`:
-  - `merge_speaker_turns_gap_s = 0.2` (Scribe 0.05). It was measured the way
-    Scribe's was: the share of replies that start with a response cue stays
-    at 31–35 % up to 0.2 s, then falls.
-  - `place_backchannels`. MAI gives a listener's うん/はい its own speaker,
+- MAI first shipped as the default with Scribe a switchable backup. The
+  same day the owner dropped Scribe as an ASR: there is no `[asr]` setting,
+  and a kept Scribe `asr.json` fails the ASR and transcript stages until
+  `grill reset <id> --from asr` (no converter). The promo price ends
+  2026-12-31.
+- The SRT builder takes per-character tokens and knows no provider; MAI
+  word times are used, never phrase times. Splitting it out of the Scribe
+  code left Scribe's `ja.srt` and `ja.voiced.srt` byte-identical over 945
+  archived responses; dropping Scribe left MAI's byte-identical over 17.
+- MAI's SRT differences:
+  - `merge_speaker_turns_gap_s = 0.2` (Scribe 0.05), now the builder's
+    default. It was measured the way Scribe's was: the share of replies
+    that start with a response cue stays at 31–35 % up to 0.2 s, then falls.
+  - `place_backchannels` (`asr/mai.py`). MAI gives a listener's うん/はい its own speaker,
     which split the talker's sentence in two blocks: 526 cases in 11
     episodes. The rule acts only on an other-speaker run of closed-list
     back-channel words inside an unfinished sentence:
@@ -263,11 +265,9 @@ All six questions went MAI's way, or were acceptable for MAI:
   The agents' Opus `audio.ogg` stays.
 - A 408/429/5xx response, or a connection failure, is tried once more. Then
   the stage fails.
-- `watch_clip` hears with the other provider (`[watch_clip] speech`,
-  `auto` by default, so switching `[asr]` alone swaps both). The config
-  refuses a named speech provider equal to `[asr]`. The prompt calls 発話 "about as
-  accurate as `ja`, possibly less" when Scribe hears MAI's `ja`, and
-  "possibly more" the other way.
+- `watch_clip` hears with Scribe (`[watch_clip] speech = true`, `false`
+  for none), a different recognizer from `ja`'s. The prompt calls 発話
+  "about as accurate as `ja`, possibly less".
 
 ## Re-evaluating a new candidate
 
@@ -276,9 +276,10 @@ All six questions went MAI's way, or were acceptable for MAI:
    dropped speech is the disqualifying failure.
 2. Check digits (第N弾, N年目), stretched words and collapsed stacks against
    the Round 2 failure points above.
-3. A new provider is a module beside `asr/mai.py` and `asr/scribe.py`:
-   client, `is_response`, `timed_words`, `srt_tokens` and SRT options, plus
-   an entry in `asr/providers.py`.
+3. Adopting it means a module replacing `asr/mai.py` for the ASR stage and
+   transcript: client, `read_response`, `timed_words` and `srt_tokens`
+   (per-character `WordToken`s for `srt_builder.py`). Check its SRT output
+   with clips before changing a builder default.
 
 API notes, in case a candidate is revisited:
 
@@ -289,5 +290,4 @@ API notes, in case a candidate is revisited:
     multipart with `audio` and a JSON `definition`.
   - No deployment step is needed. Times are in milliseconds.
   - The REST reference caps input at 2 hours and 250 MB.
-  - It uses the `AZURE_SPEECH_KEY` and `AZURE_SPEECH_ENDPOINT` that the
-    proofread's `watch_clip` already reads (`agent_tools/mai.py`).
+  - Keys: `AZURE_SPEECH_KEY` and `AZURE_SPEECH_ENDPOINT`.

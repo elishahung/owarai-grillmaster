@@ -282,16 +282,12 @@ Claude's CLI runs a turn's MCP calls one by one): cuts ≤ `max_span_s` anywhere
 `clip.mp4` (`media.video.slice_preview`: 480p, 5 fps, mono AAC, ~1 MB per
 20 s), then calls two APIs directly, no agent session, each request
 bounded by the manifest's `timeout_s`:
-- 発話: the manifest's `speech` provider, the one `ja.srt` was not
-  transcribed by (`build_speech` via `asr.providers.PROVIDERS`: `asr.mai.MaiClient.hear`, segment times,
-  the briefing's cast names as `phraseList` = `speech_phrases`, proper nouns
-  stay out since their source is often the mishearing; or
-  `asr.scribe.ScribeClipHearing`, words grouped into phrases, no keyterms),
-  cached as `speech.json` (`model` names the provider), priced by audio
-  length. `speech: None` (config `off`) leaves the section, the tool
-  description's mention and the prompt's rules out. MAI on 13 spans: no
-  speech dropped, 2–5 s per request; names and homophones often get the
-  wrong kanji, and 話者 numbers are per span.
+- 発話: ElevenLabs Scribe v2, a different recognizer from `ja.srt`'s MAI
+  (`build_speech` → `asr.scribe.ScribeClipHearing`, words grouped into
+  phrases, no keyterms), cached as `speech.json` (`model` names the
+  recognizer), priced by audio length. `speech: false` (config) leaves the
+  section, the tool description's mention and the prompt's rules out. Names
+  and homophones often get the wrong kanji, and 話者 numbers are per span.
 - テロップ / 場面: Meta's Muse (`meta.py`, `openai` SDK on use, Responses
   API, the clip inline as a base64 `input_video`, `[watch_clip]
   model`/`effort`) through `watch_clip.md`, cached as `watch.json`; its

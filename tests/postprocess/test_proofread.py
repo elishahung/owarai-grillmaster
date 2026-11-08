@@ -11,7 +11,6 @@ from grillmaster.agents.adapters.base import Capability
 from grillmaster.agents.errors import AgentOutputError, AgentTransientError
 from grillmaster.agents.schema import strict_json_schema
 from grillmaster.agents.task import SchemaOutput
-from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.briefing import Briefing, SegmentSummary, TermMapping
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.model_spec import Role
@@ -426,8 +425,7 @@ def test_the_watch_clip_tool_brings_its_guidance(
         clips_dir=tmp_path / "watch_clip",
         model="muse-spark-1.3-contributor",
         effort="high",
-        speech=AsrProvider.SCRIBE,
-        speech_phrases=(),
+        speech=True,
         env_file=tmp_path / ".env",
         timeout_s=60.0,
         max_span_s=300.0,

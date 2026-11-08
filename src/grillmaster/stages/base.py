@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 
     from grillmaster.agents.runner import AgentRunner
     from grillmaster.asr.mai import MaiClientFactory
-    from grillmaster.asr.scribe import SpeechToTextFactory
     from grillmaster.config.load import LoadedConfig
     from grillmaster.config.model import AppConfig
     from grillmaster.config.secrets import Secrets
@@ -96,7 +95,6 @@ class Externals:
     ffmpeg: FfmpegRunner
     ytdlp: YtDlp
     http: JsonHttp
-    speech_to_text: SpeechToTextFactory
     mai: MaiClientFactory
 
 
@@ -311,7 +309,7 @@ class StageContext:
     explicit inputs. `workdir` is the step's own directory
     (`.work/NN_<stage>/`, `.work/side/<task>/` or the delivery step's declared
     one), created on first access so stages without intermediates leave no
-    empty directory. `ffmpeg`, `ytdlp`, `http`, `speech_to_text` and `mai` are
+    empty directory. `ffmpeg`, `ytdlp`, `http` and `mai` are
     the run's `Externals`. `side_tasks.wait(key)` blocks until that side task,
     if this run started it, has finished (a stage reading its output); it
     returns at once otherwise.
@@ -330,7 +328,6 @@ class StageContext:
         "mai",
         "options",
         "side_tasks",
-        "speech_to_text",
         "ytdlp",
     )
 
@@ -354,7 +351,6 @@ class StageContext:
         self.ffmpeg = externals.ffmpeg
         self.ytdlp = externals.ytdlp
         self.http = externals.http
-        self.speech_to_text = externals.speech_to_text
         self.mai = externals.mai
         self.side_tasks = side_tasks
         self._store = store

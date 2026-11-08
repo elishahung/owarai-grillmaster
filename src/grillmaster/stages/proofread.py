@@ -4,9 +4,9 @@ proofread of `.work/11_glossary/checked.srt` into
 briefing (+ `answer.json`, `report.md`, and the dossier `aligned.tsv`,
 `history.md`; with telops on, the on-screen text once the telop scan has
 finished). With `[features] proofread_watch_clip` the agent also gets the
-`watch_clip` tool (speech from `[watch_clip] speech`, the provider `[asr]`
-does not use, MAI's biased toward the briefing's cast names; captions and
-scene from Meta's Muse, `[watch_clip]`), its spans kept under `watch_clip/`; the cost of the requests this run made (each
+`watch_clip` tool (speech from ElevenLabs Scribe v2 unless `[watch_clip]
+speech = false`; captions and scene from Meta's Muse, `[watch_clip]`), its
+spans kept under `watch_clip/`; the cost of the requests this run made (each
 span's records, cached ones cost nothing) is added to the project's
 `watch_clip_cost_usd`, even when the proofread fails, since it is paid.
 
@@ -25,12 +25,9 @@ from loguru import logger
 
 from grillmaster.agent_tools.meta import MetaError, read_api_key
 from grillmaster.agent_tools.watch_record import billed_records, cost_since
+from grillmaster.asr import scribe
 from grillmaster.asr.errors import AsrError
-from grillmaster.asr.providers import PROVIDERS
 from grillmaster.config.errors import ConfigError
-from grillmaster.core.briefing import Briefing
-from grillmaster.core.env_file import read_env_values
-from grillmaster.core.json_artifact import read_model
 from grillmaster.core.model_spec import Role
 from grillmaster.core.stage_key import StageKey
 from grillmaster.core.tool_session import ToolSession, WatchClipTool
@@ -69,24 +66,23 @@ WATCH_CLIP_TIMEOUT_S = 300.0
 
 
 def _preflight(config: AppConfig, secrets: Secrets) -> None:
-    """With `watch_clip`, the Meta key and the speech provider's keys."""
+    """With `watch_clip`, the Meta key and, with its speech, the ElevenLabs key."""
     if config.features.proofread_watch_clip:
-        secrets.require_watch_clip_keys(config.watch_clip_speech)
+        secrets.require_watch_clip_keys(speech=config.watch_clip.speech)
 
 
-def watch_clip_tool(ctx: StageContext, briefing: Path) -> WatchClipTool | None:
+def watch_clip_tool(ctx: StageContext) -> WatchClipTool | None:
     """`watch_clip` over `video.mp4` into `.work/12_proofread/watch_clip/`
-    when enabled, its speech biased toward the cast in `briefing`. The tool
-    server reads the keys from `.env` alone, so a key only in the
-    environment (which passes the preflight) fails here, before the
-    proofread starts."""
+    when enabled. The tool server reads the keys from `.env` alone, so a key
+    only in the environment (which passes the preflight) fails here, before
+    the proofread starts."""
     if not ctx.config.features.proofread_watch_clip:
         return None
     settings = ctx.config.watch_clip
     try:
         read_api_key(ctx.env_file)
-        if (speech := ctx.config.watch_clip_speech) is not None:
-            read_env_values(ctx.env_file, PROVIDERS[speech].env_keys, AsrError)
+        if settings.speech:
+            scribe.read_api_key(ctx.env_file)
     except (MetaError, AsrError) as error:
         raise ConfigError(
             f"{error}; the watch_clip tool server reads it from there alone"
@@ -96,28 +92,18 @@ def watch_clip_tool(ctx: StageContext, briefing: Path) -> WatchClipTool | None:
         clips_dir=ctx.layout.proofread_watch_clip_dir,
         model=settings.model,
         effort=settings.effort,
-        speech=ctx.config.watch_clip_speech,
-        speech_phrases=speech_phrases(read_model(briefing, Briefing)),
+        speech=settings.speech,
         env_file=ctx.env_file,
         timeout_s=WATCH_CLIP_TIMEOUT_S,
         max_span_s=WATCH_CLIP_MAX_SPAN_S,
     )
 
 
-def speech_phrases(briefing: Briefing) -> tuple[str, ...]:
-    """The cast's Japanese names, once each. Proper nouns stay out: their
-    `source` is often the ASR's mishearing (ひろおみ for ひるおび), which
-    would bias the second hearing toward the very error it should catch."""
-    names = (character.name_jp.strip() for character in briefing.characters)
-    return tuple(dict.fromkeys(name for name in names if name))
-
-
 def _watch_clip_param(config: AppConfig) -> str:
     if not config.features.proofread_watch_clip:
         return "off"
     muse = f"{config.watch_clip.model}/{config.watch_clip.effort}"
-    speech = config.watch_clip_speech
-    return muse if speech is None else f"{speech} + {muse}"
+    return f"scribe + {muse}" if config.watch_clip.speech else muse
 
 
 def _run(ctx: StageContext) -> str:
@@ -166,7 +152,7 @@ def _run(ctx: StageContext) -> str:
         project_root=layout.root,
         frames=frames_tool(ctx, layout.proofread_frames_dir),
         check_srt=None,
-        watch_clip=watch_clip_tool(ctx, inputs.briefing),
+        watch_clip=watch_clip_tool(ctx),
     )
     clips_dir = layout.proofread_watch_clip_dir
     seen = billed_records(clips_dir)

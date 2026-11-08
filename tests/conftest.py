@@ -17,7 +17,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from grillmaster.asr.mai import AzureSpeech, EpisodeTranscriber, MaiClientFactory
-    from grillmaster.asr.scribe import SpeechToText, SpeechToTextFactory
 
 
 @pytest.fixture(autouse=True)
@@ -72,15 +71,6 @@ def http() -> FakeJsonHttp:
     return FakeJsonHttp()
 
 
-def _no_speech_to_text(_api_key: str) -> SpeechToText:
-    raise AssertionError("this test reaches no ASR")
-
-
-@pytest.fixture
-def speech_to_text() -> SpeechToTextFactory:
-    return _no_speech_to_text
-
-
 def _no_mai(_credentials: AzureSpeech) -> EpisodeTranscriber:
     raise AssertionError("this test reaches no ASR")
 
@@ -95,16 +85,14 @@ def externals(
     fake_ffmpeg: FakeFfmpeg,
     ytdlp: FakeYtDlp,
     http: FakeJsonHttp,
-    speech_to_text: SpeechToTextFactory,
     mai: MaiClientFactory,
 ) -> Externals:
-    """Fake process seams; override `fake_ffmpeg`, `ytdlp`, `http`,
-    `speech_to_text` or `mai` to change one."""
+    """Fake process seams; override `fake_ffmpeg`, `ytdlp`, `http` or `mai`
+    to change one."""
     return Externals(
         ffmpeg=fake_ffmpeg,
         ytdlp=ytdlp,
         http=http,
-        speech_to_text=speech_to_text,
         mai=mai,
     )
 

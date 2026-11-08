@@ -1,21 +1,17 @@
-"""ElevenLabs Scribe v2: whole-episode transcription (the backup `[asr]
-provider`) and clip hearing (`watch_clip`'s second hearing when MAI
-transcribes the episode).
+"""ElevenLabs Scribe v2 hearing `watch_clip` spans: the proofread's second
+hearing, a different recognizer from the episode's MAI-Transcribe-2.
 
 The HTTP side is the SDK's `speech_to_text` client, reached through the
-`SpeechToText` protocol and a `SpeechToTextFactory` so tests pass a fake
-instead of patching. The API key goes to the factory (checked by the ASR
-stage's preflight, or read from the tool manifest's `.env` by
-`read_api_key`) and is never stored, logged or put in an error message here.
+`SpeechToText` protocol so tests pass a fake instead of patching. The API
+key is read from the tool manifest's `.env` by `read_api_key` and is never
+stored, logged or put in an error message here.
 
-The response is kept raw as `asr.json`; `srt_tokens` and `timed_words`
-read it. Japanese words come one character at a time with punctuation as
-its own word, occasionally a punctuation mark glued in front (`。1934`).
+Japanese words come one character at a time with punctuation as its own
+word, occasionally a punctuation mark glued in front (`。1934`).
 """
 
 from __future__ import annotations
 
-import json
 import re
 from typing import TYPE_CHECKING, Any, BinaryIO, Literal, Protocol
 
@@ -34,10 +30,9 @@ from grillmaster.asr.srt_builder import (
     ends_with_hard_punctuation,
 )
 from grillmaster.core.env_file import read_env_values
-from grillmaster.core.fs import atomic_write_text
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable
     from pathlib import Path
 
     from pydantic import BaseModel
@@ -49,7 +44,6 @@ LANGUAGE = "jpn"
 # ElevenLabs Scribe list price.
 PRICE_PER_HOUR_USD = 0.22
 API_KEY_ENV = "ELEVENLABS_API_KEY"
-_REQUEST_TIMEOUT_S = 600.0
 IGNORED_WORD_TYPES = frozenset({"audio_event"})
 # A clip phrase ends at a speaker change, a sentence end or this long a pause.
 _PHRASE_PAUSE_S = 1.0
@@ -70,13 +64,7 @@ class SpeechToText(Protocol):
     ) -> BaseModel: ...
 
 
-# Builds the HTTP client from the API key.
-type SpeechToTextFactory = Callable[[str], SpeechToText]
-
-
-def connect_elevenlabs(
-    api_key: str, timeout_s: float = _REQUEST_TIMEOUT_S
-) -> SpeechToText:
+def connect_elevenlabs(api_key: str, timeout_s: float) -> SpeechToText:
     """The real ElevenLabs SDK client; one request takes at most `timeout_s`."""
     from elevenlabs.client import ElevenLabs  # noqa: PLC0415 - heavy, ASR only
 
@@ -100,22 +88,6 @@ def _request(api: SpeechToText, audio: Path) -> AsrPayload:
             diarize=True,
         )
     return response.model_dump(mode="json", exclude_none=True)
-
-
-def transcribe(api: SpeechToText, audio: Path, output: Path) -> TranscriptionCost:
-    """Transcribe `audio` with word timings and speaker diarization, write
-    the raw response to `output` atomically (so a partial file never stands
-    in for a finished one), and return what the request cost."""
-    logger.info(f"Submitting ElevenLabs STT request: {audio}")
-    payload = _request(api, audio)
-    atomic_write_text(output, json.dumps(payload, ensure_ascii=False, indent=4))
-    cost = transcription_cost(payload)
-    logger.info(
-        f"ElevenLabs STT duration: {cost.audio_duration_s:.2f}s "
-        f"(${cost.total_usd:.6f} at ${PRICE_PER_HOUR_USD:.2f}/hour)"
-    )
-    logger.success(f"Saved ElevenLabs STT response: {output}")
-    return cost
 
 
 def transcription_cost(payload: AsrPayload) -> TranscriptionCost:
@@ -151,57 +123,16 @@ def _latest_word_end(payload: AsrPayload) -> float | None:
     return max(ends, default=None)
 
 
-def is_response(payload: AsrPayload) -> bool:
-    """Whether `payload` has Scribe's shape (`words`, or multichannel
-    `transcripts`)."""
-    return "words" in payload or "transcripts" in payload
-
-
 def word_items(payload: AsrPayload) -> list[Any]:
-    """Every word entry, from `words` or, for multichannel responses, the
-    concatenated `transcripts[*].words`. Entries are returned unchecked."""
+    """The `words` entries, unchecked (a clip is asked for one channel)."""
     words = payload.get("words")
-    if isinstance(words, list):
-        return words
-    transcripts = payload.get("transcripts")
-    if not isinstance(transcripts, list):
-        return []
-    items: list[Any] = []
-    for transcript in transcripts:
-        if not isinstance(transcript, dict):
-            continue
-        channel_words = transcript.get("words")
-        if isinstance(channel_words, list):
-            items.extend(channel_words)
-    return items
+    return words if isinstance(words, list) else []
 
 
-def timed_words(payload: AsrPayload) -> list[WordToken]:
-    """The `word` entries with a numeric start, in response order (spacing
-    and audio events left out), for the collapsed-timing check."""
-    words: list[WordToken] = []
-    for item in word_items(payload):
-        if not isinstance(item, dict) or item.get("type") != "word":
-            continue
-        start = item.get("start")
-        if not isinstance(start, int | float):
-            continue
-        end = item.get("end")
-        words.append(
-            WordToken(
-                text=str(item.get("text", "")),
-                start=float(start),
-                end=float(end) if isinstance(end, int | float) else float(start),
-                speaker_id=item.get("speaker_id"),
-            )
-        )
-    return words
-
-
-def srt_tokens(payload: AsrPayload) -> list[WordToken]:
-    """The SRT builder's tokens: every timed entry but audio events (spacing
-    included), a leading hard punctuation mark split off, sorted by time."""
-    tokens: list[WordToken] = []
+def tokens(payload: AsrPayload) -> list[WordToken]:
+    """Every timed entry but audio events (spacing included), a leading
+    hard punctuation mark split off, sorted by time."""
+    found: list[WordToken] = []
     for item in word_items(payload):
         if not isinstance(item, dict):
             continue
@@ -216,9 +147,9 @@ def srt_tokens(payload: AsrPayload) -> list[WordToken]:
             continue
         if end < start:
             continue
-        # Only a hard mark is split off (`。1934`); Scribe rarely glues a
-        # soft one in front, and the builder handles soft splits itself.
-        tokens.extend(
+        # Only a hard mark is split off (`。1934`), so it ends the phrase
+        # before it; Scribe rarely glues a soft one in front.
+        found.extend(
             split_leading_mark(
                 WordToken(
                     text=text,
@@ -229,22 +160,20 @@ def srt_tokens(payload: AsrPayload) -> list[WordToken]:
                 JAPANESE_HARD_PUNCTUATION,
             )
         )
-    tokens.sort(key=lambda token: (token.start, token.end))
-    return tokens
+    found.sort(key=lambda token: (token.start, token.end))
+    return found
 
 
 class ScribeClipHearing:
     """Scribe on a `watch_clip` span: diarized words grouped into phrases.
-    No keyterms (they cost extra), so the cast names are ignored. The SDK
-    client is built on the first span, so the tool server starts without
-    importing it."""
+    No keyterms (they cost extra). The SDK client is built on the first
+    span, so the tool server starts without importing it."""
 
     def __init__(self, connect: Callable[[], SpeechToText]) -> None:
         self._connect = connect
         self._api: SpeechToText | None = None
 
-    def hear(self, audio: Path, phrases: Sequence[str]) -> Hearing:
-        del phrases  # Scribe's keyterms are a paid add-on.
+    def hear(self, audio: Path) -> Hearing:
         if self._api is None:
             self._api = self._connect()
         payload = _request(self._api, audio)
@@ -281,7 +210,7 @@ def clip_phrases(payload: AsrPayload) -> tuple[Phrase, ...]:
             )
         current.clear()
 
-    for token in srt_tokens(payload):
+    for token in tokens(payload):
         if current and (
             token.speaker_id != current[-1].speaker_id
             or token.start - current[-1].end > _PHRASE_PAUSE_S

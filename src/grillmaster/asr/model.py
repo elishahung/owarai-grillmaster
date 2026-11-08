@@ -1,8 +1,9 @@
-"""What every speech provider hands back, whatever its response looks like.
+"""What the speech recognizers hand back.
 
-A whole-episode response becomes `WordToken`s for the SRT builder; a short
-clip becomes a `Hearing` of diarized `Phrase`s for `watch_clip`. Prices are
-per audio length, so each request reports a `TranscriptionCost`.
+MAI-Transcribe-2's episode response becomes `WordToken`s for the SRT
+builder; Scribe's clip becomes a `Hearing` of diarized `Phrase`s for
+`watch_clip`. Prices are per audio length, so each request reports a
+`TranscriptionCost`.
 """
 
 from __future__ import annotations
@@ -13,7 +14,6 @@ from typing import TYPE_CHECKING, Protocol
 from grillmaster.core.models import FrozenModel
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
     from pathlib import Path
 
 _SECONDS_PER_HOUR = 3600
@@ -65,7 +65,7 @@ class Phrase(FrozenModel):
 
 @dataclass(frozen=True)
 class Hearing:
-    """A clip's speech as one provider heard it."""
+    """A clip's speech as the recognizer heard it."""
 
     model: str
     phrases: tuple[Phrase, ...]
@@ -73,7 +73,6 @@ class Hearing:
 
 
 class ClipHearing(Protocol):
-    """A provider's clip transcription, as `watch_clip` uses it. `phrases`
-    (the briefing's cast names) are hints a provider may ignore."""
+    """A clip transcription, as `watch_clip` uses it."""
 
-    def hear(self, audio: Path, phrases: Sequence[str]) -> Hearing: ...
+    def hear(self, audio: Path) -> Hearing: ...

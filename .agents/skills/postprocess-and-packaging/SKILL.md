@@ -75,15 +75,14 @@ fields equal the explained ones. Python then writes `answer.json`,
 `report.md` (fixes + Python-computed briefing diff), `proofread.srt`
 (checked + fixes) and `briefing.json` only when changed (both deleted at
 stage start). With `[features] proofread_watch_clip` the
-session also gets `watch_clip` (speech from `[watch_clip] speech`, by
-default `auto` = the provider `[asr]` does not use, + Meta Muse captions, not agent roles; the
-preflight needs `META_API_KEY` and that provider's keys; spans under
+session also gets `watch_clip` (speech from Scribe unless `[watch_clip]
+speech = false`, + Meta Muse captions, not agent roles; the preflight needs
+`META_API_KEY` and, with speech, `ELEVENLABS_API_KEY`; spans under
 `.work/12_proofread/watch_clip/`) plus `watch_clip_guidance`
 (`proofread_watch_clip.md`, its 発話 rules from
-`proofread_watch_clip_speech.md` only with a speech provider: テロップ ground
+`proofread_watch_clip_speech.md` only with speech: テロップ ground
 truth; 発話 another recognizer's hearing, "about as accurate as `ja`,
-possibly less" when Scribe hears MAI's `ja`, "possibly more" the other way,
-spelling not trusted; agreeing with `zh` keeps it), for
+possibly less", spelling not trusted; agreeing with `zh` keeps it), for
 ASR-suspect lines. The stage adds the cost of the span records new since
 its start to `watch_clip_cost_usd` (also when the proofread fails; never
 cleared on reset) and appends it to its step result. Finalize reads

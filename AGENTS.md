@@ -56,9 +56,8 @@ order, and domain packages never import `project` or `config` — only
   challenge solver, `yt-dlp-ejs` via `yt-dlp[default]`; without it YouTube
   formats go missing); the agent CLIs (`agy`, `gemini`, `codex`; Claude runs
   through the SDK) logged in on their subscriptions (`gemini` also needs
-  `GOOGLE_CLOUD_PROJECT`). Only ASR (`[asr] provider`: Azure
-  MAI-Transcribe-2 by default, ElevenLabs Scribe v2 as backup) and the
-  proofread's `watch_clip` tool (the other speech provider + Meta Muse) are
+  `GOOGLE_CLOUD_PROJECT`). Only ASR (Azure MAI-Transcribe-2) and the
+  proofread's `watch_clip` tool (ElevenLabs Scribe v2 + Meta Muse) are
   metered.
 - Config: `grill.toml` (see `grill.example.toml`, schema `grill.schema.json`);
   `.env` holds secrets only (`ELEVENLABS_API_KEY`, `META_API_KEY`,

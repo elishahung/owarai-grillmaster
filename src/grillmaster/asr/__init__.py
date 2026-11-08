@@ -1,12 +1,10 @@
 """Speech recognition and the Japanese source SRT built from it.
 
-Two providers (`core.asr_provider.AsrProvider`): `mai` (Azure's
-MAI-Transcribe-2, the default) and `scribe` (ElevenLabs Scribe v2, the
-backup). Each module sends audio, keeps the raw response as `asr.json`,
-turns its own response shape into provider-neutral `model.WordToken`s and
-names its SRT knobs; each also hears `watch_clip` spans (`model.Hearing`).
-`providers` is the registry (and reads a kept `asr.json` by its shape);
-`srt_builder` turns tokens into subtitle blocks without knowing the
-provider; `timing` checks a response for collapsed timings. Nothing here reads settings: callers pass
+`mai` sends the episode's audio to Azure's MAI-Transcribe-2, keeps the raw
+response as `asr.json` and turns it into provider-neutral
+`model.WordToken`s; `srt_builder` turns those into subtitle blocks;
+`timing` checks a response for collapsed timings. `scribe` (ElevenLabs
+Scribe v2) only hears `watch_clip` spans (`model.Hearing`), a second
+recognizer beside the episode's. Nothing here reads settings: callers pass
 credentials and paths.
 """

@@ -165,10 +165,10 @@ class SttResponse(BaseModel):
 
 
 class FakeSpeechToText:
-    """An ElevenLabs `SpeechToText` returning `response`; also its factory.
+    """An ElevenLabs `SpeechToText` returning `response`.
 
-    Pass `fake.connect` as the `SpeechToTextFactory`: it records each API key
-    it is handed. Each `convert` records its keyword arguments, with the
+    `fake.connect` stands in for building the client: it records each API
+    key it is handed. Each `convert` records its keyword arguments, with the
     uploaded file's bytes under `file`. A mapping response is wrapped in an
     `SttResponse`.
     """

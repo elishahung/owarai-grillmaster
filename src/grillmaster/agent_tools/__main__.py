@@ -2,7 +2,7 @@
 
 Without `--session`, the manifest path comes from `GRILL_TOOL_SESSION`. A
 missing or invalid manifest (an unreadable reference SRT, or `watch_clip`
-without its Meta or speech provider keys) exits non-zero with the reason on stderr before
+without its Meta key, or its ElevenLabs key with speech on) exits non-zero with the reason on stderr before
 any MCP traffic, so the agent CLI reports a failed server instead of an
 empty tool list.
 """

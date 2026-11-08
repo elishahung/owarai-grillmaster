@@ -3,8 +3,8 @@ config built from `config_data`, a scripted `FakeAgentRunner`, fake process
 seams, and `make_context` to build a step's `StageContext`.
 
 Override `config_sections` (`grill.toml` sections), `script` (agent outputs
-by task name), `secrets`, `fake_ffmpeg`, `ytdlp`, `http`, `speech_to_text` or
-`mai` in a test module to change what the context carries; parametrize
+by task name), `secrets`, `fake_ffmpeg`, `ytdlp`, `http` or `mai` in a test
+module to change what the context carries; parametrize
 `config_data` indirectly for a variant; `make_context(key, ffmpeg=...)`
 swaps one seam for a call.
 """

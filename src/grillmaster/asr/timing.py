@@ -1,12 +1,13 @@
 """Find collapsed word timings in a response.
 
-Scribe occasionally stacks hundreds of words on one timestamp, often
-repeating text from elsewhere in the episode. The SRT builder would then push
-every block in the stack 0.35 s after the previous one, so tens of seconds
-of speech flash by as a burst of unreadable, partly duplicated subtitles.
-Nothing downstream can repair that; the ASR stage discards such a response
-and fails, so the next run requests a new transcription. MAI-Transcribe-2
-showed no stack in 18 responses (2026-11-09) and gets the same check.
+ElevenLabs Scribe, the former ASR, occasionally stacked hundreds of words on
+one timestamp, often repeating text from elsewhere in the episode. The SRT
+builder would then push every block in the stack 0.35 s after the previous
+one, so tens of seconds of speech flash by as a burst of unreadable, partly
+duplicated subtitles. Nothing downstream can repair that; the ASR stage
+discards such a response and fails, so the next run requests a new
+transcription. MAI-Transcribe-2 showed no stack in 18 responses
+(2026-11-09); the check stays as a guard.
 
 Measured over 1048 archived Scribe responses (2026-11-09): stacks of 40-90
 words are common (chants, rapid repeats), while the six stacks of 100 or
@@ -35,7 +36,7 @@ _PREVIEW_CHARS = 30
 def collapsed_stacks(words: Sequence[WordToken]) -> list[str]:
     """One description (`MM:SS: N words (text…)`) per run of
     `COLLAPSED_STACK_WORDS` or more consecutive `words` (response order,
-    a provider's `timed_words`) whose starts lie within `STACK_WINDOW_S` of
+    `mai.timed_words`) whose starts lie within `STACK_WINDOW_S` of
     the run's first word."""
     stacks: list[str] = []
     first = 0

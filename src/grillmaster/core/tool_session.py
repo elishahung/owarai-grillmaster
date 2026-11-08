@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING, Literal
 
 from pydantic import model_validator
 
-from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.models import FrozenModel
 
@@ -91,10 +90,9 @@ class SrtCheckTool(FrozenModel):
 
 
 class WatchClipTool(FrozenModel):
-    """`watch_clip`: a span of `video` heard by the `speech` provider (the
-    one `ja.srt` was not transcribed by, biased toward `speech_phrases`; none
-    for no 発話) and watched by Meta's `model` at `effort` (captions and
-    scene).
+    """`watch_clip`: a span of `video` heard by ElevenLabs Scribe v2 when
+    `speech` (a different recognizer from `ja.srt`'s; off for no 発話) and
+    watched by Meta's `model` at `effort` (captions and scene).
 
     The tool server calls both APIs itself (no agent session), with the keys
     read from `env_file`, each request bounded by `timeout_s`; a span's clip,
@@ -105,10 +103,8 @@ class WatchClipTool(FrozenModel):
     clips_dir: Path
     model: MuseModel
     effort: MuseEffort
-    speech: AsrProvider | None
-    # Names and terms (the briefing's) the speech recognition should favour.
-    speech_phrases: tuple[str, ...]
-    # The `.env` holding `META_API_KEY` and the speech provider's keys; no key
+    speech: bool
+    # The `.env` holding `META_API_KEY` and `ELEVENLABS_API_KEY`; no key
     # ever enters a manifest.
     env_file: Path
     timeout_s: float

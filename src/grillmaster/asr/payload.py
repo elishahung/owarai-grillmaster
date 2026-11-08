@@ -1,4 +1,4 @@
-"""A provider's raw speech-to-text response, kept as `asr.json`."""
+"""A speech recognizer's raw response (MAI's is kept as `asr.json`)."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from grillmaster.asr.errors import AsrError
 if TYPE_CHECKING:
     from pathlib import Path
 
-# The response as the provider returned it; `asr.providers` reads it.
+# A speech recognizer's response as it returned it.
 type AsrPayload = dict[str, Any]
 
 

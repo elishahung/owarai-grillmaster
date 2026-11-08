@@ -1,6 +1,6 @@
   - 発話 is a second hearing by a different speech recognizer than the one
     that wrote `ja`, timed like it. It is about as accurate as `ja`,
-    {accuracy}: another angle on the same audio, not a referee. It keeps
+    possibly less: another angle on the same audio, not a referee. It keeps
     the speech but not the spelling: names and homophones may carry the
     wrong kanji (緒方 for 尾形), so weigh how a reading sounds, and take the
     writing from テロップ, the briefing or a frame. `話者N` numbers only mark

@@ -10,7 +10,6 @@ from grillmaster.agents.prompt import (
     tools_section,
     view_file_section,
 )
-from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.tool_session import (
     FramesTool,
     ToolSession,
@@ -72,8 +71,7 @@ def test_the_watch_clip_line_leaves_the_limits_to_the_tool(tmp_path: Path):
         clips_dir=tmp_path / "watch_clip",
         model="muse-spark-1.3-contributor",
         effort="high",
-        speech=AsrProvider.SCRIBE,
-        speech_phrases=(),
+        speech=True,
         env_file=tmp_path / ".env",
         timeout_s=60.0,
         max_span_s=300.0,
@@ -120,8 +118,7 @@ def test_the_watch_clip_line_without_speech_promises_no_hearing(tmp_path: Path):
         clips_dir=tmp_path / "watch_clip",
         model="muse-spark-1.3-contributor",
         effort="high",
-        speech=None,
-        speech_phrases=(),
+        speech=False,
         env_file=tmp_path / ".env",
         timeout_s=60.0,
         max_span_s=300.0,

@@ -22,11 +22,10 @@ from grillmaster.agent_tools.watch_clip import ClipWatcher, shift_times
 from grillmaster.agent_tools.watch_record import cost_since
 from grillmaster.asr.mai import MaiError
 from grillmaster.asr.model import Hearing, Phrase, TranscriptionCost
-from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.tool_session import MuseModel, ToolSession, WatchClipTool
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable
     from pathlib import Path
 
     from tests.fakes import FakeFfmpeg
@@ -75,10 +74,10 @@ class FakeSpeech:
 
     def __init__(self, reply: Hearing | Exception = TRANSCRIPT) -> None:
         self.reply = reply
-        self.calls: list[tuple[Path, tuple[str, ...]]] = []
+        self.calls: list[Path] = []
 
-    def hear(self, audio: Path, phrases: Sequence[str]) -> Hearing:
-        self.calls.append((audio, tuple(phrases)))
+    def hear(self, audio: Path) -> Hearing:
+        self.calls.append(audio)
         if isinstance(self.reply, Exception):
             raise self.reply
         return self.reply
@@ -92,8 +91,7 @@ def config(tmp_path: Path) -> WatchClipTool:
         clips_dir=tmp_path / "work" / "12_proofread" / "watch_clip",
         model="muse-spark-1.3-contributor",
         effort="high",
-        speech=AsrProvider.SCRIBE,
-        speech_phrases=("石塚英彦",),
+        speech=True,
         env_file=tmp_path / ".env",
         timeout_s=60.0,
         max_span_s=60.0,
@@ -112,7 +110,7 @@ def test_a_span_is_heard_watched_priced_and_kept(
     assert text == f"{HEADER}{SPEECH}\n\n{SHIFTED}"
     clip_dir = config.clips_dir / SPAN_DIR
     assert model.clips == [clip_dir / "clip.mp4"]
-    assert speech.calls == [(clip_dir / "audio.flac", ("石塚英彦",))]
+    assert speech.calls == [clip_dir / "audio.flac"]
     assert (clip_dir / "clip.mp4").is_file()
     assert (clip_dir / "audio.flac").is_file()
     cost = USAGE.cost_usd(PRICES[config.model]) + TRANSCRIPT.cost.total_usd

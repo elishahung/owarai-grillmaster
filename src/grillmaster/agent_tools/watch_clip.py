@@ -5,11 +5,10 @@ so an ASR-suspect line it would fix stays unresolved. This tool cuts the
 span from `video.mp4` as a small preview clip (picture and sound) and as
 FLAC audio, then asks two services, each once, no agent session:
 
-- 発話 from the manifest's `speech` provider, the one `ja.srt` was not
-  transcribed by (`asr.mai.MaiClient` or `asr.scribe.ScribeClipHearing`):
-  diarized phrases, MAI's biased toward the briefing's cast names. It keeps
-  the speech and its times; names and homophones may carry the wrong kanji.
-  Without a `speech` provider the section is left out.
+- 発話 from ElevenLabs Scribe v2 (`asr.scribe.ScribeClipHearing`), a
+  different recognizer from `ja.srt`'s MAI-Transcribe-2: diarized phrases.
+  It keeps the speech and its times; names and homophones may carry the
+  wrong kanji. With the manifest's `speech` off the section is left out.
 - テロップ and 場面 from Meta's Muse (`meta.MetaVideoModel`, `watch_clip.md`):
   every caption and name card verbatim, and a short scene description. Its
   captions and their times are reliable; its own speech was not (it
@@ -57,8 +56,8 @@ from grillmaster.agent_tools.watch_record import (
     WatchRecord,
     failed_path,
 )
+from grillmaster.asr import scribe
 from grillmaster.asr.errors import AsrError
-from grillmaster.asr.providers import PROVIDERS
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.prompts import load_prompt
 from grillmaster.core.timecode import TimeRange
@@ -94,11 +93,11 @@ def build_model(config: WatchClipTool) -> VideoModel:
 
 
 def build_speech(config: WatchClipTool) -> ClipHearing | None:
-    """The manifest's speech provider, `None` without one; raises `AsrError`
-    without its key."""
-    if config.speech is None:
+    """Scribe's hearing, `None` with `speech` off; raises `AsrError` without
+    its key."""
+    if not config.speech:
         return None
-    return PROVIDERS[config.speech].clip_hearing(config.env_file, config.timeout_s)
+    return scribe.clip_hearing(config.env_file, config.timeout_s)
 
 
 def span_name(span: TimeRange) -> str:
@@ -206,7 +205,7 @@ class ClipWatcher:
             return read_model(path, SpeechRecord)
         audio = clip_dir / WATCH_AUDIO_FILE
         slice_audio(self._runner, self._config.video, audio, span)
-        hearing = speech.hear(audio, self._config.speech_phrases)
+        hearing = speech.hear(audio)
         record = SpeechRecord(
             model=hearing.model,
             audio_s=hearing.cost.audio_duration_s,

@@ -10,7 +10,7 @@
 ## 說明
 
 - 目標是 one shot 即可直接觀看，不想校準 (避免被暴雷)
-- 翻譯與後處理都走 agent 訂閱，只有 ASR 計費：預設 Azure MAI-Transcribe-2 $0.10 美元／小時（優惠價到 2026-12-31），備用 ElevenLabs Scribe v2 $0.22 美元／小時（開了 `proofread_watch_clip` 另有另一個語音辨識與 Meta Muse，一次最終校對約 $0.02）。一集 20 多分鐘節目從下載到輸出字幕約 30 分鐘
+- 翻譯與後處理都走 agent 訂閱，只有 ASR 計費：Azure MAI-Transcribe-2 $0.10 美元／小時（優惠價到 2026-12-31）（開了 `proofread_watch_clip` 另有 ElevenLabs Scribe v2 與 Meta Muse，一次最終校對約 $0.02）。一集 20 多分鐘節目從下載到輸出字幕約 30 分鐘
 - 設定偏好都是個人主觀，如需修改請自行 fork
 - 更詳細說明請查看以下或直接把這個 repo 丟給你的 agent
   - [心得1](https://www.bilibili.com/video/BV1ZwRQB5ETf)
@@ -20,7 +20,7 @@
 
 經過各種嘗試，覺得以下方式最合適
 
-- **ASR**：預設 `Azure MAI-Transcribe-2`（時間軸不會在吵雜段落被拉長或疊在一起、說話者分得出附和與快速對答），備用 `ElevenLabs Scribe v2`，用 `[asr] provider` 切換
+- **ASR**：`Azure MAI-Transcribe-2`（時間軸不會在吵雜段落被拉長或疊在一起、說話者分得出附和與快速對答）；`ElevenLabs Scribe v2` 只在最終校對的 `watch_clip` 當第二次聽寫
 - **翻譯**：`Gemini 3` 系列最能抓住日本綜藝的韻味，也很會看圖聽音檔
 - **潤飾**：交給 `GPT` / `Claude`，修正 `Gemini` 輸出結構異常與亂用主語的瑕疵，並且會更願意調用工具去上網查詢、截圖驗證字句
 
@@ -110,11 +110,8 @@ editor = "claude/claude-opus-5-5/high"     # 最終校對與譯者註；省略�
 utility = "codex/gpt-6.1-sol/medium"  # 輕量任務：標題、播出日期查證、字卡（--telop）、聊天室（--chat），以及 prepass／chunk 驗證失敗時的無音檔修補
 image = "codex/gpt-6.1-sol/medium"   # 封面，需要能生圖的 codex
 
-[asr]
-provider = "mai"                    # 整集 ASR：mai（Azure MAI-Transcribe-2）或 scribe（ElevenLabs Scribe v2）
-
-[watch_clip]                        # 最終校對的看片工具：發話由另一個語音辨識聽寫（按音訊時長計費），字卡與場景由 Meta Muse 讀（按 token 計費）
-speech = "auto"                     # 發話用的辨識：auto 自動用 [asr] 沒用的那家；指定時必須和 [asr] provider 不同；off 為不聽寫
+[watch_clip]                        # 最終校對的看片工具：發話由 ElevenLabs Scribe v2 聽寫（按音訊時長計費），字卡與場景由 Meta Muse 讀（按 token 計費）
+speech = true                       # false 為不聽寫發話
 model = "muse-spark-1.3-contributor"
 effort = "high"
 
@@ -147,9 +144,9 @@ notes = false                       # 譯者註：在畫面頂部補充台灣觀
 只放金鑰：
 
 ```env
-ELEVENLABS_API_KEY=xxx              # Scribe：備用 ASR，或 watch_clip 的發話聽寫
+ELEVENLABS_API_KEY=xxx              # Scribe：watch_clip 的發話聽寫
 META_API_KEY=xxx                    # 只有開 proofread_watch_clip 才需要
-AZURE_SPEECH_KEY=xxx                # Azure Speech 資源（MAI，ASR 預設；需在支援 MAI-Transcribe 的地區，例如 westus）
+AZURE_SPEECH_KEY=xxx                # Azure Speech 資源（MAI，ASR；需在支援 MAI-Transcribe 的地區，例如 westus）
 AZURE_SPEECH_ENDPOINT=https://<資源名稱>.cognitiveservices.azure.com
 ```
 

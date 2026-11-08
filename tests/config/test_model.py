@@ -15,7 +15,6 @@ from grillmaster.config.model import (
     ProgramInstruction,
     validate_config,
 )
-from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.model_spec import Backend, Effort, ModelSpec, Role
 from grillmaster.core.stage_key import StageKey
 
@@ -241,22 +240,10 @@ def _merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
-def test_the_second_hearing_must_be_the_other_provider(
+def test_watch_clip_hears_speech_unless_turned_off(
     tmp_path: Path, roles: dict[str, str]
 ):
     base = {"agents": {"roles": roles}}
-    config = validate_config(base, root=tmp_path)
-    assert config.asr.provider == AsrProvider.MAI
-    assert config.watch_clip_speech == AsrProvider.SCRIBE
-    # Switching [asr] alone is enough: auto follows it.
-    swapped = validate_config({**base, "asr": {"provider": "scribe"}}, root=tmp_path)
-    assert swapped.watch_clip_speech == AsrProvider.MAI
-    named = validate_config({**base, "watch_clip": {"speech": "scribe"}}, root=tmp_path)
-    assert named.watch_clip_speech == AsrProvider.SCRIBE
-    off = validate_config({**base, "watch_clip": {"speech": "off"}}, root=tmp_path)
-    assert off.watch_clip_speech is None
-    with pytest.raises(ValidationError, match="second hearing by the same recognizer"):
-        validate_config(
-            {**base, "asr": {"provider": "scribe"}, "watch_clip": {"speech": "scribe"}},
-            root=tmp_path,
-        )
+    assert validate_config(base, root=tmp_path).watch_clip.speech
+    off = validate_config({**base, "watch_clip": {"speech": False}}, root=tmp_path)
+    assert not off.watch_clip.speech

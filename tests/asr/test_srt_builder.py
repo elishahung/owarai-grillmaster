@@ -5,8 +5,12 @@ from typing import Any
 import pytest
 
 from grillmaster.asr.errors import AsrError
-from grillmaster.asr.scribe import srt_tokens
-from grillmaster.asr.srt_builder import SrtFormatOptions, build_srt_blocks
+from grillmaster.asr.model import WordToken, split_leading_mark
+from grillmaster.asr.srt_builder import (
+    JAPANESE_HARD_PUNCTUATION,
+    SrtFormatOptions,
+    build_srt_blocks,
+)
 from grillmaster.core.srt import serialize_srt
 
 
@@ -23,6 +27,20 @@ def word(
     }
 
 
+def tokens(payload: dict[str, Any]) -> list[WordToken]:
+    """`payload["words"]` as time-ordered tokens, a leading hard mark split
+    off as the ASR's tokens have it (`。1934`)."""
+    found = [
+        part
+        for item in payload["words"]
+        for part in split_leading_mark(
+            WordToken(item["text"], item["start"], item["end"], item.get("speaker_id")),
+            JAPANESE_HARD_PUNCTUATION,
+        )
+    ]
+    return sorted(found, key=lambda token: (token.start, token.end))
+
+
 def render(
     payload: dict[str, Any],
     options: SrtFormatOptions | None = None,
@@ -30,9 +48,9 @@ def render(
     voiced: bool = False,
 ) -> str:
     source = (
-        build_srt_blocks(srt_tokens(payload))
+        build_srt_blocks(tokens(payload))
         if options is None
-        else build_srt_blocks(srt_tokens(payload), options)
+        else build_srt_blocks(tokens(payload), options)
     )
     return serialize_srt(source.voiced if voiced else source.blocks)
 
@@ -661,39 +679,9 @@ def test_single_word_renders_one_held_block():
     )
 
 
-def test_reads_words_from_multichannel_transcripts():
-    payload = {
-        "transcripts": [
-            {"words": [word("先です。", 0.0, 0.5, "speaker_0")]},
-            {"words": [word("後です。", 2.0, 2.5, "speaker_1")]},
-        ]
-    }
-
-    srt = render(payload)
-
-    assert "1\n00:00:00,000 --> 00:00:01,000\n先です。" in srt
-    assert "2\n00:00:02,000 --> 00:00:03,000\n後です。" in srt
-
-
-def test_skips_audio_events_and_untimed_words():
-    payload = {
-        "words": [
-            {"text": "(笑)", "start": 0.0, "end": 0.3, "type": "audio_event"},
-            {"text": "無", "type": "word"},
-            word("はい。", 0.0, 0.4),
-        ]
-    }
-
-    assert render(payload) == "1\n00:00:00,000 --> 00:00:00,900\nはい。\n"
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [{"words": [{"text": "はい", "type": "word"}]}, {"words": []}, {}],
-)
-def test_raises_when_json_has_no_timed_words(payload: dict[str, Any]):
+def test_raises_without_tokens():
     with pytest.raises(AsrError, match="timed words"):
-        render(payload)
+        build_srt_blocks([])
 
 
 def test_wrap_avoids_te_connector_split():

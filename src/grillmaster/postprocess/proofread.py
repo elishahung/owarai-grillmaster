@@ -33,7 +33,6 @@ from pydantic import BaseModel, ValidationError, field_validator
 from grillmaster.agents.adapters.base import Capability
 from grillmaster.agents.errors import ValidationFailure
 from grillmaster.agents.task import AgentTask, SchemaOutput
-from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.briefing import (
     Briefing,
     Catchphrase,
@@ -381,7 +380,7 @@ def build_proofread_task(
         telop_section(inputs.telop_reference),
         frames_guidance(load_prompt(PROMPTS, "proofread_frames.md")),
         (
-            watch_clip_guidance(tools.watch_clip.speech)
+            watch_clip_guidance(speech=tools.watch_clip.speech)
             if tools.watch_clip is not None
             else None
         ),
@@ -584,19 +583,10 @@ def _cell(text: str) -> str:
     return " ".join(text.split()).replace("|", "\\|")
 
 
-# How the second hearing compares with `ja`, by the provider that hears it
-# (always the other one; `config` refuses the same provider twice). MAI
-# transcribes more accurately than Scribe (asr-provider-evaluation.md).
-_SPEECH_ACCURACY = {
-    AsrProvider.SCRIBE: "possibly less",
-    AsrProvider.MAI: "possibly more",
-}
-
-
-def watch_clip_guidance(speech: AsrProvider | None) -> str:
-    """The proofread's `watch_clip` guidance, its 発話 rules only with a
-    speech provider."""
-    if speech is None:
+def watch_clip_guidance(*, speech: bool) -> str:
+    """The proofread's `watch_clip` guidance, its 発話 rules only with
+    `speech`."""
+    if not speech:
         return render_template(
             PROMPTS,
             "proofread_watch_clip.md",
@@ -610,10 +600,6 @@ def watch_clip_guidance(speech: AsrProvider | None) -> str:
         "proofread_watch_clip.md",
         speech_lead=" and a second hearing",
         speech_sections="its speech (発話) from another speech recognizer, ",
-        speech_rules=render_template(
-            PROMPTS,
-            "proofread_watch_clip_speech.md",
-            accuracy=_SPEECH_ACCURACY[speech],
-        ),
+        speech_rules=load_prompt(PROMPTS, "proofread_watch_clip_speech.md"),
         speech_cite=" (or `発話`)",
     )

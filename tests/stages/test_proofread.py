@@ -18,8 +18,7 @@ from grillmaster.asr.model import Phrase
 from grillmaster.config.errors import ConfigError
 from grillmaster.config.model import validate_config
 from grillmaster.config.secrets import Secrets
-from grillmaster.core.asr_provider import AsrProvider
-from grillmaster.core.briefing import Briefing, Character
+from grillmaster.core.briefing import Briefing
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.srt import read_srt_file, write_srt_file
 from grillmaster.core.stage_key import StageKey
@@ -125,12 +124,7 @@ def test_proofreads_in_the_stage_directory(
 
 
 PROOFREAD_WATCH_CLIP = {"features": {"proofread_watch_clip": True}}
-WATCH_CLIP_ENV = (
-    "META_API_KEY=key\n"
-    "ELEVENLABS_API_KEY=key\n"
-    "AZURE_SPEECH_KEY=key\n"
-    "AZURE_SPEECH_ENDPOINT=https://speech.cognitiveservices.azure.com\n"
-)
+WATCH_CLIP_ENV = "META_API_KEY=key\nELEVENLABS_API_KEY=key\n"
 WATCH_USAGE = Usage(
     input_tokens=17_000,
     cached_input_tokens=0,
@@ -152,7 +146,7 @@ def _write_record(clips_dir: Path, span: str, cost_usd: float) -> None:
 
 def _write_speech(clips_dir: Path, span: str, cost_usd: float) -> None:
     record = SpeechRecord(
-        model="MAI-Transcribe-2",
+        model="scribe_v2",
         audio_s=30.0,
         cost_usd=cost_usd,
         phrases=[Phrase(start_s=21.0, speaker=0, text="え")],
@@ -173,14 +167,6 @@ def test_the_feature_adds_the_watch_clip_tool(
 ):
     project.video.write_bytes(b"mp4")
     (tmp_path / ".env").write_text(WATCH_CLIP_ENV, encoding="utf-8")
-    cast = [
-        Character(name_jp=name, name_zh=name, role_note="")
-        for name in ("尾形", " 尾形 ", "高野")
-    ]
-    write_model(
-        project.glossary_briefing,
-        make_briefing(names=("A",)).model_copy(update={"characters": cast}),
-    )
     agents.script[TASK_NAME] = FIX
 
     proofread.STAGE.run(make_context(StageKey.PROOFREAD))
@@ -193,11 +179,9 @@ def test_the_feature_adds_the_watch_clip_tool(
     assert tools.watch_clip.model == "muse-spark-1.3-contributor"
     assert tools.watch_clip.effort == "medium"
     assert tools.watch_clip.env_file == tmp_path / ".env"
-    # The cast only, once each: a proper noun's source may be the mishearing.
-    assert tools.watch_clip.speech_phrases == ("尾形", "高野")
     assert tools.watch_clip.timeout_s == proofread.WATCH_CLIP_TIMEOUT_S
-    # MAI wrote ja.srt, so Scribe hears the spans, and may hear worse.
-    assert tools.watch_clip.speech == AsrProvider.SCRIBE
+    # MAI wrote ja.srt; Scribe hears the spans, and may hear worse.
+    assert tools.watch_clip.speech
     prompt = agents.task(TASK_NAME).prompt
     assert "`watch_clip(start, end)`" in prompt
     assert "about as accurate as `ja`,\n    possibly less" in prompt
@@ -205,7 +189,7 @@ def test_the_feature_adds_the_watch_clip_tool(
 
 @pytest.mark.parametrize(
     "config_data",
-    [{**PROOFREAD_WATCH_CLIP, "watch_clip": {"speech": "off"}}],
+    [{**PROOFREAD_WATCH_CLIP, "watch_clip": {"speech": False}}],
     indirect=True,
 )
 def test_a_watch_clip_without_speech_leaves_the_hearing_out(
@@ -223,7 +207,7 @@ def test_a_watch_clip_without_speech_leaves_the_hearing_out(
     tools = agents.task(TASK_NAME).tools
     assert tools is not None
     assert tools.watch_clip is not None
-    assert tools.watch_clip.speech is None
+    assert not tools.watch_clip.speech
     prompt = agents.task(TASK_NAME).prompt
     assert "`watch_clip(start, end)`" in prompt
     assert "発話" not in prompt
@@ -319,6 +303,16 @@ def test_the_preflight_needs_the_watch_clip_keys_only_with_the_feature(
         proofread.STAGE.preflight(
             config(proofread_watch_clip=True), Secrets(meta_api_key=key)
         )
+    # Without 発話, Scribe's key is not needed.
+    no_speech = validate_config(
+        {
+            "agents": {"roles": roles},
+            "features": {"proofread_watch_clip": True},
+            "watch_clip": {"speech": False},
+        },
+        root=tmp_path,
+    )
+    proofread.STAGE.preflight(no_speech, Secrets(meta_api_key=key))
 
 
 def test_an_unpriced_watch_clip_model_fails_the_config(

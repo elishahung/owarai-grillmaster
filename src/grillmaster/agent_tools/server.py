@@ -3,9 +3,9 @@
 Only the tools in `session.allowed` are registered; a session with no tool
 configs yields a server that lists nothing. Tool descriptions carry the
 session's limits so the agent sees them in the tool listing. `watch_clip`
-asks `speech` and `model`, by default the manifest's speech provider (none
-without one) and the configured Muse model (`watch_clip.build_speech`,
-`watch_clip.build_model`).
+asks `speech` and `model`, by default Scribe's hearing (none with the
+manifest's `speech` off) and the configured Muse model
+(`watch_clip.build_speech`, `watch_clip.build_model`).
 """
 
 from __future__ import annotations

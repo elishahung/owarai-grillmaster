@@ -1,19 +1,19 @@
-"""ASR stage: transcribe `.work/05_audio/audio.ogg` with `[asr] provider`
-into `.work/06_asr/asr.json` (the provider's raw response) and add the
-spend to `ProjectState.asr_cost_usd`.
+"""ASR stage: transcribe `.work/05_audio/audio.ogg` with MAI-Transcribe-2
+into `.work/06_asr/asr.json` (the raw response) and add the spend to
+`ProjectState.asr_cost_usd`.
 
-MAI-Transcribe-2 takes no Opus, so it gets a FLAC made from `audio.ogg`
-beside the response (`layout.asr_upload`) and deleted once the request
-ends, paid or not; one a killed run left behind is dropped by the archive
-move. Its recognition is biased toward the
-source's credited talent names. Scribe reads `audio.ogg` as it is.
+MAI takes no Opus, so it gets a FLAC made from `audio.ogg` beside the
+response (`layout.asr_upload`) and deleted once the request ends, paid or
+not; one a killed run left behind is dropped by the archive move. Its
+recognition is biased toward the source's credited talent names.
 
-An existing `asr.json` is a cache hit, whichever provider wrote it: the
-stage costs nothing and records nothing, so a resume after a failure past
-the request never pays twice, and changing `[asr] provider` reaches a
-project only after `grill reset <id> --from asr`. A missing key fails the
-run's preflight, before anything is downloaded. The step result reports the
-stage's cost and the project's total.
+An existing `asr.json` is a cache hit: the stage costs nothing and records
+nothing, so a resume after a failure past the request never pays twice. A
+kept response MAI did not write (an older project's ElevenLabs Scribe
+`asr.json`) fails the stage; `grill reset <id> --from asr` transcribes it
+again. A missing key fails the run's preflight, before anything is
+downloaded. The step result reports the stage's cost and the project's
+total.
 
 A response with collapsed word timings (`asr/timing.py`), cached or new,
 fails the stage after its cost is recorded and is deleted, so the next run
@@ -26,13 +26,9 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from grillmaster.asr import scribe
+from grillmaster.asr import mai
 from grillmaster.asr.errors import AsrError
-from grillmaster.asr.mai import AzureSpeech
-from grillmaster.asr.payload import read_payload
-from grillmaster.asr.providers import for_response
 from grillmaster.asr.timing import collapsed_stacks
-from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.stage_key import StageKey
 from grillmaster.media.audio import extract_audio
 from grillmaster.stages.base import StageDef, require
@@ -46,7 +42,8 @@ if TYPE_CHECKING:
 
 
 def _preflight(config: AppConfig, secrets: Secrets) -> None:
-    secrets.require_speech_keys(config.asr.provider)
+    del config
+    secrets.require_azure_speech()
 
 
 def _run(ctx: StageContext) -> str:
@@ -67,12 +64,11 @@ def _run(ctx: StageContext) -> str:
             f"(project ASR total ${ctx.state.asr_cost_usd:.4f})"
         )
     # Checked once the cost is recorded: a discarded response was still paid.
-    payload = read_payload(layout.asr_json)
-    provider = for_response(payload)
-    if stacks := collapsed_stacks(provider.timed_words(payload)):
+    payload = mai.read_response(layout.asr_json)
+    if stacks := collapsed_stacks(mai.timed_words(payload)):
         layout.asr_json.unlink()
         raise AsrError(
-            f"{provider.label} stacked words on one timestamp "
+            f"{mai.MODEL} stacked words on one timestamp "
             f"({'; '.join(stacks)}); the response was discarded, run again to "
             "request a new transcription"
         )
@@ -86,20 +82,15 @@ def _transcribe(ctx: StageContext) -> TranscriptionCost:
     layout = ctx.layout
     audio = require(layout.audio, StageKey.AUDIO)
     # The keys were checked by the preflight.
-    match ctx.config.asr.provider:
-        case AsrProvider.SCRIBE:
-            api = ctx.speech_to_text(ctx.secrets.require_elevenlabs_api_key())
-            return scribe.transcribe(api, audio, layout.asr_json)
-        case AsrProvider.MAI:
-            endpoint, key = ctx.secrets.require_azure_speech()
-            upload = layout.asr_upload
-            try:
-                extract_audio(ctx.ffmpeg, audio, upload)
-                return ctx.mai(AzureSpeech(endpoint=endpoint, key=key)).transcribe(
-                    upload, layout.asr_json, talent_names(ctx.state)
-                )
-            finally:
-                upload.unlink(missing_ok=True)
+    endpoint, key = ctx.secrets.require_azure_speech()
+    upload = layout.asr_upload
+    try:
+        extract_audio(ctx.ffmpeg, audio, upload)
+        return ctx.mai(mai.AzureSpeech(endpoint=endpoint, key=key)).transcribe(
+            upload, layout.asr_json, talent_names(ctx.state)
+        )
+    finally:
+        upload.unlink(missing_ok=True)
 
 
 def talent_names(state: ProjectState) -> tuple[str, ...]:
@@ -110,7 +101,8 @@ def talent_names(state: ProjectState) -> tuple[str, ...]:
 
 
 def _params(config: AppConfig) -> dict[str, str]:
-    return {"provider": config.asr.provider}
+    del config
+    return {"model": mai.MODEL}
 
 
 # No `clear_state`: `asr_cost_usd` is the project's cumulative spend, and money

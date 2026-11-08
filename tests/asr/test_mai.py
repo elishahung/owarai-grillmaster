@@ -6,21 +6,21 @@ from typing import TYPE_CHECKING
 import httpx
 import pytest
 
+from grillmaster.asr.errors import AsrError
 from grillmaster.asr.mai import (
     API_VERSION,
     MAX_PHRASES,
     MODEL,
-    SRT_OPTIONS,
     AzureSpeech,
     MaiClient,
     MaiError,
     is_response,
     place_backchannels,
-    read_credentials,
+    read_response,
     srt_tokens,
     timed_words,
 )
-from grillmaster.asr.model import Phrase, WordToken
+from grillmaster.asr.model import WordToken
 from grillmaster.asr.srt_builder import build_srt_blocks
 
 if TYPE_CHECKING:
@@ -28,24 +28,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 CREDENTIALS = AzureSpeech(endpoint="https://speech.example", key="secret")
-CLIP_RESULT = {
-    "durationMilliseconds": 12_000,
-    "combinedPhrases": [{"text": "なんでやねん。 えー。"}],
-    "phrases": [
-        {
-            "offsetMilliseconds": 400,
-            "durationMilliseconds": 900,
-            "text": "なんでやねん。",
-            "speaker": 1,
-        },
-        {
-            "offsetMilliseconds": 2_250,
-            "durationMilliseconds": 300,
-            "text": "えー。",
-            "speaker": 0,
-        },
-    ],
-}
 
 
 def phrase(speaker: int, *words: tuple[str, int, int]) -> dict[str, object]:
@@ -91,21 +73,21 @@ def audio(tmp_path: Path) -> Path:
     return path
 
 
-def test_a_clip_is_sent_as_verbatim_diarized_japanese(audio: Path):
+def test_an_episode_asks_for_word_times_and_keeps_the_raw_response(
+    audio: Path, tmp_path: Path
+):
     seen: list[httpx.Request] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
         seen.append(request)
-        return httpx.Response(200, json=CLIP_RESULT)
+        return httpx.Response(200, json=EPISODE_RESULT)
 
-    hearing = _client(handle).hear(audio, ["今井らいぱち"])
+    output = tmp_path / "asr.json"
+    cost = _client(handle).transcribe(audio, output, ["今井らいぱち"])
 
-    assert hearing.model == MODEL
-    assert hearing.phrases == (
-        Phrase(start_s=0.4, speaker=1, text="なんでやねん。"),
-        Phrase(start_s=2.25, speaker=0, text="えー。"),
-    )
-    assert hearing.cost.audio_duration_s == 12.0
+    assert json.loads(output.read_text(encoding="utf-8")) == EPISODE_RESULT
+    assert cost.audio_duration_s == 3600.0
+    assert cost.total_usd == pytest.approx(0.10)
     (request,) = seen
     assert str(request.url) == (
         "https://speech.example/speechtotext/transcriptions:transcribe"
@@ -118,31 +100,23 @@ def test_a_clip_is_sent_as_verbatim_diarized_japanese(audio: Path):
         "enhancedMode": {
             "enabled": True,
             "model": MODEL,
-            "modelOptions": {"timestamps": "segment", "transcribeStyle": "verbatim"},
+            "modelOptions": {"timestamps": "word", "transcribeStyle": "verbatim"},
         },
         "diarization": {"enabled": True},
         "phraseList": {"phrases": ["今井らいぱち"]},
     }
 
 
-def test_an_episode_asks_for_word_times_and_keeps_the_raw_response(
-    audio: Path, tmp_path: Path
-):
+def test_no_phrases_send_no_phrase_list(audio: Path, tmp_path: Path):
     seen: list[httpx.Request] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         return httpx.Response(200, json=EPISODE_RESULT)
 
-    output = tmp_path / "asr.json"
-    cost = _client(handle).transcribe(audio, output, [])
+    _client(handle).transcribe(audio, tmp_path / "asr.json", [])
 
-    assert json.loads(output.read_text(encoding="utf-8")) == EPISODE_RESULT
-    assert cost.audio_duration_s == 3600.0
-    assert cost.total_usd == pytest.approx(0.10)
-    definition = _definition(seen[0])
-    assert definition["enhancedMode"]["modelOptions"]["timestamps"] == "word"  # pyright: ignore[reportIndexIssue]
-    assert "phraseList" not in definition
+    assert "phraseList" not in _definition(seen[0])
 
 
 def test_the_phrase_list_is_capped(audio: Path, tmp_path: Path):
@@ -206,44 +180,27 @@ def test_an_episode_without_words_is_not_kept(audio: Path, tmp_path: Path):
 
 
 @pytest.mark.parametrize(
-    "body",
-    [
-        {"phrases": []},
-        {
-            "durationMilliseconds": 1,
-            "phrases": [{"offsetMilliseconds": 0, "text": None}],
-        },
-        [],
-    ],
-    ids=["no-duration", "null-text", "not-an-object"],
+    "body", [{"phrases": []}, []], ids=["no-duration", "not-an-object"]
 )
-def test_an_unexpected_result_is_a_mai_error(audio: Path, body: object):
+def test_an_unexpected_result_is_a_mai_error(audio: Path, tmp_path: Path, body: object):
     with pytest.raises(MaiError, match="unexpected transcription result"):
-        _client(lambda _: httpx.Response(200, json=body)).hear(audio, [])
-
-
-def test_the_credentials_come_from_the_env_file_alone(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-):
-    env_file = tmp_path / ".env"
-    monkeypatch.setenv("AZURE_SPEECH_KEY", "from-env")
-    env_file.write_text(
-        "AZURE_SPEECH_ENDPOINT=https://speech.example/\n", encoding="utf-8"
-    )
-    with pytest.raises(MaiError, match="AZURE_SPEECH_KEY not set"):
-        read_credentials(env_file)
-    env_file.write_text(
-        "AZURE_SPEECH_KEY=from-file\nAZURE_SPEECH_ENDPOINT=https://speech.example/\n",
-        encoding="utf-8",
-    )
-    assert read_credentials(env_file) == AzureSpeech(
-        endpoint="https://speech.example", key="from-file"
-    )
+        _client(lambda _: httpx.Response(200, json=body)).transcribe(
+            audio, tmp_path / "asr.json", []
+        )
 
 
 def test_a_response_is_recognized_by_its_phrases():
     assert is_response(EPISODE_RESULT)
     assert not is_response({"words": []})
+
+
+def test_a_kept_response_of_another_shape_is_refused(tmp_path: Path):
+    kept = tmp_path / "asr.json"
+    kept.write_text(json.dumps(EPISODE_RESULT), encoding="utf-8")
+    assert read_response(kept) == EPISODE_RESULT
+    kept.write_text(json.dumps({"words": []}), encoding="utf-8")
+    with pytest.raises(AsrError, match=r"not a MAI-Transcribe-2 response.*--from asr"):
+        read_response(kept)
 
 
 def test_words_carry_their_phrase_speaker_and_their_own_times():
@@ -381,7 +338,7 @@ def test_a_moved_backchannel_becomes_the_sentences_second_line():
         ],
     }
 
-    (block,) = build_srt_blocks(srt_tokens(payload), SRT_OPTIONS).blocks
+    (block,) = build_srt_blocks(srt_tokens(payload)).blocks
 
     assert block.text == "-番組とかで会った。\n-はい。"
     assert block.time_range.start == 0.0

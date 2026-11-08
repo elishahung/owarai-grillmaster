@@ -63,7 +63,7 @@ members is a layout change. `pipeline/registry.py` holds the only lists:
 | 3 | `combine` | `video.mp4` (cut to the section, else `full.mp4` moved), `.subs/ja.official.srt` (normally none without CC or with multi-part CC; unusable downloaded CC fails); state `section` |
 | 4 | `chat_fetch` | `--chat` only (see live-chat) |
 | 5 | `audio` | `.work/05_audio/audio.ogg` |
-| 6 | `asr` | `.work/06_asr/asr.json` (the `[asr] provider`'s raw response; MAI's FLAC upload is made and deleted beside it); adds `asr_cost_usd` (an existing `asr.json` costs nothing, whichever provider wrote it); a response with 100+ words stacked on one timestamp (`asr/timing.py`), cached or not, is deleted and fails the stage, so the next run requests a new one |
+| 6 | `asr` | `.work/06_asr/asr.json` (MAI-Transcribe-2's raw response; its FLAC upload is made and deleted beside it); adds `asr_cost_usd` (an existing `asr.json` costs nothing; a kept pre-MAI Scribe response fails the stage and the transcript, `grill reset <id> --from asr` redoes it); a response with 100+ words stacked on one timestamp (`asr/timing.py`), cached or not, is deleted and fails the stage, so the next run requests a new one |
 | 7 | `transcript` | `.subs/ja.srt` + `ja.voiced.srt` (same blocks, diarized `[V<n>] ` tags for the agents) |
 | 8–11 | `prepass`, `chunks`, `refine`, `glossary` | work dirs only (translate-pipeline, postprocess-and-packaging) |
 | 12 | `proofread` | `--proofread` / `[features] proofread` only: work dir only; adds `watch_clip_cost_usd` (postprocess-and-packaging) |
@@ -110,7 +110,7 @@ stages and delivery.
   (`AgentRunner`), `events`, lazily created `workdir`, `session_dir(label)`,
   `side_tasks.wait(key)` (a stage blocks until that side task of this run
   has finished; returns at once when it never started), and the `Externals`
-  seams `ffmpeg`, `ytdlp`, `http`, `speech_to_text` (built
+  seams `ffmpeg`, `ytdlp`, `http`, `mai` (built
   once by `pipeline.runner.real_externals`; tests pass fakes from
   `tests/fakes.py`).
 - `pipeline.delivery.as_delivery_step(stage)` runs a stage as the only
@@ -205,7 +205,7 @@ listing, in order, least-squares balanced groups of ≥2) into manifests, never 
   glossary's.
   Add a path here, never inline.
 - `state.py` `ProjectState`: identity (`id`, persisted `platform`), `source`,
-  `section`, `asr_cost_usd` / `watch_clip_cost_usd` (MAI or Scribe; speech provider + Meta: the metered services), the
+  `section`, `asr_cost_usd` / `watch_clip_cost_usd` (MAI; Scribe + Meta: the metered services), the
   `stages` ledger `dict[StageKey, StageRecord]` (unknown key = validation
   error), `side_tasks` (`cover: TaskRecord`, `date_research:
   DateResearchRecord`). Readers use `effective_broadcast_date`. Every state model (`StateModel`) ignores unknown fields, so a removed feature's key never blocks loading a project.
@@ -248,14 +248,11 @@ listing, in order, least-squares balanced groups of ≥2) into manifests, never 
   `grill.example.toml`, regenerate `grill.schema.json` with `uv run poe
   schema` (a test asserts it is current).
 - `.env` holds secrets only (`Secrets`: `ELEVENLABS_API_KEY`, `META_API_KEY`,
-  `AZURE_SPEECH_KEY`, `AZURE_SPEECH_ENDPOINT`); a missing key of the
-  configured provider fails the ASR / proofread (`watch_clip`) preflight. The
-  tool server reads the `watch_clip` keys again itself (`agent_tools.meta`,
-  `asr.mai`, `asr.scribe` via `core/env_file.py`), from the `.env` path in
-  its manifest. `[asr] provider` (`mai` default, `scribe`) and
-  `[watch_clip] speech` (`auto` default = the other provider, a named one
-  that must differ, or `off`; `AppConfig.watch_clip_speech` resolves it)
-  pick the providers, so switching `[asr]` alone swaps both.
+  `AZURE_SPEECH_KEY`, `AZURE_SPEECH_ENDPOINT`); a missing Azure key fails
+  the ASR preflight, a missing Meta or (with `[watch_clip] speech`)
+  ElevenLabs key the proofread's (`watch_clip`). The tool server reads the
+  `watch_clip` keys again itself (`agent_tools.meta`, `asr.scribe` via
+  `core/env_file.py`), from the `.env` path in its manifest.
 - `programs.py` `ProgramRules`: channel then series entries merged (`common`
   text before stage text; stage keys `prepass`, `chunks`, `refine`,
   `glossary`, `proofread`, `telop`, `notes`; `remix`, `telop` and
@@ -298,21 +295,13 @@ listing, in order, least-squares balanced groups of ≥2) into manifests, never 
   ruff bans `subprocess.*` elsewhere. The first two spawn
   `core.process.spawn_tree` trees; every tree is killable and registered in
   `LIVE_PROCESSES`; after `kill_all` (`ABORT` latched) no child may start.
-- `asr/`: two providers, `mai.py` (MAI-Transcribe-2, default) and
-  `scribe.py` (Scribe v2, backup). Each owns its client (episode +
-  `watch_clip` hearing), its response → `model.WordToken`s and its
-  `SrtFormatOptions`; `providers.py` is the registry (`PROVIDERS`: SRT
-  knobs, `.env` keys, `watch_clip` hearing; `for_response` reads a kept
-  `asr.json` by its shape);
-  `srt_builder.py` is provider-neutral (no provider branches: a provider's
-  quirk goes in its module, e.g. MAI's `place_backchannels`; its tuning
-  constants are intentional, not settings). The Scribe path's output was
-  verified byte-identical over 945 archived responses at the split. To drop
-  Scribe: delete `scribe.py`, `AsrProvider.SCRIBE`, its `PROVIDERS` entry, the
-  Scribe branch of the ASR stage,
-  the ElevenLabs key (`auto` then resolves to no 発話, and its prompt slot
-  renders nothing). Evaluation and how to check a new
-  candidate: `references/asr-provider-evaluation.md`.
+- `asr/`: `mai.py` is the ASR (MAI-Transcribe-2: the episode client, the
+  response → `model.WordToken`s, `read_response` refusing any other shape);
+  `srt_builder.py` takes tokens and knows no provider (a provider's quirk
+  goes in its module, e.g. MAI's `place_backchannels`; its tuning constants
+  are intentional, not settings); `scribe.py` (Scribe v2) only hears
+  `watch_clip` spans. Evaluation and how to check a new candidate:
+  `references/asr-provider-evaluation.md`.
   `glossary/`: the fixed glossary, a required runtime input of pre-pass,
   glossary check and finalize.
 - `core/`: single copies of SRT parsing (`read_srt_file` reads `utf-8-sig`),
@@ -352,8 +341,8 @@ within 10 days) in the searchable `tui.picker` before the run starts. On a TTY t
 - Agent-written stages (refine, glossary) discard old output on re-entry.
 - Side tasks join in `finally`; `--break-after` skips side tasks, archive and
   delivery.
-- Every agent call goes through `AgentRunner`; only ASR (MAI or Scribe) and
-  `watch_clip` (speech provider + Meta) are metered, each with its cumulative state
+- Every agent call goes through `AgentRunner`; only ASR (MAI) and
+  `watch_clip` (Scribe + Meta) are metered, each with its cumulative state
   field.
 - Windows MAX_PATH 260 (ffmpeg and yt-dlp are not long-path aware): generated
   directory names go through the path budget.

@@ -22,7 +22,6 @@ from pydantic import (
     model_validator,
 )
 
-from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.model_spec import ModelSpec, ModelSpecField, Role
 from grillmaster.core.stage_key import StageKey
 from grillmaster.core.tool_session import MuseEffort, MuseModel
@@ -125,25 +124,16 @@ class AgentsConfig(BaseModel):
         return self.timeout_minutes * 60.0
 
 
-class AsrConfig(BaseModel):
-    model_config = _STRICT
-
-    provider: AsrProvider = Field(
-        default=AsrProvider.MAI,
-        description="Speech recognizer for the whole episode: mai (Azure MAI-Transcribe-2; AZURE_SPEECH_KEY, AZURE_SPEECH_ENDPOINT) or scribe (ElevenLabs Scribe v2; ELEVENLABS_API_KEY).",
-    )
-
-
 class WatchClipConfig(BaseModel):
-    """The proofread's `watch_clip` tool: per span, a speech recognizer for
-    the speech (`speech`, the provider `[asr]` does not use) and a Meta Muse
-    call for the captions and scene (`META_API_KEY`), not agent roles."""
+    """The proofread's `watch_clip` tool: per span, ElevenLabs Scribe v2 for
+    the speech (`ELEVENLABS_API_KEY`) and a Meta Muse call for the captions
+    and scene (`META_API_KEY`), not agent roles."""
 
     model_config = _STRICT
 
-    speech: AsrProvider | Literal["auto", "off"] = Field(
-        default="auto",
-        description="Speech recognizer for each span's 発話, a second hearing beside ja.srt: auto (the provider [asr] does not use), a named provider (it must differ from [asr] provider), or off for no 発話 (Muse's captions and scene only).",
+    speech: bool = Field(
+        default=True,
+        description="Hear each span's 発話 with ElevenLabs Scribe v2, a second recognizer beside ja.srt's MAI-Transcribe-2 (ELEVENLABS_API_KEY); false for Muse's captions and scene only.",
     )
 
     model: MuseModel = Field(
@@ -400,34 +390,11 @@ class AppConfig(BaseModel):
 
     paths: PathsConfig = Field(default_factory=PathsConfig)
     agents: AgentsConfig
-    asr: AsrConfig = Field(default_factory=AsrConfig)
     watch_clip: WatchClipConfig = Field(default_factory=WatchClipConfig)
     translate: TranslateConfig = Field(default_factory=TranslateConfig)
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     package: PackageConfig = Field(default_factory=PackageConfig)
     programs: ProgramsConfig = Field(default_factory=ProgramsConfig)
-
-    @property
-    def watch_clip_speech(self) -> AsrProvider | None:
-        """`[watch_clip] speech` resolved: `auto` is the provider `[asr]`
-        does not use (none once only one exists), `off` is `None`."""
-        match self.watch_clip.speech:
-            case "off":
-                return None
-            case "auto":
-                return next((p for p in AsrProvider if p != self.asr.provider), None)
-            case provider:
-                return provider
-
-    @model_validator(mode="after")
-    def _second_hearing_differs(self) -> AppConfig:
-        if self.watch_clip.speech == self.asr.provider:
-            raise ValueError(
-                f"[watch_clip] speech = '{self.watch_clip.speech}' is [asr] provider "
-                "too; a second hearing by the same recognizer repeats its errors "
-                "(use auto, the other provider, or off)"
-            )
-        return self
 
     @model_validator(mode="after")
     def _program_inserts_exist(self) -> AppConfig:

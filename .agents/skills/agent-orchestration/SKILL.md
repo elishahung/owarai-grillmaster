@@ -120,7 +120,10 @@ turn's.
   `RESULT_EXIT_GRACE_S` (30 s) later is killed and the answer kept (agy
   1.4.1 at times never exits). Model id `<model>-<low|medium|high>` checked against `agy models` (success cached
   for good; a failure answers every task for 60 s). Audio not
-  opened by a finished `view_file` step → `TurnDefect` resending it.
+  opened by a finished file-read step → `TurnDefect` resending it; since
+  1.5.3 the stream names the model's `view_file` steps `read_file` with a
+  `Path` parameter, so a CLI rename here silently turns every audio turn
+  into repair loops.
   `--json-schema` output trusted only if `finish` ran this turn, else a JSON
   object in this turn's final message (one json fence stripped). MCP from
   `<workdir>/.agents/mcp_config.json` (deleted when no tools). Resume

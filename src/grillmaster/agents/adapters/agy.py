@@ -2,12 +2,14 @@
 
 One turn is `agy … -p= --input-format stream-json --output-format
 stream-json` with the user message as one stdin JSON line. Facts this
-module is built on (agy 1.3.2):
+module is built on (agy 1.5.3):
 
 * stdin messages carry text only, and agy ignores `@path` in them, so the
   runner lists media paths and asks the model to open each with `view_file`.
-  Audio counts as heard only when a finished `view_file` step names its path;
-  unheard audio becomes a `TurnDefect` that resends it.
+  The stream reports that tool's steps as `read_file` with a `Path`
+  parameter (the model-facing name stays `view_file`). Audio counts as
+  heard only when a finished `read_file` step names its path; unheard audio
+  becomes a `TurnDefect` that resends it.
 * In stream-json input mode an error is reported and agy keeps waiting for
   the next message, so stdin closes as soon as the `result` record arrives.
   An agy still running `RESULT_EXIT_GRACE_S` after the `result` is killed.
@@ -87,7 +89,8 @@ PROBE_FAILURE_TTL_S = 60.0
 _LOGIN_HINT = "run `agy` once interactively to sign in"
 _FINISH_TOOL = "finish"
 _MCP_TOOL = "call_mcp_tool"
-_VIEW_FILE_TOOL = "view_file"
+# The stream's name for the model's `view_file` steps.
+_FILE_READ_STEP = "read_file"
 # How long agy may keep running after its `result`: 1.4.1 at times never
 # exits (its log stops before "Language server shutting down"), which held
 # a finished turn until the timeout. A clean exit takes under a second.
@@ -336,8 +339,8 @@ class AgyTurnParser:
         if name == _MCP_TOOL:
             name = str(params.get("ToolName") or name)
             params = params.get("Arguments") or {}
-        elif name == _VIEW_FILE_TOOL and done and "AbsolutePath" in params:
-            self._viewed.add(path_key(str(params["AbsolutePath"])))
+        elif name == _FILE_READ_STEP and done and "Path" in params:
+            self._viewed.add(path_key(str(params["Path"])))
         if index not in self._announced:
             self._announced.add(index)
             yield ToolCall(name, params)

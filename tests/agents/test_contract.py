@@ -2,7 +2,8 @@
 
 The fixtures under `tests/fixtures/agents/` are real recordings (agy 1.3.2,
 gemini-cli 0.63.0, codex-cli 0.160.0, Claude Code via claude-agent-sdk
-0.2.135). Re-record them
+0.2.135); the agy file-read steps were rewritten to the 1.5.3 shape
+(`read_file` / `Path`, taken from a production stream). Re-record them
 with `scripts/record_agent_fixture.py` after a CLI upgrade.
 """
 
@@ -141,7 +142,7 @@ CASES = [
         Backend.AGY,
         "schema_with_tools",
         "f87452b9-44d7-40c9-ac1e-fbd5fde78293",
-        tools=("run_command", "view_file"),
+        tools=("run_command", "read_file"),
         structured={"answer": "red", "items": [{"source": "a", "target": "b"}]},
         schema=True,
     ),
@@ -149,7 +150,7 @@ CASES = [
         Backend.AGY,
         "mcp_image",
         "9cbca5fb-d55c-421a-9618-765dcbfc2523",
-        tools=("view_file", "secret_picture"),
+        tools=("read_file", "secret_picture"),
         text="green\n",
     ),
     # No `finish` step in this turn: agy's `structured_output` is the
@@ -384,9 +385,9 @@ def _recorded_audio_path() -> Path:
     for line in fixture_lines("agy", "audio_view_file"):
         step = json.loads(line).get("step_update") or {}
         params = (step.get("tool_info") or {}).get("parameters") or {}
-        if "AbsolutePath" in params:
-            return Path(params["AbsolutePath"])
-    raise AssertionError("fixture has no view_file step")
+        if "Path" in params:
+            return Path(params["Path"])
+    raise AssertionError("fixture has no read_file step")
 
 
 def test_agy_audio_opened_with_view_file_counts_as_heard(

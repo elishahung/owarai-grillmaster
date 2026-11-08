@@ -41,10 +41,12 @@ one `session/prompt` per turn. Facts this module is built on (gemini-cli
   `context.includeDirectoryTree: false` (the workdir listing showed the
   chunk's `audio.ogg`; a model cut it with ffmpeg through the shell, heard
   nothing and declared its inline audio missing) and the request's
-  `ToolAccess` (READ: `tools.exclude` of the shell and the writing tools;
-  with a shell, a pre-pass searched the web with curl instead of
-  `google_web_search`, and a clip-transcription session ran whisper on its clip
-  and browsed the project tree; NONE: a `tools.core` allowlist of one inert
+  `ToolAccess` (READ: `tools.exclude` of the shell, the writing tools and
+  the file readers; with a shell, a pre-pass searched the web with curl
+  instead of `google_web_search`, and a clip-transcription session ran
+  whisper on its clip and browsed the project tree; a chunk re-checking a
+  line `read_file`'d its `audio.ogg` or its saved frames and hit the 400
+  above; NONE: a `tools.core` allowlist of one inert
   built-in, since the API refuses a request without any function, and
   skills off) go into
   `<workdir>/.gemini/settings.json`, which the CLI reads only in a trusted
@@ -170,6 +172,11 @@ HOME_FILES = (
 )
 # The shell and the file-writing built-ins: WRITE access only.
 WRITE_TOOLS = ("run_shell_command", "write_file", "replace")
+# The file readers: they return a media file (the chunk's `audio.ogg`, its
+# saved frames) as inline data in the tool result, which Code Assist answers
+# with a 400. A READ task gets its inputs in the message; only a WRITE task
+# (refine, glossary check) reads its sources from disk.
+FILE_READ_TOOLS = ("read_file", "read_many_files")
 # A built-in that reaches no file, shell or network: it lists the session's
 # background shell processes, and a session without the shell has none.
 INERT_TOOL = "list_background_processes"
@@ -181,7 +188,7 @@ INERT_TOOL = "list_background_processes"
 # `activate_skill` is registered again outside that gate when a skill exists.
 TOOL_SETTINGS: dict[ToolAccess, dict[str, Any]] = {
     ToolAccess.NONE: {"tools": {"core": [INERT_TOOL]}, "skills": {"enabled": False}},
-    ToolAccess.READ: {"tools": {"exclude": list(WRITE_TOOLS)}},
+    ToolAccess.READ: {"tools": {"exclude": [*WRITE_TOOLS, *FILE_READ_TOOLS]}},
     ToolAccess.WRITE: {},
 }
 MAX_MEDIA_BYTES = 100 * 1024 * 1024

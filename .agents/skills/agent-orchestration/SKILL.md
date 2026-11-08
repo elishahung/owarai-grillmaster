@@ -155,7 +155,9 @@ turn's.
   `ToolAccess` (READ: `tools.exclude` of the shell, `write_file`, `replace`:
   a pre-pass curl'ed Google instead of `google_web_search`, a clip
   transcription got whisper'd and the project tree browsed, glossary check copies
-  files with it; NONE: `tools.core` = [`list_background_processes`], an
+  files with it; and of `read_file`/`read_many_files`: a chunk re-checking a
+  line read its `audio.ogg`/frames, media in a tool result → the 400 above;
+  NONE: `tools.core` = [`list_background_processes`], an
   allowlist that leaves MCP tools and keeps one inert built-in because the
   API answers a request without any function with a 400, plus
   `skills.enabled: false`, since `activate_skill` is registered again

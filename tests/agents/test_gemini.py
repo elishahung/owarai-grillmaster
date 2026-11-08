@@ -232,7 +232,7 @@ def test_effort_becomes_the_thinking_level_of_the_model(
     assert thinking == {"thinkingLevel": level}
 
 
-def test_only_a_file_writing_task_keeps_the_shell_and_writing_tools(
+def test_only_a_file_writing_task_keeps_the_shell_and_file_tools(
     make_request: Callable[..., TurnRequest],
 ):
     for request in (
@@ -241,8 +241,15 @@ def test_only_a_file_writing_task_keeps_the_shell_and_writing_tools(
         make_request(spec=FLASH_LOW),
     ):
         _first_turn(request)
+        # A media file read through a tool comes back inline: a 400.
         assert _settings(request)["tools"] == {
-            "exclude": ["run_shell_command", "write_file", "replace"]
+            "exclude": [
+                "run_shell_command",
+                "write_file",
+                "replace",
+                "read_file",
+                "read_many_files",
+            ]
         }
 
     request = make_request(spec=FLASH_LOW, tool_access=ToolAccess.WRITE)

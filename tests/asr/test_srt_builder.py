@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from grillmaster.asr.errors import AsrError
+from grillmaster.asr.scribe import srt_tokens
 from grillmaster.asr.srt_builder import SrtFormatOptions, build_srt_blocks
 from grillmaster.core.srt import serialize_srt
 
@@ -29,9 +30,9 @@ def render(
     voiced: bool = False,
 ) -> str:
     source = (
-        build_srt_blocks(payload)
+        build_srt_blocks(srt_tokens(payload))
         if options is None
-        else build_srt_blocks(payload, options)
+        else build_srt_blocks(srt_tokens(payload), options)
     )
     return serialize_srt(source.voiced if voiced else source.blocks)
 

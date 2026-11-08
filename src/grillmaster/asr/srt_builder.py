@@ -1,9 +1,17 @@
-"""Convert ElevenLabs word-level ASR output into Japanese source SRT blocks.
+"""Convert word-level ASR tokens into Japanese source SRT blocks.
 
-Words are grouped into utterances (speaker change, silence, punctuation,
-length), utterances into subtitle blocks (close turns become `-` dialogue),
-then timings are de-overlapped and held briefly after speech ends. The same
-blocks are also rendered with diarized voice tags for the agents.
+Provider-neutral: each provider turns its response into time-ordered
+`WordToken`s and picks its `SrtFormatOptions` (`asr.providers`). Words are grouped into utterances (speaker
+change, silence, punctuation, length), utterances into subtitle blocks
+(close turns become `-` dialogue), then timings are de-overlapped and held
+briefly after speech ends. The same blocks are also rendered with diarized
+voice tags for the agents.
+
+Nothing here knows the provider: a provider's quirks live in its own
+module (its tokens, any pre-pass over them, its options). The rules and the
+default knobs were tuned on ElevenLabs Scribe v2 output (single characters,
+punctuation as its own token, coarse diarization); `asr.mai.SRT_OPTIONS`
+documents what MAI-Transcribe-2 changes.
 """
 
 from __future__ import annotations
@@ -13,12 +21,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from grillmaster.asr.errors import AsrError
-from grillmaster.asr.payload import word_items
 from grillmaster.core.srt import SrtBlock, voice_tag
 from grillmaster.core.timecode import format_timecode_line
 
 if TYPE_CHECKING:
-    from grillmaster.asr.payload import AsrPayload
+    from collections.abc import Sequence
+
+    from grillmaster.asr.model import WordToken
 
 
 JAPANESE_HARD_PUNCTUATION = "。！？?!"
@@ -65,7 +74,6 @@ MAX_ORPHAN_TAIL_CHARS = 8
 MIN_SEGMENT_DURATION_S = 0.35
 DRAG_FILLER_MIN_DURATION_S = 0.6
 DIALOGUE_PREFIX = "-"
-IGNORED_WORD_TYPES = frozenset({"audio_event"})
 
 # Wrap scoring: a line this short (or shorter) after a break is penalized.
 _VERY_SHORT_WRAP_LINE = 3
@@ -74,11 +82,12 @@ _SHORT_WRAP_LINE = 6
 
 @dataclass(frozen=True, slots=True)
 class SrtFormatOptions:
-    """The tunable formatting knobs; production always uses the defaults.
+    """The tunable formatting knobs. The defaults are Scribe's (`asr.scribe`
+    uses them as they are); `asr.mai.SRT_OPTIONS` overrides fields for MAI.
 
     They are fine-tuned against real ASR output, not user settings; tests
     and tuning experiments override single fields. Re-validate against
-    representative ASR JSON before changing a default. Rationale:
+    representative ASR JSON before changing a default. Rationale (Scribe):
 
     - `max_segment_chars = 44` (was 48): at 48 (exactly two 24-char lines)
       an utterance can grow past the cap when the segmenter absorbs a
@@ -115,14 +124,6 @@ class SrtFormatOptions:
     min_inter_subtitle_gap_s: float = 0.08
 
 
-@dataclass(frozen=True)
-class WordToken:
-    text: str
-    start: float
-    end: float
-    speaker_id: str | None
-
-
 @dataclass
 class Utterance:
     speaker_id: str | None
@@ -156,18 +157,18 @@ _DEFAULT_OPTIONS = SrtFormatOptions()
 
 
 def build_srt_blocks(
-    payload: AsrPayload, options: SrtFormatOptions = _DEFAULT_OPTIONS
+    tokens: Sequence[WordToken], options: SrtFormatOptions = _DEFAULT_OPTIONS
 ) -> SourceSrt:
-    """Subtitle blocks, numbered from 1, for an ElevenLabs response.
+    """Subtitle blocks, numbered from 1, for time-ordered `tokens`.
 
-    Production passes no `options`; overrides are for tests and tuning
-    experiments. Raises `AsrError` when the response has no timed words.
+    Production passes the provider's options (`asr.providers`);
+    other overrides are for tests and tuning experiments. Raises `AsrError`
+    when there are no tokens.
     """
-    tokens = _extract_tokens(payload)
     if not tokens:
-        raise AsrError("ElevenLabs ASR JSON does not contain timed words")
+        raise AsrError("ASR response does not contain timed words")
 
-    utterances = _build_utterances(tokens, options)
+    utterances = _build_utterances(list(tokens), options)
     blocks = _merge_utterances_to_blocks(utterances, options)
     blocks = _merge_overlapping_blocks(blocks, options)
     for block in blocks:
@@ -182,62 +183,6 @@ def build_srt_blocks(
         blocks=_render_srt(blocks, options, voices=None),
         voiced=_render_srt(blocks, options, voices=voices),
     )
-
-
-def _extract_tokens(payload: AsrPayload) -> list[WordToken]:
-    tokens: list[WordToken] = []
-    for item in word_items(payload):
-        if not isinstance(item, dict):
-            continue
-        word_type = item.get("type")
-        if word_type in IGNORED_WORD_TYPES:
-            continue
-        text = str(item.get("text") or "")
-        if not text:
-            continue
-        start = item.get("start")
-        end = item.get("end")
-        if not isinstance(start, (int, float)) or not isinstance(end, (int, float)):
-            continue
-        if end < start:
-            continue
-        tokens.extend(
-            _split_token_if_needed(
-                WordToken(
-                    text=text,
-                    start=float(start),
-                    end=float(end),
-                    speaker_id=item.get("speaker_id"),
-                ),
-            )
-        )
-    tokens.sort(key=lambda token: (token.start, token.end))
-    return tokens
-
-
-def _split_token_if_needed(token: WordToken) -> list[WordToken]:
-    # Only split a leading hard-punct prefix off the token (e.g.
-    # `。1934` → `。` + `1934`). Soft punctuation (`、`) stays attached
-    # to the next char because ASR rarely emits it as a leading prefix
-    # and the segment-builder handles soft splits via punctuation rules
-    # downstream.
-    if len(token.text) <= 1 or token.text[0] not in JAPANESE_HARD_PUNCTUATION:
-        return [token]
-
-    return [
-        WordToken(
-            text=token.text[0],
-            start=token.start,
-            end=token.start,
-            speaker_id=token.speaker_id,
-        ),
-        WordToken(
-            text=token.text[1:],
-            start=token.start,
-            end=token.end,
-            speaker_id=token.speaker_id,
-        ),
-    ]
 
 
 def _build_utterances(
@@ -307,7 +252,7 @@ def _should_start_new_utterance(
         return True
 
     text = _normalize_spacing(joined)
-    if _ends_with_split_punctuation(previous.text):
+    if ends_with_hard_punctuation(previous.text):
         return True
     return (
         _ends_with_soft_split_punctuation(previous.text)
@@ -356,7 +301,7 @@ def _find_best_utterance_split_index(tokens: list[WordToken]) -> int | None:
     for index in range(len(tokens) - 1, -1, -1):
         token = tokens[index]
         if not (
-            _ends_with_split_punctuation(token.text)
+            ends_with_hard_punctuation(token.text)
             or _ends_with_soft_split_punctuation(token.text)
         ):
             continue
@@ -402,10 +347,10 @@ def _would_create_short_orphan_tail(tokens: list[WordToken], start_index: int) -
         raw_len += len(token.text)
         if raw_len > MAX_ORPHAN_TAIL_CHARS:
             return False
-        if _ends_with_split_punctuation(token.text):
+        if ends_with_hard_punctuation(token.text):
             break
 
-    if not tail or not _ends_with_split_punctuation(tail[-1].text):
+    if not tail or not ends_with_hard_punctuation(tail[-1].text):
         return False
     text = _join_token_texts(tail)
     return len(text) <= MAX_ORPHAN_TAIL_CHARS
@@ -441,7 +386,7 @@ def _merge_utterances_to_blocks(
         block = blocks[-1]
         if _can_merge_into_block(block, utterance, options):
             same_speaker = block.utterances[-1].speaker_id == utterance.speaker_id
-            prev_ends_hard = _ends_with_split_punctuation(block.utterances[-1].text)
+            prev_ends_hard = ends_with_hard_punctuation(block.utterances[-1].text)
             if same_speaker and not prev_ends_hard:
                 block.utterances[-1].text = _join_text_parts(
                     block.utterances[-1].text, utterance.text
@@ -576,7 +521,7 @@ def _is_short_inline_utterance(utterance: Utterance) -> bool:
     return (
         bool(text)
         and len(text) <= MAX_INLINE_SHORT_UTTERANCE_CHARS
-        and _ends_with_split_punctuation(text)
+        and ends_with_hard_punctuation(text)
     )
 
 
@@ -591,7 +536,7 @@ def _can_merge_into_block(
     # space (e.g. 「いいんすか？ それ。」).
     if (
         same_speaker
-        and _ends_with_split_punctuation(block.utterances[-1].text)
+        and ends_with_hard_punctuation(block.utterances[-1].text)
         and not _can_inline_same_speaker_utterance(
             block.utterances[-1], utterance, options
         )
@@ -846,7 +791,7 @@ def _is_unsafe_segment_start(text: str) -> bool:
     )
 
 
-def _ends_with_split_punctuation(text: str) -> bool:
+def ends_with_hard_punctuation(text: str) -> bool:
     return bool(text and text[-1] in JAPANESE_HARD_PUNCTUATION)
 
 

@@ -1,10 +1,18 @@
 from __future__ import annotations
 
+from typing import Any
+
+from grillmaster.asr import scribe
 from grillmaster.asr.timing import (
     COLLAPSED_STACK_WORDS,
     STACK_WINDOW_S,
-    collapsed_stacks,
 )
+from grillmaster.asr.timing import collapsed_stacks as stacks_of_words
+
+
+def collapsed_stacks(payload: dict[str, Any]) -> list[str]:
+    """The check as the ASR stage runs it on a Scribe response."""
+    return stacks_of_words(scribe.timed_words(payload))
 
 
 def word(text: str, start: float) -> dict[str, object]:

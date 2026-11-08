@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Protocol, cast
 
-from grillmaster.agent_tools._env import read_env_values
+from grillmaster.core.env_file import read_env_values
 from grillmaster.core.models import FrozenModel
 
 if TYPE_CHECKING:

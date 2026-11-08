@@ -1,4 +1,4 @@
-"""The raw ElevenLabs speech-to-text response (`asr.json`)."""
+"""A provider's raw speech-to-text response, kept as `asr.json`."""
 
 from __future__ import annotations
 
@@ -10,8 +10,7 @@ from grillmaster.asr.errors import AsrError
 if TYPE_CHECKING:
     from pathlib import Path
 
-# The response as ElevenLabs returned it; only `words` / `transcripts` and
-# `audio_duration_secs` are read.
+# The response as the provider returned it; `asr.providers` reads it.
 type AsrPayload = dict[str, Any]
 
 
@@ -24,22 +23,3 @@ def read_payload(path: Path) -> AsrPayload:
     if not isinstance(payload, dict):
         raise AsrError(f"ASR response is not a JSON object: {path}")
     return payload
-
-
-def word_items(payload: AsrPayload) -> list[Any]:
-    """Every word entry, from `words` or, for multichannel responses, the
-    concatenated `transcripts[*].words`. Entries are returned unchecked."""
-    words = payload.get("words")
-    if isinstance(words, list):
-        return words
-    transcripts = payload.get("transcripts")
-    if not isinstance(transcripts, list):
-        return []
-    items: list[Any] = []
-    for transcript in transcripts:
-        if not isinstance(transcript, dict):
-            continue
-        channel_words = transcript.get("words")
-        if isinstance(channel_words, list):
-            items.extend(channel_words)
-    return items

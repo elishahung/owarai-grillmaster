@@ -3,8 +3,9 @@
 Only the tools in `session.allowed` are registered; a session with no tool
 configs yields a server that lists nothing. Tool descriptions carry the
 session's limits so the agent sees them in the tool listing. `watch_clip`
-asks `speech` and `model`, by default MAI-Transcribe-2 and the configured
-Muse model (`watch_clip.build_speech`, `watch_clip.build_model`).
+asks `speech` and `model`, by default the manifest's speech provider (none
+without one) and the configured Muse model (`watch_clip.build_speech`,
+`watch_clip.build_model`).
 """
 
 from __future__ import annotations
@@ -23,8 +24,8 @@ from grillmaster.media.ffmpeg import SubprocessFfmpegRunner
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from grillmaster.agent_tools.mai import SpeechModel
     from grillmaster.agent_tools.meta import VideoModel
+    from grillmaster.asr.model import ClipHearing
     from grillmaster.core.tool_session import ToolSession
     from grillmaster.media.ffmpeg import FfmpegRunner
 
@@ -39,7 +40,7 @@ def build_server(
     session: ToolSession,
     runner: FfmpegRunner | None = None,
     model: VideoModel | None = None,
-    speech: SpeechModel | None = None,
+    speech: ClipHearing | None = None,
 ) -> FastMCP:
     server = FastMCP(SERVER_NAME, log_level="WARNING")
     for name in sorted(session.allowed):
@@ -59,7 +60,7 @@ def _tool(
     name: ToolName,
     runner: FfmpegRunner | None,
     model: VideoModel | None,
-    speech: SpeechModel | None,
+    speech: ClipHearing | None,
 ) -> tuple[Callable[..., Any], str]:
     """The handler and description of one allowed tool."""
     match name:

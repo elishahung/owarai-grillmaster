@@ -2,7 +2,7 @@
 
 Without `--session`, the manifest path comes from `GRILL_TOOL_SESSION`. A
 missing or invalid manifest (an unreadable reference SRT, or `watch_clip`
-without its Meta or Azure keys) exits non-zero with the reason on stderr before
+without its Meta or speech provider keys) exits non-zero with the reason on stderr before
 any MCP traffic, so the agent CLI reports a failed server instead of an
 empty tool list.
 """
@@ -14,9 +14,9 @@ import os
 import sys
 from pathlib import Path
 
-from grillmaster.agent_tools.mai import MaiError
 from grillmaster.agent_tools.meta import MetaError
 from grillmaster.agent_tools.server import build_server
+from grillmaster.asr.errors import AsrError
 from grillmaster.core.tool_session import SESSION_ENV_VAR, ToolSession
 
 _EXIT_BAD_SESSION = 2
@@ -40,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
         # Building the server reads the session's reference files and keys.
         server = build_server(ToolSession.load(path))
     # pydantic errors are ValueErrors
-    except (OSError, ValueError, MetaError, MaiError) as error:
+    except (OSError, ValueError, MetaError, AsrError) as error:
         return _fail(f"invalid tool session {path}: {error}")
     server.run("stdio")
     return 0

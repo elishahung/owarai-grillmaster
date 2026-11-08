@@ -30,7 +30,8 @@ from loguru import logger
 from grillmaster.agents.adapters import AdapterRegistry
 from grillmaster.agents.runner import AgentRunner
 from grillmaster.agents.workspace import seal_workspace_root
-from grillmaster.asr.client import connect_elevenlabs
+from grillmaster.asr.mai import connect_mai
+from grillmaster.asr.scribe import connect_elevenlabs
 from grillmaster.core.stage_key import StageKey
 from grillmaster.events.bus import EventBus
 from grillmaster.events.context import stage_scope
@@ -229,13 +230,14 @@ class ProjectRun:
 
 
 def real_externals() -> Externals:
-    """The real ffmpeg, yt-dlp, platform HTTP and ElevenLabs seams; each
-    loads its heavy library only on first use."""
+    """The real ffmpeg, yt-dlp, platform HTTP, ElevenLabs and Azure Speech
+    seams; each loads its heavy library only on first use."""
     return Externals(
         ffmpeg=SubprocessFfmpegRunner(),
         ytdlp=YtDlpLibrary(),
         http=UrllibJsonHttp(),
         speech_to_text=connect_elevenlabs,
+        mai=connect_mai,
     )
 
 

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from pydantic import ValidationError
 
+from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.tool_session import (
     FramesTool,
     SrtCheckTool,
@@ -132,6 +133,7 @@ def _watch_clip(root: Path, **overrides: Any) -> WatchClipTool:
         "clips_dir": root / "work" / "12_proofread" / "watch_clip",
         "model": "muse-spark-1.3-contributor",
         "effort": "high",
+        "speech": AsrProvider.SCRIBE,
         "speech_phrases": ("今井らいぱち",),
         "env_file": root / ".env",
         "timeout_s": 600.0,

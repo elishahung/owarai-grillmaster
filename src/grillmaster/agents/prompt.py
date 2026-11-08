@@ -101,6 +101,9 @@ def tools_section(
         lines.append(
             "- `watch_clip(start, end)`：另外聽寫並看這段影片，"
             "回傳日文的發話、畫面字幕與場景描述。"
+            if tools.watch_clip.speech is not None
+            else "- `watch_clip(start, end)`：另外看這段影片，"
+            "回傳日文的畫面字幕與場景描述。"
         )
     if not lines:
         return ""

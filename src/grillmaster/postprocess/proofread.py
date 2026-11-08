@@ -12,9 +12,9 @@ and cannot break the skeleton: fixes, each quoting the block's current text
 briefing patch, the replacement of each top-level field it corrects, every
 changed field explained in `briefing_changes`. A violation is a repair round.
 With a `watch_clip` tool in the session, the agent can also have a span of
-the video heard by a speech recognizer and watched by a video model, which
-report its speech, on-screen captions and scene, for lines whose ASR is
-suspect.
+the video watched by a video model and, with a speech provider, heard by
+the recognizer that did not write `ja`, which report its on-screen captions,
+scene and speech, for lines whose ASR is suspect.
 
 Python then applies the accepted fixes to a copy of the checked SRT, writes
 the patched briefing as this stage's own copy when it changed
@@ -33,6 +33,7 @@ from pydantic import BaseModel, ValidationError, field_validator
 from grillmaster.agents.adapters.base import Capability
 from grillmaster.agents.errors import ValidationFailure
 from grillmaster.agents.task import AgentTask, SchemaOutput
+from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.briefing import (
     Briefing,
     Catchphrase,
@@ -380,7 +381,7 @@ def build_proofread_task(
         telop_section(inputs.telop_reference),
         frames_guidance(load_prompt(PROMPTS, "proofread_frames.md")),
         (
-            load_prompt(PROMPTS, "proofread_watch_clip.md")
+            watch_clip_guidance(tools.watch_clip.speech)
             if tools.watch_clip is not None
             else None
         ),
@@ -581,3 +582,38 @@ def _entries(value: str | Sequence[BaseModel]) -> list[str]:
 def _cell(text: str) -> str:
     """`text` safe inside one Markdown table cell."""
     return " ".join(text.split()).replace("|", "\\|")
+
+
+# How the second hearing compares with `ja`, by the provider that hears it
+# (always the other one; `config` refuses the same provider twice). MAI
+# transcribes more accurately than Scribe (asr-provider-evaluation.md).
+_SPEECH_ACCURACY = {
+    AsrProvider.SCRIBE: "possibly less",
+    AsrProvider.MAI: "possibly more",
+}
+
+
+def watch_clip_guidance(speech: AsrProvider | None) -> str:
+    """The proofread's `watch_clip` guidance, its 発話 rules only with a
+    speech provider."""
+    if speech is None:
+        return render_template(
+            PROMPTS,
+            "proofread_watch_clip.md",
+            speech_lead="",
+            speech_sections="",
+            speech_rules="",
+            speech_cite="",
+        )
+    return render_template(
+        PROMPTS,
+        "proofread_watch_clip.md",
+        speech_lead=" and a second hearing",
+        speech_sections="its speech (発話) from another speech recognizer, ",
+        speech_rules=render_template(
+            PROMPTS,
+            "proofread_watch_clip_speech.md",
+            accuracy=_SPEECH_ACCURACY[speech],
+        ),
+        speech_cite=" (or `発話`)",
+    )

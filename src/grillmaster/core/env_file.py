@@ -1,9 +1,11 @@
-"""API keys for the tools that call metered services, read from `.env` alone.
+"""API keys for the agent tools that call metered services, read from `.env`
+alone.
 
-The manifest names the `.env` path, never a key: gemini's CLI strips every
-variable named like a key from its MCP servers, so a key only in the
-environment would work for some callers and not others. `dotenv` is
-imported on use.
+A tool manifest names the `.env` path, never a key: gemini's CLI strips
+every variable named like a key from its MCP servers, so a key only in the
+environment would work for some callers and not others. The speech clients
+(`asr.mai`, `asr.scribe`) and `agent_tools.meta` read their keys through
+this. `dotenv` is imported on use.
 """
 
 from __future__ import annotations

@@ -75,12 +75,15 @@ fields equal the explained ones. Python then writes `answer.json`,
 `report.md` (fixes + Python-computed briefing diff), `proofread.srt`
 (checked + fixes) and `briefing.json` only when changed (both deleted at
 stage start). With `[features] proofread_watch_clip` the
-session also gets `watch_clip` (MAI-Transcribe-2 speech biased toward the
-briefing's cast + Meta Muse captions via `[watch_clip]`, not agent roles;
-the preflight needs `META_API_KEY`, `AZURE_SPEECH_KEY`,
-`AZURE_SPEECH_ENDPOINT`; spans under `.work/12_proofread/watch_clip/`) plus
-`proofread_watch_clip.md` (テロップ ground truth; 発話 a second hearing whose
-spelling is not trusted; agreeing with `zh` keeps it), for
+session also gets `watch_clip` (speech from `[watch_clip] speech`, by
+default `auto` = the provider `[asr]` does not use, + Meta Muse captions, not agent roles; the
+preflight needs `META_API_KEY` and that provider's keys; spans under
+`.work/12_proofread/watch_clip/`) plus `watch_clip_guidance`
+(`proofread_watch_clip.md`, its 発話 rules from
+`proofread_watch_clip_speech.md` only with a speech provider: テロップ ground
+truth; 発話 another recognizer's hearing, "about as accurate as `ja`,
+possibly less" when Scribe hears MAI's `ja`, "possibly more" the other way,
+spelling not trusted; agreeing with `zh` keeps it), for
 ASR-suspect lines. The stage adds the cost of the span records new since
 its start to `watch_clip_cost_usd` (also when the proofread fails; never
 cleared on reset) and appends it to its step result. Finalize reads
@@ -211,7 +214,7 @@ not `video|cover|info|refine|glossary_check|proofread`.
 ## Settings and invariants
 
 - `grill.toml`: `[agents.roles] postprocess|editor|utility|image`; `[watch_clip]
-  model|effort`; `[features]
+  speech|model|effort`; `[features]
   cover|date_research|title_suggestion|proofread|proofread_watch_clip`; `[paths] package|archive`; `[package]
   remix_pool` (default `"default"`), `[[package.inserts]]`;
   `[programs.series|channel."X"]` `remix`, `inserts`, `instruction.{common,refine,glossary,proofread}`.

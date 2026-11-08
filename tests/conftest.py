@@ -16,20 +16,23 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from grillmaster.asr.client import SpeechToText, SpeechToTextFactory
+    from grillmaster.asr.mai import AzureSpeech, EpisodeTranscriber, MaiClientFactory
+    from grillmaster.asr.scribe import SpeechToText, SpeechToTextFactory
 
 
 @pytest.fixture(autouse=True)
 def _isolated_environment(
     request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Run every test in `tmp_path` with no `GRILL_HOME` and no ElevenLabs
-    key, so the developer's own `grill.toml` and `.env` are never found; and,
+    """Run every test in `tmp_path` with no `GRILL_HOME` and no speech
+    keys, so the developer's own `grill.toml` and `.env` are never found; and,
     but for the live tests that need them, with `tmp_path` as home, so neither
     are the developer's agent logins."""
     monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("GRILL_HOME", raising=False)
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_KEY", raising=False)
+    monkeypatch.delenv("AZURE_SPEECH_ENDPOINT", raising=False)
     if request.node.get_closest_marker("live") is None:
         monkeypatch.setenv("HOME", str(tmp_path))
         monkeypatch.setenv("USERPROFILE", str(tmp_path))
@@ -78,17 +81,31 @@ def speech_to_text() -> SpeechToTextFactory:
     return _no_speech_to_text
 
 
+def _no_mai(_credentials: AzureSpeech) -> EpisodeTranscriber:
+    raise AssertionError("this test reaches no ASR")
+
+
+@pytest.fixture
+def mai() -> MaiClientFactory:
+    return _no_mai
+
+
 @pytest.fixture
 def externals(
     fake_ffmpeg: FakeFfmpeg,
     ytdlp: FakeYtDlp,
     http: FakeJsonHttp,
     speech_to_text: SpeechToTextFactory,
+    mai: MaiClientFactory,
 ) -> Externals:
-    """Fake process seams; override `fake_ffmpeg`, `ytdlp`, `http` or
-    `speech_to_text` to change one."""
+    """Fake process seams; override `fake_ffmpeg`, `ytdlp`, `http`,
+    `speech_to_text` or `mai` to change one."""
     return Externals(
-        ffmpeg=fake_ffmpeg, ytdlp=ytdlp, http=http, speech_to_text=speech_to_text
+        ffmpeg=fake_ffmpeg,
+        ytdlp=ytdlp,
+        http=http,
+        speech_to_text=speech_to_text,
+        mai=mai,
     )
 
 

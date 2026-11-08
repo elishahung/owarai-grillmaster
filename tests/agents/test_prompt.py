@@ -10,6 +10,7 @@ from grillmaster.agents.prompt import (
     tools_section,
     view_file_section,
 )
+from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.tool_session import (
     FramesTool,
     ToolSession,
@@ -71,6 +72,7 @@ def test_the_watch_clip_line_leaves_the_limits_to_the_tool(tmp_path: Path):
         clips_dir=tmp_path / "watch_clip",
         model="muse-spark-1.3-contributor",
         effort="high",
+        speech=AsrProvider.SCRIBE,
         speech_phrases=(),
         env_file=tmp_path / ".env",
         timeout_s=60.0,
@@ -110,3 +112,21 @@ def test_handoff_section_fences_the_output_beyond_its_backticks(
 ):
     text = handoff_section(output, "problem")
     assert text.endswith(f"\n{fence}\n{output}\n{fence}")
+
+
+def test_the_watch_clip_line_without_speech_promises_no_hearing(tmp_path: Path):
+    watch_clip = WatchClipTool(
+        video=tmp_path / "video.mp4",
+        clips_dir=tmp_path / "watch_clip",
+        model="muse-spark-1.3-contributor",
+        effort="high",
+        speech=None,
+        speech_phrases=(),
+        env_file=tmp_path / ".env",
+        timeout_s=60.0,
+        max_span_s=300.0,
+    )
+    session = ToolSession(
+        project_root=tmp_path, frames=None, check_srt=None, watch_clip=watch_clip
+    )
+    assert tools_section(session).endswith("回傳日文的畫面字幕與場景描述。")

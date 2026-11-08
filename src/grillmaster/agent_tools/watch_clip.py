@@ -5,9 +5,11 @@ so an ASR-suspect line it would fix stays unresolved. This tool cuts the
 span from `video.mp4` as a small preview clip (picture and sound) and as
 FLAC audio, then asks two services, each once, no agent session:
 
-- 発話 from Azure's MAI-Transcribe-2 (`mai.MaiSpeechModel`): verbatim,
-  diarized phrases, biased toward the briefing's cast names. It keeps the speech
-  and its times; names and homophones may carry the wrong kanji.
+- 発話 from the manifest's `speech` provider, the one `ja.srt` was not
+  transcribed by (`asr.mai.MaiClient` or `asr.scribe.ScribeClipHearing`):
+  diarized phrases, MAI's biased toward the briefing's cast names. It keeps
+  the speech and its times; names and homophones may carry the wrong kanji.
+  Without a `speech` provider the section is left out.
 - テロップ and 場面 from Meta's Muse (`meta.MetaVideoModel`, `watch_clip.md`):
   every caption and name card verbatim, and a short scene description. Its
   captions and their times are reliable; its own speech was not (it
@@ -39,7 +41,6 @@ from typing import TYPE_CHECKING
 import anyio.to_thread
 from mcp.server.fastmcp.exceptions import ToolError
 
-from grillmaster.agent_tools import mai
 from grillmaster.agent_tools._media import media_duration
 from grillmaster.agent_tools.meta import (
     PRICES,
@@ -56,6 +57,8 @@ from grillmaster.agent_tools.watch_record import (
     WatchRecord,
     failed_path,
 )
+from grillmaster.asr.errors import AsrError
+from grillmaster.asr.providers import PROVIDERS
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.prompts import load_prompt
 from grillmaster.core.timecode import TimeRange
@@ -68,6 +71,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from grillmaster.agent_tools.meta import Usage
+    from grillmaster.asr.model import ClipHearing
     from grillmaster.core.tool_session import WatchClipTool
     from grillmaster.media.ffmpeg import FfmpegRunner
 
@@ -89,9 +93,12 @@ def build_model(config: WatchClipTool) -> VideoModel:
     )
 
 
-def build_speech(config: WatchClipTool) -> mai.SpeechModel:
-    """MAI-Transcribe-2; raises `MaiError` without the Azure key or endpoint."""
-    return mai.MaiSpeechModel(mai.read_credentials(config.env_file), config.timeout_s)
+def build_speech(config: WatchClipTool) -> ClipHearing | None:
+    """The manifest's speech provider, `None` without one; raises `AsrError`
+    without its key."""
+    if config.speech is None:
+        return None
+    return PROVIDERS[config.speech].clip_hearing(config.env_file, config.timeout_s)
 
 
 def span_name(span: TimeRange) -> str:
@@ -128,7 +135,7 @@ class ClipWatcher:
         config: WatchClipTool,
         runner: FfmpegRunner,
         model: VideoModel,
-        speech: mai.SpeechModel,
+        speech: ClipHearing | None,
     ) -> None:
         self._config = config
         self._runner = runner
@@ -142,11 +149,16 @@ class ClipWatcher:
 
     def describe(self) -> str:
         """Tool description with this session's span limit."""
+        speech = (
+            "発話 (another speech recognizer's verbatim phrases, "
+            "`[t] 話者N: text`, times in video seconds; 話者 numbers only mark "
+            "a change of speaker within this span), "
+            if self._speech is not None
+            else ""
+        )
         return (
             "Hear and watch the show between `start` and `end` (seconds) "
-            "independently of ja.srt, in Japanese: 発話 (a speech recognizer's "
-            "verbatim phrases, `[t] 話者N: text`, times in video seconds; "
-            "話者 numbers only mark a change of speaker within this span), "
+            f"independently of ja.srt, in Japanese: {speech}"
             "テロップ (every on-screen caption, name card and label, verbatim, "
             "read by a video model, with its time) and 場面 (a short scene "
             "description). It takes tens of seconds. The span must lie inside "
@@ -163,10 +175,16 @@ class ClipWatcher:
             lock = self._span_locks.setdefault(name, threading.Lock())
         with lock:
             clip_dir = self._config.clips_dir / name
-            try:
-                speech = render_speech(self._speech_record(span, clip_dir))
-            except (MediaError, mai.MaiError) as error:
-                speech = f"## 発話\n\n（取得できず: hearing the clip failed: {error}）"
+            speech = ""
+            if self._speech is not None:
+                try:
+                    record = self._speech_record(self._speech, span, clip_dir)
+                    speech = render_speech(record) + "\n\n"
+                except (MediaError, AsrError) as error:
+                    speech = (
+                        "## 発話\n\n"
+                        f"（取得できず: hearing the clip failed: {error}）\n\n"
+                    )
             try:
                 picture = self._watch_record(span, clip_dir).text
             except (MediaError, MetaError) as error:
@@ -175,27 +193,29 @@ class ClipWatcher:
                 )
         return (
             f"Clip {span.start:.3f}s-{span.end:.3f}s (times are video seconds; "
-            f"テロップ within about 2 s):\n{speech}\n\n{picture}"
+            f"テロップ within about 2 s):\n{speech}{picture}"
         )
 
-    def _speech_record(self, span: TimeRange, clip_dir: Path) -> SpeechRecord:
-        """The kept record, else MAI's transcript; raises `MediaError` or
-        `MaiError`."""
+    def _speech_record(
+        self, speech: ClipHearing, span: TimeRange, clip_dir: Path
+    ) -> SpeechRecord:
+        """The kept record, else `speech`'s hearing; raises `MediaError` or
+        `AsrError`."""
         path = clip_dir / SPEECH_FILE
         if path.is_file():
             return read_model(path, SpeechRecord)
         audio = clip_dir / WATCH_AUDIO_FILE
         slice_audio(self._runner, self._config.video, audio, span)
-        transcript = self._speech.transcribe(audio, self._config.speech_phrases)
+        hearing = speech.hear(audio, self._config.speech_phrases)
         record = SpeechRecord(
-            model=mai.MODEL,
-            audio_s=transcript.audio_s,
-            cost_usd=transcript.cost_usd,
+            model=hearing.model,
+            audio_s=hearing.cost.audio_duration_s,
+            cost_usd=hearing.cost.total_usd,
             phrases=[
                 phrase.model_copy(
                     update={"start_s": round(span.start + phrase.start_s, 3)}
                 )
-                for phrase in transcript.phrases
+                for phrase in hearing.phrases
             ],
         )
         write_model(path, record)

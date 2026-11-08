@@ -282,13 +282,16 @@ Claude's CLI runs a turn's MCP calls one by one): cuts ≤ `max_span_s` anywhere
 `clip.mp4` (`media.video.slice_preview`: 480p, 5 fps, mono AAC, ~1 MB per
 20 s), then calls two APIs directly, no agent session, each request
 bounded by the manifest's `timeout_s`:
-- 発話: Azure's MAI-Transcribe-2 (`mai.py`, `httpx` on use, fast
-  transcription REST, `ja`, verbatim, diarized, segment times, the
-  briefing's cast names as `phraseList` = `speech_phrases`; proper nouns stay out, their source is often the mishearing), cached as
-  `speech.json`, priced $0.10 per audio hour. Measured on 13 spans: no
-  speech dropped, times match `ja.srt`, 2–5 s per request; names and
-  homophones often get the wrong kanji, and 話者 numbers are per span
-  and split one speaker in two.
+- 発話: the manifest's `speech` provider, the one `ja.srt` was not
+  transcribed by (`build_speech` via `asr.providers.PROVIDERS`: `asr.mai.MaiClient.hear`, segment times,
+  the briefing's cast names as `phraseList` = `speech_phrases`, proper nouns
+  stay out since their source is often the mishearing; or
+  `asr.scribe.ScribeClipHearing`, words grouped into phrases, no keyterms),
+  cached as `speech.json` (`model` names the provider), priced by audio
+  length. `speech: None` (config `off`) leaves the section, the tool
+  description's mention and the prompt's rules out. MAI on 13 spans: no
+  speech dropped, 2–5 s per request; names and homophones often get the
+  wrong kanji, and 話者 numbers are per span.
 - テロップ / 場面: Meta's Muse (`meta.py`, `openai` SDK on use, Responses
   API, the clip inline as a base64 `input_video`, `[watch_clip]
   model`/`effort`) through `watch_clip.md`, cached as `watch.json`; its
@@ -297,7 +300,7 @@ bounded by the manifest's `timeout_s`:
 Each section stands alone: a failed request leaves its section naming the
 failure, the other still answers, and only the failed one is asked again.
 The tool shifts every time to video seconds. Keys come from the manifest's
-`env_file` alone (`_env.read_env_values`; the `.env` path, never a key): gemini's CLI strips every
+`env_file` alone (`core.env_file.read_env_values`; the `.env` path, never a key): gemini's CLI strips every
 `*KEY*` variable from MCP servers. `watch_record.py` holds the records
 and `cost_since` (apart so the grill process prices spans without the MCP
 stack); the archive move drops the media (`ProjectLayout.archive_discards`).

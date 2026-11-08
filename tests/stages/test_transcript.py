@@ -53,3 +53,47 @@ def test_response_without_words_fails(make_context: MakeContext, layout: Project
         transcript.STAGE.run(make_context(StageKey.TRANSCRIPT))
     assert not layout.ja_srt.exists()
     assert not layout.ja_voiced_srt.exists()
+
+
+def test_builds_the_japanese_srt_from_a_mai_response(
+    make_context: MakeContext, layout: ProjectLayout
+):
+    def phrase(speaker: int, text: str, start_ms: int) -> dict[str, object]:
+        return {
+            "speaker": speaker,
+            "text": text,
+            "words": [
+                {
+                    "text": char,
+                    "offsetMilliseconds": start_ms + i * 100,
+                    "durationMilliseconds": 100,
+                }
+                for i, char in enumerate(text)
+            ],
+        }
+
+    write_response(
+        layout,
+        {
+            "durationMilliseconds": 10_000,
+            "phrases": [
+                phrase(0, "番組とかで", 0),
+                phrase(1, "はい。", 520),
+                phrase(0, "会った。", 900),
+            ],
+        },
+    )
+
+    transcript.STAGE.run(make_context(StageKey.TRANSCRIPT))
+
+    (block,) = read_srt_file(layout.ja_voiced_srt)
+    assert block.text == "-[V1] 番組とかで会った。\n-[V2] はい。"
+
+
+def test_an_unknown_response_shape_fails(
+    make_context: MakeContext, layout: ProjectLayout
+):
+    write_response(layout, {"file_url": "x", "properties": {}})
+
+    with pytest.raises(AsrError, match="Unknown ASR response shape"):
+        transcript.STAGE.run(make_context(StageKey.TRANSCRIPT))

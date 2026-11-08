@@ -9,7 +9,6 @@ import pytest
 from mcp.server.fastmcp.exceptions import ToolError
 from mcp.types import TextContent
 
-from grillmaster.agent_tools.mai import MaiError, Phrase, Transcript
 from grillmaster.agent_tools.meta import (
     PRICES,
     Answer,
@@ -21,6 +20,9 @@ from grillmaster.agent_tools.meta import (
 from grillmaster.agent_tools.server import build_server
 from grillmaster.agent_tools.watch_clip import ClipWatcher, shift_times
 from grillmaster.agent_tools.watch_record import cost_since
+from grillmaster.asr.mai import MaiError
+from grillmaster.asr.model import Hearing, Phrase, TranscriptionCost
+from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.tool_session import MuseModel, ToolSession, WatchClipTool
 
 if TYPE_CHECKING:
@@ -38,12 +40,13 @@ USAGE = Usage(
 )
 ANSWER = "## テロップ\n[0.0] 石塚英彦(64)\n\n## 場面\n楽屋。"
 SHIFTED = "## テロップ\n[10.0] 石塚英彦(64)\n\n## 場面\n楽屋。"
-TRANSCRIPT = Transcript(
+TRANSCRIPT = Hearing(
+    model="scribe_v2",
     phrases=(
         Phrase(start_s=1.5, speaker=0, text="64歳でした。"),
         Phrase(start_s=3.25, speaker=1, text="えー。"),
     ),
-    audio_s=30.5,
+    cost=TranscriptionCost.priced(30.5, 0.22),
 )
 SPEECH = "## 発話\n\n[11.5] 話者0: 64歳でした。\n[13.2] 話者1: えー。"
 HEADER = "Clip 10.000s-40.500s (times are video seconds; テロップ within about 2 s):\n"
@@ -68,13 +71,13 @@ class FakeModel:
 
 
 class FakeSpeech:
-    """Transcribes every clip's audio as `reply` (a `Transcript` or an error)."""
+    """Hears every clip's audio as `reply` (a `Hearing` or an error)."""
 
-    def __init__(self, reply: Transcript | Exception = TRANSCRIPT) -> None:
+    def __init__(self, reply: Hearing | Exception = TRANSCRIPT) -> None:
         self.reply = reply
         self.calls: list[tuple[Path, tuple[str, ...]]] = []
 
-    def transcribe(self, audio: Path, phrases: Sequence[str]) -> Transcript:
+    def hear(self, audio: Path, phrases: Sequence[str]) -> Hearing:
         self.calls.append((audio, tuple(phrases)))
         if isinstance(self.reply, Exception):
             raise self.reply
@@ -89,6 +92,7 @@ def config(tmp_path: Path) -> WatchClipTool:
         clips_dir=tmp_path / "work" / "12_proofread" / "watch_clip",
         model="muse-spark-1.3-contributor",
         effort="high",
+        speech=AsrProvider.SCRIBE,
         speech_phrases=("石塚英彦",),
         env_file=tmp_path / ".env",
         timeout_s=60.0,
@@ -111,7 +115,7 @@ def test_a_span_is_heard_watched_priced_and_kept(
     assert speech.calls == [(clip_dir / "audio.flac", ("石塚英彦",))]
     assert (clip_dir / "clip.mp4").is_file()
     assert (clip_dir / "audio.flac").is_file()
-    cost = USAGE.cost_usd(PRICES[config.model]) + TRANSCRIPT.cost_usd
+    cost = USAGE.cost_usd(PRICES[config.model]) + TRANSCRIPT.cost.total_usd
     assert cost_since(config.clips_dir, frozenset()) == (2, pytest.approx(cost))
     # The kept records answer again without a new request or cut.
     calls = len(fake_ffmpeg.calls)
@@ -122,7 +126,20 @@ def test_a_span_is_heard_watched_priced_and_kept(
 
 
 def test_speech_is_priced_by_audio_length():
-    assert Transcript((), audio_s=3600.0).cost_usd == pytest.approx(0.10)
+    assert TranscriptionCost.priced(3600.0, 0.10).total_usd == pytest.approx(0.10)
+
+
+def test_without_a_speech_provider_only_the_picture_answers(
+    config: WatchClipTool, fake_ffmpeg: FakeFfmpeg
+):
+    model = FakeModel(Answer(ANSWER, USAGE))
+    watcher = ClipWatcher(
+        config.model_copy(update={"speech": None}), fake_ffmpeg, model, None
+    )
+
+    assert watcher.watch(10.0, 40.5) == f"{HEADER}{SHIFTED}"
+    assert "発話" not in watcher.describe()
+    assert not (config.clips_dir / SPAN_DIR / "audio.flac").exists()
 
 
 def test_usage_is_priced_with_cached_input_at_its_own_rate():
@@ -203,7 +220,7 @@ def test_a_failed_watch_still_answers_with_the_speech(
     assert "RateLimitError" in text
     assert cost_since(config.clips_dir, frozenset()) == (
         1,
-        pytest.approx(TRANSCRIPT.cost_usd),
+        pytest.approx(TRANSCRIPT.cost.total_usd),
     )
     # The speech is kept; only the picture is asked again.
     model.reply = Answer(ANSWER, USAGE)
@@ -217,7 +234,7 @@ def test_a_billed_request_without_an_answer_still_counts(
     watcher = ClipWatcher(config, fake_ffmpeg, model, FakeSpeech())
     for _ in range(2):
         assert "ended incomplete" in watcher.watch(10.0, 40.5)
-    cost = 2 * USAGE.cost_usd(PRICES[config.model]) + TRANSCRIPT.cost_usd
+    cost = 2 * USAGE.cost_usd(PRICES[config.model]) + TRANSCRIPT.cost.total_usd
     assert cost_since(config.clips_dir, frozenset()) == (3, pytest.approx(cost))
     # No answer was kept, so the span is watched again.
     model.reply = Answer(ANSWER, USAGE)

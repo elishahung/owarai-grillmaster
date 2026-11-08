@@ -1,7 +1,8 @@
 """`watch_clip`'s billed requests, as records the proofread stage prices.
 
 Every billed request leaves one record in its span's directory: the speech
-as `speech.json` (`SpeechRecord`, MAI-Transcribe-2, priced by audio length),
+as `speech.json` (`SpeechRecord`, the speech provider's, priced by audio
+length),
 Muse's captions and scene as `watch.json` (`WatchRecord`), or a Muse request
 billed without a usable answer as `failed-<n>.json` (`FailedWatch`), so its
 spend is counted too. The first two are also the span's cache. Kept apart
@@ -13,8 +14,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from grillmaster.agent_tools.mai import Phrase
 from grillmaster.agent_tools.meta import Usage
+from grillmaster.asr.model import Phrase
 from grillmaster.core.json_artifact import read_model
 from grillmaster.core.models import FrozenModel
 from grillmaster.core.tool_session import MuseEffort, MuseModel
@@ -32,8 +33,8 @@ class BilledRequest(FrozenModel):
 
 
 class SpeechRecord(BilledRequest):
-    """One span's speech as MAI-Transcribe-2 heard it, its phrases timed in
-    video seconds (`speaker` numbers are per span)."""
+    """One span's speech as the speech provider (`model`) heard it, its
+    phrases timed in video seconds (`speaker` numbers are per span)."""
 
     model: str
     audio_s: float

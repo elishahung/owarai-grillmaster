@@ -127,6 +127,19 @@ def test_archive_drops_watch_clip_media_but_keeps_records(
     ]
 
 
+def test_archive_drops_an_asr_upload_a_killed_run_left(
+    layout: ProjectLayout, state: ProjectState, tmp_path: Path
+):
+    layout.asr_upload.parent.mkdir(parents=True)
+    layout.asr_upload.write_bytes(b"flac")
+    layout.asr_json.write_text("{}\n", encoding="utf-8")
+
+    archived = archive_project(layout, state, tmp_path / "archive")
+
+    assert archived.asr_json.is_file()
+    assert not archived.asr_upload.exists()
+
+
 def test_archive_puts_undated_projects_under_etc(
     layout: ProjectLayout, state: ProjectState, tmp_path: Path
 ):

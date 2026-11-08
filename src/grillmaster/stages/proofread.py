@@ -4,9 +4,9 @@ proofread of `.work/11_glossary/checked.srt` into
 briefing (+ `answer.json`, `report.md`, and the dossier `aligned.tsv`,
 `history.md`; with telops on, the on-screen text once the telop scan has
 finished). With `[features] proofread_watch_clip` the agent also gets the
-`watch_clip` tool (speech from Azure's MAI-Transcribe-2, biased toward the
-briefing's cast names; captions and scene from Meta's Muse, `[watch_clip]`), its
-spans kept under `watch_clip/`; the cost of the requests this run made (each
+`watch_clip` tool (speech from `[watch_clip] speech`, the provider `[asr]`
+does not use, MAI's biased toward the briefing's cast names; captions and
+scene from Meta's Muse, `[watch_clip]`), its spans kept under `watch_clip/`; the cost of the requests this run made (each
 span's records, cached ones cost nothing) is added to the project's
 `watch_clip_cost_usd`, even when the proofread fails, since it is paid.
 
@@ -23,12 +23,13 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
-from grillmaster.agent_tools.mai import MODEL as MAI_MODEL
-from grillmaster.agent_tools.mai import MaiError, read_credentials
 from grillmaster.agent_tools.meta import MetaError, read_api_key
 from grillmaster.agent_tools.watch_record import billed_records, cost_since
+from grillmaster.asr.errors import AsrError
+from grillmaster.asr.providers import PROVIDERS
 from grillmaster.config.errors import ConfigError
 from grillmaster.core.briefing import Briefing
+from grillmaster.core.env_file import read_env_values
 from grillmaster.core.json_artifact import read_model
 from grillmaster.core.model_spec import Role
 from grillmaster.core.stage_key import StageKey
@@ -68,9 +69,9 @@ WATCH_CLIP_TIMEOUT_S = 300.0
 
 
 def _preflight(config: AppConfig, secrets: Secrets) -> None:
-    """With `watch_clip`, the Meta key and the Azure Speech key and endpoint."""
+    """With `watch_clip`, the Meta key and the speech provider's keys."""
     if config.features.proofread_watch_clip:
-        secrets.require_watch_clip_keys()
+        secrets.require_watch_clip_keys(config.watch_clip_speech)
 
 
 def watch_clip_tool(ctx: StageContext, briefing: Path) -> WatchClipTool | None:
@@ -81,19 +82,21 @@ def watch_clip_tool(ctx: StageContext, briefing: Path) -> WatchClipTool | None:
     proofread starts."""
     if not ctx.config.features.proofread_watch_clip:
         return None
+    settings = ctx.config.watch_clip
     try:
         read_api_key(ctx.env_file)
-        read_credentials(ctx.env_file)
-    except (MetaError, MaiError) as error:
+        if (speech := ctx.config.watch_clip_speech) is not None:
+            read_env_values(ctx.env_file, PROVIDERS[speech].env_keys, AsrError)
+    except (MetaError, AsrError) as error:
         raise ConfigError(
             f"{error}; the watch_clip tool server reads it from there alone"
         ) from error
-    settings = ctx.config.watch_clip
     return WatchClipTool(
         video=require(ctx.layout.video, StageKey.COMBINE),
         clips_dir=ctx.layout.proofread_watch_clip_dir,
         model=settings.model,
         effort=settings.effort,
+        speech=ctx.config.watch_clip_speech,
         speech_phrases=speech_phrases(read_model(briefing, Briefing)),
         env_file=ctx.env_file,
         timeout_s=WATCH_CLIP_TIMEOUT_S,
@@ -112,7 +115,9 @@ def speech_phrases(briefing: Briefing) -> tuple[str, ...]:
 def _watch_clip_param(config: AppConfig) -> str:
     if not config.features.proofread_watch_clip:
         return "off"
-    return f"{MAI_MODEL} + {config.watch_clip.model}/{config.watch_clip.effort}"
+    muse = f"{config.watch_clip.model}/{config.watch_clip.effort}"
+    speech = config.watch_clip_speech
+    return muse if speech is None else f"{speech} + {muse}"
 
 
 def _run(ctx: StageContext) -> str:

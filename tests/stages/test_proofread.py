@@ -6,7 +6,6 @@ import pytest
 from pydantic import SecretStr, ValidationError
 from tests.fakes import FakeAgentRunner, make_blocks, make_briefing
 
-from grillmaster.agent_tools.mai import Phrase
 from grillmaster.agent_tools.meta import Usage
 from grillmaster.agent_tools.watch_record import (
     FailedWatch,
@@ -15,9 +14,11 @@ from grillmaster.agent_tools.watch_record import (
     failed_path,
 )
 from grillmaster.agents.errors import AgentOutputError
+from grillmaster.asr.model import Phrase
 from grillmaster.config.errors import ConfigError
 from grillmaster.config.model import validate_config
 from grillmaster.config.secrets import Secrets
+from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.briefing import Briefing, Character
 from grillmaster.core.json_artifact import read_model, write_model
 from grillmaster.core.srt import read_srt_file, write_srt_file
@@ -126,6 +127,7 @@ def test_proofreads_in_the_stage_directory(
 PROOFREAD_WATCH_CLIP = {"features": {"proofread_watch_clip": True}}
 WATCH_CLIP_ENV = (
     "META_API_KEY=key\n"
+    "ELEVENLABS_API_KEY=key\n"
     "AZURE_SPEECH_KEY=key\n"
     "AZURE_SPEECH_ENDPOINT=https://speech.cognitiveservices.azure.com\n"
 )
@@ -194,7 +196,37 @@ def test_the_feature_adds_the_watch_clip_tool(
     # The cast only, once each: a proper noun's source may be the mishearing.
     assert tools.watch_clip.speech_phrases == ("尾形", "高野")
     assert tools.watch_clip.timeout_s == proofread.WATCH_CLIP_TIMEOUT_S
-    assert "`watch_clip(start, end)`" in agents.task(TASK_NAME).prompt
+    # MAI wrote ja.srt, so Scribe hears the spans, and may hear worse.
+    assert tools.watch_clip.speech == AsrProvider.SCRIBE
+    prompt = agents.task(TASK_NAME).prompt
+    assert "`watch_clip(start, end)`" in prompt
+    assert "about as accurate as `ja`,\n    possibly less" in prompt
+
+
+@pytest.mark.parametrize(
+    "config_data",
+    [{**PROOFREAD_WATCH_CLIP, "watch_clip": {"speech": "off"}}],
+    indirect=True,
+)
+def test_a_watch_clip_without_speech_leaves_the_hearing_out(
+    make_context: MakeContext,
+    project: ProjectLayout,
+    agents: FakeAgentRunner,
+    tmp_path: Path,
+):
+    project.video.write_bytes(b"mp4")
+    (tmp_path / ".env").write_text("META_API_KEY=key\n", encoding="utf-8")
+    agents.script[TASK_NAME] = FIX
+
+    proofread.STAGE.run(make_context(StageKey.PROOFREAD))
+
+    tools = agents.task(TASK_NAME).tools
+    assert tools is not None
+    assert tools.watch_clip is not None
+    assert tools.watch_clip.speech is None
+    prompt = agents.task(TASK_NAME).prompt
+    assert "`watch_clip(start, end)`" in prompt
+    assert "発話" not in prompt
 
 
 @pytest.mark.parametrize("config_data", [PROOFREAD_WATCH_CLIP], indirect=True)
@@ -251,7 +283,7 @@ def test_the_spans_this_run_requested_add_to_the_project_spend(
         ({}, "off"),
         (
             {"proofread_watch_clip": True},
-            "MAI-Transcribe-2 + muse-spark-1.3-contributor/high",
+            "scribe + muse-spark-1.3-contributor/high",
         ),
     ],
 )
@@ -279,11 +311,11 @@ def test_the_preflight_needs_the_watch_clip_keys_only_with_the_feature(
     key = SecretStr("key")
     proofread.STAGE.preflight(
         config(proofread_watch_clip=True),
-        Secrets(meta_api_key=key, azure_speech_key=key, azure_speech_endpoint=key),
+        Secrets(meta_api_key=key, elevenlabs_api_key=key),
     )
     with pytest.raises(ConfigError, match="META_API_KEY is not set"):
         proofread.STAGE.preflight(config(proofread_watch_clip=True), secrets)
-    with pytest.raises(ConfigError, match="AZURE_SPEECH_KEY is not set"):
+    with pytest.raises(ConfigError, match="ELEVENLABS_API_KEY is not set"):
         proofread.STAGE.preflight(
             config(proofread_watch_clip=True), Secrets(meta_api_key=key)
         )
@@ -308,7 +340,7 @@ def test_a_key_only_in_the_environment_fails_before_the_proofread(
 ):
     project.video.write_bytes(b"mp4")
     monkeypatch.setenv("META_API_KEY", "key")
-    monkeypatch.setenv("AZURE_SPEECH_KEY", "key")
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "key")
     with pytest.raises(ConfigError, match="reads it from there alone"):
         proofread.STAGE.run(make_context(StageKey.PROOFREAD))
     assert agents.tasks == []

@@ -262,6 +262,11 @@ class ProjectLayout:
         return self.work_dir(StageKey.ASR) / "asr.json"
 
     @property
+    def asr_upload(self) -> Path:
+        """MAI's FLAC upload: made per request and deleted after it."""
+        return self.work_dir(StageKey.ASR) / "upload.flac"
+
+    @property
     def prepass_briefing(self) -> Path:
         return self.work_dir(StageKey.PREPASS) / _BRIEFING_FILE_NAME
 
@@ -364,13 +369,11 @@ class ProjectLayout:
     def archive_discards(self) -> tuple[Path, ...]:
         """Existing files the archive move drops: the `watch_clip` tool's
         clips and audio, which nothing reads once their span's records are
-        kept."""
+        kept, and an ASR upload a killed run left behind."""
         spans = self.proofread_watch_clip_dir
-        return tuple(
-            sorted(
-                path for name in WATCH_MEDIA_FILES for path in spans.glob(f"*/{name}")
-            )
-        )
+        media = (path for name in WATCH_MEDIA_FILES for path in spans.glob(f"*/{name}"))
+        upload = (self.asr_upload,) if self.asr_upload.is_file() else ()
+        return tuple(sorted((*media, *upload)))
 
     @property
     def chat_batches_dir(self) -> Path:

@@ -22,6 +22,7 @@ from pydantic import (
     model_validator,
 )
 
+from grillmaster.core.asr_provider import AsrProvider
 from grillmaster.core.model_spec import ModelSpec, ModelSpecField, Role
 from grillmaster.core.stage_key import StageKey
 from grillmaster.core.tool_session import MuseEffort, MuseModel
@@ -127,23 +128,23 @@ class AgentsConfig(BaseModel):
 class AsrConfig(BaseModel):
     model_config = _STRICT
 
-    model: str = Field(
-        default="scribe_v2",
-        min_length=1,
-        description="ElevenLabs speech-to-text model.",
-    )
-    language: str = Field(
-        default="jpn", min_length=1, description="Language code hint for ElevenLabs."
+    provider: AsrProvider = Field(
+        default=AsrProvider.MAI,
+        description="Speech recognizer for the whole episode: mai (Azure MAI-Transcribe-2; AZURE_SPEECH_KEY, AZURE_SPEECH_ENDPOINT) or scribe (ElevenLabs Scribe v2; ELEVENLABS_API_KEY).",
     )
 
 
 class WatchClipConfig(BaseModel):
-    """The proofread's `watch_clip` tool: per span, an Azure MAI-Transcribe-2
-    call for the speech (`AZURE_SPEECH_KEY`, `AZURE_SPEECH_ENDPOINT`) and a
-    Meta Muse call for the captions and scene (`META_API_KEY`), not agent
-    roles."""
+    """The proofread's `watch_clip` tool: per span, a speech recognizer for
+    the speech (`speech`, the provider `[asr]` does not use) and a Meta Muse
+    call for the captions and scene (`META_API_KEY`), not agent roles."""
 
     model_config = _STRICT
+
+    speech: AsrProvider | Literal["auto", "off"] = Field(
+        default="auto",
+        description="Speech recognizer for each span's 発話, a second hearing beside ja.srt: auto (the provider [asr] does not use), a named provider (it must differ from [asr] provider), or off for no 発話 (Muse's captions and scene only).",
+    )
 
     model: MuseModel = Field(
         default="muse-spark-1.3-contributor",
@@ -405,6 +406,28 @@ class AppConfig(BaseModel):
     features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     package: PackageConfig = Field(default_factory=PackageConfig)
     programs: ProgramsConfig = Field(default_factory=ProgramsConfig)
+
+    @property
+    def watch_clip_speech(self) -> AsrProvider | None:
+        """`[watch_clip] speech` resolved: `auto` is the provider `[asr]`
+        does not use (none once only one exists), `off` is `None`."""
+        match self.watch_clip.speech:
+            case "off":
+                return None
+            case "auto":
+                return next((p for p in AsrProvider if p != self.asr.provider), None)
+            case provider:
+                return provider
+
+    @model_validator(mode="after")
+    def _second_hearing_differs(self) -> AppConfig:
+        if self.watch_clip.speech == self.asr.provider:
+            raise ValueError(
+                f"[watch_clip] speech = '{self.watch_clip.speech}' is [asr] provider "
+                "too; a second hearing by the same recognizer repeats its errors "
+                "(use auto, the other provider, or off)"
+            )
+        return self
 
     @model_validator(mode="after")
     def _program_inserts_exist(self) -> AppConfig:

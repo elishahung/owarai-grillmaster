@@ -45,8 +45,21 @@ _SPEECH_ENCODE = (
     "-f",
     "ogg",
 )
-# `watch_clip`'s speech service reads WAV, MP3 or FLAC only.
-_FLAC_ENCODE = ("-vn", "-c:a", "flac", "-ac", "1", "-ar", "16000", "-f", "flac")
+# MAI (ASR and `watch_clip`) reads WAV, MP3 or FLAC only. 16-bit: ffmpeg
+# would pick 24-bit for decoded Opus, 40 % larger for nothing.
+_FLAC_ENCODE = (
+    "-vn",
+    "-c:a",
+    "flac",
+    "-sample_fmt",
+    "s16",
+    "-ac",
+    "1",
+    "-ar",
+    "16000",
+    "-f",
+    "flac",
+)
 
 
 def extract_audio(runner: FfmpegRunner, video: Path, output: Path) -> None:

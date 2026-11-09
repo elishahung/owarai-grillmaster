@@ -44,7 +44,6 @@ from grillmaster.asr.payload import read_payload
 from grillmaster.asr.srt_builder import (
     JAPANESE_HARD_PUNCTUATION,
     JAPANESE_SOFT_PUNCTUATION,
-    MAX_CHARACTERS_PER_LINE,
     ends_with_hard_punctuation,
 )
 from grillmaster.core.fs import atomic_write_text
@@ -283,103 +282,64 @@ def timed_words(payload: AsrPayload) -> list[WordToken]:
 
 def srt_tokens(payload: AsrPayload) -> list[WordToken]:
     """The SRT builder's tokens: the words with a leading punctuation mark
-    split off, sorted by time, back-channels that cut into another
-    speaker's sentence moved behind it or dropped (`place_backchannels`)."""
+    split off, sorted by time, listeners' back-channels inside another
+    speaker's talk dropped (`drop_backchannels`)."""
     tokens = [
         part
         for word in timed_words(payload)
         for part in split_leading_mark(word, _LEADING_MARKS)
     ]
     tokens.sort(key=lambda token: (token.start, token.end))
-    return place_backchannels(tokens, MAX_CHARACTERS_PER_LINE)
+    return drop_backchannels(tokens)
 
 
-def place_backchannels(tokens: Sequence[WordToken], line_chars: int) -> list[WordToken]:
-    """Keep each sentence whole across a listener's back-channel.
+def drop_backchannels(tokens: Sequence[WordToken]) -> list[WordToken]:
+    """Drop the listeners' back-channels inside one talker's talk.
 
     MAI gives a listener's うん its own speaker where Scribe folded it into
-    the talker, and the builder starts a new utterance at every speaker
-    change, so 「派手な」「うん。」「ものやった時に」 would split the sentence
-    in two blocks. A run of back-channel words only that cuts into another
-    speaker's unfinished sentence is, when that sentence fits one line of
-    `line_chars` and is cut only once, moved behind the sentence's end, so
-    the builder sets it as the block's second `-` line; otherwise dropped.
-    Only the order changes: every kept token keeps its time. A reply after
-    a finished sentence (「〜ですか？」「はい。」), or anything beyond
-    back-channel words, stays where it is."""
+    the talker. Back-channel-only runs by other speakers, one or several in
+    a row, that the same talker resumes after carry nothing a viewer reads:
+    mid-sentence (「派手な」「うん。」「ものやった時に」) they would split the
+    sentence in two blocks, between sentences (「〜企画です。」「ほー。」
+    「ちなみに〜」) each became a 「-嗯」 line. They are dropped. Kept, after
+    a finished sentence only: an answer to a question (the sentence ends in
+    ？ or か。) and a reaction ending in ？ (ええ？). A reply the talker
+    does not resume after stays too. Kept tokens keep their times."""
     runs = [list(run) for _, run in groupby(tokens, key=lambda t: t.speaker_id)]
     out: list[WordToken] = []
-    # `out` without the moved back-channels: the talk the next cut is
-    # judged against, so a moved うん never stands in for the talker.
-    spoken: list[WordToken] = []
-
-    def emit(run: Sequence[WordToken]) -> None:
-        out.extend(run)
-        spoken.extend(run)
-
     index = 0
     while index < len(runs):
-        cuts = _sentence_cuts(runs, index, spoken)
-        if not cuts:
-            emit(runs[index])
-            index += 1
+        talker = out[-1] if out else None
+        end = index
+        while (
+            talker is not None
+            and end < len(runs)
+            and runs[end][0].speaker_id != talker.speaker_id
+            and _is_backchannel(runs[end])
+        ):
+            end += 1
+        if (
+            talker is not None
+            and index < end < len(runs)
+            and runs[end][0].speaker_id == talker.speaker_id
+            and not _answers_or_reacts(out, runs[index:end])
+        ):
+            index = end
             continue
-        if len(cuts) == 1:
-            # The talker's run after the cut, possibly running on past the
-            # sentence's end.
-            talker = runs[cuts[0] + 1]
-            end = next(
-                (
-                    i + 1
-                    for i, t in enumerate(talker)
-                    if ends_with_hard_punctuation(t.text)
-                ),
-                len(talker),
-            )
-            sentence = _sentence_head(spoken) + "".join(t.text for t in talker[:end])
-            emit(talker[:end])
-            if len(sentence) <= line_chars:
-                out.extend(runs[cuts[0]])
-            emit(talker[end:])
-        else:
-            for cut in cuts:
-                emit(runs[cut + 1])
-        index = cuts[-1] + 2
+        out.extend(runs[index])
+        index += 1
     return out
 
 
-def _sentence_cuts(
-    runs: list[list[WordToken]], index: int, spoken: list[WordToken]
-) -> list[int]:
-    """The run indexes from `index` on that are back-channels cutting into
-    the sentence `spoken` ends with, each followed by the talker's next run."""
-    cuts: list[int] = []
-    talker = spoken[-1] if spoken else None
-    while (
-        talker is not None
-        and index + 1 < len(runs)
-        and runs[index][0].speaker_id != talker.speaker_id
-        and runs[index + 1][0].speaker_id == talker.speaker_id
-        and not ends_with_hard_punctuation(talker.text)
-        and _is_backchannel(runs[index])
-    ):
-        cuts.append(index)
-        talker = runs[index + 1][-1]
-        if any(ends_with_hard_punctuation(t.text) for t in runs[index + 1]):
-            break
-        index += 2
-    return cuts
-
-
-def _sentence_head(spoken: list[WordToken]) -> str:
-    """The talker's text since their last sentence end in `spoken`."""
-    head: list[str] = []
-    speaker = spoken[-1].speaker_id if spoken else None
-    for token in reversed(spoken):
-        if token.speaker_id != speaker or ends_with_hard_punctuation(token.text):
-            break
-        head.append(token.text)
-    return "".join(reversed(head))
+def _answers_or_reacts(
+    talk: Sequence[WordToken], listeners: Sequence[Sequence[WordToken]]
+) -> bool:
+    """Whether the `listeners`' back-channels after `talk` answer its finished
+    question or react to its finished sentence with a ？."""
+    if not ends_with_hard_punctuation(talk[-1].text):
+        return False
+    question = "".join(t.text for t in talk[-2:]).endswith(("？", "?", "か。"))
+    return question or any(run[-1].text.endswith(("？", "?")) for run in listeners)
 
 
 def _is_backchannel(run: Sequence[WordToken]) -> bool:

@@ -60,7 +60,7 @@ def test_builds_the_japanese_srt(make_context: MakeContext, layout: ProjectLayou
     assert not layout.work_dir(StageKey.TRANSCRIPT).exists()
 
 
-def test_a_backchannel_inside_a_sentence_becomes_its_second_line(
+def test_a_backchannel_inside_a_sentence_is_dropped(
     make_context: MakeContext, layout: ProjectLayout
 ):
     write_response(
@@ -78,7 +78,7 @@ def test_a_backchannel_inside_a_sentence_becomes_its_second_line(
     transcript.STAGE.run(make_context(StageKey.TRANSCRIPT))
 
     (block,) = read_srt_file(layout.ja_voiced_srt)
-    assert block.text == "-[V1] 番組とかで会った。\n-[V2] はい。"
+    assert block.text == "[V1] 番組とかで会った。"
 
 
 def test_response_without_words_fails(make_context: MakeContext, layout: ProjectLayout):

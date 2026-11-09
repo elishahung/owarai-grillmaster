@@ -298,7 +298,8 @@ listing, in order, least-squares balanced groups of ≥2) into manifests, never 
 - `asr/`: `mai.py` is the ASR (MAI-Transcribe-2: the episode client, the
   response → `model.WordToken`s, `read_response` refusing any other shape);
   `srt_builder.py` takes tokens and knows no provider (a provider's quirk
-  goes in its module, e.g. MAI's `place_backchannels`; its tuning constants
+  goes in its module, e.g. MAI's `drop_backchannels` (a listener's 相槌
+  inside one talker's talk never reaches `ja.srt`); its tuning constants
   are intentional, not settings); `scribe.py` (Scribe v2) only hears
   `watch_clip` spans. Evaluation and how to check a new candidate:
   `references/asr-provider-evaluation.md`.

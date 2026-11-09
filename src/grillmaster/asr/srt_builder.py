@@ -1,7 +1,7 @@
 """Convert word-level ASR tokens into Japanese source SRT blocks.
 
 `asr.mai.srt_tokens` turns the response into time-ordered `WordToken`s
-(the provider's quirks, such as its back-channel placement, live there).
+(the provider's quirks, such as dropping its back-channels, live there).
 Words are grouped into utterances (speaker change, silence, punctuation,
 length), utterances into subtitle blocks (close turns become `-` dialogue),
 then timings are de-overlapped and held briefly after speech ends. The same

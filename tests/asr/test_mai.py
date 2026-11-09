@@ -14,8 +14,8 @@ from grillmaster.asr.mai import (
     AzureSpeech,
     MaiClient,
     MaiError,
+    drop_backchannels,
     is_response,
-    place_backchannels,
     read_response,
     srt_tokens,
     timed_words,
@@ -233,102 +233,66 @@ def tokens(*runs: tuple[str, str, float]) -> list[WordToken]:
     ]
 
 
-def text_of(result: list[WordToken]) -> list[tuple[str | None, str]]:
-    return [
-        (token.speaker_id, "".join(t.text for t in group))
-        for token, group in _runs(result)
-    ]
-
-
-def _runs(result: list[WordToken]) -> list[tuple[WordToken, list[WordToken]]]:
-    runs: list[tuple[WordToken, list[WordToken]]] = []
-    for token in result:
-        if runs and runs[-1][0].speaker_id == token.speaker_id:
-            runs[-1][1].append(token)
-        else:
-            runs.append((token, [token]))
-    return runs
-
-
-def test_a_backchannel_in_a_one_line_sentence_moves_behind_it():
-    original = tokens(
-        ("a", "番組とかで", 0.0), ("b", "うん。", 0.6), ("a", "会った。", 1.0)
-    )
-
-    result = place_backchannels(original, 24)
-
-    assert text_of(result) == [("a", "番組とかで会った。"), ("b", "うん。")]
-    # Only the order changes.
-    assert sorted(result, key=id) == sorted(original, key=id)
-
-
-def test_a_backchannel_in_a_two_line_sentence_is_dropped():
-    long_head = "だからゴールデンボンバーが本当に派手な"
-    result = place_backchannels(
-        tokens(
-            ("a", long_head, 0.0), ("b", "うん。", 2.0), ("a", "ものやった時に。", 2.5)
-        ),
-        24,
-    )
-
-    assert text_of(result) == [("a", f"{long_head}ものやった時に。")]
-
-
-def test_a_sentence_cut_twice_drops_both_backchannels():
-    result = place_backchannels(
-        tokens(
+@pytest.mark.parametrize(
+    "runs",
+    [
+        (("a", "番組とかで", 0.0), ("b", "うん。", 0.6), ("a", "会った。", 1.0)),
+        (
             ("a", "あの僕の", 0.0),
             ("b", "うんうん。", 0.5),
             ("a", "系統の", 1.1),
             ("c", "ああ。", 1.5),
             ("a", "先頭。", 1.8),
         ),
-        24,
-    )
-
-    assert text_of(result) == [("a", "あの僕の系統の先頭。")]
-
-
-def test_a_moved_backchannel_never_stands_in_for_the_talker():
-    # B's うん (no mark) moves behind A's line; D's うん then follows B's
-    # next line, which is not cut into, so D's stays where it is.
-    result = place_backchannels(
-        tokens(
-            ("a", "番組とかで", 0.0),
-            ("b", "うん", 0.6),
-            ("a", "会った。", 0.9),
-            ("d", "うん", 1.4),
-            ("b", "そう", 1.7),
+        # Neither the mid-sentence か nor the ？ makes it a reply.
+        (("a", "問題とか", 0.0), ("b", "ええ？", 0.5), ("a", "あって。", 0.9)),
+        (("a", "企画です。", 0.0), ("b", "ほー。", 0.6), ("a", "ちなみに。", 1.0)),
+        (
+            ("a", "揃えました。", 0.0),
+            ("b", "うん。", 0.7),
+            ("c", "はいはい。", 1.0),
+            ("a", "次。", 1.6),
         ),
-        24,
-    )
-
-    assert text_of(result) == [
-        ("a", "番組とかで会った。"),
-        ("b", "うん"),
-        ("d", "うん"),
-        ("b", "そう"),
-    ]
+    ],
+    ids=[
+        "mid-sentence",
+        "cut-twice",
+        "mid-sentence-reaction",
+        "between-sentences",
+        "several-listeners",
+    ],
+)
+def test_listeners_inside_the_talkers_talk_are_dropped(
+    runs: tuple[tuple[str, str, float], ...],
+):
+    original = tokens(*runs)
+    # Only the talker's tokens remain, at their times.
+    assert drop_backchannels(original) == [t for t in original if t.speaker_id == "a"]
 
 
 @pytest.mark.parametrize(
     "runs",
     [
-        # A reply after a finished sentence.
         (("a", "行くんですか？", 0.0), ("b", "はい。", 0.8), ("a", "そう。", 1.2)),
-        # More than back-channel words.
+        (("a", "行くんか。", 0.0), ("b", "うん。", 0.6), ("a", "そう。", 1.0)),
+        (("a", "3個。", 0.0), ("b", "ええ？", 0.4), ("a", "そう。", 0.8)),
+        (("a", "企画です。", 0.0), ("b", "うん。", 0.6), ("c", "次。", 1.0)),
         (("a", "あとDJさんが", 0.0), ("b", "あの裸のね。", 0.8), ("a", "出て", 1.5)),
-        # Nobody resumes.
-        (("a", "それで", 0.0), ("b", "うん。", 0.4), ("c", "次。", 0.8)),
     ],
-    ids=["after-a-sentence", "more-than-a-backchannel", "no-resume"],
+    ids=[
+        "answer-to-？",
+        "answer-to-か",
+        "reaction-ending-in-？",
+        "no-resume",
+        "more-than-a-backchannel",
+    ],
 )
-def test_other_turns_stay_where_they_are(runs: tuple[tuple[str, str, float], ...]):
+def test_replies_and_reactions_stay(runs: tuple[tuple[str, str, float], ...]):
     original = tokens(*runs)
-    assert place_backchannels(original, 24) == original
+    assert drop_backchannels(original) == original
 
 
-def test_a_moved_backchannel_becomes_the_sentences_second_line():
+def test_a_sentence_cut_by_a_backchannel_stays_one_block():
     payload = {
         "durationMilliseconds": 10_000,
         "phrases": [
@@ -340,5 +304,5 @@ def test_a_moved_backchannel_becomes_the_sentences_second_line():
 
     (block,) = build_srt_blocks(srt_tokens(payload)).blocks
 
-    assert block.text == "-番組とかで会った。\n-はい。"
+    assert block.text == "番組とかで会った。"
     assert block.time_range.start == 0.0

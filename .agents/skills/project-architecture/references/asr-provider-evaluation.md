@@ -249,15 +249,20 @@ All six questions went MAI's way, or were acceptable for MAI:
   - `merge_speaker_turns_gap_s = 0.2` (Scribe 0.05), now the builder's
     default. It was measured the way Scribe's was: the share of replies
     that start with a response cue stays at 31–35 % up to 0.2 s, then falls.
-  - `place_backchannels` (`asr/mai.py`). MAI gives a listener's うん/はい its own speaker,
-    which split the talker's sentence in two blocks: 526 cases in 11
-    episodes. The rule acts only on an other-speaker run of closed-list
-    back-channel words inside an unfinished sentence:
-    - when the sentence fits one line and is cut once, the run moves behind
-      the sentence and becomes the block's second `-` line (111);
-    - otherwise it is dropped (415).
-  - No token's time changes. The owner reviewed before/after clips of each
-    case and preferred the result.
+  - `drop_backchannels` (`asr/mai.py`). MAI gives a listener's うん/はい its
+    own speaker. Mid-sentence that split the talker's sentence in two
+    blocks (526 cases in 11 episodes); between sentences each became a
+    「-嗯」 line (254 of 306 back-channel-only runs in 4 episodes). A run
+    of closed-list back-channel words by other speakers, one or several in
+    a row, that the same talker resumes after is dropped. Kept, after a
+    finished sentence only: an answer to a question (ending in ？ or か。)
+    and a reaction ending in ？. No token's time changes.
+  - History: the first rule (`place_backchannels`, owner-reviewed with
+    clips) handled only mid-sentence cuts and moved a one-line case behind
+    the sentence as a second `-` line. On 2026-11-09 the owner found too
+    many 「嗯」「啊」 lines in translated episodes. The one rule replaced it,
+    since the moved lines were mostly redundant はい too. On the 4 MAI
+    episodes, back-channel-only subtitle lines went from 397 to 128.
 - The episode's phrase list is the source's credited talent names. The
   briefing does not exist yet at ASR time. On 261006 the phrase list moved
   ノブ from 9 to 24 hits and 大悟 from 0 to 7, with no extra charge.

@@ -100,8 +100,8 @@ names + curated Han/kana-Latin `zh` from the fixed glossary, longest first),
 then Netflix-TC punctuation (incl. a model's spaced or punctuation-led
 `/`/`／` speaker separator: two `-` lines when that fits a one-line block,
 else one `／`, never a comma; unspaced `1/2`, `A／B` stay; a block of 3+
-lines with several voices folded to two by `_fold_turns`: two `-` lines, or
-the voices split by `／`. The chunk agent writes one `-` line per voice
+lines with several voices folded to two `-` rows by `_fold_turns`, voices
+sharing a row split by `／` (`-A／B` / `-C`). The chunk agent writes one `-` line per voice
 regardless of count; folding is refine's job, `_fold_turns` its guarantee), then `fit_text`: a line wider than the full
 canvas (1900 px) is broken into rows (libass breaks only at a space, so CJK
 ran off both edges), its row-final `，、；。` dropped. The break lives in the

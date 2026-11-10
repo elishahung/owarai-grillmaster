@@ -27,6 +27,16 @@ def word(
     }
 
 
+def chars(
+    text: str, start: float, speaker: str, step: float = 0.1
+) -> list[dict[str, Any]]:
+    """One word per character, `step` seconds each, from `start`."""
+    return [
+        word(char, start + i * step, start + (i + 1) * step, speaker)
+        for i, char in enumerate(text)
+    ]
+
+
 def tokens(payload: dict[str, Any]) -> list[WordToken]:
     """`payload["words"]` as time-ordered tokens, a leading hard mark split
     off as the ASR's tokens have it (`。1934`)."""
@@ -221,17 +231,16 @@ def test_limits_dialogue_block_height_after_overlap_merge():
     }
 
     # The split between blocks is driven by the 2-line cap. Pass it
-    # explicitly to keep this test pinned to that cap. With short
-    # same-speaker hard-punct merging enabled, 三+四 land in one
-    # block (inlined), and 五+六 form a final dialogue block. Each block
-    # starts at its speech; the padded block before it ends there.
+    # explicitly to keep this test pinned to that cap. 三+四 start too soon
+    # after 一+二 for that block to be readable on its own, so they join it,
+    # one speaker's lines on one `-` line; 五+六 would make four lines and
+    # form a final dialogue block. Each block starts at its speech; the
+    # padded block before it ends there.
     srt = render(payload, SrtFormatOptions(max_lines_per_block=2))
 
-    assert "1\n00:00:00,000 --> 00:00:00,100\n-一。\n-二。" in srt
-    assert "2\n00:00:00,100 --> 00:00:00,300\n三。 四。" in srt
-    assert "3\n00:00:00,300 --> 00:00:01,350\n-五。\n-六。" in srt
-    # No 4th block — 五+六 together fit the dialogue cap.
-    assert "\n4\n" not in srt.rstrip("\n") + "\n"
+    assert "1\n00:00:00,000 --> 00:00:00,300\n-一。\n-二。 三。 四。" in srt
+    assert "2\n00:00:00,300 --> 00:00:01,350\n-五。\n-六。" in srt
+    assert "\n3\n" not in srt.rstrip("\n") + "\n"
 
 
 def test_merges_short_same_speaker_utterances_across_hard_punct():
@@ -929,10 +938,10 @@ def test_hold_caps_middle_block_at_next_block_minus_min_gap():
 
 
 def test_hold_does_not_shrink_back_to_back_blocks():
-    # Blocks 1-2 sit at 0.0→0.1 and 0.1→0.3 (no gap between them).
-    # cap = next.start - 0.08 < block.end, so the no-shrink rule keeps
-    # each end where the overlap pass left it. Only the last block
-    # (0.3→0.85) extends by hold to 1.35.
+    # Block 1 ends at 0.3 where block 2 starts (no gap between them).
+    # cap = next.start - 0.08 < block.end, so the no-shrink rule keeps its
+    # end where the overlap pass left it. Only the last block (0.3→0.85)
+    # extends by hold to 1.35.
     payload = {
         "words": [
             word("一。", 0.0, 0.1, "speaker_0"),
@@ -953,44 +962,32 @@ def test_hold_does_not_shrink_back_to_back_blocks():
         ),
     )
 
-    assert "1\n00:00:00,000 --> 00:00:00,100" in srt
-    assert "2\n00:00:00,100 --> 00:00:00,300" in srt
-    assert "3\n00:00:00,300 --> 00:00:01,350" in srt
-    assert "\n4\n" not in srt.rstrip("\n") + "\n"
+    assert "1\n00:00:00,000 --> 00:00:00,300" in srt
+    assert "2\n00:00:00,300 --> 00:00:01,350" in srt
+    assert "\n3\n" not in srt.rstrip("\n") + "\n"
 
 
 def test_overlapping_blocks_never_start_after_their_speech():
-    # The first line is padded to 0.35 s; the next speaker starts at 0.32 s
-    # with a two-line turn, too much to share its block. The padded block
-    # ends there instead of pushing the next one back.
+    # The first block's 「うん。」 is padded to 0.81 s; the next speaker starts
+    # at 0.6 s with a two-line turn, too much to share its block, and late
+    # enough that the first block stays readable. It ends there instead of
+    # pushing the next one back.
     payload = {
         "words": [
-            *(
-                word(char, i * 0.025, (i + 1) * 0.025, "speaker_0")
-                for i, char in enumerate("それはちょっと違うかな。")
-            ),
-            *(
-                word(char, 0.32 + i * 0.1, 0.42 + i * 0.1, "speaker_1")
-                for i, char in enumerate(
-                    "会話をしてて、何々やってもらっていいって言われてもやらないですよね。"
-                )
+            *chars("それはちょっと違うかな。", 0.0, "speaker_0", step=0.0375),
+            *chars("うん。", 0.46, "speaker_2", step=0.01),
+            *chars(
+                "会話をしてて、何々やってもらっていいって言われてもやらないですよね。",
+                0.6,
+                "speaker_1",
             ),
         ]
     }
 
     srt = render(payload, SrtFormatOptions(max_lines_per_block=2))
 
-    assert "1\n00:00:00,000 --> 00:00:00,320\nそれはちょっと違うかな。" in srt
-    assert "2\n00:00:00,320 --> " in srt
-
-
-def chars(
-    text: str, start: float, speaker: str, step: float = 0.1
-) -> list[dict[str, Any]]:
-    return [
-        word(char, start + i * step, start + (i + 1) * step, speaker)
-        for i, char in enumerate(text)
-    ]
+    assert "1\n00:00:00,000 --> 00:00:00,600\n-それはちょっと違うかな。\n-うん。" in srt
+    assert "2\n00:00:00,600 --> " in srt
 
 
 def test_short_line_cutting_into_a_two_line_turn_shares_its_block():
@@ -1032,6 +1029,52 @@ def test_short_line_joins_its_own_speakers_turn_over_the_line_cap():
     assert (
         "-ごめん。 だから俺責任取れないから、マジで。\n-いや、あの赤星なのよ。" in srt
     )
+
+
+def test_a_flashing_line_does_not_join_a_turn_it_would_overfill():
+    # Joined, one speaker's two lines would need three rows: they stay two
+    # blocks rather than render as two over-long lines.
+    payload = {
+        "words": [
+            *chars("それはちょっと違うと思うんだけど。", 0.0, "speaker_0", step=0.0176),
+            *chars(
+                "会話をしてて、何々やってもらっていいって言われてもやらないですよね。",
+                0.32,
+                "speaker_0",
+            ),
+        ]
+    }
+
+    srt = render(payload)
+
+    assert "1\n00:00:00,000 --> 00:00:00,320\nそれはちょっと違うと思うんだけど。" in srt
+    assert "2\n00:00:00,320 --> " in srt
+
+
+def test_blocks_starting_together_keep_their_time():
+    # Two turns too long to share a block start at the same instant: cutting
+    # the first at the second's start would leave it no time, so they overlap.
+    payload = {
+        "words": [
+            word(
+                "会話をしてて、何々やってもらっていいって言われてもやらないですよね。",
+                0.0,
+                3.0,
+                "speaker_0",
+            ),
+            word(
+                "いや、その話はまた別の機会にしようかなと思ってるんですよ。",
+                0.0,
+                2.5,
+                "speaker_1",
+            ),
+        ]
+    }
+
+    srt = render(payload)
+
+    assert "1\n00:00:00,000 --> 00:00:02,500" in srt
+    assert "2\n00:00:00,000 --> 00:00:03,500" in srt
 
 
 def test_two_full_turns_stay_apart():

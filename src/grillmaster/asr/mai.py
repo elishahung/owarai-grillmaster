@@ -359,7 +359,7 @@ def drop_flashing_backchannels(tokens: Sequence[WordToken]) -> list[WordToken]:
         end = _sentence_end(tokens, index)
         sentence = tokens[index:end]
         previous = out[-1] if out else None
-        if (
+        if not (
             previous is not None
             and end < len(tokens)
             and previous.speaker_id == sentence[0].speaker_id
@@ -367,9 +367,7 @@ def drop_flashing_backchannels(tokens: Sequence[WordToken]) -> list[WordToken]:
             and _is_backchannel(sentence)
             and tokens[end].start - sentence[0].start < MIN_SEGMENT_DURATION_S
         ):
-            index = end
-            continue
-        out.extend(sentence)
+            out.extend(sentence)
         index = end
     return out
 

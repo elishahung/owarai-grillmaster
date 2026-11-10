@@ -157,8 +157,13 @@ def test_turn_changes_past_two_lines_keep_one_slash(text: str, expected: str):
             "-咦？\n-要是牠生病了\n責任不就在我嗎",
             "-咦？\n-要是牠生病了，責任不就在我嗎",
         ),
-        # Three voices share two rows, split as evenly as fits.
-        ("-咦？\n-不是。\n-第幾支了？", "咦？／不是\n第幾支了？"),  # noqa: RUF001
+        # Three voices share two rows, split as evenly as fits; each row
+        # starts a voice.
+        ("-咦？\n-不是。\n-第幾支了？", "-咦？／不是\n-第幾支了？"),  # noqa: RUF001
+        # An interruption's dashes do not stand mid-row.
+        ("-好\n-- 等一下\n-什麼？", "-好／等一下\n-什麼？"),  # noqa: RUF001
+        # A dash-only row is no voice.
+        ("-\n其實是這樣\n-對啊", "-其實是這樣\n-對啊"),
     ],
 )
 def test_voices_past_two_lines_fold_to_two(text: str, expected: str):

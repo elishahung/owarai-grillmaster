@@ -14,7 +14,7 @@ upstream can undo them:
     (`誰啊？/山內` → `-誰啊？` / `-山內`), otherwise one unspaced full-width
     slash, never a comma; an unspaced one between words (`1/2`) stays;
   - a block of more than two lines holding several voices is folded to two
-    (`_fold_turns`): two `-` lines, or the voices split by a full-width
+    `-` rows (`_fold_turns`), voices sharing a row split by a full-width
     slash;
   - strip `，、；。` and surrounding whitespace at line edges (no terminal
     commas or periods);
@@ -80,8 +80,8 @@ _CLOSING_BRACKETS = frozenset("」』）)》")
 # Stands in for a turn-change slash until the block's shape is known.
 _TURN = "\x1f"
 _TURN_EDGE = re.compile(rf"[\s，、；。]*{_TURN}[\s，、；。]*")
-# What a voice sheds next to the full-width slash folding it beside another.
-_TURN_EDGE_PUNCT = " \t　，、；。"
+# A voice's leading speaker dashes, all of them (`_SPEAKER_DASH` takes one).
+_LEADING_DASHES = re.compile(r"^(?:[ \t　]*[-‐-―−－])+[ \t　]*")  # noqa: RUF001
 # A row ending in one of these needs no `，` when the next row joins it.
 _PAUSE_MARKS = _SENTENCE_PUNCT | _CLOSING_BRACKETS | frozenset("：:—")
 
@@ -242,11 +242,12 @@ def clean_text(text: str) -> str:
 
 def _fold_turns(lines: list[str]) -> list[str]:
     """A block of more than two lines holding two or more voices, folded to
-    two: two voices that each fit one row become two `-` lines, more voices
-    share the two rows split by `／` as evenly as fits. A voice's wrapped
-    rows are joined first (with `，` where a row ends without a pause mark).
-    When no fold fits, the lines stay for `fit_text`. Refine is asked to do
-    this; this pass makes sure of it."""  # noqa: RUF002
+    two `-` rows: two voices take one row each, more share the rows split by
+    `／` as evenly as fits (`-A／B` / `-C`). Every row starts a voice, so a
+    row break never reads as one voice going on. A voice's wrapped rows are
+    joined first (with `，` where a row ends without a pause mark). When no
+    fold fits, the lines stay for `fit_text`. Refine is asked to do this;
+    this pass makes sure of it."""  # noqa: RUF002
     if len(lines) <= 2:  # noqa: PLR2004
         return lines
     turns: list[str] = []
@@ -260,11 +261,9 @@ def _fold_turns(lines: list[str]) -> list[str]:
             turns.append(row)
     if len(turns) < 2 or not all(turns):  # noqa: PLR2004
         return lines
-    if len(turns) == 2 and all(_fits_row(turn) for turn in turns):  # noqa: PLR2004
-        return [f"-{turn}" for turn in turns]
-    voices = [turn.strip(_TURN_EDGE_PUNCT) for turn in turns]
+    voices = [_LINE_EDGE_PUNCT.sub("", turn) for turn in turns]
     folds = [
-        ("／".join(voices[:split]), "／".join(voices[split:]))  # noqa: RUF001
+        (_fold_row(voices[:split]), _fold_row(voices[split:]))
         for split in range(1, len(voices))
     ]
     fitting = [fold for fold in folds if all(_fits_row(row) for row in fold)]
@@ -273,8 +272,17 @@ def _fold_turns(lines: list[str]) -> list[str]:
     return list(min(fitting, key=lambda fold: max(map(_row_width, fold))))
 
 
+def _fold_row(voices: Sequence[str]) -> str:
+    """One `-` row of `voices` split by `／`; a later voice's own leading
+    dashes (an interruption's `--`) would stand mid-row, so they go."""  # noqa: RUF002
+    rest = [_LEADING_DASHES.sub("", voice) for voice in voices[1:]]
+    return "-" + "／".join([voices[0], *rest])  # noqa: RUF001
+
+
 def _join_rows(left: str, right: str) -> str:
-    return left + right if left[-1] in _PAUSE_MARKS else f"{left}，{right}"
+    if not left or not right or left[-1] in _PAUSE_MARKS:
+        return left + right
+    return f"{left}，{right}"
 
 
 def _row_width(row: str) -> float:

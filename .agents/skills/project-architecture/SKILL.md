@@ -156,7 +156,12 @@ copied contextvars context when the loop passes `start_after`; never fail the
 run (a stage that needs the output waits via `StageContext.side_tasks` and
 redoes or skips the work itself); always joined in the manager's `__exit__` — also when a stage failed,
 because the agent cost is already paid (an interrupt waits only
-`INTERRUPT_WAIT_S`).
+`INTERRUPT_WAIT_S`). While they still run, a failed stage is offered again
+(`StageRetryOffered`) through `core.stage_retry.StageRetry`: `cli.live.run_live`
+creates it under the dashboard and hands it to the work beside the sinks
+(`run(sinks, stage_retry)`; none on the console); `r` re-runs the stage in
+place in the same run, lock and state store. Unanswered, the run fails once
+the side tasks finish, as before.
 
 **Reset (`pipeline/reset.py`):** clears ledger entries, `clear_state` fields,
 the whole work dir and declared `outputs`; state is saved first so an

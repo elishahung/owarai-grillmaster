@@ -20,6 +20,7 @@ def test_every_documented_event_is_in_the_union():
         "StepCompleted",
         "StepSkipped",
         "StepFailed",
+        "StageRetryOffered",
         "ProgressStarted",
         "ProgressAdvanced",
         "ProgressFinished",

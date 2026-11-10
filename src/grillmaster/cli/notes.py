@@ -47,7 +47,7 @@ def notes_command(
     options = RunOptions(source=state.source_id)
     pipeline = NOTES_PROBE if probe else NOTES_ONLY
     run_or_exit(
-        lambda sinks: deliver_project(
+        lambda sinks, _: deliver_project(
             loaded, layout, options, sinks=sinks, pipeline=pipeline
         ),
         failure=f"Failed to write the notes of {layout.root}",

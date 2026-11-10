@@ -272,7 +272,9 @@ def _run_split(
         fail(str(error))
     pipeline = pipeline_from(ctx)
     final = run_or_exit(
-        lambda sinks: split.run(loaded, sinks=sinks, pipeline=pipeline),
+        lambda sinks, stage_retry: split.run(
+            loaded, sinks=sinks, pipeline=pipeline, stage_retry=stage_retry
+        ),
         failure=f"Failed to process {options.source} in {parts} parts",
     )
     logger.success(

@@ -34,12 +34,20 @@ from grillmaster.tui.state import PipelineState
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from grillmaster.core.stage_retry import StageRetry
     from grillmaster.events.bus import EventSink
 
 # How long an aborted worker gets to unwind once its processes are killed.
 INTERRUPT_WAIT_S = 10.0
 # Joins wait in slices: on Windows an unbounded `Thread.join` ignores Ctrl-C.
 _JOIN_SLICE_S = 0.2
+
+# Builds the app from the sink, the state, the work's retry and the run's
+# in-place stage retry (if any).
+type AppFactory = Callable[
+    [TuiSink, PipelineState, Callable[[], None], Callable[[], None] | None],
+    GrillMasterApp,
+]
 
 
 class RunAborted(KeyboardInterrupt):
@@ -53,8 +61,8 @@ def run_with_tui[T](
     *,
     restore_logging: Callable[[], None],
     console_handler: int | None = None,
-    app_factory: Callable[[TuiSink, PipelineState, Callable[[], None]], GrillMasterApp]
-    | None = None,
+    app_factory: AppFactory | None = None,
+    stage_retry: StageRetry | None = None,
     kill_processes: Callable[[], object] = kill_all,
     interrupt_wait_s: float = INTERRUPT_WAIT_S,
 ) -> T:
@@ -64,6 +72,8 @@ def run_with_tui[T](
     `console_handler` is the loguru handler id the dashboard replaces and
     `restore_logging` re-creates it afterwards. After a failure `r` runs
     `work` again on a fresh thread; the last attempt decides the outcome.
+    While the work offers a failed stage again through `stage_retry`, `r`
+    takes that offer instead.
     Raises `RunAborted` when the user quits while the work runs. Should the
     dashboard itself crash, the work is waited for with console output.
     `app_factory` builds the app (tests drive a headless one);
@@ -72,7 +82,9 @@ def run_with_tui[T](
     sink = TuiSink()
     state = PipelineState()
     worker = _Worker(work, sink)
-    app = (app_factory or _default_app)(sink, state, worker.retry)
+    app = (app_factory or _default_app)(
+        sink, state, worker.retry, stage_retry.request if stage_retry else None
+    )
     if console_handler is not None:
         logger.remove(console_handler)
     handler = logger.add(
@@ -121,9 +133,12 @@ def _abort[T](
 
 
 def _default_app(
-    sink: TuiSink, state: PipelineState, retry: Callable[[], None]
+    sink: TuiSink,
+    state: PipelineState,
+    retry: Callable[[], None],
+    stage_retry: Callable[[], None] | None,
 ) -> GrillMasterApp:
-    return GrillMasterApp(sink, state, on_retry=retry)
+    return GrillMasterApp(sink, state, on_retry=retry, on_stage_retry=stage_retry)
 
 
 class _Worker[T]:

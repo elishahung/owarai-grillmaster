@@ -28,6 +28,7 @@ if TYPE_CHECKING:
 
     from grillmaster.config.load import LoadedConfig
     from grillmaster.core.source_id import SourceId
+    from grillmaster.core.stage_retry import StageRetry
     from grillmaster.events.bus import EventSink
     from grillmaster.stages.base import RunOptions
 
@@ -72,6 +73,7 @@ class SerialRun:
         *,
         sinks: Sequence[EventSink],
         pipeline: Pipeline = PIPELINE,
+        stage_retry: StageRetry | None = None,
     ) -> ProjectLayout | None:
         """Run the remaining projects; returns the last one's final layout
         (`None` when none remained). Raises the failing project's error."""
@@ -84,7 +86,7 @@ class SerialRun:
             options = replace(self.template, source=source, parent=self.parent)
             item = ProjectRun(loaded, options, pipeline)
             try:
-                final = item.run(sinks)
+                final = item.run(sinks, stage_retry)
             except ArchivedProjectError as error:
                 logger.info(
                     f"Serial {self.position + 1}/{total}: {source} is already "

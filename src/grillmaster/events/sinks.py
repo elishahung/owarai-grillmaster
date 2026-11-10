@@ -24,6 +24,7 @@ from grillmaster.events.types import (
     RunOutcome,
     RunStarted,
     SessionOutcome,
+    StageRetryOffered,
     StepCompleted,
     StepFailed,
     StepSkipped,
@@ -52,7 +53,7 @@ class ConsoleSink:
             logger.log(level, message)
 
 
-def describe(event: Event) -> tuple[str, str] | None:  # noqa: PLR0911 - one case per event
+def describe(event: Event) -> tuple[str, str] | None:  # noqa: PLR0911, PLR0912 - one case per event
     """`(loguru level, message)` for an event; `None` when it is not logged."""
     match event:
         case RunStarted(project=project, plan=plan):
@@ -73,6 +74,9 @@ def describe(event: Event) -> tuple[str, str] | None:  # noqa: PLR0911 - one cas
             return "INFO", f"[{key}] skipped ({reason})"
         case StepFailed(key=key, error=error):
             return "ERROR", f"[{key}] failed: {error}"
+        case StageRetryOffered(key=key, waiting=waiting):
+            joined = ", ".join(waiting)
+            return "WARNING", f"[{key}] failed; the run ends once {joined} finish"
         case ProgressStarted(label=label, total=total):
             size = f" ({total:g})" if total is not None else ""
             return "DEBUG", f"{label}{size}"

@@ -19,6 +19,7 @@ from grillmaster.events.types import (
     RunStarted,
     SessionOutcome,
     SkipReason,
+    StageRetryOffered,
     StepCompleted,
     StepFailed,
     StepSkipped,
@@ -169,6 +170,26 @@ def test_retry_clears_the_failure_and_the_next_run_rebuilds(run_state: PipelineS
     run_state.apply(RunStarted("epabc123", PLAN))
     assert _step(run_state, "chunks").state is ItemState.PENDING
     assert run_state.sessions == {}
+
+
+def test_a_stage_retry_offer_lasts_until_taken_or_the_run_ends(
+    run_state: PipelineState,
+):
+    offer = StageRetryOffered("chunks", ("cover",))
+    run_state.apply(StepStarted("chunks", STAGE))
+    run_state.apply(StepFailed("chunks", STAGE, "boom"))
+    run_state.apply(offer)
+    # A side task's progress keeps the offer.
+    run_state.apply(StepStarted("date_research", PlanKind.SIDE_TASK))
+    assert run_state.retry_offer == offer
+
+    assert run_state.take_retry_offer() == offer
+    assert run_state.retry_offer is None
+    assert run_state.take_retry_offer() is None
+
+    run_state.apply(offer)
+    run_state.apply(RunFinished(RunOutcome.FAILED, "boom"))
+    assert run_state.retry_offer is None
 
 
 def test_batch_rolls_over_per_project(run_state: PipelineState):

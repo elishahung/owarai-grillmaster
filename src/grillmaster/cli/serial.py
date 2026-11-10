@@ -85,7 +85,9 @@ def serial_command(
         fail(str(error))
     pipeline = pipeline_from(ctx)
     final = run_or_exit(
-        lambda sinks: serial.run(loaded, sinks=sinks, pipeline=pipeline),
+        lambda sinks, stage_retry: serial.run(
+            loaded, sinks=sinks, pipeline=pipeline, stage_retry=stage_retry
+        ),
         failure=f"Failed to process {len(ids)} serial sources",
     )
     logger.success(

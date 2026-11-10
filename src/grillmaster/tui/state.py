@@ -39,6 +39,7 @@ from grillmaster.events.types import (
     RunStarted,
     SessionOutcome,
     SkipReason,
+    StageRetryOffered,
     StepCompleted,
     StepFailed,
     StepSkipped,
@@ -268,6 +269,8 @@ class PipelineState:
         self.finished = False
         self.failed = False
         self.error: str | None = None
+        # A failed stage the run offers again while side tasks still run.
+        self.retry_offer: StageRetryOffered | None = None
         self.current_step_key: str | None = None
         self._bar_owner: dict[str, str] = {}
         # Bumped by every change; the app redraws when it moved.
@@ -403,6 +406,8 @@ class PipelineState:
             case StepFailed(key=key, kind=kind, error=error):
                 self._fail_step(self._ensure_step(key, kind), error, at)
                 self._leave(key)
+            case StageRetryOffered():
+                self.retry_offer = event
             case ProgressStarted() | ProgressAdvanced() | ProgressFinished():
                 self._progress(event, stage)
             case AgentSessionStarted():
@@ -441,6 +446,14 @@ class PipelineState:
         self.run_outcome = None
         self.current_step_key = None
 
+    def take_retry_offer(self) -> StageRetryOffered | None:
+        """The stage on offer, now taken (a second `r` waits for the next
+        offer)."""
+        offer, self.retry_offer = self.retry_offer, None
+        if offer is not None:
+            self.version += 1
+        return offer
+
     # -- helpers -------------------------------------------------------------
 
     def _start_run(self, project: str, plan: tuple[PlanEntry, ...]) -> None:
@@ -465,6 +478,7 @@ class PipelineState:
 
     def _finish_run(self, outcome: RunOutcome, error: str | None, at: float) -> None:
         self.run_outcome = outcome
+        self.retry_offer = None
         if outcome is RunOutcome.FAILED and self.current_step_key is not None:
             step = self._by_key.get(self.current_step_key)
             if step is not None and step.state is ItemState.RUNNING:

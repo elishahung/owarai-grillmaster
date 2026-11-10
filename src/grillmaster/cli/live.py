@@ -25,12 +25,17 @@ import typer
 from loguru import logger
 
 from grillmaster.cli.common import console_handler, fail, restore_console_logging
+from grillmaster.core.stage_retry import StageRetry
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Iterator, Sequence
     from types import FrameType
 
     from grillmaster.events.bus import EventSink
+
+# The work under `run_live`: its sinks and, under the dashboard, the gate
+# through which `r` retries a failed stage in place (`core.stage_retry`).
+type LiveWork[T] = Callable[[Sequence[EventSink], StageRetry | None], T]
 
 # 128 + SIGINT, what a shell reports for a run stopped by Ctrl-C.
 ABORT_EXIT_CODE = 130
@@ -46,13 +51,13 @@ def interactive_terminal() -> bool:
 
 
 def run_live[T](
-    work: Callable[[Sequence[EventSink]], T],
+    work: LiveWork[T],
     *,
     interactive: bool | None = None,
     kill_processes: Callable[[], object] | None = None,
 ) -> T:
-    """`work(sinks)` under the dashboard when `interactive` (default: on a
-    terminal), else with console logging.
+    """`work(sinks, stage_retry)` under the dashboard when `interactive`
+    (default: on a terminal), else with console logging and no gate.
 
     Raises `KeyboardInterrupt` (`tui.RunAborted` from the dashboard) once
     the work's child processes are killed; `kill_processes` (default
@@ -64,10 +69,12 @@ def run_live[T](
     if interactive:
         from grillmaster.tui import run_with_tui
 
+        stage_retry = StageRetry()
         return run_with_tui(
-            lambda sink: work([sink]),
+            lambda sink: work([sink], stage_retry),
             restore_logging=restore_console_logging,
             console_handler=console_handler(),
+            stage_retry=stage_retry,
         )
     from grillmaster.events.sinks import ConsoleSink
 
@@ -76,7 +83,7 @@ def run_live[T](
 
         kill_processes = kill_all
     with _kill_on_interrupt(kill_processes):
-        return work([ConsoleSink()])
+        return work([ConsoleSink()], None)
 
 
 @contextlib.contextmanager
@@ -98,7 +105,7 @@ def _kill_on_interrupt(kill_processes: Callable[[], object]) -> Iterator[None]:
         signal.signal(signal.SIGINT, previous)
 
 
-def run_or_exit[T](work: Callable[[Sequence[EventSink]], T], *, failure: str) -> T:
+def run_or_exit[T](work: LiveWork[T], *, failure: str) -> T:
     """`run_live(work)`; a failure exits 1 with `"<failure>: <error>"`, an
     abort exits `ABORT_EXIT_CODE`."""
     try:

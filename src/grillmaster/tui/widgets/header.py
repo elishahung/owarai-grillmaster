@@ -46,6 +46,8 @@ def render_header(state: PipelineState, view: View) -> RenderableType:
         status = Text("FAILED", "bold red")
     elif state.finished:
         status = Text("COMPLETED", "bold green")
+    elif state.retry_offer is not None:
+        status = Text(f"{state.retry_offer.key} FAILED · r retries", "bold red")
     else:
         status = Text("RUNNING", "bold cyan")
 

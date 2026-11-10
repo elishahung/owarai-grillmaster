@@ -14,23 +14,27 @@ from grillmaster.events.sinks import ConsoleSink
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from grillmaster.core.stage_retry import StageRetry
     from grillmaster.events.bus import EventSink
 
 
-def test_without_a_terminal_events_go_to_the_console():
+def test_without_a_terminal_events_go_to_the_console_and_no_retry_gate():
     seen: list[Sequence[EventSink]] = []
+    gates: list[StageRetry | None] = []
 
-    def work(sinks: Sequence[EventSink]) -> str:
+    def work(sinks: Sequence[EventSink], stage_retry: StageRetry | None) -> str:
         seen.append(sinks)
+        gates.append(stage_retry)
         return "done"
 
     assert run_live(work, interactive=False) == "done"
     [sinks] = seen
+    assert gates == [None]
     assert [type(sink) for sink in sinks] == [ConsoleSink]
 
 
 def test_an_interrupt_without_a_terminal_propagates():
-    def work(sinks: Sequence[EventSink]) -> None:
+    def work(sinks: Sequence[EventSink], stage_retry: StageRetry | None) -> None:
         raise KeyboardInterrupt
 
     with pytest.raises(KeyboardInterrupt):
@@ -41,7 +45,7 @@ def test_ctrl_c_without_a_terminal_kills_children_before_unwinding():
     before = signal.getsignal(signal.SIGINT)
     killed: list[str] = []
 
-    def work(sinks: Sequence[EventSink]) -> None:
+    def work(sinks: Sequence[EventSink], stage_retry: StageRetry | None) -> None:
         signal.raise_signal(signal.SIGINT)
 
     with pytest.raises(KeyboardInterrupt):

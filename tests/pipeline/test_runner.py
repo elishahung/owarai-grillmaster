@@ -22,6 +22,7 @@ from tests.pipeline.fakes import (
 
 from grillmaster.core.source_id import Platform, SourceId
 from grillmaster.core.stage_key import SideTaskKey, StageKey
+from grillmaster.core.stage_retry import StageRetry
 from grillmaster.events.context import current_stage
 from grillmaster.events.types import (
     AgentSessionFinished,
@@ -32,6 +33,7 @@ from grillmaster.events.types import (
     RunStarted,
     SessionOutcome,
     SkipReason,
+    StageRetryOffered,
     StepCompleted,
     StepFailed,
     StepSkipped,
@@ -88,7 +90,11 @@ def run(
     """Run `pipeline` on the fixture project; keyword overrides for options."""
 
     def runner(
-        pipeline: Pipeline, *, archive: Archive | None = None, **overrides: object
+        pipeline: Pipeline,
+        *,
+        archive: Archive | None = None,
+        stage_retry: StageRetry | None = None,
+        **overrides: object,
     ) -> ProjectLayout:
         return run_pipeline(
             layout,
@@ -100,6 +106,7 @@ def run(
             events=bus,
             pipeline=pipeline,
             archive=archive,
+            stage_retry=stage_retry,
             clock=ticking_clock(),
             started_at=STARTED_AT,
         )
@@ -487,9 +494,23 @@ def test_stage_failure_is_reported_and_raised(
     assert "StageFailedError" in text  # the traceback, at DEBUG
 
 
-def test_side_task_is_joined_when_a_stage_fails(
-    run: Runner, journal: Journal, recording_sink: RecordingSink
-):
+class _OnOffer:
+    """A sink calling `action` as soon as a retry is offered (the dashboard's
+    `r`, say)."""
+
+    def __init__(self, action: Callable[[], None]) -> None:
+        self.action = action
+
+    def emit(self, event: Event) -> None:
+        if isinstance(event, StageRetryOffered):
+            self.action()
+
+
+def _slow_cover_pipeline(
+    journal: Journal, download: Callable[[StageContext], str | None]
+) -> tuple[Pipeline, threading.Event]:
+    """Metadata, then `download` beside a cover task that finishes once the
+    returned event is set."""
     release = threading.Event()
 
     def slow_cover(ctx: StageContext) -> str:
@@ -498,14 +519,10 @@ def test_side_task_is_joined_when_a_stage_fails(
         journal.add("cover finished")
         return "cover.png"
 
-    def fail_after_release(ctx: StageContext) -> None:
-        release.set()
-        raise StageFailedError("download broke")
-
     pipeline = Pipeline(
         (
             fake_stage(StageKey.METADATA, journal),
-            fake_stage(StageKey.DOWNLOAD, journal, action=fail_after_release),
+            fake_stage(StageKey.DOWNLOAD, journal, action=download),
         ),
         side_tasks=(
             fake_side_task(
@@ -513,9 +530,33 @@ def test_side_task_is_joined_when_a_stage_fails(
             ),
         ),
     )
+    return pipeline, release
+
+
+@pytest.mark.parametrize("offered", [False, True], ids=["no-gate", "unanswered"])
+def test_side_task_is_joined_when_a_stage_fails(
+    run: Runner,
+    journal: Journal,
+    bus: EventBus,
+    recording_sink: RecordingSink,
+    *,
+    offered: bool,
+):
+    def fail_after_release(ctx: StageContext) -> None:
+        if not offered:
+            release.set()
+        raise StageFailedError("download broke")
+
+    pipeline, release = _slow_cover_pipeline(journal, fail_after_release)
+    stage_retry = None
+    if offered:
+        # The cover finishes only once the offer is out, unanswered.
+        stage_retry = StageRetry(poll_s=0.01)
+        bus.subscribe(_OnOffer(release.set))
     with pytest.raises(StageFailedError):
-        run(pipeline)
+        run(pipeline, stage_retry=stage_retry)
     assert "cover finished" in journal.entries
+    assert journal.entries.count(f"run:{StageKey.DOWNLOAD}@{StageKey.DOWNLOAD}") == 1
     events = recording_sink.events
     completed = next(
         index
@@ -526,6 +567,58 @@ def test_side_task_is_joined_when_a_stage_fails(
         events[completed], kind=PlanKind.SIDE_TASK, result="cover.png"
     )
     assert completed < events.index(RunFinished(RunOutcome.FAILED, "download broke"))
+    offer = StageRetryOffered(StageKey.DOWNLOAD, (SideTaskKey.COVER,))
+    assert (offer in events) is offered
+
+
+def test_a_stage_failing_beside_a_side_task_is_retried_in_place(
+    run: Runner,
+    journal: Journal,
+    bus: EventBus,
+    layout: ProjectLayout,
+    recording_sink: RecordingSink,
+):
+    attempts: list[int] = []
+
+    def flaky(ctx: StageContext) -> None:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise StageFailedError("prepass flake")
+        release.set()
+
+    pipeline, release = _slow_cover_pipeline(journal, flaky)
+    stage_retry = StageRetry(poll_s=0.01)
+    bus.subscribe(_OnOffer(stage_retry.request))
+
+    run(pipeline, stage_retry=stage_retry)
+
+    assert len(attempts) == 2
+    events = recording_sink.events
+    offered = events.index(StageRetryOffered(StageKey.DOWNLOAD, (SideTaskKey.COVER,)))
+    assert events[offered - 1] == StepFailed(
+        StageKey.DOWNLOAD, PlanKind.STAGE, "prepass flake"
+    )
+    assert events[offered + 1] == StepStarted(StageKey.DOWNLOAD, PlanKind.STAGE)
+    assert events[-1] == RunFinished(RunOutcome.COMPLETED)
+    assert load_state(layout).is_done(StageKey.DOWNLOAD)
+
+
+def test_no_retry_is_offered_without_running_side_tasks(
+    run: Runner, journal: Journal, recording_sink: RecordingSink
+):
+    pipeline = Pipeline(
+        (
+            fake_stage(StageKey.METADATA, journal),
+            fake_stage(StageKey.DOWNLOAD, journal, action=failing("download broke")),
+        ),
+    )
+
+    with pytest.raises(StageFailedError):
+        run(pipeline, stage_retry=StageRetry(poll_s=0.01))
+
+    assert not any(
+        isinstance(event, StageRetryOffered) for event in recording_sink.events
+    )
 
 
 def test_side_task_runs_in_its_own_scope_thread_and_workdir(

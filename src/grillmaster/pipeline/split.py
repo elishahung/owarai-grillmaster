@@ -48,6 +48,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from grillmaster.config.load import LoadedConfig
+    from grillmaster.core.stage_retry import StageRetry
     from grillmaster.events.bus import EventSink
     from grillmaster.media.ffmpeg import FfmpegRunner
     from grillmaster.stages.base import RunOptions
@@ -182,6 +183,7 @@ class SplitRun:
         *,
         sinks: Sequence[EventSink],
         pipeline: Pipeline = PIPELINE,
+        stage_retry: StageRetry | None = None,
     ) -> ProjectLayout | None:
         """Returns the last part's final layout; raises the failing step's error."""
         if self.serial is None:
@@ -190,7 +192,9 @@ class SplitRun:
                 part_sources(self.template.source, self.parts),
                 replace(self.template, hint=None),
             )
-        return self.serial.run(loaded, sinks=sinks, pipeline=pipeline)
+        return self.serial.run(
+            loaded, sinks=sinks, pipeline=pipeline, stage_retry=stage_retry
+        )
 
     def _prepare(
         self, loaded: LoadedConfig, sinks: Sequence[EventSink], pipeline: Pipeline

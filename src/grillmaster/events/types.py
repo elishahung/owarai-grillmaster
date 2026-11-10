@@ -134,6 +134,15 @@ class StepFailed:
     error: str
 
 
+@dataclass(frozen=True, slots=True)
+class StageRetryOffered:
+    """Stage `key` failed while side tasks `waiting` still run: until they
+    are done, the run can retry the stage in place (`core.stage_retry`)."""
+
+    key: str
+    waiting: tuple[str, ...]
+
+
 # --- progress bars ---------------------------------------------------------
 
 
@@ -208,6 +217,7 @@ type Event = (
     | StepCompleted
     | StepSkipped
     | StepFailed
+    | StageRetryOffered
     | ProgressStarted
     | ProgressAdvanced
     | ProgressFinished

@@ -25,7 +25,9 @@ from grillmaster.events.types import (
     RunStarted,
     SessionOutcome,
     SkipReason,
+    StageRetryOffered,
     StepCompleted,
+    StepFailed,
     StepSkipped,
     StepStarted,
 )
@@ -88,14 +90,26 @@ def _app(
     sink: TuiSink,
     *,
     on_retry: Callable[[], None] | None = None,
+    on_stage_retry: Callable[[], None] | None = None,
     clipboard: Callable[[str], None] | None = None,
 ) -> GrillMasterApp:
     # Monotonic like the sink, so stamped events and the live clock agree.
     state = PipelineState()
     if clipboard is None:
-        return GrillMasterApp(sink, state, on_retry=on_retry, tick_seconds=None)
+        return GrillMasterApp(
+            sink,
+            state,
+            on_retry=on_retry,
+            on_stage_retry=on_stage_retry,
+            tick_seconds=None,
+        )
     return GrillMasterApp(
-        sink, state, on_retry=on_retry, clipboard=clipboard, tick_seconds=None
+        sink,
+        state,
+        on_retry=on_retry,
+        on_stage_retry=on_stage_retry,
+        clipboard=clipboard,
+        tick_seconds=None,
     )
 
 
@@ -293,6 +307,37 @@ def test_retry_only_after_a_failure():
             assert retries == [1]
             assert app.view.follow
             assert not app.state.finished
+
+    _run(drive())
+
+
+def test_retry_takes_a_stage_retry_offer_while_side_tasks_run():
+    sink = TuiSink()
+    _scripted(sink)
+    retries: list[str] = []
+    app = _app(
+        sink,
+        on_retry=lambda: retries.append("run"),
+        on_stage_retry=lambda: retries.append("stage"),
+    )
+
+    async def drive() -> None:
+        async with app.run_test(size=SIZE) as pilot:
+            sink.emit(StepFailed("chunks", PlanKind.STAGE, "boom"))
+            sink.emit(StageRetryOffered("chunks", ("cover",)))
+            await _pump(app, pilot)
+            assert "chunks FAILED · r retries" in _text(
+                render_header(app.state, app.view)
+            )
+
+            app.view.follow = False
+            await pilot.press("r")
+            assert retries == ["stage"]
+            assert app.state.retry_offer is None
+            assert app.view.follow
+            # Taken: a second press waits for the next offer.
+            await pilot.press("r")
+            assert retries == ["stage"]
 
     _run(drive())
 

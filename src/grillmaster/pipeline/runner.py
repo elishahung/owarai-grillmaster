@@ -9,9 +9,10 @@ metadata stage has named the program, every later stage and side task that
 is off (for this run, or for this project by `applies`) is reported disabled
 at once rather than at its turn, so no sink shows it pending meanwhile. Side
 tasks start as the loop passes their stage and are joined when the loop
-ends, however it ends. Then the archive move (when one is wired) relocates
-the project, its logs and its state store, and the delivery steps run on the
-project where it now lives.
+ends, however it ends; a stage failing while some still run can be retried
+in place meanwhile (`core.stage_retry`). Then the archive move (when one is
+wired) relocates the project, its logs and its state store, and the
+delivery steps run on the project where it now lives.
 
 `run_project` is the `grill run` entry (archive wired from `[paths] archive`);
 `deliver_project` runs only the delivery steps on an existing project
@@ -40,6 +41,7 @@ from grillmaster.events.types import (
     RunOutcome,
     RunStarted,
     SkipReason,
+    StageRetryOffered,
     StepSkipped,
 )
 from grillmaster.media.ffmpeg import SubprocessFfmpegRunner
@@ -62,6 +64,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from grillmaster.config.load import LoadedConfig
+    from grillmaster.core.stage_retry import StageRetry
     from grillmaster.events.bus import EventSink
     from grillmaster.pipeline.delivery import Archive
     from grillmaster.project.layout import ProjectLayout
@@ -80,6 +83,7 @@ def run_project(
     *,
     sinks: Sequence[EventSink],
     pipeline: Pipeline = PIPELINE,
+    stage_retry: StageRetry | None = None,
 ) -> ProjectLayout:
     """Check the run, open (or create) the project and run it; returns the
     project's final layout.
@@ -124,6 +128,7 @@ def run_project(
             events=events,
             pipeline=pipeline,
             archive=archive,
+            stage_retry=stage_retry,
         )
 
 
@@ -195,6 +200,8 @@ class ProjectRun:
     (`ArchivedDeliveryError`, recorded as `archived`), the source resolves
     only to the archive and re-running it is refused, so every further `run`
     (the dashboard's retry) runs only the delivery on the archived project.
+    `run`'s `stage_retry` (none: off) lets the dashboard retry a failed stage
+    in place while side tasks still run (`core.stage_retry`).
     """
 
     loaded: LoadedConfig
@@ -202,12 +209,18 @@ class ProjectRun:
     pipeline: Pipeline = PIPELINE
     archived: ProjectLayout | None = None
 
-    def run(self, sinks: Sequence[EventSink]) -> ProjectLayout:
+    def run(
+        self, sinks: Sequence[EventSink], stage_retry: StageRetry | None = None
+    ) -> ProjectLayout:
         if self.archived is not None:
             return self._deliver(self.archived, sinks)
         try:
             return run_project(
-                self.loaded, self.options, sinks=sinks, pipeline=self.pipeline
+                self.loaded,
+                self.options,
+                sinks=sinks,
+                pipeline=self.pipeline,
+                stage_retry=stage_retry,
             )
         except ArchivedDeliveryError as error:
             self.archived = error.archived
@@ -264,6 +277,7 @@ def run_pipeline(
     events: EventBus,
     pipeline: Pipeline = PIPELINE,
     archive: Archive | None = None,
+    stage_retry: StageRetry | None = None,
     clock: Callable[[], float] = time.monotonic,
     started_at: datetime | None = None,
 ) -> ProjectLayout:
@@ -271,8 +285,9 @@ def run_pipeline(
 
     `archive` moves the project directory and returns its new layout; it is
     planned and run only when given, right after the stages, so delivery
-    reads the moved project. Raises whatever a stage, the archive or a
-    delivery step raised (a delivery failure after a move as
+    reads the moved project. `stage_retry` is the dashboard's in-run retry
+    of a failed stage (`core.stage_retry`). Raises whatever a stage, the
+    archive or a delivery step raised (a delivery failure after a move as
     `ArchivedDeliveryError`), after the side tasks are joined and
     `RunFinished(failed)` is emitted.
     """
@@ -286,6 +301,7 @@ def run_pipeline(
         externals=externals,
         events=events,
         archive=archive,
+        stage_retry=stage_retry,
         clock=clock,
     )
     return run.execute(started_at or local_now())
@@ -303,6 +319,7 @@ class _Run:
         externals: Externals,
         events: EventBus,
         archive: Archive | None,
+        stage_retry: StageRetry | None,
         clock: Callable[[], float],
     ) -> None:
         self._pipeline = pipeline
@@ -313,6 +330,7 @@ class _Run:
         self._externals = externals
         self._events = events
         self._archive = archive
+        self._stage_retry = stage_retry
         self._clock = clock
         self._usage = UsageCollector()
         # Stages already reported disabled (`_announce_off` reports early).
@@ -386,7 +404,7 @@ class _Run:
         ) as side_tasks:
             stages = self._pipeline.stages
             for index, stage in enumerate(stages):
-                self._run_stage(stage, side_tasks)
+                self._run_stage_offering_retry(stage, side_tasks)
                 side_tasks.stage_passed(stage.key)
                 if stage.key == StageKey.METADATA:
                     self._announce_off(stages[index + 1 :])
@@ -436,6 +454,31 @@ class _Run:
         """Off for this run (`enabled`) or for this project (`applies`)."""
         return not stage.enabled(self._options, self._loaded.config) or (
             stage.applies is not None and not stage.applies(ctx)
+        )
+
+    def _run_stage_offering_retry(
+        self, stage: StageDef, side_tasks: SideTaskManager
+    ) -> None:
+        """`_run_stage`; after a failure, while side tasks still run, offer the
+        stage again and run it again in place when a retry is requested."""
+        while True:
+            try:
+                self._run_stage(stage, side_tasks)
+            except Exception:
+                if not self._retry_requested(stage.key, side_tasks):
+                    raise
+                logger.info(f"Retrying {stage.key} in place")
+            else:
+                return
+
+    def _retry_requested(self, key: StageKey, side_tasks: SideTaskManager) -> bool:
+        """Offer failed stage `key` again while side tasks still run; whether
+        a retry was requested before they finished."""
+        if self._stage_retry is None or not (waiting := side_tasks.running()):
+            return False
+        return self._stage_retry.offer(
+            lambda: self._events.emit(StageRetryOffered(key, waiting)),
+            over=lambda: not side_tasks.running(),
         )
 
     def _run_stage(self, stage: StageDef, side_tasks: SideTaskWaiter) -> None:

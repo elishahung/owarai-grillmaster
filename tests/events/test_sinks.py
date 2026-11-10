@@ -23,6 +23,7 @@ from grillmaster.events.types import (
     RunStarted,
     SessionOutcome,
     SkipReason,
+    StageRetryOffered,
     StepCompleted,
     StepFailed,
     StepSkipped,
@@ -80,6 +81,10 @@ def test_console_sink_logs_described_events_only(log_records: list[Record]):
         (
             StepFailed("cover", PlanKind.SIDE_TASK, "quota"),
             ("ERROR", "[cover] failed: quota"),
+        ),
+        (
+            StageRetryOffered("prepass", ("telop_scan", "cover")),
+            ("WARNING", "[prepass] failed; the run ends once telop_scan, cover finish"),
         ),
         (
             AgentSessionStarted("refine", "refine", "codex", "gpt-5.5", "medium"),

@@ -113,6 +113,10 @@ class SideTaskManager:
         while thread.is_alive():
             thread.join(_WAIT_POLL_S)
 
+    def running(self) -> tuple[SideTaskKey, ...]:
+        """The tasks of this run still working."""
+        return tuple(key for key, thread in self._threads.items() if thread.is_alive())
+
     def join(self, timeout: float | None = None) -> None:
         """Wait for the started tasks; with `timeout`, at most that long in all."""
         deadline = None if timeout is None else time.monotonic() + timeout

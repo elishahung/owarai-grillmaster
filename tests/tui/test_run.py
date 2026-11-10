@@ -12,8 +12,15 @@ from loguru import logger
 from tests.tui.fakes import PLAN
 
 from grillmaster.core.process import ProcessRegistry
+from grillmaster.core.stage_retry import StageRetry
 from grillmaster.events.context import stage_scope
-from grillmaster.events.types import PlanKind, RunStarted, StepCompleted, StepStarted
+from grillmaster.events.types import (
+    PlanKind,
+    RunStarted,
+    StageRetryOffered,
+    StepCompleted,
+    StepStarted,
+)
 from grillmaster.tui.app import AppExit, GrillMasterApp
 from grillmaster.tui.run import RunAborted, run_with_tui
 
@@ -28,7 +35,8 @@ if TYPE_CHECKING:
 class _HeadlessApp(GrillMasterApp):
     """Quits like a user pressing `q` once the work has finished (or right
     away with `leave_early`), recording the state it saw. With
-    `retry_failures` it presses `r` after a failure instead."""
+    `retry_failures` it presses `r` after a failure, or on a stage retry
+    offer, instead."""
 
     def __init__(
         self,
@@ -45,7 +53,10 @@ class _HeadlessApp(GrillMasterApp):
         super().pump()
         if self._leave_early:
             self.exit(AppExit.ABORTED)
-        elif self.state.finished and self.state.failed and self._retry_failures:
+        elif self._retry_failures and (
+            self.state.retry_offer is not None
+            or (self.state.finished and self.state.failed)
+        ):
             self.action_retry()
         elif self.state.finished:
             self.exit(AppExit.DONE)
@@ -75,12 +86,17 @@ class _Factory:
         self.app: _HeadlessApp | None = None
 
     def __call__(
-        self, sink: TuiSink, state: PipelineState, retry: Callable[[], None]
+        self,
+        sink: TuiSink,
+        state: PipelineState,
+        retry: Callable[[], None],
+        stage_retry: Callable[[], None] | None,
     ) -> GrillMasterApp:
         self.app = self.app_type(
             sink,
             state,
             on_retry=retry,
+            on_stage_retry=stage_retry,
             leave_early=self.leave_early,
             retry_failures=self.retry_failures,
         )
@@ -203,6 +219,20 @@ def test_retry_returns_the_second_attempt(console: _Console):
     assert len(attempts) == 2
     assert factory.state.finished
     assert not factory.state.failed
+
+
+def test_r_takes_the_work_s_stage_retry_offer(console: _Console):
+    factory = _Factory(retry_failures=True)
+    stage_retry = StageRetry(poll_s=0.01)
+
+    def work(sink: EventSink) -> bool:
+        sink.emit(RunStarted("epabc123", PLAN))
+        return stage_retry.offer(
+            lambda: sink.emit(StageRetryOffered("chunks", ("cover",))),
+            over=lambda: False,
+        )
+
+    assert _run(work, console, factory, stage_retry=stage_retry)
 
 
 def test_a_crashed_dashboard_falls_back_to_the_console(console: _Console):

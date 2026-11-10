@@ -34,7 +34,7 @@ def telop_command(
     layout, state = load_project_or_exit(project)
     options = RunOptions(source=state.source_id)
     run_or_exit(
-        lambda sinks: deliver_project(
+        lambda sinks, _: deliver_project(
             loaded, layout, options, sinks=sinks, pipeline=TELOP_ONLY
         ),
         failure=f"Failed to translate the telops of {layout.root}",

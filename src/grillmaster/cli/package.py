@@ -82,7 +82,7 @@ def package_command(
     )
     pipeline = pipeline_from(ctx)
     run_or_exit(
-        lambda sinks: deliver_project(
+        lambda sinks, _: deliver_project(
             loaded, layout, options, sinks=sinks, pipeline=pipeline
         ),
         failure=f"Failed to package {layout.root}",

@@ -94,8 +94,9 @@ def put_on_clipboard(text: str) -> None:
 
 class GrillMasterApp(App[AppExit]):
     """`on_retry` restarts the work after a failure (the app has already
-    reset the state). `tick_seconds=None` disables the refresh timer; tests
-    then call `pump` themselves."""
+    reset the state); `on_stage_retry` takes an offer to retry a failed
+    stage in place (`core.stage_retry`). `tick_seconds=None` disables the
+    refresh timer; tests then call `pump` themselves."""
 
     TITLE = "Owarai GrillMaster"
 
@@ -138,6 +139,7 @@ class GrillMasterApp(App[AppExit]):
         state: PipelineState | None = None,
         *,
         on_retry: Callable[[], None] | None = None,
+        on_stage_retry: Callable[[], None] | None = None,
         clipboard: Callable[[str], None] = put_on_clipboard,
         tick_seconds: float | None = TICK_SECONDS,
     ) -> None:
@@ -146,6 +148,7 @@ class GrillMasterApp(App[AppExit]):
         self.state = state if state is not None else PipelineState()
         self.view = View()
         self._on_retry = on_retry
+        self._on_stage_retry = on_stage_retry
         self._copy = clipboard
         self._tick_seconds = tick_seconds
         self._abort_armed_at: float | None = None
@@ -281,6 +284,15 @@ class GrillMasterApp(App[AppExit]):
         )
 
     def action_retry(self) -> None:
+        if self._on_stage_retry is not None and (
+            offer := self.state.take_retry_offer()
+        ):
+            self.view.follow = True
+            self.view.chunk = None
+            self._on_stage_retry()
+            self.notify(f"Retrying {offer.key}; the side tasks keep running.")
+            self.refresh_view()
+            return
         if not (self.state.finished and self.state.failed):
             self.notify("Retry is available after a failure.", severity="information")
             return

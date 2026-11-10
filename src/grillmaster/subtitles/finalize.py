@@ -13,6 +13,9 @@ upstream can undo them:
     change: in a one-line block with one such slash it becomes two `-` lines
     (`誰啊？/山內` → `-誰啊？` / `-山內`), otherwise one unspaced full-width
     slash, never a comma; an unspaced one between words (`1/2`) stays;
+  - a block of more than two lines holding several voices is folded to two
+    (`_fold_turns`): two `-` lines, or the voices split by a full-width
+    slash;
   - strip `，、；。` and surrounding whitespace at line edges (no terminal
     commas or periods);
   - normalize a leading speaker dash to a half-width `-` with no space;
@@ -44,6 +47,7 @@ from grillmaster.subtitles.ass import (
     DIALOGUE_MARGINS,
     DIALOGUE_STYLE_NAME,
     LineBreaks,
+    text_width,
 )
 
 if TYPE_CHECKING:
@@ -76,6 +80,10 @@ _CLOSING_BRACKETS = frozenset("」』）)》")
 # Stands in for a turn-change slash until the block's shape is known.
 _TURN = "\x1f"
 _TURN_EDGE = re.compile(rf"[\s，、；。]*{_TURN}[\s，、；。]*")
+# What a voice sheds next to the full-width slash folding it beside another.
+_TURN_EDGE_PUNCT = " \t　，、；。"
+# A row ending in one of these needs no `，` when the next row joins it.
+_PAUSE_MARKS = _SENTENCE_PUNCT | _CLOSING_BRACKETS | frozenset("：:—")
 
 # Han + kana letters that a Latin-containing name unit is separated from by
 # one half-width space. CJK punctuation, the middle dot (U+30FB), the
@@ -229,7 +237,52 @@ def clean_line(line: str) -> str:
 
 
 def clean_text(text: str) -> str:
-    return "\n".join(clean_line(line) for line in _split_turns(text))
+    return "\n".join(clean_line(line) for line in _fold_turns(_split_turns(text)))
+
+
+def _fold_turns(lines: list[str]) -> list[str]:
+    """A block of more than two lines holding two or more voices, folded to
+    two: two voices that each fit one row become two `-` lines, more voices
+    share the two rows split by `／` as evenly as fits. A voice's wrapped
+    rows are joined first (with `，` where a row ends without a pause mark).
+    When no fold fits, the lines stay for `fit_text`. Refine is asked to do
+    this; this pass makes sure of it."""  # noqa: RUF002
+    if len(lines) <= 2:  # noqa: PLR2004
+        return lines
+    turns: list[str] = []
+    for line in lines:
+        row = line.strip()
+        if _SPEAKER_DASH.match(row):
+            turns.append(_SPEAKER_DASH.sub("", row))
+        elif turns:
+            turns[-1] = _join_rows(turns[-1], row)
+        else:
+            turns.append(row)
+    if len(turns) < 2 or not all(turns):  # noqa: PLR2004
+        return lines
+    if len(turns) == 2 and all(_fits_row(turn) for turn in turns):  # noqa: PLR2004
+        return [f"-{turn}" for turn in turns]
+    voices = [turn.strip(_TURN_EDGE_PUNCT) for turn in turns]
+    folds = [
+        ("／".join(voices[:split]), "／".join(voices[split:]))  # noqa: RUF001
+        for split in range(1, len(voices))
+    ]
+    fitting = [fold for fold in folds if all(_fits_row(row) for row in fold)]
+    if not fitting:
+        return lines
+    return list(min(fitting, key=lambda fold: max(map(_row_width, fold))))
+
+
+def _join_rows(left: str, right: str) -> str:
+    return left + right if left[-1] in _PAUSE_MARKS else f"{left}，{right}"
+
+
+def _row_width(row: str) -> float:
+    return text_width(row, DIALOGUE_FONT_SIZE)
+
+
+def _fits_row(row: str) -> bool:
+    return _row_width(row) <= DIALOGUE_MARGINS.room
 
 
 # --- over-wide lines --------------------------------------------------------

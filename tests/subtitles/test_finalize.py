@@ -146,6 +146,39 @@ def test_turn_changes_past_two_lines_keep_one_slash(text: str, expected: str):
 
 
 @pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Two voices, one wrapped: its rows join on one line.
+        (
+            "-咦？\n-要是牠生病了，\n責任不就在我嗎",
+            "-咦？\n-要是牠生病了，責任不就在我嗎",
+        ),
+        (
+            "-咦？\n-要是牠生病了\n責任不就在我嗎",
+            "-咦？\n-要是牠生病了，責任不就在我嗎",
+        ),
+        # Three voices share two rows, split as evenly as fits.
+        ("-咦？\n-不是。\n-第幾支了？", "咦？／不是\n第幾支了？"),  # noqa: RUF001
+    ],
+)
+def test_voices_past_two_lines_fold_to_two(text: str, expected: str):
+    assert clean_text(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # No fold fits: the lines stay for `fit_text`.
+        "\n".join(f"-{'我' * 30}" for _ in range(3)),
+        # One voice is not folded.
+        "要是牠\n生病了\n怎麼辦",
+    ],
+)
+def test_lines_that_cannot_fold_stay(text: str):
+    assert clean_text(text) == text
+
+
+@pytest.mark.parametrize(
     "text",
     ["Peace（和平／剪刀手）", "機率 1/2", "AC / DC"],  # noqa: RUF001
 )

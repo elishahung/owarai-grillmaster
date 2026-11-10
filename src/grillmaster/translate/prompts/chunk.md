@@ -56,7 +56,7 @@ The success criterion is natural, comedy-flavored Taiwanese variety subtitles th
 - **One entry per input block.** Do not skip, merge, split, or reorder. Your output must have exactly as many entries as your input has blocks, each source index appearing exactly once, in source order.
 - The first entry's `index` is the exact index given to you as `from_index`; the last entry's is the exact index given to you as `to_index`.
 - `text` is the block's translated subtitle text only (no index, no timecode); separate subtitle lines with a newline character.
-- When two voices share a block (a `-` dialogue block, or one source line you hear split between two speakers), give each voice one line starting with `-`; if that would take more than two lines, separate the voices with `／` instead (Chinese punctuation would read as one speaker). Never use `/` or `／` otherwise.
+- When two or more voices share a block (a `-` dialogue block, or one source line you hear split between two speakers), give each voice its own line starting with `-`, even past two lines; a later pass folds them. Never join voices with punctuation or a slash.
 
 ### LINE WRAPPING
 - The source SRT line breaks reflect Japanese phrasing and are advisory only. When the Chinese translation is long enough to wrap, choose break points that fit Chinese phrasing rather than mirroring the source. Don't leave a single character, mood particle (啦/喔/嘛/耶), or stray punctuation alone on the trailing line.

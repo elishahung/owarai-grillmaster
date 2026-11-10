@@ -255,8 +255,13 @@ All six questions went MAI's way, or were acceptable for MAI:
     「-嗯」 line (254 of 306 back-channel-only runs in 4 episodes). A run
     of closed-list back-channel words by other speakers, one or several in
     a row, that the same talker resumes after is dropped. Kept, after a
-    finished sentence only: an answer to a question (ending in ？ or か。)
-    and a reaction ending in ？. No token's time changes.
+    finished sentence only: an answer to a question (ending in ？ or か。,
+    not a rhetorical 〜じゃないですか。) and a reaction ending in ？. A lone
+    あ counts as a back-channel. No token's time changes.
+  - `drop_flashing_backchannels`: MAI sometimes gives the listener's へえ
+    to the talker (「〜今の時代。へえ。」). A back-channel sentence right
+    after the same speaker's finished sentence, with the next word starting
+    within 0.35 s, would only flash and is dropped.
   - History: the first rule (`place_backchannels`, owner-reviewed with
     clips) handled only mid-sentence cuts and moved a one-line case behind
     the sentence as a second `-` line. On 2026-11-09 the owner found too

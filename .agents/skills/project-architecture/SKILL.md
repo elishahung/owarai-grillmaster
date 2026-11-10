@@ -300,7 +300,10 @@ listing, in order, least-squares balanced groups of ≥2) into manifests, never 
   `srt_builder.py` takes tokens and knows no provider (a provider's quirk
   goes in its module, e.g. MAI's `drop_backchannels` (a listener's 相槌
   inside one talker's talk never reaches `ja.srt`); its tuning constants
-  are intentional, not settings); `scribe.py` (Scribe v2) only hears
+  are intentional, not settings; a block never starts later than its
+  speech, an overlap shortens the earlier block, and an overlapping short
+  line (≤ 8 chars) may push a block one line past the cap, which the chunk
+  prompt's full-width-slash rule folds back to two Chinese lines); `scribe.py` (Scribe v2) only hears
   `watch_clip` spans. Evaluation and how to check a new candidate:
   `references/asr-provider-evaluation.md`.
   `glossary/`: the fixed glossary, a required runtime input of pre-pass,

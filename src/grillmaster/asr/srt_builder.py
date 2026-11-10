@@ -14,6 +14,7 @@ MAI-Transcribe-2 shares but for its finer speaker turns.
 
 from __future__ import annotations
 
+import itertools
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -417,40 +418,70 @@ def _merge_overlapping_blocks(
     for block in blocks[1:]:
         previous = merged[-1]
         merged_duration = max(previous.end, block.end) - previous.start
-        if (
-            block.start < previous.end
+        utterances = (
+            _overlap_merged(previous, block, options)
+            if block.start < previous.end
             and merged_duration <= MAX_OVERLAPPING_BLOCK_DURATION_S
             and len(previous.utterances) + len(block.utterances)
             <= MAX_UTTERANCES_PER_BLOCK
-            and _rendered_line_count(
-                _inline_same_speaker_utterances(
-                    [*previous.utterances, *block.utterances], options
-                ),
-                options,
-            )
-            <= options.max_lines_per_block
-        ):
-            previous.utterances.extend(block.utterances)
+            else None
+        )
+        if utterances is not None:
+            previous.utterances = utterances
             previous.end = max(previous.end, block.end)
         else:
             merged.append(block)
     return merged
 
 
+def _overlap_merged(
+    left: SubtitleBlock, right: SubtitleBlock, options: SrtFormatOptions
+) -> list[Utterance] | None:
+    """Two overlapping blocks' utterances as one block, or None when they do
+    not fit: within the line cap, or one line over it when one side is a
+    single short line (「え？」 cutting into a two-line turn). Kept apart, the
+    short one would be cut to a flash by the next block's start; together
+    both stay up for the whole turn, and the translator folds the voices into
+    two lines with a full-width slash. Over the cap, a short line next to its
+    own speaker's turn joins that turn's line, so one voice never takes two
+    `-` lines."""
+    utterances = [*left.utterances, *right.utterances]
+    if _merged_line_count(utterances, options) <= options.max_lines_per_block:
+        return utterances
+    if not any(
+        len(side.utterances) == 1
+        and len(side.utterances[0].text.strip()) <= MAX_INLINE_SHORT_UTTERANCE_CHARS
+        for side in (left, right)
+    ):
+        return None
+    tail, head = left.utterances[-1], right.utterances[0]
+    if tail.speaker_id == head.speaker_id:
+        joined = Utterance(
+            speaker_id=tail.speaker_id,
+            start=tail.start,
+            end=max(tail.end, head.end),
+            text=f"{tail.text} {head.text}",
+        )
+        utterances = [*left.utterances[:-1], joined, *right.utterances[1:]]
+    if _merged_line_count(utterances, options) <= options.max_lines_per_block + 1:
+        return utterances
+    return None
+
+
+def _merged_line_count(utterances: list[Utterance], options: SrtFormatOptions) -> int:
+    return _rendered_line_count(
+        _inline_same_speaker_utterances(utterances, options), options
+    )
+
+
 def _resolve_block_overlaps(blocks: list[SubtitleBlock]) -> None:
-    for index in range(1, len(blocks)):
-        previous = blocks[index - 1]
-        current = blocks[index]
-        if previous.end <= current.start:
-            continue
+    """End each block where the next one starts when they overlap.
 
-        if current.start - previous.start >= MIN_SEGMENT_DURATION_S:
-            previous.end = current.start
-            continue
-
-        current.start = previous.end
-        if current.end <= current.start:
-            current.end = current.start + MIN_SEGMENT_DURATION_S
+    A block never starts later than its speech: the earlier block gives way,
+    even when that leaves it on screen briefly (a short line padded to
+    `MIN_SEGMENT_DURATION_S` that the next speaker cuts into)."""
+    for previous, current in itertools.pairwise(blocks):
+        previous.end = min(previous.end, current.start)
 
 
 def _extend_subtitle_hold_times(
@@ -596,7 +627,8 @@ def _render_block_text(
     voices: dict[str, int] | None,
 ) -> list[str]:
     """The block's lines; with `voices`, each voice turn's first line (a
-    single-voice block's very first line) carries its voice tag."""
+    single-voice block's very first line) carries its voice tag. In a
+    dialogue block only a turn's first line starts with `-`."""
     use_dialogue = len({item.speaker_id for item in block.utterances}) > 1
     rendered: list[str] = []
     for position, utterance in enumerate(block.utterances):
@@ -612,8 +644,12 @@ def _render_block_text(
             tag = voice_tag(voices[utterance.speaker_id])
         wrapped = _wrap_text(text, options, max_lines=options.max_lines_per_block)
         for line_number, line in enumerate(wrapped):
-            body = f"{tag}{line}" if line_number == 0 else line
-            rendered.append(f"{DIALOGUE_PREFIX}{body}" if use_dialogue else body)
+            if line_number > 0:
+                rendered.append(line)
+            elif use_dialogue:
+                rendered.append(f"{DIALOGUE_PREFIX}{tag}{line}")
+            else:
+                rendered.append(f"{tag}{line}")
     return rendered
 
 

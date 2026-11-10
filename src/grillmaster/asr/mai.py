@@ -44,6 +44,7 @@ from grillmaster.asr.payload import read_payload
 from grillmaster.asr.srt_builder import (
     JAPANESE_HARD_PUNCTUATION,
     JAPANESE_SOFT_PUNCTUATION,
+    MIN_SEGMENT_DURATION_S,
     ends_with_hard_punctuation,
 )
 from grillmaster.core.fs import atomic_write_text
@@ -79,6 +80,8 @@ _RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
 _LEADING_MARKS = JAPANESE_HARD_PUNCTUATION + JAPANESE_SOFT_PUNCTUATION
 
 # Back-channel words (相槌), one or more in a row, e.g. うん, はいはい.
+# A lone あ is one too: a listener's short 「あ。」 just before the talker
+# goes on.
 _BACKCHANNEL_WORDS = (
     "なるほど",
     "うーん",
@@ -96,8 +99,15 @@ _BACKCHANNEL_WORDS = (
     "おお",
     "おー",
     "はあ",
+    "あ",
 )
 _BACKCHANNEL = re.compile("(?:" + "|".join(_BACKCHANNEL_WORDS) + ")+")
+# A sentence ending in か。 asks a question its back-channel answers,
+# unless it is a rhetorical 〜じゃないですか。 (「めっちゃあるじゃないですか。」
+# 「うん。」), which only seeks agreement.
+_RHETORICAL_TAILS = ("じゃないですか。", "やないですか。", "じゃないか。", "やないか。")
+# MAI times one character per token: enough tokens for the longest tail.
+_RHETORICAL_TAIL_TOKENS = max(map(len, _RHETORICAL_TAILS))
 
 
 class MaiError(AsrError):
@@ -283,14 +293,15 @@ def timed_words(payload: AsrPayload) -> list[WordToken]:
 def srt_tokens(payload: AsrPayload) -> list[WordToken]:
     """The SRT builder's tokens: the words with a leading punctuation mark
     split off, sorted by time, listeners' back-channels inside another
-    speaker's talk dropped (`drop_backchannels`)."""
+    speaker's talk dropped (`drop_backchannels`), and so are the ones MAI
+    gave the talker that would only flash (`drop_flashing_backchannels`)."""
     tokens = [
         part
         for word in timed_words(payload)
         for part in split_leading_mark(word, _LEADING_MARKS)
     ]
     tokens.sort(key=lambda token: (token.start, token.end))
-    return drop_backchannels(tokens)
+    return drop_flashing_backchannels(drop_backchannels(tokens))
 
 
 def drop_backchannels(tokens: Sequence[WordToken]) -> list[WordToken]:
@@ -303,7 +314,8 @@ def drop_backchannels(tokens: Sequence[WordToken]) -> list[WordToken]:
     sentence in two blocks, between sentences (「〜企画です。」「ほー。」
     「ちなみに〜」) each became a 「-嗯」 line. They are dropped. Kept, after
     a finished sentence only: an answer to a question (the sentence ends in
-    ？ or か。) and a reaction ending in ？ (ええ？). A reply the talker
+    ？ or か。, but not the rhetorical 〜じゃないですか。) and a reaction
+    ending in ？ (ええ？). A reply the talker
     does not resume after stays too. Kept tokens keep their times."""
     runs = [list(run) for _, run in groupby(tokens, key=lambda t: t.speaker_id)]
     out: list[WordToken] = []
@@ -331,6 +343,49 @@ def drop_backchannels(tokens: Sequence[WordToken]) -> list[WordToken]:
     return out
 
 
+def drop_flashing_backchannels(tokens: Sequence[WordToken]) -> list[WordToken]:
+    """Drop a back-channel sentence MAI put inside the talker's own turn
+    that the next words leave no time to read.
+
+    MAI sometimes gives the listener's へえ to the talker
+    (「〜今の時代。」「へえ。」, both one speaker), so `drop_backchannels`
+    cannot see it. Such a sentence, right after the same speaker's finished
+    sentence, with the next word (anyone's) starting within
+    `MIN_SEGMENT_DURATION_S` of it, would only flash before the next line:
+    it is dropped. Kept tokens keep their times."""
+    out: list[WordToken] = []
+    index = 0
+    while index < len(tokens):
+        end = _sentence_end(tokens, index)
+        sentence = tokens[index:end]
+        previous = out[-1] if out else None
+        if (
+            previous is not None
+            and end < len(tokens)
+            and previous.speaker_id == sentence[0].speaker_id
+            and ends_with_hard_punctuation(previous.text)
+            and _is_backchannel(sentence)
+            and tokens[end].start - sentence[0].start < MIN_SEGMENT_DURATION_S
+        ):
+            index = end
+            continue
+        out.extend(sentence)
+        index = end
+    return out
+
+
+def _sentence_end(tokens: Sequence[WordToken], start: int) -> int:
+    """The index after the sentence starting at `start`: through its first
+    hard punctuation, or to where the speaker changes."""
+    speaker = tokens[start].speaker_id
+    index = start
+    while index < len(tokens) and tokens[index].speaker_id == speaker:
+        index += 1
+        if ends_with_hard_punctuation(tokens[index - 1].text):
+            break
+    return index
+
+
 def _answers_or_reacts(
     talk: Sequence[WordToken], listeners: Sequence[Sequence[WordToken]]
 ) -> bool:
@@ -338,7 +393,10 @@ def _answers_or_reacts(
     question or react to its finished sentence with a ？."""
     if not ends_with_hard_punctuation(talk[-1].text):
         return False
-    question = "".join(t.text for t in talk[-2:]).endswith(("？", "?", "か。"))
+    tail = "".join(t.text for t in talk[-_RHETORICAL_TAIL_TOKENS:])
+    question = tail.endswith(("？", "?")) or (
+        tail.endswith("か。") and not tail.endswith(_RHETORICAL_TAILS)
+    )
     return question or any(run[-1].text.endswith(("？", "?")) for run in listeners)
 
 

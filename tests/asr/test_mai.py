@@ -15,6 +15,7 @@ from grillmaster.asr.mai import (
     MaiClient,
     MaiError,
     drop_backchannels,
+    drop_flashing_backchannels,
     is_response,
     read_response,
     srt_tokens,
@@ -253,6 +254,13 @@ def tokens(*runs: tuple[str, str, float]) -> list[WordToken]:
             ("c", "はいはい。", 1.0),
             ("a", "次。", 1.6),
         ),
+        (("a", "もう普通", 0.0), ("b", "あ。", 0.5), ("a", "会話をしてて。", 0.8)),
+        # A rhetorical じゃないですか。 seeks agreement, not an answer.
+        (
+            ("a", "めっちゃあるじゃないですか。", 0.0),
+            ("b", "うん。", 1.5),
+            ("a", "田んぼ。", 1.9),
+        ),
     ],
     ids=[
         "mid-sentence",
@@ -260,6 +268,8 @@ def tokens(*runs: tuple[str, str, float]) -> list[WordToken]:
         "mid-sentence-reaction",
         "between-sentences",
         "several-listeners",
+        "lone-あ",
+        "rhetorical-じゃないですか",
     ],
 )
 def test_listeners_inside_the_talkers_talk_are_dropped(
@@ -290,6 +300,33 @@ def test_listeners_inside_the_talkers_talk_are_dropped(
 def test_replies_and_reactions_stay(runs: tuple[tuple[str, str, float], ...]):
     original = tokens(*runs)
     assert drop_backchannels(original) == original
+
+
+def test_a_talkers_own_backchannel_that_would_flash_is_dropped():
+    # MAI gave the listener's へえ to the talker; the next speaker starts
+    # 0.3 s after it.
+    original = tokens(
+        ("a", "今の時代。", 0.0), ("a", "へえ。", 0.5), ("b", "で、写真。", 0.8)
+    )
+    assert drop_flashing_backchannels(original) == [
+        t for t in original if t.start < 0.5 or t.start >= 0.8
+    ]
+
+
+@pytest.mark.parametrize(
+    "runs",
+    [
+        # Time enough to read it.
+        (("a", "今の時代。", 0.0), ("a", "へえ。", 0.5), ("b", "で、写真。", 1.0)),
+        # Not after the speaker's own finished sentence.
+        (("a", "今の時代", 0.0), ("a", "へえ。", 0.4), ("b", "で、写真。", 0.7)),
+        (("a", "今の時代。", 0.0), ("b", "へえ。", 0.5), ("c", "で、写真。", 0.8)),
+    ],
+    ids=["readable", "mid-sentence", "own-turn"],
+)
+def test_other_backchannel_sentences_stay(runs: tuple[tuple[str, str, float], ...]):
+    original = tokens(*runs)
+    assert drop_flashing_backchannels(original) == original
 
 
 def test_a_sentence_cut_by_a_backchannel_stays_one_block():

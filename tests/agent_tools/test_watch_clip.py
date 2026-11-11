@@ -45,7 +45,7 @@ TRANSCRIPT = Hearing(
         Phrase(start_s=1.5, speaker=0, text="64歳でした。"),
         Phrase(start_s=3.25, speaker=1, text="えー。"),
     ),
-    cost=TranscriptionCost.priced(30.5, 0.22),
+    cost=TranscriptionCost.priced(30.5, 0.20),
 )
 SPEECH = "## 発話\n\n[11.5] 話者0: 64歳でした。\n[13.2] 話者1: えー。"
 HEADER = "Clip 10.000s-40.500s (times are video seconds; テロップ within about 2 s):\n"

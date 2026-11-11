@@ -2,17 +2,19 @@
 
 MAI-Transcribe-2 is the ASR. ElevenLabs Scribe v2, the ASR until
 2026-11-09, now only hears `watch_clip` spans. This file records
-two rounds of evaluation, so a later candidate is checked against the same
+the evaluations, so a later candidate is checked against the same
 failures first instead of re-running a whole comparison:
 
 - **2026-10-10:** Grok Voice Transcribe 2.0 was rejected for dropping speech.
 - **2026-11-09:** MAI-Transcribe-2 passed and replaced Scribe.
+- **2026-11-11:** Scribe v3 was rejected for `watch_clip` (degenerate output).
 
 ## Candidates and outcome
 
 | Candidate | Price (batch) | Outcome |
 |---|---|---|
-| ElevenLabs Scribe v2 | $0.22/h, keyterms +$0.05/h | ASR until 2026-11-09; now `watch_clip`'s second hearing only |
+| ElevenLabs Scribe v2 | $0.20/h, keyterms +$0.05/h | ASR until 2026-11-09; now `watch_clip`'s second hearing only |
+| ElevenLabs Scribe v3 | $0.20/h, keyterms +$0.05/h | rejected 2026-11-11: replaced minutes of noisy speech with junk |
 | xAI Grok Voice Transcribe 2.0 | $0.10/h, keyterms/diarization included | rejected: drops speech |
 | Microsoft MAI-Transcribe-2 (Azure Speech) | $0.10/h promo until 2026-12-31 | the ASR since 2026-11-09 |
 
@@ -278,6 +280,27 @@ All six questions went MAI's way, or were acceptable for MAI:
 - `watch_clip` hears with Scribe (`[watch_clip] speech = true`, `false`
   for none), a different recognizer from `ja`'s. The prompt calls 発話
   "about as accurate as `ja`, possibly less".
+
+## Round 3 (2026-11-11): Scribe v3 for `watch_clip`
+
+One request, the same as the old Scribe v2 ASR (`jpn`, word timestamps,
+diarize, no keyterms), on 260628 らいぱち's archived `audio.ogg`: 50 min,
+$0.167, 68 s. Baseline: the archived Scribe v2 `asr.json`.
+
+- **Degenerate output.** In the noisy pantomime segment, one "word" of
+  2,522 junk characters (mostly zeros, with Dutch, Korean, Thai and
+  Hindi fragments) spans 32:45–36:25. About 3 min 47 s of real speech is
+  lost; v2 had it all, apart from its 「前」 stretched 76 s. The 20 s before
+  it also carries low-logprob junk (삐, rinos, idelberg, formin, a leaked
+  `ざわざわする声]` tag), and 「저는」 appears three times around 40:17–40:52.
+- **Elsewhere better.** 1 stretched word against v2's 19, no collapsed
+  stacks, about 13 % more characters outside the junk.
+- **Numbers in kanji** (二十枚, 六四三, 三百九) where v2 wrote digits.
+  Without a number-format request it no longer matches `ja.srt`'s digits.
+- **29 speakers** against v2's 7.
+- `clip_phrases` parses the response unchanged (same keys plus `logprob`).
+
+Kept on v2: a clip that hits such a segment would hand the proofread junk.
 
 ## Re-evaluating a new candidate
 

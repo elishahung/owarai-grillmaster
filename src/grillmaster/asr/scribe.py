@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 MODEL = "scribe_v2"
 LANGUAGE = "jpn"
 # ElevenLabs Scribe list price.
-PRICE_PER_HOUR_USD = 0.22
+PRICE_PER_HOUR_USD = 0.20
 API_KEY_ENV = "ELEVENLABS_API_KEY"
 IGNORED_WORD_TYPES = frozenset({"audio_event"})
 # A clip phrase ends at a speaker change, a sentence end or this long a pause.

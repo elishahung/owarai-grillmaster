@@ -58,7 +58,7 @@ instead of:
 ```
 
 - Normalize only clearly awkward number style: use half-width Arabic numerals for precise values, dates, times, measurements, scores, rankings, episode/chapter numbers, and money when compactness matters. Use Chinese numerals for short rounded spoken expressions when they read more naturally. Do not mix Arabic and Chinese numerals inside one number phrase.
-- For repeated words, reduce mechanical duplication only when the source repeats the same word twice without comedic or emotional force. Preserve repetition when it carries timing, teasing, panic, emphasis, or a running joke.
+- For repeated words, reduce mechanical duplication only when the source repeats the same word twice without comedic or emotional force. Preserve repetition when it carries timing, teasing, panic, emphasis, or a running joke, but cap a run at three (`怎麼辦、怎麼辦、怎麼辦、怎麼辦、怎麼辦` → `怎麼辦、怎麼辦、怎麼辦`, `對對對對對` → `對對對`) unless the count itself is the point, such as several people giving the same answer, a chant, or counted beats. Never stand in `…` for a repetition; it marks unfinished speech. Write a repeated one- or two-character word without separators (`對對對`, `不對不對不對`) and separate longer ones with `、` (`好可怕、好可怕、好可怕`).
 - Match profanity, teasing, and roast severity without censoring or intensifying it. Prefer compact Taiwan Traditional Chinese phrasing that preserves the original register and variety-show timing.
 
 Review workflow:

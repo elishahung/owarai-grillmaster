@@ -521,12 +521,21 @@ def _labels_of(
     ]
 
 
+# A card's row is up for at least `_ROW_SHARE` of the card's time. Measured
+# 2026-11-12 on ten episodes: of 945 rows reached, the 124 up for less were
+# a shirt print, a logo, a whiteboard or a screen read for a moment beside
+# the card, or a board's tile turned over while the card was up; the rows
+# of the captions and boards checked were up for 0.75-1.0 of it.
+_ROW_SHARE = 0.5
+
+
 def _rows_of(
     labels: Sequence[_Line], start: float, end: float, fixtures: Sequence[_Line]
 ) -> list[_Line]:
     """Recurring `fixtures` that are more rows of a card (on from `start` to
     `end`) under the `labels` copied into it: up only while the card is,
-    starting or ending with it, and touching a label or another such row. A
+    starting or ending with it, for at least `_ROW_SHARE` of its time, and
+    touching a label or another such row. A
     caption whose wording is afterwards kept up as the corner title is
     recurring text row by row, and only the row set against a fresh line
     (its date) labels the card; the rows under that one come and go with
@@ -540,6 +549,7 @@ def _rows_of(
         if line.start >= start - CARD_TIMING_S
         and line.end <= end + CARD_TIMING_S
         and _shares_an_edge(line, start, end)
+        and line.end - line.start >= _ROW_SHARE * (end - start)
         and id(line) not in labelling
     ]
     rows: list[_Line] = []

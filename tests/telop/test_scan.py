@@ -740,24 +740,44 @@ def test_a_label_set_at_one_size_labels_its_plate_wherever_the_plate_is():
     assert cards[0].text == "推薦人 / 浦井のりひろ / 男性ブランコ"
 
 
-def test_a_board_kept_up_afterwards_as_the_corner_title_keeps_all_its_rows():
-    # Only the board's date is fresh: its wording is recurring text row by
-    # row. The first row sits flush under the date and labels the card; its
-    # right half fades in later, and the second row touches rows only.
-    # (Times moved 1570 s earlier.)
-    board: list[Shown] = [
-        (10.25, 15.75, (0.027, 0.705, 0.273, 0.763), "2024年4月3日0A"),
-        (10.25, 15.75, (0.154, 0.769, 0.415, 0.865), "心霊スポト"),
-        (11.75, 15.75, (0.402, 0.772, 0.783, 0.864), "幽霊が出てくるより"),
-        (10.25, 15.75, (0.151, 0.856, 0.795, 0.960), "怒った管理人が出てくる方が怖い"),
-    ]
-    wording = "心霊スポット幽霊が出てくるより怒った管理人が出てくる方が怖い"
-    title: Shown = (30.25, 571.75, (0.018, 0.018, 0.727, 0.093), wording)
+# A board whose wording is afterwards kept up as the corner title, so it is
+# recurring text row by row; only its date is fresh. The first row sits
+# flush under the date and labels the card, and the second row touches rows
+# only. (Times moved 1570 s earlier.)
+_BOARD: list[Shown] = [
+    (10.25, 15.75, (0.027, 0.705, 0.273, 0.763), "2024年4月3日0A"),
+    (10.25, 15.75, (0.154, 0.769, 0.415, 0.865), "心霊スポト"),
+    (10.25, 15.75, (0.151, 0.856, 0.795, 0.960), "怒った管理人が出てくる方が怖い"),
+    (
+        30.25,
+        571.75,
+        (0.018, 0.018, 0.727, 0.093),
+        "心霊スポット幽霊が出てくるより怒った管理人が出てくる方が怖い",
+    ),
+]
+_BOARD_HALF_ROW = ((0.402, 0.772, 0.783, 0.864), "幽霊が出てくるより")
 
-    cards = build_cards(shown(*board, title), []).offered
+
+def test_a_board_kept_up_afterwards_as_the_corner_title_keeps_all_its_rows():
+    # The first row's right half fades in 1.5 s after the board.
+    half_row: Shown = (11.75, 15.75, *_BOARD_HALF_ROW)
+
+    cards = build_cards(shown(*_BOARD, half_row), []).offered
 
     assert [card.text for card in cards] == [
         "2024年4月3日0A / 心霊スポト / 幽霊が出てくるより / 怒った管理人が出てくる方が怖い"
+    ]
+
+
+def test_a_recurring_line_up_for_under_half_a_card_s_time_is_not_its_row():
+    # The same line read for the board's last 2.5 s only (an invented time),
+    # as a logo, a print or a whiteboard line is read for a moment by a card.
+    read_late: Shown = (13.75, 15.75, *_BOARD_HALF_ROW)
+
+    cards = build_cards(shown(*_BOARD, read_late), []).offered
+
+    assert [card.text for card in cards] == [
+        "2024年4月3日0A / 心霊スポト / 怒った管理人が出てくる方が怖い"
     ]
 
 

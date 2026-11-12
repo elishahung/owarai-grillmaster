@@ -99,13 +99,16 @@ location show), not settings.
   line height above/below) that stays up across it and starts or ends with
   it is copied in as its label (`熊元MEMO` over successive memos). Under
   such a label, recurring lines up only while the card is (starting or
-  ending with it) that touch it or each other are the card's other rows
+  ending with it, for ≥ half its time: `_ROW_SHARE`, shorter ones were
+  prints, logos and whiteboards read for a moment) that touch it or each
+  other are the card's other rows
   and are copied in too (`_rows_of`: a caption whose wording is then kept
   up as the corner title is recurring row by row, and its translation
   landed on the rows left out, 2026-11-12), except a row two cards up
   together could each claim (a wall of titles, `_copied`). Known cost: a
-  fixture's short track inside a card's span joins as a row past
-  `_LABELLING` (a logo fragment, a whiteboard scribble by a caption). Two
+  fixture's track that comes and goes with a card within `CARD_TIMING_S`
+  joins as a row past `_LABELLING` (a logo fragment, a whiteboard scribble
+  by a caption); timing cannot tell those from a caption's rows. Two
   fresh groups on screen together on either side of one such label are
   one card (a plate whose middle column is also the corner title); boards
   bridged this way are left to the selector. Only an edited-in text labels

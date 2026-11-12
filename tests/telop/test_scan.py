@@ -738,3 +738,48 @@ def test_a_label_set_at_one_size_labels_its_plate_wherever_the_plate_is():
     cards = build_cards(shown(*labels, *plate), []).offered
 
     assert cards[0].text == "推薦人 / 浦井のりひろ / 男性ブランコ"
+
+
+def test_a_board_kept_up_afterwards_as_the_corner_title_keeps_all_its_rows():
+    # Only the board's date is fresh: its wording is recurring text row by
+    # row. The first row sits flush under the date and labels the card; its
+    # right half fades in later, and the second row touches rows only.
+    # (Times moved 1570 s earlier.)
+    board: list[Shown] = [
+        (10.25, 15.75, (0.027, 0.705, 0.273, 0.763), "2024年4月3日0A"),
+        (10.25, 15.75, (0.154, 0.769, 0.415, 0.865), "心霊スポト"),
+        (11.75, 15.75, (0.402, 0.772, 0.783, 0.864), "幽霊が出てくるより"),
+        (10.25, 15.75, (0.151, 0.856, 0.795, 0.960), "怒った管理人が出てくる方が怖い"),
+    ]
+    wording = "心霊スポット幽霊が出てくるより怒った管理人が出てくる方が怖い"
+    title: Shown = (30.25, 571.75, (0.018, 0.018, 0.727, 0.093), wording)
+
+    cards = build_cards(shown(*board, title), []).offered
+
+    assert [card.text for card in cards] == [
+        "2024年4月3日0A / 心霊スポト / 幽霊が出てくるより / 怒った管理人が出てくる方が怖い"
+    ]
+
+
+def test_a_recurring_row_two_cards_could_claim_joins_neither():
+    # A wall of titles: two fresh lines, each over a recurring row of its
+    # own, and one more recurring row under both.
+    fresh = [read((0.1, 0.5, 0.3, 0.56), "あさ"), read((0.5, 0.5, 0.7, 0.56), "よる")]
+    fixtures = [
+        read((0.1, 0.57, 0.3, 0.63), "その一"),
+        read((0.5, 0.57, 0.7, 0.63), "その二"),
+        read((0.1, 0.64, 0.7, 0.70), "共通の行"),
+    ]
+    away = [
+        line.model_copy(
+            update={
+                "box": (line.box[0], line.box[1] - 0.4, line.box[2], line.box[3] - 0.4)
+            }
+        )
+        for line in fixtures
+    ]
+    frames = [away] * 130 + [[]] * 4 + [[*fresh, *fixtures]] * 4
+
+    cards = build_cards(scan_of(*frames), []).offered
+
+    assert sorted(card.text for card in cards) == ["あさ / その一", "よる / その二"]

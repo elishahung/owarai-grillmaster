@@ -9,7 +9,8 @@ timing and touch on screen into cards (stacked, or close on one row: a card
 beside another stays apart), copies a recurring label that stays up across
 several cards into each card it sits on (an edited-in one, not scene text
 such as a shirt print: see `_Recurs`; not where it rarely labels one, as a
-logo: see `_LABELLING`), and labels each card:
+logo: see `_LABELLING`) along with the recurring rows under it that come
+and go with that card (`_rows_of`), and labels each card:
 
 - `recurring`: every line's text is on screen for over `RECURRING_S`
   across the episode (corner logos and titles, shirt prints, bottle
@@ -492,6 +493,14 @@ def _group(lines: Sequence[_Line]) -> list[list[_Line]]:
     return sorted(groups.values(), key=lambda group: group[0].start)
 
 
+def _shares_an_edge(line: _Line, start: float, end: float) -> bool:
+    """Whether a line comes up or leaves with a card on from `start` to
+    `end`."""
+    return (
+        abs(line.start - start) <= CARD_TIMING_S or abs(line.end - end) <= CARD_TIMING_S
+    )
+
+
 def _labels_of(
     group: Sequence[_Line], start: float, end: float, labels: Sequence[_Line]
 ) -> list[_Line]:
@@ -506,12 +515,72 @@ def _labels_of(
         for label in labels
         if label.start <= start + CARD_TIMING_S
         and label.end >= end - CARD_TIMING_S
-        and (
-            abs(label.start - start) <= CARD_TIMING_S
-            or abs(label.end - end) <= CARD_TIMING_S
-        )
+        and _shares_an_edge(label, start, end)
         and any(_touch(label.box, line.box) in _ABOVE_OR_BELOW for line in group)
         and _may_join(label, biggest)
+    ]
+
+
+def _rows_of(
+    labels: Sequence[_Line], start: float, end: float, fixtures: Sequence[_Line]
+) -> list[_Line]:
+    """Recurring `fixtures` that are more rows of a card (on from `start` to
+    `end`) under the `labels` copied into it: up only while the card is,
+    starting or ending with it, and touching a label or another such row. A
+    caption whose wording is afterwards kept up as the corner title is
+    recurring text row by row, and only the row set against a fresh line
+    (its date) labels the card; the rows under that one come and go with
+    it."""
+    if not labels:
+        return []
+    labelling = {id(label) for label in labels}
+    left = [
+        line
+        for line in fixtures
+        if line.start >= start - CARD_TIMING_S
+        and line.end <= end + CARD_TIMING_S
+        and _shares_an_edge(line, start, end)
+        and id(line) not in labelling
+    ]
+    rows: list[_Line] = []
+    reached = list(labels)
+    while reached:
+        at = reached.pop()
+        apart: list[_Line] = []
+        for line in left:
+            if _touch(line.box, at.box) and _may_join(line, at):
+                rows.append(line)
+                reached.append(line)
+            else:
+                apart.append(line)
+        left = apart
+    return rows
+
+
+def _copied(
+    groups: Sequence[Sequence[_Line]],
+    labels: Sequence[_Line],
+    fixtures: Sequence[_Line],
+) -> list[list[_Line]]:
+    """The recurring lines copied into each fresh group: its labels, and the
+    rows under them (`_rows_of`) reached without a line another group
+    reaches or is labelled by. A row two cards up together could each claim
+    is a board's (a wall of titles, a score sheet): copied into both, it
+    would be read twice."""
+    spans = [_span(group) for group in groups]
+    labelled = [
+        _labels_of(group, *span, labels)
+        for group, span in zip(groups, spans, strict=True)
+    ]
+    reached = Counter(
+        id(line)
+        for found, span in zip(labelled, spans, strict=True)
+        for line in (*found, *_rows_of(found, *span, fixtures))
+    )
+    own = [line for line in fixtures if reached[id(line)] <= 1]
+    return [
+        [*found, *_rows_of(found, *span, own)]
+        for found, span in zip(labelled, spans, strict=True)
     ]
 
 
@@ -665,32 +734,32 @@ def build_cards(scan: TelopScan, transcript: Sequence[SrtBlock]) -> TelopCards:
     # Fixtures never join fresh lines into one card (a logo under a row of
     # name plates would chain them together); an overlay one only labels a
     # card, and not where it rarely labels one (`_LABELLING`), scene text (a
-    # shirt print by a name plate) not even that.
+    # shirt print by a name plate) not even that. Under a label, overlay
+    # lines up only while the card is are its other rows (`_copied`).
     fixtures = [line for line in lines if recurring[id(line)] is not _Recurs.NO]
     fresh = [line for line in lines if recurring[id(line)] is _Recurs.NO]
     fresh_groups = _group(fresh)
-    labels = _labelling(
-        fresh_groups,
-        [line for line in fixtures if recurring[id(line)] is _Recurs.OVERLAY],
-    )
+    overlays = [line for line in fixtures if recurring[id(line)] is _Recurs.OVERLAY]
+    labels = _labelling(fresh_groups, overlays)
+    bridged = _bridged(fresh_groups, labels)
     groups = sorted(
         [
-            *((group, False) for group in _bridged(fresh_groups, labels)),
-            *((group, True) for group in _group(fixtures)),
+            *zip(bridged, _copied(bridged, labels, overlays), strict=True),
+            *((group, None) for group in _group(fixtures)),
         ],
         key=lambda tagged: tagged[0][0].start,
     )
     inset = 0.5 / scan.fps - CARD_EDGE_S
     cards: list[TelopCard] = []
-    for group, is_fixture in groups:
+    for group, copied in groups:
         start, end = _span(group)
         echoes = set[int]()
-        if is_fixture:
+        if copied is None:
             kind = CardKind.RECURRING
         else:
             echoes = {id(line) for line in group if _repeats_speech(line, cues)}
             kind = CardKind.SPEECH if len(echoes) == len(group) else CardKind.CANDIDATE
-            group.extend(_labels_of(group, start, end, labels))
+            group.extend(copied)
         ordered = _reading_order(group)
         cards.append(
             TelopCard(

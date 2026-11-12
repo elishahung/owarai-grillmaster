@@ -97,7 +97,15 @@ location show), not settings.
   plates chained them); they form their own `recurring` cards, never
   offered, and a recurring line set flush on a card (≤ half the smaller
   line height above/below) that stays up across it and starts or ends with
-  it is copied in as its label (`熊元MEMO` over successive memos). Two
+  it is copied in as its label (`熊元MEMO` over successive memos). Under
+  such a label, recurring lines up only while the card is (starting or
+  ending with it) that touch it or each other are the card's other rows
+  and are copied in too (`_rows_of`: a caption whose wording is then kept
+  up as the corner title is recurring row by row, and its translation
+  landed on the rows left out, 2026-11-12), except a row two cards up
+  together could each claim (a wall of titles, `_copied`). Known cost: a
+  fixture's short track inside a card's span joins as a row past
+  `_LABELLING` (a logo fragment, a whiteboard scribble by a caption). Two
   fresh groups on screen together on either side of one such label are
   one card (a plate whose middle column is also the corner title); boards
   bridged this way are left to the selector. Only an edited-in text labels
@@ -294,7 +302,11 @@ OCR or agent run is needed. Per item:
    this episode's text.
 3. Measure a rule change on every scanned project: `diff <HEAD's scan.py>`
    (`git show HEAD:src/grillmaster/telop/scan.py > "$TEMP/old_scan.py"`;
-   ~30 s over the archive). Read what it lets in or drops elsewhere. A
+   about a minute over a hundred projects, a process per core). Shape the
+   rule on a few named episodes of different kinds first (`diff <baseline>
+   <id>...`, seconds), judging each change there as better or worse rather
+   than driving the count down, then run the archive. Read what it lets in
+   or drops elsewhere. A
    rule that fixes the episode but admits logos, sponsor marks, ad copy or
    board entries elsewhere is rejected. OCR boxes include decoration and
    vary for the same text (one corner title 46 px vs 77 px tall), so size
@@ -346,7 +358,8 @@ Known gap (2026-10-27): whether a text recurs is judged by text alone,
 wherever and however it appears (only labelling looks at places and sizes,
 above). A corner label's text reused elsewhere is absorbed: a
 full-screen title card or break bumper repeating the corner title, an
-intro name plate whose name is also a long-running label. Size/orientation
+intro name plate whose name is also a long-running label (one with a
+fresh line, such as a date, keeps its rows: `_rows_of`). Size/orientation
 "set apart" exceptions were measured and rejected (on other episodes they
 mostly admitted logos, sponsor marks and boards). Recurrence counted only
 at a line's own place was measured and rejected for labelling (2026-10-29):

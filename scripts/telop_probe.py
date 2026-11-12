@@ -16,7 +16,9 @@ once, without OCR or an agent run.
 - `diff <baseline scan.py> [<project>...]`: the offered cards a baseline
   `scan.py` (e.g. `git show HEAD:src/grillmaster/telop/scan.py > old.py`)
   and the working tree build differently, on every scanned project by
-  default (local and archived): measure a rule change before keeping it.
+  default (local and archived), a process per core: about a minute over a
+  hundred projects. Name a few projects of different kinds while shaping a
+  rule (seconds), and measure it on all of them before keeping it.
 - `review <baseline scan.py> [<project>...] [--out <dir>]`: the same
   changes as images to show the owner, one per moment: the still before
   (left) and after (right), each changed card boxed in a colour; it prints
@@ -39,6 +41,8 @@ import json
 import re
 import sys
 import tempfile
+from concurrent.futures import ProcessPoolExecutor
+from itertools import repeat
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -179,16 +183,32 @@ def _load_module(path: Path) -> ModuleType:
     return module
 
 
-def diff_command(baseline: Path, projects: list[str]) -> None:
+type _Offered = set[tuple[float, str]]
+
+
+def _offered(layout: ProjectLayout, baseline: Path) -> tuple[_Offered, _Offered]:
+    """A project's offered cards as a baseline `scan.py` and as the working
+    tree build them. Runs in a worker process, so it returns plain values:
+    the baseline's card classes exist only where it was loaded."""
     old = _load_module(baseline)
+    return (
+        {(c.start, c.text) for c in _cards(layout, old).offered},
+        {(c.start, c.text) for c in _cards(layout).offered},
+    )
+
+
+def diff_command(baseline: Path, projects: list[str]) -> None:
+    _load_module(baseline)  # A baseline that does not load fails here, once.
     layouts = [_layout(project) for project in projects] or list(_scanned())
-    for layout in layouts:
-        before = {(c.start, c.text) for c in _cards(layout, old).offered}
-        after = {(c.start, c.text) for c in _cards(layout).offered}
-        print(f"=== {layout.root.name}: offered {len(before)} -> {len(after)}")
-        for sign, changed in (("+", after - before), ("-", before - after)):
-            for start, text in sorted(changed):
-                print(f"  {sign} {start:7.1f} {text}")
+    # Building cards takes a second or two per project and rule set, on one
+    # core: a process per project, as many at once as there are cores.
+    with ProcessPoolExecutor() as pool:
+        offered = pool.map(_offered, layouts, repeat(baseline))
+        for layout, (before, after) in zip(layouts, offered, strict=True):
+            print(f"=== {layout.root.name}: offered {len(before)} -> {len(after)}")
+            for sign, changed in (("+", after - before), ("-", before - after)):
+                for start, text in sorted(changed):
+                    print(f"  {sign} {start:7.1f} {text}")
 
 
 _SAME_MOMENT_S = 1.5

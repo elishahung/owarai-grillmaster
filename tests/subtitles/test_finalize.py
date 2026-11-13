@@ -22,6 +22,7 @@ from grillmaster.subtitles.finalize import (
     briefing_name_units,
     build_name_spacer,
     clean_text,
+    close_quotes_per_block,
     curated_name_units,
     dialogue_line,
     fit_text,
@@ -189,6 +190,74 @@ def test_lines_that_cannot_fold_stay(text: str):
 )
 def test_slashes_between_words_stay(text: str):
     assert clean_text(text) == text
+
+
+# --- quotes per block -------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("texts", "expected"),
+    [
+        pytest.param(["說「ABC", "DEF」"], ["說「ABC」", "「DEF」"], id="two-blocks"),
+        pytest.param(
+            ["「啊", "這裡啊", "叫那家店」"],
+            ["「啊」", "「這裡啊」", "「叫那家店」"],
+            id="middle-block",
+        ),
+        pytest.param(
+            ["他說：\n「喂", "你在幹嘛？」"],
+            ["他說：\n「喂」", "「你在幹嘛？」"],
+            id="opened-on-a-second-row",
+        ),
+        pytest.param(
+            ["「他說『小弟弟", "真乖』", "然後走了」"],
+            ["「他說『小弟弟』」", "「『真乖』」", "「然後走了」"],
+            id="nested",
+        ),
+        pytest.param(
+            ["-好啊\n-他說「ABC", "-DEF」"],
+            ["-好啊\n-他說「ABC」", "-「DEF」"],
+            id="after-a-speaker-dash",
+        ),
+        pytest.param(
+            ["「要是被逼問\n就說自己清白」"],
+            ["「要是被逼問\n就說自己清白」"],
+            id="one-block-over-two-rows",
+        ),
+        pytest.param(["「沒關的", "下一句"], ["「沒關的", "下一句"], id="never-closed"),
+        pytest.param(
+            ["「我的感性\n比他們", "-還要優秀」\n-別說了"],
+            ["「我的感性\n比他們」", "-「還要優秀」\n-別說了"],
+            id="closed-by-the-first-voice",
+        ),
+        pytest.param(
+            ["說「北千住…", "-是的\n-車站的情侶」了"],
+            ["說「北千住…」", "-是的\n-「車站的情侶」了"],
+            id="closed-by-the-second-voice",
+        ),
+        pytest.param(
+            ["-好\n-「我以前", "-嗯\n-是棵樹」"],
+            ["-好\n-「我以前」", "-嗯\n-「是棵樹」"],
+            id="carried-from-the-last-voice",
+        ),
+        pytest.param(
+            ["「接下來", "-目標是偶像\n-對吧", "下台」"],
+            ["「接下來", "-目標是偶像\n-對吧", "下台」"],
+            id="dialogue-inside",
+        ),
+        pytest.param(
+            ["-他說「ABC\n-嗯", "DEF」"],
+            ["-他說「ABC\n-嗯", "DEF」"],
+            id="left-open-by-a-voice-before-the-last",
+        ),
+        pytest.param(["「開", "錯』"], ["「開", "錯』"], id="mismatched-closer"),
+        pytest.param(["沒有引號", "多的」"], ["沒有引號", "多的」"], id="stray-closer"),
+    ],
+)
+def test_a_quote_over_several_blocks_is_closed_in_each(
+    texts: list[str], expected: list[str]
+):
+    assert close_quotes_per_block(texts) == expected
 
 
 # --- over-wide lines --------------------------------------------------------
@@ -364,6 +433,8 @@ def test_write_finalized_spaces_then_cleans(tmp_path: Path):
         SrtBlock(1, "00:00:01,000 --> 00:00:02,000", "以及空前Meteor的茶屋。"),
         SrtBlock(2, "00:00:03,000 --> 00:00:04,000", "難道是森本桑？"),
         SrtBlock(3, "00:00:05,000 --> 00:00:06,000", "我推薦的是水川Katamari 桑啊。"),
+        SrtBlock(4, "00:00:07,000 --> 00:00:08,000", "他說「好啊，"),
+        SrtBlock(5, "00:00:09,000 --> 00:00:10,000", "走吧。」"),
     ]
     ass_path = tmp_path / "subs" / "cht.ass"
     srt_path = tmp_path / "subs" / "cht.srt"
@@ -379,7 +450,10 @@ def test_write_finalized_spaces_then_cleans(tmp_path: Path):
         "1\n00:00:01,000 --> 00:00:02,000\n以及 空前Meteor 的茶屋\n\n"
         "2\n00:00:03,000 --> 00:00:04,000\n難道是森本桑？\n\n"
         # Curated, not in the briefing; the trailing 桑 keeps its space.
-        "3\n00:00:05,000 --> 00:00:06,000\n我推薦的是 水川Katamari 桑啊\n"
+        "3\n00:00:05,000 --> 00:00:06,000\n我推薦的是 水川Katamari 桑啊\n\n"
+        # Closed per block after the punctuation cleanup.
+        "4\n00:00:07,000 --> 00:00:08,000\n他說「好啊」\n\n"
+        "5\n00:00:09,000 --> 00:00:10,000\n「走吧」\n"
     )
     ass = ass_path.read_text(encoding="utf-8")
     assert ass.startswith(DIALOGUE_HEADER)

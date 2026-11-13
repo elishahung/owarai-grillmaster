@@ -1,7 +1,7 @@
 """Finalize: the deliverable subtitles, a player SRT (styled as ASS where
 it is drawn).
 
-Three deterministic passes run here, after every agent pass, so nothing
+Four deterministic passes run here, after every agent pass, so nothing
 upstream can undo them:
 
 - Mixed-script name spacing. Latin-containing renderings agreed in the
@@ -23,6 +23,11 @@ upstream can undo them:
   - strip `，、；。` right before a closing `」`/`』` (`？！…` stay);
   - drop spaces hugging mid-line full-width `，、；。：！？`;
   - turn any remaining mid-line `。` into `，`.
+- Quotes per block (`close_quotes_per_block`), the one pass reading
+  neighboring blocks: a quote carried over several blocks is closed and
+  reopened in every block (`說「ABC` / `DEF」` → `說「ABC」` / `「DEF」`)
+  when the run closes; among several voices only the one closing it takes
+  the marks. One block's quote may span its rows.
 - Over-wide lines: a line wider than the full canvas is broken into rows
   (`fit_text`), so the text itself carries every row drawn and the telop
   placement reads them from the SRT.
@@ -36,6 +41,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import replace
+from functools import reduce
 from typing import TYPE_CHECKING
 
 from grillmaster.core.fs import atomic_write_text
@@ -60,7 +66,9 @@ if TYPE_CHECKING:
 
 _LINE_EDGE_PUNCT = re.compile(r"^[\s，、；。]+|[\s，、；。]+$")
 _ELLIPSIS_RUN = re.compile(r"(?:\.{3,}|[…⋯])+")
-_QUOTE_TAIL_PUNCT = re.compile(r"[\s，、；。]+(?=[」』])")
+_QUOTE_PAIRS = {"「": "」", "『": "』"}
+_QUOTE_OPENER_OF = {closer: opener for opener, closer in _QUOTE_PAIRS.items()}
+_QUOTE_TAIL_PUNCT = re.compile(rf"[\s，、；。]+(?=[{''.join(_QUOTE_OPENER_OF)}])")
 # Full-width punctuation carries no adjacent spaces. Refine writes two
 # clauses on one line as "好帥。 很有型", and the "。"→"，" pass would otherwise
 # leave "好帥， 很有型".
@@ -250,15 +258,14 @@ def _fold_turns(lines: list[str]) -> list[str]:
     this pass makes sure of it."""  # noqa: RUF002
     if len(lines) <= 2:  # noqa: PLR2004
         return lines
-    turns: list[str] = []
-    for line in lines:
-        row = line.strip()
-        if _SPEAKER_DASH.match(row):
-            turns.append(_SPEAKER_DASH.sub("", row))
-        elif turns:
-            turns[-1] = _join_rows(turns[-1], row)
-        else:
-            turns.append(row)
+    turns = [
+        reduce(
+            _join_rows,
+            [_SPEAKER_DASH.sub("", rows[0].strip())]
+            + [row.strip() for row in rows[1:]],
+        )
+        for rows in _voices(lines)
+    ]
     if len(turns) < 2 or not all(turns):  # noqa: PLR2004
         return lines
     voices = [_LINE_EDGE_PUNCT.sub("", turn) for turn in turns]
@@ -272,6 +279,18 @@ def _fold_turns(lines: list[str]) -> list[str]:
     return list(min(fitting, key=lambda fold: max(map(_row_width, fold))))
 
 
+def _voices(lines: Sequence[str]) -> list[list[str]]:
+    """`lines` grouped by voice: a `-` line starts one, a line without
+    goes on the one before."""
+    voices: list[list[str]] = []
+    for line in lines:
+        if voices and not _SPEAKER_DASH.match(line.strip()):
+            voices[-1].append(line)
+        else:
+            voices.append([line])
+    return voices
+
+
 def _fold_row(voices: Sequence[str]) -> str:
     """One `-` row of `voices` split by `／`; a later voice's own leading
     dashes (an interruption's `--`) would stand mid-row, so they go."""  # noqa: RUF002
@@ -283,6 +302,87 @@ def _join_rows(left: str, right: str) -> str:
     if not left or not right or left[-1] in _PAUSE_MARKS:
         return left + right
     return f"{left}，{right}"
+
+
+def close_quotes_per_block(texts: Sequence[str]) -> list[str]:
+    """Netflix Traditional Chinese: a quote carried over several subtitles
+    takes its marks in every one. A block leaving a quote open starts a run
+    that ends at the block closing it; each block of the run gets the
+    carried openers at its start (after a speaker dash) and the closers of
+    what it leaves open at its end. In a block of several voices
+    (`_voices`) the carried quote belongs to the one voice holding its
+    closer (`-還要優秀」` / `-別說了` → `-「還要優秀」` / `-別說了`), and only
+    the last voice may leave a quote open. A run that never closes, meets a
+    mismatched closer, or reaches voices none or several of which close it
+    is left as written."""
+    out = list(texts)
+    start = 0
+    while start < len(texts):
+        run = _quote_run(texts, start)
+        if run is None:
+            start += 1
+            continue
+        out[start : start + len(run)] = run
+        start += len(run)
+    return out
+
+
+def _quote_run(texts: Sequence[str], start: int) -> list[str] | None:
+    """The blocks from `start` to the one closing the quote `start` leaves
+    open, rewritten (just `start` when it opens none); None when the run
+    is left."""
+    carry: list[str] = []
+    run: list[str] = []
+    for index in range(start, len(texts)):
+        carried = _carry_quotes(texts[index], carry)
+        if carried is None:
+            return None
+        rewritten, carry = carried
+        run.append(rewritten)
+        if not carry:
+            return run
+    return None
+
+
+def _carry_quotes(text: str, carry: Sequence[str]) -> tuple[str, list[str]] | None:
+    """`text` with the `carry`ed quotes reopened and what it leaves open
+    closed, and what it leaves open; None when it cannot take `carry`."""
+    voices = ["\n".join(rows) for rows in _voices(text.split("\n"))]
+    closing = [i for i, voice in enumerate(voices) if _open_quotes(voice, []) is None]
+    if len(voices) > 1 and len(closing) != (1 if carry else 0):
+        return None
+    target = closing[0] if closing else 0
+    left: list[str] = []
+    for i, voice in enumerate(voices):
+        before = carry if i == target else []
+        open_after = _open_quotes(voice, before)
+        if open_after is None or (open_after and i < len(voices) - 1):
+            return None
+        voices[i] = _wrap_quote(voice, before, open_after)
+        left = open_after
+    return "\n".join(voices), left
+
+
+def _open_quotes(text: str, carry: Sequence[str]) -> list[str] | None:
+    """The openers still open after `text` with `carry` open before it;
+    None when a closer has no matching opener."""
+    stack = list(carry)
+    for char in text:
+        if char in _QUOTE_PAIRS:
+            stack.append(char)
+        elif char in _QUOTE_OPENER_OF:
+            if not stack or stack[-1] != _QUOTE_OPENER_OF[char]:
+                return None
+            stack.pop()
+    return stack
+
+
+def _wrap_quote(text: str, before: Sequence[str], after: Sequence[str]) -> str:
+    opening = "".join(before)
+    closing = "".join(_QUOTE_PAIRS[opener] for opener in reversed(after))
+    dash = _LEADING_DASHES.match(text)
+    head = dash.group(0) if dash else ""
+    return f"{head}{opening}{text[len(head) :]}{closing}"
 
 
 def _row_width(row: str) -> float:
@@ -317,11 +417,14 @@ def fit_text(text: str) -> str:
 
 
 def finalize_blocks(blocks: Iterable[SrtBlock], units: Iterable[str]) -> list[SrtBlock]:
-    """Name spacing, punctuation cleanup, then over-wide lines broken, on
-    every block's text."""
+    """Name spacing, punctuation cleanup, quotes closed per block, then
+    over-wide lines broken, on every block's text."""
     space = build_name_spacer(units)
+    blocks = list(blocks)
+    texts = close_quotes_per_block([clean_text(space(block.text)) for block in blocks])
     return [
-        replace(block, text=fit_text(clean_text(space(block.text)))) for block in blocks
+        replace(block, text=fit_text(text))
+        for block, text in zip(blocks, texts, strict=True)
     ]
 
 

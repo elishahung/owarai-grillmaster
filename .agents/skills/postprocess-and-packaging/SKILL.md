@@ -102,7 +102,10 @@ then Netflix-TC punctuation (incl. a model's spaced or punctuation-led
 else one `／`, never a comma; unspaced `1/2`, `A／B` stay; a block of 3+
 lines with several voices folded to two `-` rows by `_fold_turns`, voices
 sharing a row split by `／` (`-A／B` / `-C`). The chunk agent writes one `-` line per voice
-regardless of count; folding is refine's job, `_fold_turns` its guarantee), then `fit_text`: a line wider than the full
+regardless of count; folding is refine's job, `_fold_turns` its guarantee),
+then `close_quotes_per_block`: a quote carried over several blocks is closed
+and reopened in each (Netflix TC), in `-` lines only on the voice closing
+it; an unclosed or ambiguous run stays as written, then `fit_text`: a line wider than the full
 canvas (1900 px) is broken into rows (libass breaks only at a space, so CJK
 ran off both edges), its row-final `，、；。` dropped. The break lives in the
 text (SRT + ASS, the archived deliverables; owner's call over breaking only

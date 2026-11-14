@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 import pytest
 from loguru import logger
 
+from grillmaster.events.context import add_sink
+
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -19,6 +21,6 @@ def log_records() -> Iterator[list[Record]]:
     def sink(message: Message) -> None:
         records.append(message.record)
 
-    handler = logger.add(sink, level="DEBUG")
+    handler = add_sink(sink, level="DEBUG")
     yield records
     logger.remove(handler)

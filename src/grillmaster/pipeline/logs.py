@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from grillmaster.events.context import add_sink
 from grillmaster.events.sinks import JsonlSink
 
 if TYPE_CHECKING:
@@ -51,7 +52,7 @@ class ProjectLogs:
         """(Re)open this run's logs under `layout`, appending; open ones are
         closed first."""
         self.close()
-        self._handler = logger.add(
+        self._handler = add_sink(
             layout.run_log(self._started_at),
             level="DEBUG",
             format=_format,

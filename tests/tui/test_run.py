@@ -13,7 +13,7 @@ from tests.tui.fakes import PLAN
 
 from grillmaster.core.process import ProcessRegistry
 from grillmaster.core.stage_retry import StageRetry
-from grillmaster.events.context import stage_scope
+from grillmaster.events.context import add_sink, stage_scope
 from grillmaster.events.types import (
     PlanKind,
     RunStarted,
@@ -120,7 +120,7 @@ class _Console:
         self.restored_event = threading.Event()
 
     def _add(self) -> int:
-        return logger.add(self.out, level="INFO", format="{level} {message}")
+        return add_sink(self.out, level="INFO", format="{level} {message}")
 
     def restore(self) -> None:
         self.restored += 1
@@ -172,7 +172,7 @@ def test_returns_the_work_result_and_shows_its_events_and_logs(console: _Console
 
 def test_only_the_console_handler_is_swapped_out(console: _Console):
     kept = io.StringIO()
-    file_handler = logger.add(kept, level="INFO", format="{message}")
+    file_handler = add_sink(kept, level="INFO", format="{message}")
 
     def work(_sink: EventSink) -> None:
         logger.info("during the dashboard")

@@ -8,7 +8,7 @@ import pytest
 from loguru import logger
 from tests.tui.fakes import PLAN, FakeClock
 
-from grillmaster.events.context import stage_scope, task_scope
+from grillmaster.events.context import add_sink, stage_scope, task_scope
 from grillmaster.events.types import (
     ActivityKind,
     AgentActivity,
@@ -96,7 +96,7 @@ def test_work_done_is_queued_after_earlier_events():
 @pytest.fixture
 def bridged() -> Iterator[TuiSink]:
     sink = TuiSink()
-    handler = logger.add(
+    handler = add_sink(
         log_bridge(sink), level="DEBUG", format="{level.name[0]} {message}"
     )
     yield sink

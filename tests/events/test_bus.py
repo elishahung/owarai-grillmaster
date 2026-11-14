@@ -7,6 +7,7 @@ import pytest
 from loguru import logger
 
 from grillmaster.events.bus import EventBus
+from grillmaster.events.context import add_sink
 from grillmaster.events.types import LogLine, PlanKind, StepCompleted, StepStarted
 
 if TYPE_CHECKING:
@@ -73,7 +74,7 @@ def test_failure_logging_does_not_recurse_through_a_log_bridge(
     def bridge(message: Message) -> None:
         bus.emit(LogLine(message.record["level"].name, message.record["message"]))
 
-    handler = logger.add(bridge, level="ERROR")
+    handler = add_sink(bridge, level="ERROR")
     try:
         bus.emit(StepStarted("asr", STAGE))
     finally:

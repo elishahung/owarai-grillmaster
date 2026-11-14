@@ -117,6 +117,7 @@ ban-relative-imports = "parents"
 "subprocess.Popen".msg = "Use grillmaster.media.ffmpeg or grillmaster.agents.process"
 "subprocess.call".msg = "Use grillmaster.media.ffmpeg or grillmaster.agents.process"
 "subprocess.check_output".msg = "Use grillmaster.media.ffmpeg or grillmaster.agents.process"
+"loguru.logger.add".msg = "Use grillmaster.events.context.add_sink: it keeps traceback locals (API keys) out of logs"
 "asyncio.run".msg = "Pipeline code is thread-based; only agents.adapters.claude runs an event loop"
 
 [tool.ruff.lint.flake8-type-checking]

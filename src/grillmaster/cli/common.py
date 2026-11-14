@@ -15,7 +15,7 @@ import typer
 from loguru import logger
 
 from grillmaster.cli.args import looks_like_path
-from grillmaster.events.context import install_log_context
+from grillmaster.events.context import add_sink, install_log_context
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -45,7 +45,7 @@ def configure_console_logging() -> None:
 def restore_console_logging() -> None:
     """Add the console sink (again), leaving every other handler alone."""
     global _console_handler  # noqa: PLW0603 - the one console sink of the process
-    _console_handler = logger.add(sys.stderr, level="INFO", format=_CONSOLE_FORMAT)
+    _console_handler = add_sink(sys.stderr, level="INFO", format=_CONSOLE_FORMAT)
 
 
 def console_handler() -> int | None:

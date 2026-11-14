@@ -9,6 +9,7 @@ from tests.sources.fakes import FakeJsonHttp, FakeYtDlp
 
 from grillmaster.core.process import ABORT
 from grillmaster.core.source_id import Platform, SourceId
+from grillmaster.events.context import add_sink
 from grillmaster.project.state import ProjectState
 from grillmaster.stages.base import Externals
 
@@ -49,7 +50,7 @@ def _reset_abort_latch() -> Iterator[None]:
 def warnings() -> Iterator[list[str]]:
     """The messages logged at WARNING or above while the test runs."""
     messages: list[str] = []
-    handler = logger.add(
+    handler = add_sink(
         lambda message: messages.append(message.record["message"]), level="WARNING"
     )
     yield messages

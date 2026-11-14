@@ -494,6 +494,20 @@ def test_stage_failure_is_reported_and_raised(
     assert "StageFailedError" in text  # the traceback, at DEBUG
 
 
+def test_the_run_log_traceback_leaves_out_local_values(
+    run: Runner, journal: Journal, layout: ProjectLayout
+):
+    def leaky(ctx: StageContext) -> None:
+        key = "sk-do-not-log"
+        raise StageFailedError(f"rejected a key of {len(key)} characters")
+
+    with pytest.raises(StageFailedError):
+        run(Pipeline((fake_stage(StageKey.METADATA, journal, action=leaky),)))
+    text = layout.run_log(STARTED_AT).read_text(encoding="utf-8")
+    assert "rejected a key of 13 characters" in text
+    assert "sk-do-not-log" not in text
+
+
 class _OnOffer:
     """A sink calling `action` as soon as a retry is offered (the dashboard's
     `r`, say)."""

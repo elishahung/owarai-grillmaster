@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
@@ -44,6 +44,15 @@ def patch_record(record: Record) -> None:
     """Loguru patcher: `extra["stage"]` / `extra["task"]` from the scopes."""
     record["extra"]["stage"] = _stage.get()
     record["extra"]["task"] = _task.get()
+
+
+def add_sink(sink: Any, **options: Any) -> int:
+    """`logger.add` for every sink of the process (ruff bans the direct call).
+
+    `diagnose=False`: a traceback never prints its frames' local values, which
+    held the Azure key in the ASR stage's frames.
+    """
+    return logger.add(sink, diagnose=False, **options)  # noqa: TID251
 
 
 def install_log_context() -> None:

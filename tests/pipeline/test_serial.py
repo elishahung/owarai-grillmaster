@@ -19,6 +19,7 @@ from grillmaster.config.load import LoadedConfig
 from grillmaster.config.model import validate_config
 from grillmaster.core.source_id import Platform, SourceId, parse_source
 from grillmaster.core.stage_key import StageKey
+from grillmaster.events.context import add_sink
 from grillmaster.events.types import BatchItemStarted, RunStarted
 from grillmaster.pipeline.registry import Pipeline
 from grillmaster.pipeline.runner import ArchivedDeliveryError
@@ -48,7 +49,7 @@ def journal() -> Journal:
 @pytest.fixture
 def errors() -> Iterator[list[str]]:
     messages: list[str] = []
-    handler = logger.add(
+    handler = add_sink(
         lambda message: messages.append(message.record["message"]), level="ERROR"
     )
     yield messages

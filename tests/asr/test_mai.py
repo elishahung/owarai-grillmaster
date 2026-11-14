@@ -9,11 +9,13 @@ import pytest
 from grillmaster.asr.errors import AsrError
 from grillmaster.asr.mai import (
     API_VERSION,
+    MAX_PHRASE_CHARS,
     MAX_PHRASES,
     MODEL,
     AzureSpeech,
     MaiClient,
     MaiError,
+    definition,
     drop_backchannels,
     drop_flashing_backchannels,
     is_response,
@@ -131,6 +133,31 @@ def test_the_phrase_list_is_capped(audio: Path, tmp_path: Path):
     _client(handle).transcribe(audio, tmp_path / "asr.json", names)
 
     assert _definition(seen[0])["phraseList"] == {"phrases": names[:MAX_PHRASES]}
+
+
+_AT_LIMIT = "あ" * MAX_PHRASE_CHARS
+_OVER_LIMIT = "い" * (MAX_PHRASE_CHARS + 1)
+
+
+@pytest.mark.parametrize(
+    ("phrases", "expected"),
+    [
+        ([_AT_LIMIT, _OVER_LIMIT, "狩野英孝"], [_AT_LIMIT, "狩野英孝"]),
+        ([_OVER_LIMIT], None),
+    ],
+    ids=["mixed", "only-overlong"],
+)
+def test_phrases_over_the_length_limit_are_left_out(
+    phrases: list[str], expected: list[str] | None, warnings: list[str]
+):
+    body = definition(phrases)
+
+    assert body.get("phraseList") == (
+        None if expected is None else {"phrases": expected}
+    )
+    (warning,) = warnings
+    assert warning.startswith(f"Leaving 1 phrase(s) over {MAX_PHRASE_CHARS} characters")
+    assert _OVER_LIMIT in warning
 
 
 def test_an_episode_is_tried_once_more_after_a_server_failure(

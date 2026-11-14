@@ -198,6 +198,42 @@ def test_abema_casts_take_the_role_of_their_heading():
     )
 
 
+def test_abema_cast_lines_joined_by_a_comma_split_into_talents():
+    talents = abema.parse_casts(
+        {
+            "credit": {
+                "casts": ["■出演", "小籔千豊、山内健司（かまいたち）、 、狩野英孝"]
+            }
+        },
+        "90-2032_s3_p7",
+    )
+    assert talents == (
+        Talent(id="abema:90-2032_s3_p7:1", name="小籔千豊", roles=("出演",)),
+        Talent(
+            id="abema:90-2032_s3_p7:2",
+            name="山内健司（かまいたち）",
+            roles=("出演",),
+        ),
+        Talent(id="abema:90-2032_s3_p7:3", name="狩野英孝", roles=("出演",)),
+    )
+
+
+def test_abema_names_inside_brackets_stay_with_their_group():
+    talents = abema.parse_casts(
+        {
+            "credit": {
+                "casts": ["ネルソンズ（和田、青山）、Den(リンダカラー∞）、みさわ"]
+            }
+        },
+        "90-1_s1_p1",
+    )
+    assert [talent.name for talent in talents] == [
+        "ネルソンズ（和田、青山）",
+        "Den(リンダカラー∞）",
+        "みさわ",
+    ]
+
+
 def test_abema_episode_extras_read_the_program_api():
     http = FakeJsonHttp(
         {

@@ -37,6 +37,10 @@ USERS_URL = "https://api.abema.io/v1/users"
 PROGRAM_URL = "https://api.abema.io/v1/video/programs/{id}"
 SLOT_URL = "https://api.abema.io/v1/media/slots/{id}"
 _ROLE_MARK = "■"
+_NAME_SEPARATOR = "、"
+# ABEMA mixes half- and full-width brackets in one name (`Den(リンダカラー∞）`).
+_OPEN_BRACKETS = frozenset("（(")
+_CLOSE_BRACKETS = frozenset("）)")
 _BASE_HEADERS = {
     "Origin": "https://abema.tv",
     "Referer": "https://abema.tv/",
@@ -100,7 +104,10 @@ def reset_auth_cache() -> None:
 
 
 def parse_casts(payload: dict[str, Any], episode_id: str) -> tuple[Talent, ...]:
-    """Talents from `credit.casts`, where `■<role>` lines head each group."""
+    """Talents from `credit.casts`, where `■<role>` lines head each group.
+
+    A line usually holds one name, but some episodes list a whole cast on
+    one line joined by `、`; each name becomes its own talent (`_names`)."""
     credit = payload.get("credit")
     raw_casts = credit.get("casts") if isinstance(credit, dict) else None
     if not isinstance(raw_casts, list):
@@ -113,14 +120,35 @@ def parse_casts(payload: dict[str, Any], episode_id: str) -> tuple[Talent, ...]:
         if cast.startswith(_ROLE_MARK):
             role = cast.lstrip(_ROLE_MARK).strip() or None
             continue
-        talents.append(
-            Talent(
-                id=f"abema:{episode_id}:{len(talents) + 1}",
-                name=cast,
-                roles=(role,) if role else (),
+        for name in _names(cast):
+            talents.append(
+                Talent(
+                    id=f"abema:{episode_id}:{len(talents) + 1}",
+                    name=name,
+                    roles=(role,) if role else (),
+                )
             )
-        )
     return tuple(talents)
+
+
+def _names(cast: str) -> list[str]:
+    """`cast` split at each `、` outside brackets: a group's members listed in
+    `（…）` stay one name with it."""
+    names: list[str] = []
+    current: list[str] = []
+    depth = 0
+    for char in cast:
+        if char == _NAME_SEPARATOR and depth == 0:
+            names.append("".join(current))
+            current = []
+            continue
+        if char in _OPEN_BRACKETS:
+            depth += 1
+        elif char in _CLOSE_BRACKETS:
+            depth = max(depth - 1, 0)
+        current.append(char)
+    names.append("".join(current))
+    return [name for raw in names if (name := raw.strip())]
 
 
 def _get_json(url: str, http: JsonHttp) -> Any:

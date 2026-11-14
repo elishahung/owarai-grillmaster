@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, NoReturn
 from loguru import logger
 
 from grillmaster.core.process import kill_all
+from grillmaster.events.context import add_sink
 from grillmaster.events.sinks import ConsoleSink
 from grillmaster.events.types import LogLine
 from grillmaster.tui.app import AppExit, GrillMasterApp
@@ -87,7 +88,7 @@ def run_with_tui[T](
     )
     if console_handler is not None:
         logger.remove(console_handler)
-    handler = logger.add(
+    handler = add_sink(
         log_bridge(sink), level="DEBUG", format=LOG_FORMAT, colorize=False
     )
     crash: Exception | None = None

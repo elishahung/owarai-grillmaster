@@ -71,6 +71,8 @@ EPISODE_TIMEOUT_S = 900.0
 # a fast-transcription phrase list (a 2026 write-up cites 2,000), and a
 # compilation merges every entry's credits.
 MAX_PHRASES = 500
+# MAI rejects the whole request (HTTP 400) when any phrase is longer.
+MAX_PHRASE_CHARS = 50
 # Statuses worth one more try: a timeout, throttling, a server-side failure
 # (diarization has failed this way for whole regions at a time).
 _RETRY_STATUSES = frozenset({408, 429, 500, 502, 503, 504})
@@ -138,8 +140,17 @@ def definition(phrases: Sequence[str]) -> dict[str, Any]:
         },
         "diarization": {"enabled": True},
     }
-    if phrases:
-        body["phraseList"] = {"phrases": list(phrases[:MAX_PHRASES])}
+    kept: list[str] = []
+    too_long: list[str] = []
+    for phrase in phrases:
+        (kept if len(phrase) <= MAX_PHRASE_CHARS else too_long).append(phrase)
+    if too_long:
+        logger.warning(
+            f"Leaving {len(too_long)} phrase(s) over {MAX_PHRASE_CHARS} characters "
+            f"out of the MAI phrase list: {too_long}"
+        )
+    if kept:
+        body["phraseList"] = {"phrases": kept[:MAX_PHRASES]}
     return body
 
 

@@ -277,7 +277,9 @@ listing, in order, least-squares balanced groups of ≥2) into manifests, never 
   `copy_context()`. Progress bars go through `events.progress.track`.
 - Sinks: `ConsoleSink` (non-TTY), `JsonlSink` (`.logs/events-<ts>.jsonl`,
   added by the pipeline), `tui.TuiSink`. `pipeline/logs.py` also writes
-  `.logs/run-<ts>.log`.
+  `.logs/run-<ts>.log`. Every loguru sink goes through `events.context.add_sink`
+  (`diagnose=False`: a traceback never prints local values, API keys sat in the
+  ASR frames); ruff bans direct `logger.add`.
 - TUI: `PipelineState` is a pure reducer over events; plan, labels and weights
   come from `RunStarted`; the chunk board is sessions named `chunks/…`. A step's
   progress is its first open bar, a later open bar filling one step of it (nested bars). Abort
@@ -289,7 +291,8 @@ listing, in order, least-squares balanced groups of ≥2) into manifests, never 
   `tver`, `abema`) registered in `registry.py`; ID parsing is
   `core/source_id.py`. BiliBili never sends cookies (format list cap)
   and downloads in `http_chunk_size` ranges (a CDN host answers 567 to a request without Range); ABEMA
-  resets yt-dlp's cached token before downloading. Extras and broadcast dates
+  resets yt-dlp's cached token before downloading and splits a `credit.casts`
+  line joined by `、` into one talent per name. Extras and broadcast dates
   are best-effort. A year-less TVer label takes the latest month/day no later
   than availability + 30 days (reruns re-list months later), checked against
   its weekday; inconclusive → `None`, so date research runs. Downloads keep
@@ -301,7 +304,9 @@ listing, in order, least-squares balanced groups of ≥2) into manifests, never 
   `core.process.spawn_tree` trees; every tree is killable and registered in
   `LIVE_PROCESSES`; after `kill_all` (`ABORT` latched) no child may start.
 - `asr/`: `mai.py` is the ASR (MAI-Transcribe-2: the episode client, the
-  response → `model.WordToken`s, `read_response` refusing any other shape);
+  response → `model.WordToken`s, `read_response` refusing any other shape;
+  the talent phrase list drops, with a warning, any phrase over 50 characters,
+  which MAI answers with HTTP 400);
   `srt_builder.py` takes tokens and knows no provider (a provider's quirk
   goes in its module, e.g. MAI's `drop_backchannels` (a listener's 相槌
   inside one talker's talk never reaches `ja.srt`); its tuning constants

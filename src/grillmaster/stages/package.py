@@ -4,7 +4,8 @@
 Runs after the last stage of every complete run, and alone via `grill
 package`; in a run it reads the project where it lives after the archive
 move (the archived copy when `[paths] archive` is set). Title
-suggestions are generated here (cached in `.work/package/titles.json`), the
+suggestions are generated here (cached in `.work/package/titles.json`) and
+written to `info.json` as `<nickname or program>:<content> <YYMMDD>`, the
 dialogue (`video.cht.srt`) is rendered to `.work/package/dialogue.ass`, the
 chat panel to `.work/package/chat.ass`, the translated telops
 (`.subs/telop.cht.json`, when present and not `--no-telop`) to
@@ -34,7 +35,7 @@ from grillmaster.core.json_artifact import read_model
 from grillmaster.core.model_spec import Role
 from grillmaster.core.srt import read_srt_file
 from grillmaster.extras.cover import copy_cover
-from grillmaster.extras.titles import ensure_titles
+from grillmaster.extras.titles import ProgramNames, ensure_titles, titles_info
 from grillmaster.package.assemble import (
     GLOSSARY_REPORT_NAME,
     PACKAGE_INNER_PATH_RESERVE,
@@ -78,7 +79,9 @@ def _run(ctx: StageContext) -> str:
     package_root = _package_root(ctx.config)
     layout = ctx.layout
     require_inputs(layout.video, layout.cht_srt)
-    pool, inserts = _pools(ctx.options, ctx.config, ctx.state.source)
+    source = ctx.state.source
+    rules = program_rules(ctx.config, source)
+    pool, inserts = _pools(ctx.options, ctx.config, rules, source)
     # Whatever can refuse the package runs before a pool cursor moves.
     require_pools(package_root, _pool_names(pool, inserts))
     destination = package_destination(
@@ -101,9 +104,17 @@ def _run(ctx: StageContext) -> str:
     titles = ensure_titles(
         ctx.agents,
         briefing=layout.effective_briefing(),
+        program=ProgramNames(series=source.series, channel=source.channel),
         cache=layout.titles,
         session_dir=ctx.session_dir(),
         enabled=ctx.config.features.title_suggestion,
+    )
+    info_titles = (
+        None
+        if titles is None
+        else titles_info(
+            titles, nickname=rules.nickname, aired=ctx.state.effective_broadcast_date
+        )
     )
     write_ass(read_srt_file(layout.cht_srt), layout.dialogue_ass)
     burn = build_burn_plan(
@@ -125,11 +136,7 @@ def _run(ctx: StageContext) -> str:
         burn = with_notes(burn, layout.notes_cht_json, layout.notes_ass)
     with deliverable_dir(destination) as target:
         copy_cover(cover=layout.cover, poster=layout.poster, target_dir=target)
-        write_info(
-            target,
-            titles=titles.model_dump() if titles is not None else None,
-            briefing=briefing,
-        )
+        write_info(target, titles=info_titles, briefing=briefing)
         copy_reports(
             target,
             {
@@ -169,7 +176,8 @@ def _preflight(
     if not package_root.is_dir():
         raise PackageError(f"[paths] package {package_root} is not a directory")
     source = state.source if state is not None else SourceInfo()
-    require_pools(package_root, _pool_names(*_pools(options, config, source)))
+    rules = program_rules(config, source)
+    require_pools(package_root, _pool_names(*_pools(options, config, rules, source)))
 
 
 def _package_root(config: AppConfig) -> Path:
@@ -190,11 +198,10 @@ def _briefing(layout: ProjectLayout) -> Briefing | None:
 
 
 def _pools(
-    options: RunOptions, config: AppConfig, source: SourceInfo
+    options: RunOptions, config: AppConfig, rules: ProgramRules, source: SourceInfo
 ) -> tuple[str | None, list[Insert]]:
     """The remix noise pool (`None` for a plain burn-in) and the inserts of
     this deliverable, from the run flags and the program's rules."""
-    rules = program_rules(config, source)
     pool = _remix_pool(options, config, rules, source)
     inserts = [
         Insert(pool=rule.pool, output=rule.output)

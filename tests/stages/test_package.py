@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from datetime import date
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -47,7 +48,8 @@ if TYPE_CHECKING:
 SOURCE_SECONDS = 1000.0
 BRIEFING = make_briefing(summary="demo")
 TITLES = TitleSuggestions(
-    titles=[TitleSuggestion(title=f"標題{i}", reason="r") for i in range(3)]
+    program="節目全名",
+    titles=[TitleSuggestion(title=f"標題{i}", reason="r") for i in range(3)],
 )
 DESTINATION = "epabc123_show"
 # Where the deliverable is rendered before it replaces DESTINATION.
@@ -129,8 +131,10 @@ def make(
     return build
 
 
-def burn_in_fake(layout: ProjectLayout, package_root: Path) -> PackageFfmpeg:
-    output = package_root / STAGING / package.VIDEO_NAME
+def burn_in_fake(
+    layout: ProjectLayout, package_root: Path, *, staging: str = STAGING
+) -> PackageFfmpeg:
+    output = package_root / staging / package.VIDEO_NAME
     expected = package_output_duration(SOURCE_SECONDS - PACKAGE_LEAD_TRIM_SECONDS)
     return PackageFfmpeg({layout.video: SOURCE_SECONDS, output: expected})
 
@@ -222,9 +226,43 @@ def test_title_suggestion_generates_and_caches_titles(
 
     task = agents.task("titles")
     assert task.session_dir == finished.package_work_dir / "session"
+    assert task.prompt.startswith("## program.json")
     assert finished.titles.exists()
     info = json.loads((package_root / DESTINATION / "info.json").read_text("utf-8"))
-    assert info["titles"][0]["title"] == "標題0"
+    # Undated and without a nickname: the agent's program name leads.
+    assert info["titles"][0]["title"] == "節目全名:標題0"
+
+
+@pytest.mark.parametrize(
+    "config_data",
+    [
+        pytest.param(
+            {"programs": {"series": {"番組": {"nickname": "暱稱"}}}},
+            id="nickname",
+        )
+    ],
+    indirect=True,
+)
+def test_titles_lead_with_the_nickname_and_end_with_the_air_date(
+    make: MakeContext,
+    finished: ProjectLayout,
+    package_root: Path,
+    state: ProjectState,
+):
+    write_model(finished.titles, TITLES)
+    state.source.series = "番組"
+    state.broadcast_date = date(2026, 11, 17)
+
+    package.STEP.run(
+        make(burn_in_fake(finished, package_root, staging=f"261117_{STAGING}"))
+    )
+
+    info = json.loads(
+        (package_root / f"261117_{DESTINATION}" / "info.json").read_text("utf-8")
+    )
+    assert [title["title"] for title in info["titles"]] == [
+        f"暱稱:標題{i} 261117" for i in range(3)
+    ]
 
 
 def test_remix_renders_parts_and_carries_the_insert(
@@ -568,7 +606,9 @@ def test_a_missing_briefing_packages_the_titles_alone(
     package.STEP.run(make(burn_in_fake(finished, package_root)))
 
     info = json.loads((package_root / DESTINATION / "info.json").read_text("utf-8"))
-    assert info == TITLES.model_dump()
+    assert info == {
+        "titles": [{"title": f"節目全名:標題{i}", "reason": "r"} for i in range(3)]
+    }
     assert any("No briefing" in warning for warning in warnings)
 
 

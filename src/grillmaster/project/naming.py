@@ -21,6 +21,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from grillmaster.core.air_date import AIR_DATE_FORMAT
 from grillmaster.core.fs import BACKUP_SUFFIX, STAGING_SUFFIX
 from grillmaster.core.paths import attempt_path, fit_dir_name, handoff_path, measure
 from grillmaster.project.layout import ProjectLayout, session_dir
@@ -46,8 +47,7 @@ _LONGEST_SESSION_FILE = "result.json"
 # Deliverable names are `<YYMMDD>_<id>[_<name>]`; dated archive groups are
 # `YY/MM`, undated ones `etc`. `archived_candidates` matches the same pieces.
 _NAME_SEPARATOR = "_"
-_STEM_DATE_FORMAT = "%y%m%d"
-_STEM_DATE_DIGITS = len(f"{date(2000, 1, 1):{_STEM_DATE_FORMAT}}")
+_STEM_DATE_DIGITS = len(f"{date(2000, 1, 1):{AIR_DATE_FORMAT}}")
 _GROUP_FORMATS = ("%y", "%m")
 _UNDATED_GROUP = "etc"
 # Sibling directories `core.fs.staged_dir` leaves, never a project.
@@ -105,7 +105,7 @@ def deliverable_stem(state: ProjectState) -> str:
     aired = state.effective_broadcast_date
     if aired is None:
         return state.id
-    return f"{aired:{_STEM_DATE_FORMAT}}{_NAME_SEPARATOR}{state.id}"
+    return f"{aired:{AIR_DATE_FORMAT}}{_NAME_SEPARATOR}{state.id}"
 
 
 def deliverable_name(state: ProjectState) -> str:

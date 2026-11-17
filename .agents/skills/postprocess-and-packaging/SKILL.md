@@ -134,9 +134,13 @@ exit even when a stage failed, skipped entirely by `--break-after`; done =
   record exists; a cached verdict is applied even when skipped (`_on_skip`).
   The context carries the TVer on-air label: a stated year or a year-less
   month/day is authoritative in the prompt.
-- **Titles** (package step; role `utility`, `WEB_SEARCH`, `workdir=None`): three
-  titles from the effective briefing, cached at `.work/package/titles.json`;
-  `[features] title_suggestion` gates only generating a missing one; failure warns.
+- **Titles** (package step; role `utility`, `WEB_SEARCH`, `workdir=None`): from
+  the effective briefing plus series/channel, the agent returns the program's
+  full Chinese name and three contents, cached at `.work/package/titles.json`;
+  `info.json` gets them composed in code as `<nickname or program>:<content>
+  <YYMMDD>` (`titles_info`; program `nickname`, `effective_broadcast_date`), so
+  a nickname edit needs no agent run. `[features] title_suggestion` gates only
+  generating a missing one; failure warns.
 
 ## Compose (`package/compose.py`, `stages/compose.py`)
 
@@ -222,7 +226,7 @@ not `video|cover|info|refine|glossary_check|proofread`.
   speech|model|effort`; `[features]
   cover|date_research|title_suggestion|proofread|proofread_watch_clip`; `[paths] package|archive`; `[package]
   remix_pool` (default `"default"`), `[[package.inserts]]`;
-  `[programs.series|channel."X"]` `remix`, `inserts`, `instruction.{common,refine,glossary,proofread}`.
+  `[programs.series|channel."X"]` `nickname`, `remix`, `inserts`, `instruction.{common,refine,glossary,proofread}`.
 - Agent-written stages discard old output on re-entry: the runner deletes all
   declared `FilesOutput` files before each attempt; the ledger is the only
   completion marker (`grill reset` to redo).

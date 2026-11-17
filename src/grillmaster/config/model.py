@@ -338,6 +338,11 @@ class ProgramRule(BaseModel):
 
     model_config = _STRICT
 
+    nickname: str | None = Field(
+        default=None,
+        pattern=r"^\S(?:.*\S)?$",
+        description="Short Chinese name that leads the deliverable titles ('<nickname>:<content> <YYMMDD>'); a series overrides its channel. Without one the titles lead with the program's full Chinese name.",
+    )
     remix: bool | None = Field(
         default=None,
         description="Package this program as remix with package.remix_pool (true) or never (false); a series overrides its channel, --remix / --no-remix override both.",

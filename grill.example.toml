@@ -117,6 +117,10 @@ when = "remix"     # "remix": remix deliverables only; "always": every one
 # entry; channel applies first, then series. Downloading a new program
 # appends an empty entry here for you to fill in.
 [programs.series."水曜日のダウンタウン"]
+# Short Chinese name leading the deliverable titles in info.json
+# ("<nickname>:<content> <YYMMDD>"); a series overrides its channel. Leave it
+# out to lead with the program's full Chinese name.
+nickname = "水曜"
 # Package as remix with package.remix_pool (true) or never (false); a series
 # overrides its channel, and --remix / --no-remix override both.
 remix = true

@@ -2,7 +2,8 @@
 
 A program matches up to two entries, its channel and its series. They merge
 broadest first (channel, then series): `remix`, `telop` and `notes` are the
-most specific entry's explicit choice (`None` when neither sets it), and each
+most specific entry's explicit choice (`None` when neither sets it), the
+`nickname` likewise, and each
 stage's instruction text is every entry's `common` text followed by its stage
 text, in that order. Inserts are the ones no program lists plus
 the ones a matching entry lists, in declaration order.
@@ -45,6 +46,7 @@ REGISTER_LOCK_TIMEOUT_S = 30.0
 class ProgramRules:
     """The merged rules of every entry matching one program."""
 
+    nickname: str | None = None
     remix: bool | None = None
     telop: bool | None = None
     notes: bool | None = None
@@ -89,6 +91,7 @@ def resolve_program_rules(
     scoped = {name for _, _, rule in programs.rules() for name in rule.inserts}
     listed = {name for rule in entries for name in rule.inserts}
     return ProgramRules(
+        nickname=_most_specific(rule.nickname for rule in entries),
         remix=_most_specific(rule.remix for rule in entries),
         telop=_most_specific(rule.telop for rule in entries),
         notes=_most_specific(rule.notes for rule in entries),
@@ -101,7 +104,7 @@ def resolve_program_rules(
     )
 
 
-def _most_specific(choices: Iterable[bool | None]) -> bool | None:
+def _most_specific[T](choices: Iterable[T | None]) -> T | None:
     """The last explicit choice of entries in merge order (series over
     channel), `None` when none makes one."""
     return next(

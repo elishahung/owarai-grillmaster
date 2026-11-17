@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import pytest
+from pydantic import ValidationError
 
 from grillmaster.config.errors import ConfigError
 from grillmaster.config.load import read_config
@@ -133,6 +134,43 @@ def test_switches_are_the_most_specific_explicit_choice(
     )
     rules = _resolve(config, series="s", channel="c")
     assert getattr(rules, switch) is expected
+
+
+@pytest.mark.parametrize(
+    ("series", "channel", "expected"),
+    [(None, None, None), (None, "台", "台"), ("系列", "台", "系列")],
+)
+def test_nickname_is_the_most_specific_one(
+    minimal_data: dict[str, Any],
+    series: str | None,
+    channel: str | None,
+    expected: str | None,
+):
+    def entry(value: str | None) -> dict[str, Any]:
+        return {} if value is None else {"nickname": value}
+
+    config = validate_config(
+        {
+            **minimal_data,
+            "programs": {
+                "series": {"s": entry(series)},
+                "channel": {"c": entry(channel)},
+            },
+        },
+        root=Path(),
+    )
+    assert _resolve(config, series="s", channel="c").nickname == expected
+
+
+@pytest.mark.parametrize("nickname", ["", " ", " 併桌", "併桌 "])
+def test_a_blank_or_padded_nickname_is_rejected(
+    minimal_data: dict[str, Any], nickname: str
+):
+    with pytest.raises(ValidationError):
+        validate_config(
+            {**minimal_data, "programs": {"series": {"s": {"nickname": nickname}}}},
+            root=Path(),
+        )
 
 
 def test_unknown_or_missing_names_match_no_entry(config: AppConfig):

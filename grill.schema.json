@@ -374,6 +374,20 @@
       "additionalProperties": false,
       "description": "Rules for one series or channel name.",
       "properties": {
+        "nickname": {
+          "anyOf": [
+            {
+              "pattern": "^\\S(?:.*\\S)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Short Chinese name that leads the deliverable titles ('<nickname>:<content> <YYMMDD>'); a series overrides its channel. Without one the titles lead with the program's full Chinese name.",
+          "title": "Nickname"
+        },
         "remix": {
           "anyOf": [
             {

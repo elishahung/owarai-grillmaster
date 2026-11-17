@@ -262,7 +262,8 @@ listing, in order, least-squares balanced groups of ≥2) into manifests, never 
   text before stage text; stage keys `prepass`, `chunks`, `refine`,
   `glossary`, `proofread`, `telop`, `notes`; `remix`, `telop` and
   `notes` are tri-state, series' explicit value over channel's, `None` =
-  follow `[features]` (for `remix`, no remix);
+  follow `[features]` (for `remix`, no remix); `nickname` (the title
+  prefix) merges the same way;
   `stages._common.switch_enabled/switch_applies` add the run flag on top,
   `stages/package.py` does it for `remix`). `register_program` (download stage) is the only writer of
   `grill.toml`, appending empty entries with `tomlkit` under

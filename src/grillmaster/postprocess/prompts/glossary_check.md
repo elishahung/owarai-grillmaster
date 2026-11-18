@@ -99,6 +99,9 @@ Evidence rules:
 - Use the `get_frames` tool when visual ground truth may settle the issue:
   on-screen text cards, lower-thirds, captions, props, labels, scoreboards,
   costumes, visible names, or visual gags at a specific timestamp.
+- This stage has no audio input: do not extract, encode, or print audio from
+  the project's media files. Settle what was said from `ja.voiced.srt`,
+  frames, and web sources.
 - If you use web search or frames to make a correction, record that evidence in
   `{report}`.
 - Do not guess. If evidence is inconclusive, leave the subtitle and pre-pass

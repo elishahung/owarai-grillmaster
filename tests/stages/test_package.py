@@ -14,7 +14,7 @@ from grillmaster.core.json_artifact import write_model
 from grillmaster.core.source_id import Platform, SourceId
 from grillmaster.core.srt import SrtBlock, read_srt_file, write_srt_file
 from grillmaster.core.timecode import format_timecode_line
-from grillmaster.extras.titles import TitleSuggestion, TitleSuggestions
+from grillmaster.extras.titles import TitleSuggestions
 from grillmaster.live_chat.layout import ChatLayout
 from grillmaster.live_chat.schema import TranslatedChatLog, TranslatedChatMessage
 from grillmaster.media.errors import MediaError
@@ -47,9 +47,15 @@ if TYPE_CHECKING:
 
 SOURCE_SECONDS = 1000.0
 BRIEFING = make_briefing(summary="demo")
-TITLES = TitleSuggestions(
-    program="節目全名",
-    titles=[TitleSuggestion(title=f"標題{i}", reason="r") for i in range(3)],
+TITLES = TitleSuggestions.model_validate(
+    {
+        "program": "節目全名",
+        "translation": {"title": "標題0", "basis": "b"},
+        "project": None,
+        "summary": {"title": "標題1", "basis": "b"},
+        "talent": {"title": "標題2", "basis": "b"},
+        "creative": {"title": "標題3", "basis": "b"},
+    }
 )
 DESTINATION = "epabc123_show"
 # Where the deliverable is rendered before it replaces DESTINATION.
@@ -226,7 +232,7 @@ def test_title_suggestion_generates_and_caches_titles(
 
     task = agents.task("titles")
     assert task.session_dir == finished.package_work_dir / "session"
-    assert task.prompt.startswith("## program.json")
+    assert task.prompt.startswith("## source.json")
     assert finished.titles.exists()
     info = json.loads((package_root / DESTINATION / "info.json").read_text("utf-8"))
     # Undated and without a nickname: the agent's program name leads.
@@ -261,7 +267,7 @@ def test_titles_lead_with_the_nickname_and_end_with_the_air_date(
         (package_root / f"261117_{DESTINATION}" / "info.json").read_text("utf-8")
     )
     assert [title["title"] for title in info["titles"]] == [
-        f"暱稱:標題{i} 261117" for i in range(3)
+        f"暱稱:標題{i} 261117" for i in range(4)
     ]
 
 
@@ -607,7 +613,15 @@ def test_a_missing_briefing_packages_the_titles_alone(
 
     info = json.loads((package_root / DESTINATION / "info.json").read_text("utf-8"))
     assert info == {
-        "titles": [{"title": f"節目全名:標題{i}", "reason": "r"} for i in range(3)]
+        "titles": [
+            {
+                "kind": kind,
+                "title": f"節目全名:標題{i}",
+                "content": f"標題{i}",
+                "basis": "b",
+            }
+            for i, kind in enumerate(["翻譯", "概述", "藝人", "創意"])
+        ]
     }
     assert any("No briefing" in warning for warning in warnings)
 

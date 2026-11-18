@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from pydantic import ValidationError
@@ -10,12 +10,15 @@ from tests.fakes import FakeAgentRunner, make_briefing
 
 from grillmaster.agents.adapters.base import Capability
 from grillmaster.agents.errors import AgentOutputError
+from grillmaster.agents.schema import strict_json_schema
 from grillmaster.agents.task import SchemaOutput
 from grillmaster.core.json_artifact import write_model
 from grillmaster.core.model_spec import Role
+from grillmaster.core.talent import Talent
 from grillmaster.extras.titles import (
+    ANGLE_LABELS,
     TASK_NAME,
-    ProgramNames,
+    SourceListing,
     TitleSuggestions,
     build_titles_task,
     ensure_titles,
@@ -27,18 +30,24 @@ from grillmaster.extras.titles import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-TITLES = TitleSuggestions.model_validate(
-    {
-        "program": "節目全名",
-        "titles": [
-            {"title": "搭檔末日", "reason": "沿用企劃名"},
-            {"title": "控比配對", "reason": "影射配對機制"},
-            {"title": "職業修羅場", "reason": "點出現場張力"},
-        ],
-    }
-)
+
+DATA: dict[str, Any] = {
+    "program": "節目全名",
+    "translation": {"title": "新人初登場挑戰", "basis": "官方集名精簡"},
+    "project": {"title": "猜拳王", "basis": "官方企劃名短稱"},
+    "summary": {"title": "全員猜拳爭獎金", "basis": "官方介紹的設定"},
+    "talent": {"title": "甲組合、乙先生", "basis": "官方出演者"},
+    "creative": {"title": "出拳前心理戰", "basis": "開場規則延伸"},
+}
+TITLES = TitleSuggestions.model_validate(DATA)
 BRIEFING = make_briefing((1, 3), summary="demo")
-PROGRAM = ProgramNames(series="番組", channel="局")
+SOURCE = SourceListing(
+    series="番組",
+    channel="局",
+    title="番組 集名",
+    description="介紹",
+    talents=(Talent(id="t1", name="芸人", roles=("ゲスト",)),),
+)
 
 
 @pytest.fixture
@@ -59,7 +68,7 @@ def ensure(
     return ensure_titles(
         agents,
         briefing=briefing,
-        program=PROGRAM,
+        source=SOURCE,
         cache=cache,
         session_dir=cache.parent / "session",
         enabled=enabled,
@@ -67,29 +76,61 @@ def ensure(
 
 
 @pytest.mark.parametrize(
-    "titles",
+    "overrides",
     [
-        ["搭檔末日", "控比配對"],
-        ["搭檔末日", "控比配對", "職業修羅場", "第四個"],
-        ["搭", "控比配對", "職業修羅場"],
-        ["一個太長太長的標題", "控比配對", "職業修羅場"],
+        {"summary": None},
+        {"translation": {"title": "搭", "basis": "b"}},
+        {"translation": {"title": "官方集名的翻譯剪得還是太長太長了", "basis": "b"}},
+        {"project": {"title": "企劃名超過十個字的企劃", "basis": "b"}},
+        {"creative": {"title": "創意", "basis": ""}},
     ],
-    ids=["too-few", "too-many", "too-short", "too-long"],
+    ids=[
+        "missing-angle",
+        "too-short",
+        "translation-too-long",
+        "project-too-long",
+        "no-basis",
+    ],
 )
-def test_suggestions_must_be_three_short_titles(titles: list[str]) -> None:
+def test_suggestions_hold_every_angle_within_its_length(
+    overrides: dict[str, Any],
+) -> None:
     with pytest.raises(ValidationError):
-        TitleSuggestions.model_validate(
-            {
-                "program": "節目全名",
-                "titles": [{"title": title, "reason": "r"} for title in titles],
-            }
-        )
+        TitleSuggestions.model_validate({**DATA, **overrides})
 
 
-def test_task_hands_the_program_and_briefing_over(tmp_path: Path) -> None:
-    task = build_titles_task(
-        BRIEFING, program=PROGRAM, session_dir=tmp_path / "session"
-    )
+def test_every_angle_has_a_label_and_its_bound_reaches_the_schema() -> None:
+    schema = strict_json_schema(TitleSuggestions)["properties"]
+
+    assert list(ANGLE_LABELS) == [
+        field for field in TitleSuggestions.model_fields if field != "program"
+    ]
+    project = next(s for s in schema["project"]["anyOf"] if s["type"] == "object")
+    bounds = {
+        field: (project if field == "project" else schema[field])["properties"][
+            "title"
+        ]["maxLength"]
+        for field in ANGLE_LABELS
+    }
+    assert bounds == {
+        "translation": 14,
+        "project": 10,
+        "summary": 12,
+        "talent": 24,
+        "creative": 10,
+    }
+
+
+def test_an_episode_without_a_project_skips_that_angle() -> None:
+    suggestions = TitleSuggestions.model_validate({**DATA, "project": None})
+
+    titles = titles_info(suggestions, nickname="暱稱", aired=None)["titles"]
+
+    assert [title["kind"] for title in titles] == ["翻譯", "概述", "藝人", "創意"]
+
+
+def test_task_hands_the_listing_and_briefing_over(tmp_path: Path) -> None:
+    task = build_titles_task(BRIEFING, source=SOURCE, session_dir=tmp_path / "session")
 
     assert task.name == TASK_NAME
     assert task.role is Role.UTILITY
@@ -97,11 +138,17 @@ def test_task_hands_the_program_and_briefing_over(tmp_path: Path) -> None:
     assert task.requires == frozenset({Capability.WEB_SEARCH})
     assert task.output == SchemaOutput(TitleSuggestions)
     assert task.instructions.startswith("# 影片標題建議產生規範")
-    program, briefing = task.prompt.split("\n\n## pre_pass.json\n\n")
-    assert program.startswith("## program.json\n\n```json\n")
+    source, briefing = task.prompt.split("\n\n## pre_pass.json\n\n")
+    assert source.startswith("## source.json\n\n```json\n")
     assert json.loads(
-        program.removeprefix("## program.json\n\n```json\n").removesuffix("\n```")
-    ) == {"series": "番組", "channel": "局"}
+        source.removeprefix("## source.json\n\n```json\n").removesuffix("\n```")
+    ) == {
+        "series": "番組",
+        "channel": "局",
+        "title": "番組 集名",
+        "description": "介紹",
+        "talents": [{"name": "芸人", "name_kana": None, "roles": ["ゲスト"]}],
+    }
     body = briefing.removeprefix("```json\n").removesuffix("\n```")
     assert json.loads(body) == BRIEFING.prompt_dict()
 
@@ -112,7 +159,7 @@ def test_generate_writes_the_cache(tmp_path: Path, cache: Path) -> None:
     result = generate_titles(
         agents,
         BRIEFING,
-        program=PROGRAM,
+        source=SOURCE,
         cache=cache,
         session_dir=tmp_path / "session",
     )
@@ -184,27 +231,41 @@ def test_agent_failure_yields_no_titles(briefing_path: Path, cache: Path) -> Non
     ],
     ids=["nickname", "program", "undated"],
 )
-def test_info_titles_are_program_content_and_air_date(
+def test_info_titles_carry_the_angle_content_and_full_title(
     nickname: str | None, aired: date | None, prefix: str, suffix: str
 ) -> None:
     info = titles_info(TITLES, nickname=nickname, aired=aired)
 
     assert info == {
         "titles": [
-            {"title": f"{prefix}:搭檔末日{suffix}", "reason": "沿用企劃名"},
-            {"title": f"{prefix}:控比配對{suffix}", "reason": "影射配對機制"},
-            {"title": f"{prefix}:職業修羅場{suffix}", "reason": "點出現場張力"},
+            {
+                "kind": kind,
+                "title": f"{prefix}:{content}{suffix}",
+                "content": content,
+                "basis": basis,
+            }
+            for kind, content, basis in [
+                ("翻譯", "新人初登場挑戰", "官方集名精簡"),
+                ("企劃", "猜拳王", "官方企劃名短稱"),
+                ("概述", "全員猜拳爭獎金", "官方介紹的設定"),
+                ("藝人", "甲組合、乙先生", "官方出演者"),
+                ("創意", "出拳前心理戰", "開場規則延伸"),
+            ]
         ]
     }
 
 
-def test_titles_without_a_program_name_are_regenerated(
+def test_titles_in_the_three_title_format_are_regenerated(
     briefing_path: Path, cache: Path
 ) -> None:
-    write_model(cache, TITLES)
-    stale = json.loads(cache.read_text("utf-8"))
-    del stale["program"]
-    cache.write_text(json.dumps(stale, ensure_ascii=False), encoding="utf-8")
+    cache.parent.mkdir(parents=True)
+    cache.write_text(
+        json.dumps(
+            {"program": "節目全名", "titles": [{"title": "舊標題", "reason": "r"}]},
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
     agents = FakeAgentRunner({TASK_NAME: TITLES})
 
     assert ensure(agents, briefing=briefing_path, cache=cache) == TITLES

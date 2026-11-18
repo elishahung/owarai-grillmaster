@@ -135,11 +135,17 @@ exit even when a stage failed, skipped entirely by `--break-after`; done =
   The context carries the TVer on-air label: a stated year or a year-less
   month/day is authoritative in the prompt.
 - **Titles** (package step; role `utility`, `WEB_SEARCH`, `workdir=None`): from
-  the effective briefing plus series/channel, the agent returns the program's
-  full Chinese name and three contents, cached at `.work/package/titles.json`;
-  `info.json` gets them composed in code as `<nickname or program>:<content>
-  <YYMMDD>` (`titles_info`; program `nickname`, `effective_broadcast_date`), so
-  a nickname edit needs no agent run. `[features] title_suggestion` gates only
+  the platform listing (`SourceListing`: series/channel, official title,
+  description, talents) plus the effective briefing, the agent returns the
+  program's full Chinese name and one content per angle (`ANGLE_LABELS`: 翻譯,
+  企劃 — `null` without a named project —, 概述, 藝人, 創意), each with a
+  `basis` and a per-angle length bound carried by its field type into the
+  native schema; cached at `.work/package/titles.json`. Spoiler-free is the prompt's core
+  rule: title and basis state only what is known before the episode starts
+  (the briefing holds the outcome). `info.json` lists kind, content, basis and
+  the title composed in code as `<nickname or program>:<content> <YYMMDD>`
+  (`titles_info`; program `nickname`, `effective_broadcast_date`), so a
+  nickname edit needs no agent run. `[features] title_suggestion` gates only
   generating a missing one; failure warns.
 
 ## Compose (`package/compose.py`, `stages/compose.py`)

@@ -4,8 +4,9 @@
 Runs after the last stage of every complete run, and alone via `grill
 package`; in a run it reads the project where it lives after the archive
 move (the archived copy when `[paths] archive` is set). Title
-suggestions are generated here (cached in `.work/package/titles.json`) and
-written to `info.json` as `<nickname or program>:<content> <YYMMDD>`, the
+suggestions are generated here from the platform listing and the briefing
+(cached in `.work/package/titles.json`) and written to `info.json`, each
+also composed as `<nickname or program>:<content> <YYMMDD>`, the
 dialogue (`video.cht.srt`) is rendered to `.work/package/dialogue.ass`, the
 chat panel to `.work/package/chat.ass`, the translated telops
 (`.subs/telop.cht.json`, when present and not `--no-telop`) to
@@ -35,7 +36,7 @@ from grillmaster.core.json_artifact import read_model
 from grillmaster.core.model_spec import Role
 from grillmaster.core.srt import read_srt_file
 from grillmaster.extras.cover import copy_cover
-from grillmaster.extras.titles import ProgramNames, ensure_titles, titles_info
+from grillmaster.extras.titles import SourceListing, ensure_titles, titles_info
 from grillmaster.package.assemble import (
     GLOSSARY_REPORT_NAME,
     PACKAGE_INNER_PATH_RESERVE,
@@ -104,7 +105,13 @@ def _run(ctx: StageContext) -> str:
     titles = ensure_titles(
         ctx.agents,
         briefing=layout.effective_briefing(),
-        program=ProgramNames(series=source.series, channel=source.channel),
+        source=SourceListing(
+            series=source.series,
+            channel=source.channel,
+            title=source.title,
+            description=source.description,
+            talents=tuple(source.talents),
+        ),
         cache=layout.titles,
         session_dir=ctx.session_dir(),
         enabled=ctx.config.features.title_suggestion,

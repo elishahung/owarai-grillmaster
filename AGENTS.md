@@ -98,6 +98,11 @@ implementation minutiae, or local workaround history into top-level guidance;
 fold small local details into the relevant existing paragraph, or leave them out
 when the code/tests are the clearer source of truth.
 
+Measurements (model comparisons, A/B runs, archive statistics) go in
+`docs/reports/YYYY-MM-DD_<topic>.md`, not in code comments, skills or memory;
+skills keep only the rule a report changes. The repo is public: reports carry no
+local paths, account details or other personal data.
+
 If you add a large, self-contained subsystem, factor it into its own skill
 under `.agents/skills/` (and add a row to the table above) instead of bloating
 an existing one. AGENTS.md itself stays thin — detail belongs in skills.

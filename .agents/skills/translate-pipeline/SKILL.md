@@ -132,3 +132,12 @@ Stage registry, ledger, `grill reset`, layout: **project-architecture**.
   `chunk_frame_interval_s` (30), `frame_max_side` (768).
 - `[programs.series|channel."<name>".instruction]` keys `common`, `prepass`,
   `chunks` reach the prompts as `SourceContext.program_instruction`.
+
+## Comparing models
+
+- Cheap A/B without code: copy a project into a scratch `GRILL_HOME` (roles
+  and `[paths]` changed), drop the ledger entries from the stage on, delete
+  only the target chunk's `translation.json` + `session/` (the rest stay
+  cached), run `grill <id> --break-after chunks`.
+- Reruns of one model differ ~40 % in wording, so judge by a fixed list of
+  known meaning errors, not text diffs. Results: `docs/reports/`.

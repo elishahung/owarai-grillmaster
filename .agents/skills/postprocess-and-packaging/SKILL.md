@@ -31,7 +31,9 @@ own semantic rules and get `ProgramRules.instruction_text(<stage>)` appended.
   their prompts judge subject/point of view per speaker run, not per block.
 - **Refine** (`RefineInputs`): `.work/09_chunks/merged.srt` →
   `.work/10_refine/refined.srt` (required) + `report.md` (optional); reads the
-  effective briefing.
+  effective briefing. How much refine rewrites depends mostly on its model
+  (gpt-6.2-sol edits ~3× the blocks 6.1 did, same effort), so compare chunk
+  models by refine edit rate only under one refine model.
 - **Glossary** (`GlossaryInputs`): `refined.srt` → `.work/11_glossary/checked.srt`
   (required), optional `report.md` and `briefing.candidate.json`. Reads the
   pre-pass briefing, `.subs/ja.voiced.srt`, and `.subs/ja.official.srt` if present

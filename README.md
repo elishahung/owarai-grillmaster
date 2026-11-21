@@ -21,7 +21,7 @@
 經過各種嘗試，覺得以下方式最合適
 
 - **ASR**：`Azure MAI-Transcribe-2`（時間軸不會在吵雜段落被拉長或疊在一起、說話者分得出附和與快速對答）；`ElevenLabs Scribe v2` 只在最終校對的 `watch_clip` 當第二次聽寫
-- **翻譯**：`Gemini 3` 系列最能抓住日本綜藝的韻味，也很會看圖聽音檔
+- **翻譯**：`Gemini` 系列最能抓住日本綜藝的韻味，也很會看圖聽音檔
 - **潤飾**：交給 `GPT` / `Claude`，修正 `Gemini` 輸出結構異常與亂用主語的瑕疵，並且會更願意調用工具去上網查詢、截圖驗證字句
 
 ## 流程
@@ -103,12 +103,12 @@ archive = 'NAS:\video\ai'          # stage 完成後的歸檔位置（打包前�
 package = 'NAS:\video\package'     # 燒錄字幕後的成品位置
 
 [agents.roles]                      # 各角色模型，格式為 backend/model[/effort][/fast]（fast 僅 codex，較快但耗更多額度）
-prepass = "gemini/gemini-3.1-pro-preview/high"  # backend：gemini、agy、claude、codex（皆為訂閱制；agy 與 gemini 能聽音檔）
-chunk = "gemini/gemini-3.1-pro-preview/high"
-postprocess = "codex/gpt-6.1-sol/high"
+prepass = "agy/gemini-4-neon/high"  # backend：gemini、agy、claude、codex（agy 與 gemini 能聽音檔）
+chunk = "agy/gemini-4-neon/high"
+postprocess = "codex/gpt-6.2-sol/high"
 editor = "claude/claude-opus-5-5/high"     # 最終校對與譯者註；省略則沿用 postprocess
-utility = "codex/gpt-6.1-sol/medium"  # 輕量任務：標題、播出日期查證、字卡（--telop）、聊天室（--chat），以及 prepass／chunk 驗證失敗時的無音檔修補
-image = "codex/gpt-6.1-sol/medium"   # 封面，需要能生圖的 codex
+utility = "codex/gpt-6.2-sol/medium"  # 輕量任務：標題、播出日期查證、字卡（--telop）、聊天室（--chat），以及 prepass／chunk 驗證失敗時的無音檔修補
+image = "codex/gpt-6.2-sol/medium"   # 封面，需要能生圖的 codex
 
 [watch_clip]                        # 最終校對的看片工具：發話由 ElevenLabs Scribe v2 聽寫（按音訊時長計費），字卡與場景由 Meta Muse 讀（按 token 計費）
 speech = true                       # false 為不聽寫發話

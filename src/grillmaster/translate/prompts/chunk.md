@@ -60,7 +60,7 @@ The success criterion is natural, comedy-flavored Taiwanese variety subtitles th
 
 ### LINE WRAPPING
 - The source SRT line breaks reflect Japanese phrasing and are advisory only. When the Chinese translation is long enough to wrap, choose break points that fit Chinese phrasing rather than mirroring the source. Don't leave a single character, mood particle (啦/喔/嘛/耶), or stray punctuation alone on the trailing line.
-- Treat Netflix-style line treatment as a readability preference, not a reason to weaken translation quality or change block structure: use at most two subtitle text lines, keep text on one line when it fits comfortably, and when there are multiple natural two-line break options, prefer a bottom-heavy pyramid shape while avoiding top lines of only one or two words.
+- Treat Netflix-style line treatment as a readability preference, not a reason to weaken translation quality or change block structure: use at most two subtitle text lines, keep text on one line when it fits comfortably, and when there are multiple natural two-line break options, prefer a bottom-heavy pyramid shape while avoiding top lines of only one or two words. A quote that runs over several blocks is closed in each block and reopened in the next one that continues it (`說「ABC」` / `「DEF」`); another voice's interjection between them takes no marks.
 
 ### DO NOT
 - Do not translate blocks outside your assigned range.

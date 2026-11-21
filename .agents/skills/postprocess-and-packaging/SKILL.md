@@ -107,7 +107,9 @@ sharing a row split by `／` (`-A／B` / `-C`). The chunk agent writes one `-` l
 regardless of count; folding is refine's job, `_fold_turns` its guarantee),
 then `close_quotes_per_block`: a quote carried over several blocks is closed
 and reopened in each (Netflix TC), in `-` lines only on the voice closing
-it; an unclosed or ambiguous run stays as written, then `fit_text`: a line wider than the full
+it; an unclosed or ambiguous run stays as written (a quote read out between
+other voices' interjections is one: the chunk and refine prompts own the
+per-block rule, this pass is the net), then `fit_text`: a line wider than the full
 canvas (1900 px) is broken into rows (libass breaks only at a space, so CJK
 ran off both edges), its row-final `，、；。` dropped. The break lives in the
 text (SRT + ASS, the archived deliverables; owner's call over breaking only

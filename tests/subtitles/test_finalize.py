@@ -411,7 +411,7 @@ def test_bundled_glossary_yields_mixed_names():
     units = curated_name_units(load_fixed_glossary())
 
     assert len(units) > 5
-    assert "水川Katamari" in units
+    assert "野田Crystal" in units
     assert not {"金屬球棒", "Diane", "THE SECOND"} & set(units)
 
 
@@ -432,7 +432,7 @@ def test_write_finalized_spaces_then_cleans(tmp_path: Path):
     blocks = [
         SrtBlock(1, "00:00:01,000 --> 00:00:02,000", "以及空前Meteor的茶屋。"),
         SrtBlock(2, "00:00:03,000 --> 00:00:04,000", "難道是森本桑？"),
-        SrtBlock(3, "00:00:05,000 --> 00:00:06,000", "我推薦的是水川Katamari 桑啊。"),
+        SrtBlock(3, "00:00:05,000 --> 00:00:06,000", "我推薦的是野田Crystal 桑啊。"),
         SrtBlock(4, "00:00:07,000 --> 00:00:08,000", "他說「好啊，"),
         SrtBlock(5, "00:00:09,000 --> 00:00:10,000", "走吧。」"),
     ]
@@ -450,7 +450,7 @@ def test_write_finalized_spaces_then_cleans(tmp_path: Path):
         "1\n00:00:01,000 --> 00:00:02,000\n以及 空前Meteor 的茶屋\n\n"
         "2\n00:00:03,000 --> 00:00:04,000\n難道是森本桑？\n\n"
         # Curated, not in the briefing; the trailing 桑 keeps its space.
-        "3\n00:00:05,000 --> 00:00:06,000\n我推薦的是 水川Katamari 桑啊\n\n"
+        "3\n00:00:05,000 --> 00:00:06,000\n我推薦的是 野田Crystal 桑啊\n\n"
         # Closed per block after the punctuation cleanup.
         "4\n00:00:07,000 --> 00:00:08,000\n他說「好啊」\n\n"
         "5\n00:00:09,000 --> 00:00:10,000\n「走吧」\n"
